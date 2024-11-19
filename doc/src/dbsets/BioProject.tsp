@@ -6,15 +6,24 @@ using TypeSpec.JsonSchema;
 
 @jsonSchema
 model BioProject {
+  @example("bioproject")
   type: "bioproject";
+
+  @example("PRJNA1")
   identifier: string;
+
   name: string | null;
   dateCreated: string;
   datePublished: string | null;
   dateModified: string;
+
+  @doc(Descriptions.checkEnum)
   visibility: string;
+
+  @doc(Descriptions.checkEnum)
   status: string;
-  isPartOf: string;
+
+  isPartOf: "BioProject";
 
   @doc(Descriptions.url)
   url: string;
