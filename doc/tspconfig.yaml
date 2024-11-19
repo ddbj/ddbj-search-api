@@ -3,4 +3,6 @@ emit:
   - "@typespec/json-schema"
 options:
   "@typespec/openapi3":
-    "file-type": "json"
+    "file-type": "yaml"
+  "@typespec/json-schema":
+    "file-type": "yaml"

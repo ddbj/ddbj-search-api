@@ -5,7 +5,9 @@
   "scripts": {
     "clean": "run-func scripts/clean.js clean",
     "build": "npm run clean && tsp compile src/main.tsp",
-    "dev": "tsp compile src/main.tsp --watch"
+    "dev": "tsp compile src/main.tsp --watch",
+    "bundle": "npm run build && run-func scripts/bundle.js bundle",
+    "format": "tsp format '**/*.tsp'"
   },
   "peerDependencies": {
     "@typespec/compiler": "latest",
