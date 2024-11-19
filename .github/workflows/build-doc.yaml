@@ -40,7 +40,7 @@ jobs:
           cache: "pnpm"
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
-        working-directory: doc
+        working-directory: ./doc
       - name: Bundle
         run: ${{ steps.detect-package-manager.outputs.runner }} bundle
       - name: Upload artifact
