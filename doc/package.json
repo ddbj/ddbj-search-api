@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsp compile src/main.tsp",
+    "clean": "run-func scripts/clean.js clean",
+    "build": "npm run clean && tsp compile src/main.tsp",
     "dev": "tsp compile src/main.tsp --watch"
   },
   "peerDependencies": {
@@ -22,7 +23,9 @@
     "@typespec/prettier-plugin-typespec": "latest",
     "@typespec/rest": "latest",
     "@typespec/versioning": "latest",
-    "prettier": "^3.3.3"
+    "consola": "^3.2.3",
+    "prettier": "^3.3.3",
+    "run-func": "^3.0.0"
   },
   "private": true
 }

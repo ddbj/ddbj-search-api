@@ -2,14 +2,14 @@ import "@typespec/http";
 import "@typespec/rest";
 import "@typespec/json-schema";
 
+using TypeSpec.JsonSchema;
+using TypeSpec.Http;
+using TypeSpec.Rest;
+
 @service({
   title: "DDBJ SEARCH API",
 })
 namespace DemoService;
-
-using TypeSpec.Http;
-using TypeSpec.Rest;
-using TypeSpec.JsonSchema;
 
 model Distribution {}
 
@@ -33,7 +33,8 @@ model DBXref {
   url: string;
 }
 
-model BioProject extends OmitProperties<BaseResponse, "url"> {
+@jsonSchema
+model BioProject extends BaseResponse {
   type: "BioProject";
   objectType: "UmbrellaBioProject" | "BioProject";
   description: string | null;
