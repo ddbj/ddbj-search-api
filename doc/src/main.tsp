@@ -1,5 +1,6 @@
 import "@typespec/http";
 import "@typespec/rest";
+import "@typespec/json-schema";
 
 @service({
   title: "DDBJ SEARCH API",
@@ -8,6 +9,7 @@ namespace DemoService;
 
 using TypeSpec.Http;
 using TypeSpec.Rest;
+using TypeSpec.JsonSchema;
 
 model Distribution {}
 

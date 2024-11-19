@@ -2,9 +2,14 @@
   "name": "ddbj-search-api",
   "version": "0.1.0",
   "type": "module",
+  "scripts": {
+    "build": "tsp compile src/main.tsp",
+    "dev": "tsp compile src/main.tsp --watch"
+  },
   "peerDependencies": {
     "@typespec/compiler": "latest",
     "@typespec/http": "latest",
+    "@typespec/json-schema": "latest",
     "@typespec/openapi3": "latest",
     "@typespec/rest": "latest",
     "@typespec/versioning": "latest"
@@ -12,8 +17,9 @@
   "devDependencies": {
     "@typespec/compiler": "latest",
     "@typespec/http": "latest",
+    "@typespec/json-schema": "latest",
     "@typespec/openapi3": "latest",
-    "@typespec/prettier-plugin-typespec": "^0.62.0",
+    "@typespec/prettier-plugin-typespec": "latest",
     "@typespec/rest": "latest",
     "@typespec/versioning": "latest",
     "prettier": "^3.3.3"

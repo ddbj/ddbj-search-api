@@ -14,11 +14,14 @@ importers:
       '@typespec/http':
         specifier: latest
         version: 0.62.0(@typespec/compiler@0.62.0)
+      '@typespec/json-schema':
+        specifier: latest
+        version: 0.62.0(@typespec/compiler@0.62.0)
       '@typespec/openapi3':
         specifier: latest
         version: 0.62.0(@typespec/compiler@0.62.0)(@typespec/http@0.62.0(@typespec/compiler@0.62.0))(@typespec/openapi@0.62.0(@typespec/compiler@0.62.0)(@typespec/http@0.62.0(@typespec/compiler@0.62.0)))(@typespec/versioning@0.62.0(@typespec/compiler@0.62.0))(openapi-types@12.1.3)
       '@typespec/prettier-plugin-typespec':
-        specifier: ^0.62.0
+        specifier: latest
         version: 0.62.0
       '@typespec/rest':
         specifier: latest
@@ -110,6 +113,12 @@ packages:
     peerDependenciesMeta:
       '@typespec/streams':
         optional: true
+
+  '@typespec/json-schema@0.62.0':
+    resolution: {integrity: sha512-8wM+ENB8NY9y4mhevk6XImYqzgiZdQFlq9fMwsoJGT7jsNA4MYAHsDrVH2jWfOnR1EssCHNV5bu1DttfXpaZvg==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@typespec/compiler': ~0.62.0
 
   '@typespec/openapi3@0.62.0':
     resolution: {integrity: sha512-tfmaPvZ38fM+O5+ZBq4ic7fc32E3v0JOFP9h+7otQyrVprLVCToXpBwaxB7c2nTSJbI4vcxK7/T3Z8BD5j8X+w==}
@@ -540,6 +549,11 @@ snapshots:
   '@typespec/http@0.62.0(@typespec/compiler@0.62.0)':
     dependencies:
       '@typespec/compiler': 0.62.0
+
+  '@typespec/json-schema@0.62.0(@typespec/compiler@0.62.0)':
+    dependencies:
+      '@typespec/compiler': 0.62.0
+      yaml: 2.5.1
 
   '@typespec/openapi3@0.62.0(@typespec/compiler@0.62.0)(@typespec/http@0.62.0(@typespec/compiler@0.62.0))(@typespec/openapi@0.62.0(@typespec/compiler@0.62.0)(@typespec/http@0.62.0(@typespec/compiler@0.62.0)))(@typespec/versioning@0.62.0(@typespec/compiler@0.62.0))(openapi-types@12.1.3)':
     dependencies:
