@@ -20,6 +20,11 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+
+defaults:
+  run:
+    working-directory: doc
+
 jobs:
   # Build job
   build:
