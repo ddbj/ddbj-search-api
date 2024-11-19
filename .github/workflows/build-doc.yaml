@@ -21,9 +21,9 @@ concurrency:
   cancel-in-progress: false
 
 
-defaults:
-  run:
-    working-directory: doc
+#defaults:
+#  run:
+#    working-directory: doc
 
 jobs:
   # Build job
@@ -40,6 +40,7 @@ jobs:
           cache: "pnpm"
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
+        working-directory: doc
       - name: Bundle
         run: ${{ steps.detect-package-manager.outputs.runner }} bundle
       - name: Upload artifact
