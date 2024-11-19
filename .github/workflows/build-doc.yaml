@@ -38,11 +38,13 @@ jobs:
         with:
           node-version: 22
           cache: "pnpm"
+          cache-dependency-path: doc/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
         working-directory: ./doc
       - name: Bundle
         run: ${{ steps.detect-package-manager.outputs.runner }} bundle
+        working-directory: ./doc
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
