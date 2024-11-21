@@ -25,18 +25,18 @@ model BioSample {
   description: string | null;
   title: string | null;
 
-  @doc(Descriptions.dbXref)
+  @doc(Caution.dbXref)
   dbXref: Xref[] | null;
 
   organism: Organism | null;
   attributes: {
-    @doc(Descriptions.snake)
+    @doc(Todo.snake)
     attribute_name: string;
 
-    @doc(Descriptions.snake)
+    @doc(Todo.snake)
     display_name: string;
 
-    @doc(Descriptions.snake)
+    @doc(Todo.snake)
     harmonized_name: string;
 
     content: string;
@@ -45,11 +45,11 @@ model BioSample {
     name: string;
   }[];
 
-  @doc(Descriptions.pascal)
+  @doc(Todo.pascal)
   Package: {
     name: string;
 
-    @doc(Descriptions.snake)
+    @doc(Todo.snake)
     display_name: string;
   };
 }

@@ -17,10 +17,10 @@ model BioProject {
   datePublished: string | null;
   dateModified: string;
 
-  @doc(Descriptions.checkEnum)
+  @doc(Todo.checkEnum)
   visibility: string;
 
-  @doc(Descriptions.checkEnum)
+  @doc(Todo.checkEnum)
   status: string;
 
   isPartOf: "BioProject";
@@ -34,7 +34,7 @@ model BioProject {
   description: string | null;
   title: string | null;
 
-  @doc(Descriptions.dbXref)
+  @doc(Caution.dbXref)
   dbXref: Xref[] | null;
 
   organism: Organism | null;
