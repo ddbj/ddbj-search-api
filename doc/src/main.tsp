@@ -2,7 +2,6 @@ import "@typespec/http";
 import "@typespec/rest";
 import "@typespec/json-schema";
 import "@typespec/openapi3";
-import "./common/models.tsp";
 import "./dbsets/BioProject.tsp";
 import "./dbsets/BioSample.tsp";
 import "./dbsets/JgaDac.tsp";
@@ -28,7 +27,6 @@ union SearchResponse {
   JgaDac,
 }
 @route("jga-*,sra-*,bioproject,biosample/_msearch")
-//@query(_msearch)
 interface SearchResources {
   @post
   search(
@@ -36,8 +34,3 @@ interface SearchResources {
     @body SearchRequest: "",
   ): SearchResponse;
 }
-//  op detail(
-//  	@header `Content-Type`: "application/json; charset=UTF-8"
-//  ): SearchResponse;
-//search/resources/jga-*,sra-*,bioproject,biosample/_msearch?
-//

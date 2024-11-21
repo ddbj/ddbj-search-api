@@ -1,6 +1,6 @@
 import "@typespec/json-schema";
 import "../common/constants.tsp";
-import "../common/models.tsp";
+import "../common/components.tsp";
 
 using TypeSpec.JsonSchema;
 
