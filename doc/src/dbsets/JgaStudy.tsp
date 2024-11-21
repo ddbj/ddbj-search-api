@@ -5,8 +5,8 @@ import "../common/components.tsp";
 using TypeSpec.JsonSchema;
 
 @jsonSchema
-model JgaDac {
-  type: "jga-dac";
+model JgaStudy {
+  type: "jga-study";
   identifier: string;
   name: string | null;
   dateCreated: string;
@@ -26,4 +26,17 @@ model JgaDac {
 
   distribution: Distribution[];
   properties: unknown;
+  sameAs: Xref[] | null;
+  description: string | null;
+  title: string | null;
+  downloadUrl: DownloadUrl[] | null;
+
+  @doc(Caution.oldOrganism)
+  organism: __Organism | null;
+
+  @doc(Caution.dbXrefs)
+  dbXrefs: Xref[];
+
+  @doc(Caution.dbXrefsStatistics)
+  dbXrefsStatistics: __DbXrefsStatistics[];
 }

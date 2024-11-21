@@ -4,6 +4,7 @@ import "@typespec/json-schema";
 import "@typespec/openapi3";
 import "./dbsets/BioProject.tsp";
 import "./dbsets/BioSample.tsp";
+import "./dbsets/JgaStudy.tsp";
 import "./dbsets/JgaDac.tsp";
 
 using TypeSpec.JsonSchema;
@@ -24,6 +25,7 @@ namespace DDBJSearch;
 union SearchResponse {
   BioProject,
   BioSample,
+  JgaStudy,
   JgaDac,
 }
 @route("jga-*,sra-*,bioproject,biosample/_msearch")
