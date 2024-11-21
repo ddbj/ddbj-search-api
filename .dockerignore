@@ -1,0 +1,8 @@
+# Ignore everything
+**
+
+!ddbj_search_api
+!LICENSE
+!pyproject.toml
+!README.md
+!tests
