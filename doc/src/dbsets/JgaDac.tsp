@@ -6,7 +6,9 @@ using TypeSpec.JsonSchema;
 
 @jsonSchema
 model JgaDac {
+  @example("jga-dac")
   type: "jga-dac";
+
   identifier: string;
   name: string | null;
   dateCreated: string;

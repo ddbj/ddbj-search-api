@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "clean": "run-func scripts/clean.js clean",
-    "build": "npm run clean && tsp compile src/main.tsp",
-    "dev": "tsp compile src/main.tsp --watch",
-    "bundle": "npm run build && run-func scripts/bundle.js bundle",
-    "format": "tsp format '**/*.tsp'"
+    "tsp:clean": "run-func scripts/clean.js clean",
+    "tsp:build": "npm run tsp:clean && tsp compile src/main.tsp",
+    "dsp:dev": "npm run tsp:clean && tsp compile src/main.tsp --watch",
+    "vite": "vite",
+    "vite:build": "vite build",
+    "format": "tsp format '**/*.tsp'",
+    "dev": "concurrently \"npm run dsp:dev\" \"npm run vite\"",
+    "bundle": "npm run tsp:build && npm run vite:build"
   },
   "peerDependencies": {
     "@typespec/compiler": "latest",
@@ -25,9 +28,15 @@
     "@typespec/prettier-plugin-typespec": "latest",
     "@typespec/rest": "latest",
     "@typespec/versioning": "latest",
+    "concurrently": "^9.1.0",
     "consola": "^3.2.3",
     "prettier": "^3.3.3",
-    "run-func": "^3.0.0"
+    "run-func": "^3.0.0",
+    "vite-multiple-assets": "^2.2.2",
+    "vite-plugin-full-reload": "^1.2.0"
   },
-  "private": true
+  "private": true,
+  "dependencies": {
+    "vite": "^5.4.11"
+  }
 }
