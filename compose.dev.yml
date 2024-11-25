@@ -1,0 +1,27 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile-dev
+    environment:
+      - DDBJ_SEARCH_API_DEBUG=True
+      - DDBJ_SEARCH_API_HOST=0.0.0.0
+      - DDBJ_SEARCH_API_PORT=8080
+      - DDBJ_SEARCH_API_URL_PREFIX=/search
+      - DDBJ_SEARCH_API_BASE_URL=https://dev.ddbj.nig.ac.jp/search
+      - DDBJ_SEARCH_API_ES_URL=https://dev.ddbj.nig.ac.jp/search/resources
+    volumes:
+      - ${PWD}:/app
+    ports:
+      - 127.0.0.1:8080:8080
+    restart: unless-stopped
+    working_dir: /app
+    command: [ "sleep", "infinity" ]
+    networks:
+      - ddbj-search-network-dev
+    init: true
+
+networks:
+  ddbj-search-network-dev:
+    name: ddbj-search-network-dev
+    external: true

@@ -84,7 +84,7 @@ curl -X GET "http://localhost:8080/search/entry/biosample/SAMN02953658.jsonld"
 To set up the development environment for the API Server, use the [compose.dev.yml](./compose.dev.yml) file. Follow these steps:
 
 ```bash
-docker network create ddbj-search-network
+docker network create ddbj-search-network-dev
 docker compose -f compose.dev.yml up -d --build
 docker compose -f compose.dev.yml exec app ddbj_search_api --debug
 ```

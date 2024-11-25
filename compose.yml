@@ -4,19 +4,17 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - DDBJ_SEARCH_API_DEBUG=True
+      - DDBJ_SEARCH_API_DEBUG=False
       - DDBJ_SEARCH_API_HOST=0.0.0.0
       - DDBJ_SEARCH_API_PORT=8080
       - DDBJ_SEARCH_API_URL_PREFIX=/search
-      - DDBJ_SEARCH_API_BASE_URL=https://dev.ddbj.nig.ac.jp/search
-      - DDBJ_SEARCH_API_ES_URL=https://dev.ddbj.nig.ac.jp/search/resources
-    volumes:
-      - ${PWD}:/app
+      - DDBJ_SEARCH_API_BASE_URL=https://ddbj.nig.ac.jp/search
+      - DDBJ_SEARCH_API_ES_URL=https://ddbj.nig.ac.jp/search/resources
     ports:
       - 127.0.0.1:8080:8080
     restart: unless-stopped
     working_dir: /app
-    command: [ "sleep", "infinity" ]
+    command: [ "ddbj_search_api" ]
     networks:
       - ddbj-search-network
     init: true
