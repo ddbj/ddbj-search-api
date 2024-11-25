@@ -13,6 +13,10 @@ from ddbj_search_api.utils import inside_docker, str2bool
 PKG_DIR = Path(__file__).resolve().parent
 
 
+BIOPROJECT_CONTEXT_URL = "https://raw.githubusercontent.com/ddbj/rdf/main/context/bioproject.jsonld"
+BIOSAMPLE_CONTEXT_URL = "https://raw.githubusercontent.com/ddbj/rdf/main/context/biosample.jsonld"
+
+
 # === Global Configuration ===
 
 
@@ -21,6 +25,7 @@ class AppConfig(BaseModel):
     port: int = 8080
     debug: bool = False
     url_prefix: str = "/search"
+    base_url: str = f"http://{'0.0.0.0' if inside_docker() else '127.0.0.1'}:8080"
     es_url: str = "https://ddbj.nig.ac.jp/search/resources"
 
 
@@ -53,6 +58,12 @@ def parse_args(args: Optional[List[str]] = None) -> Namespace:
         help="URL prefix for the service endpoints. (default: '/search', e.g., /dfast/api)"
     )
     parser.add_argument(
+        "--base-url",
+        type=str,
+        metavar="",
+        help="Base URL for JSON-LD @id field. This field is generated using the format: {base_url}/entry/bioproject/{bioproject_id}.jsonld. (default: http://{host}:{port}{url_prefix})"
+    )
+    parser.add_argument(
         "--es-url",
         type=str,
         metavar="",
@@ -67,11 +78,17 @@ def get_config() -> AppConfig:
     args = parse_args(sys.argv[1:])
     default_config = AppConfig()
 
+    host = args.host or os.environ.get("DDBJ_SEARCH_API_HOST", default_config.host)
+    port = args.port or int(os.environ.get("DDBJ_SEARCH_API_PORT", default_config.port))
+    url_prefix = args.url_prefix or os.environ.get("DDBJ_SEARCH_API_URL_PREFIX", default_config.url_prefix)
+    base_url = args.base_url or os.environ.get("DDBJ_SEARCH_API_BASE_URL", f"http://{host}:{port}{url_prefix}")
+
     return AppConfig(
-        host=args.host or os.environ.get("DDBJ_SEARCH_API_HOST", default_config.host),
-        port=args.port or int(os.environ.get("DDBJ_SEARCH_API_PORT", default_config.port)),
+        host=host,
+        port=port,
         debug=args.debug or str2bool(os.environ.get("DDBJ_SEARCH_API_DEBUG", default_config.debug)),
-        url_prefix=args.url_prefix or os.environ.get("DDBJ_SEARCH_API_URL_PREFIX", default_config.url_prefix),
+        url_prefix=url_prefix,
+        base_url=base_url,
         es_url=args.es_url or os.environ.get("DDBJ_SEARCH_API_ES_URL", default_config.es_url),
     )
 

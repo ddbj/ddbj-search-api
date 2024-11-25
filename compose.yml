@@ -8,6 +8,7 @@ services:
       - DDBJ_SEARCH_API_HOST=0.0.0.0
       - DDBJ_SEARCH_API_PORT=8080
       - DDBJ_SEARCH_API_URL_PREFIX=/search
+      - DDBJ_SEARCH_API_BASE_URL=https://dev.ddbj.nig.ac.jp/search
       - DDBJ_SEARCH_API_ES_URL=https://dev.ddbj.nig.ac.jp/search/resources
     volumes:
       - ${PWD}:/app

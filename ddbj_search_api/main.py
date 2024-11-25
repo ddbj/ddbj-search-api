@@ -1,13 +1,54 @@
 import logging.config
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Message, Receive, Scope, Send
 
 from ddbj_search_api.config import LOGGER, PKG_DIR, get_config, logging_config
 from ddbj_search_api.routers import router
+from ddbj_search_api.schemas import ErrorResponse
+
+
+def fix_error_handler(app: FastAPI) -> None:
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        app_config = get_config()
+        if app_config.debug:
+            LOGGER.exception("Something http exception occurred.", exc_info=exc)
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=ErrorResponse(
+                msg=exc.detail,
+                status_code=exc.status_code,
+            ).model_dump()
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        app_config = get_config()
+        if app_config.debug:
+            LOGGER.exception("Request validation error occurred.", exc_info=exc)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": exc.errors()}
+        )
+
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(_request: Request, _exc: Exception) -> JSONResponse:
+        # If a general Exception occurs, a traceback will be output without using LOGGER.
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=ErrorResponse(
+                msg="The server encountered an internal error and was unable to complete your request.",
+                status_code=500,
+            ).model_dump()
+        )
 
 
 class CustomCORSMiddleware(CORSMiddleware):
@@ -80,6 +121,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(router)
+    fix_error_handler(app)
 
     return app
 
@@ -97,8 +139,6 @@ def main() -> None:
         factory=True,
     )
 
-
-# https://ddbj.nig.ac.jp/search/entry/bioproject/PRJNA17
 
 if __name__ == "__main__":
     main()
