@@ -6,6 +6,13 @@ import "./dbsets/BioProject.tsp";
 import "./dbsets/BioSample.tsp";
 import "./dbsets/JgaStudy.tsp";
 import "./dbsets/JgaDac.tsp";
+import "./dbsets/JgaDataset.tsp";
+import "./dbsets/JgaPolicy.tsp";
+import "./dbsets/SraStudy.tsp";
+import "./dbsets/SraSample.tsp";
+import "./dbsets/SraExperiment.tsp";
+import "./dbsets/SraRun.tsp";
+import "./dbsets/SraSubmission.tsp";
 
 using TypeSpec.JsonSchema;
 using TypeSpec.Http;
@@ -27,6 +34,13 @@ union SearchResponse {
   BioSample,
   JgaStudy,
   JgaDac,
+  JgaDataset,
+  JgaPolicy,
+  SraStudy,
+  SraSample,
+  SraExperiment,
+  SraRun,
+  SraSubmission,
 }
 @route("jga-*,sra-*,bioproject,biosample/_msearch")
 interface SearchResources {

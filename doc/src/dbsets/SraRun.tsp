@@ -5,14 +5,14 @@ import "../common/components.tsp";
 using TypeSpec.JsonSchema;
 
 @jsonSchema
-model JgaStudy {
-  @example("jga-study")
-  type: "jga-study";
+model SraRun {
+  @example("sra-run")
+  type: "sra-run";
 
-  @example("JGAS000004")
+  @example("SRR885622")
   identifier: string;
 
-  @example("JSUB000007_Study_0001")
+  @example("224302")
   name: string | null;
 
   @example("2014-09-08T08:23:12+09:00")
@@ -32,21 +32,18 @@ model JgaStudy {
   @example("public")
   status: string;
 
-  @example("jga")
-  isPartOf: "jga";
+  @example("sra")
+  isPartOf: "sra";
 
   @doc(Descriptions.url)
-  @example("https://ddbj.nig.ac.jp/resource/jga-study/JGAS000004")
+  @example("https://ddbj.nig.ac.jp/resource/sra-run/SRR885622")
   url: string;
 
   distribution: Distribution[];
   properties: unknown;
   sameAs: Xref[] | null;
   description: string | null;
-
-  @example("Genomic and Genetic Analysis of Brain Tumors and Analysis of Their Clinicopathological Significance")
   title: string | null;
-
   downloadUrl: DownloadUrl[] | null;
 
   @doc(Caution.oldOrganism)

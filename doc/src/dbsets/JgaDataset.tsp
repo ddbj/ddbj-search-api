@@ -5,14 +5,14 @@ import "../common/components.tsp";
 using TypeSpec.JsonSchema;
 
 @jsonSchema
-model JgaStudy {
-  @example("jga-study")
-  type: "jga-study";
+model JgaDataset {
+  @example("jga-dataset")
+  type: "jga-dataset";
 
-  @example("JGAS000004")
+  @example("JGAD000001")
   identifier: string;
 
-  @example("JSUB000007_Study_0001")
+  @example("JSUB000002_Dataset_0001")
   name: string | null;
 
   @example("2014-09-08T08:23:12+09:00")
@@ -42,9 +42,11 @@ model JgaStudy {
   distribution: Distribution[];
   properties: unknown;
   sameAs: Xref[] | null;
+
+  @example("whole-exome sequencing data from 97 Japanese lung adenocarcinomapatients")
   description: string | null;
 
-  @example("Genomic and Genetic Analysis of Brain Tumors and Analysis of Their Clinicopathological Significance")
+  @example("whole-exome sequencing data from 97 Japanese lung adenocarcinomapatients")
   title: string | null;
 
   downloadUrl: DownloadUrl[] | null;
