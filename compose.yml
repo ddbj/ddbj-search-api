@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile
     container_name: ddbj-search-api
     environment:
-      - DDBJ_SEARCH_API_DEBUG=False
+      - DDBJ_SEARCH_API_DEBUG=${DDBJ_SEARCH_API_DEBUG:-False}
       - DDBJ_SEARCH_API_HOST=0.0.0.0
       - DDBJ_SEARCH_API_PORT=8080
       - DDBJ_SEARCH_API_URL_PREFIX=/search
-      - DDBJ_SEARCH_API_BASE_URL=https://ddbj.nig.ac.jp/search
-      - DDBJ_SEARCH_API_ES_URL=https://ddbj.nig.ac.jp/search/resources
+      - DDBJ_SEARCH_API_BASE_URL=${DDBJ_SEARCH_API_BASE_URL:-https://ddbj.nig.ac.jp/search}
+      - DDBJ_SEARCH_API_ES_URL=${DDBJ_SEARCH_API_ES_URL:-http:/ddbj-search-elasticsearch:9200}
     working_dir: /app
     command: [ "ddbj_search_api" ]
     networks:
