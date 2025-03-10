@@ -7,6 +7,12 @@ LABEL org.opencontainers.image.version="0.1.0"
 LABEL org.opencontainers.image.description="The implementation of DDBJ Search API"
 LABEL org.opencontainers.image.licenses="Apache2.0"
 
+RUN apt update && \
+    apt install -y --no-install-recommends \
+    git && \
+    apt clean && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY . .
 RUN python3 -m pip install --no-cache-dir --progress-bar off -U pip && \
