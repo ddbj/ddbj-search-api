@@ -4,7 +4,6 @@
 
 This repository contains the implementation of:
 
-- **API Specification**
 - **API Server**
 
 for [GitHub - ddbj/ddbj-search](https://github.com/ddbj/ddbj-search).  
