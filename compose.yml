@@ -11,9 +11,6 @@ services:
       - DDBJ_SEARCH_API_URL_PREFIX=/search
       - DDBJ_SEARCH_API_BASE_URL=https://ddbj.nig.ac.jp/search
       - DDBJ_SEARCH_API_ES_URL=https://ddbj.nig.ac.jp/search/resources
-    ports:
-      - 127.0.0.1:8080:8080
-    restart: unless-stopped
     working_dir: /app
     command: [ "ddbj_search_api" ]
     networks:

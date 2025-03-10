@@ -1,10 +1,10 @@
+from ddbj_search_converter.schema import BioProject, BioSample  # type: ignore
 from fastapi import APIRouter, HTTPException, status
 
 from ddbj_search_api.config import (BIOPROJECT_CONTEXT_URL,
                                     BIOSAMPLE_CONTEXT_URL, get_config)
 from ddbj_search_api.es_client import get_es_doc
-from ddbj_search_api.schemas import (BioProject, BioProjectLD, BioSample,
-                                     BioSampleLD)
+from ddbj_search_api.schemas import BioProjectLD, BioSampleLD
 
 router = APIRouter()
 
