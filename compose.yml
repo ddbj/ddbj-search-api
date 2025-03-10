@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: ddbj-search-api
     container_name: ddbj-search-api
     environment:
       - DDBJ_SEARCH_API_DEBUG=${DDBJ_SEARCH_API_DEBUG:-False}

@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile-dev
     container_name: ddbj-search-api-dev
+    image: ddbj-search-api-dev
     environment:
       - DDBJ_SEARCH_API_DEBUG=True
       - DDBJ_SEARCH_API_HOST=0.0.0.0
