@@ -1,5 +1,11 @@
 FROM python:3.10.15-slim-bookworm
 
+RUN apt update && \
+    apt install -y --no-install-recommends \
+    git && \
+    apt clean && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY . .
 RUN python3 -m pip install --no-cache-dir --progress-bar off -U pip && \
