@@ -1,0 +1,690 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DDBJ SEARCH API",
+    "version": "0.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5137",
+      "description": "Development server"
+    }
+  ],
+  "components": {
+    "schemas": {},
+    "parameters": {}
+  },
+  "paths": {
+    "/api/entries/": {
+      "get": {
+        "summary": "All entries list",
+        "tags": [
+          "search result list"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "integer string; treat as '1' if omitted."
+            },
+            "required": false,
+            "description": "integer string; treat as '1' if omitted.",
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "integer string; treat as '10' if omitted."
+            },
+            "required": false,
+            "description": "integer string; treat as '10' if omitted.",
+            "name": "perPage",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma separated keywords",
+              "example": "homo sapience,Draparnaldia"
+            },
+            "required": false,
+            "description": "Comma separated keywords",
+            "name": "keywords",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "datePublished",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "dateUpdated",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma separated list of DB types",
+              "example": "biosample,bioproject"
+            },
+            "required": false,
+            "description": "Comma separated list of DB types",
+            "name": "types",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
+                        "perPage": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 10
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 10000
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total"
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "identifier": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "example": "bioproject"
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "Draparnaldia sp. CCAC 6921, genomic data."
+                          },
+                          "dbXrefs": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            },
+                            "example": {
+                              "bioproject": 1,
+                              "biosample": 1,
+                              "sra-study": 2
+                            }
+                          },
+                          "datePublished": {
+                            "type": "string",
+                            "example": "2013-05-31"
+                          }
+                        },
+                        "required": [
+                          "identifier",
+                          "type",
+                          "title",
+                          "dbXrefs",
+                          "datePublished"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "pagination",
+                    "items"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/bioproject/": {
+      "get": {
+        "summary": "BioProject list",
+        "tags": [
+          "search result list"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "integer string; treat as '1' if omitted."
+            },
+            "required": false,
+            "description": "integer string; treat as '1' if omitted.",
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "integer string; treat as '10' if omitted."
+            },
+            "required": false,
+            "description": "integer string; treat as '10' if omitted.",
+            "name": "perPage",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma separated keywords",
+              "example": "homo sapience,Draparnaldia"
+            },
+            "required": false,
+            "description": "Comma separated keywords",
+            "name": "keywords",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "datePublished",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "dateUpdated",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "organization",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "publication",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "grant",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TRUE",
+                "FALSE"
+              ]
+            },
+            "required": false,
+            "name": "umbrella",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
+                        "perPage": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 10
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 10000
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total"
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "identifier": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "Draparnaldia sp. CCAC 6921, genomic data."
+                          },
+                          "dbXrefs": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            },
+                            "example": {
+                              "bioproject": 1,
+                              "biosample": 1,
+                              "sra-study": 2
+                            }
+                          },
+                          "datePublished": {
+                            "type": "string",
+                            "example": "2013-05-31"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "bioproject"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "identifier",
+                          "title",
+                          "dbXrefs",
+                          "datePublished",
+                          "type"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "pagination",
+                    "items"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/biosample/": {
+      "get": {
+        "summary": "BioSample list",
+        "tags": [
+          "search result list"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "integer string; treat as '1' if omitted."
+            },
+            "required": false,
+            "description": "integer string; treat as '1' if omitted.",
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "integer string; treat as '10' if omitted."
+            },
+            "required": false,
+            "description": "integer string; treat as '10' if omitted.",
+            "name": "perPage",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma separated keywords",
+              "example": "homo sapience,Draparnaldia"
+            },
+            "required": false,
+            "description": "Comma separated keywords",
+            "name": "keywords",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "datePublished",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "dateUpdated",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        },
+                        "perPage": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 10
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 10000
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total"
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "identifier": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "Draparnaldia sp. CCAC 6921, genomic data."
+                          },
+                          "dbXrefs": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            },
+                            "example": {
+                              "bioproject": 1,
+                              "biosample": 1,
+                              "sra-study": 2
+                            }
+                          },
+                          "datePublished": {
+                            "type": "string",
+                            "example": "2013-05-31"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "biosample"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "identifier",
+                          "title",
+                          "dbXrefs",
+                          "datePublished",
+                          "type"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "pagination",
+                    "items"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entries/bioproject/{identifier}": {
+      "get": {
+        "summary": "BioProject detail",
+        "tags": [
+          "search result detail"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "identifier",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "identifier": {
+                      "type": "string"
+                    },
+                    "dateCreated": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dateModified": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "datePublished": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "bioproject"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "organism": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "identifier",
+                    "dateCreated",
+                    "dateModified",
+                    "datePublished",
+                    "type",
+                    "title",
+                    "organism",
+                    "description"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/count/types/": {
+      "get": {
+        "summary": "count types",
+        "tags": [
+          "count"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma separated keywords",
+              "example": "homo sapience,Draparnaldia"
+            },
+            "required": false,
+            "description": "Comma separated keywords",
+            "name": "keywords",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "datePublished",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "2020-05-01,2021-04-30"
+            },
+            "required": false,
+            "name": "dateUpdated",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bioproject": {
+                      "type": "number"
+                    },
+                    "biosample": {
+                      "type": "number"
+                    },
+                    "sra-run": {
+                      "type": "number"
+                    },
+                    "sra-experiment": {
+                      "type": "number"
+                    },
+                    "sra-sample": {
+                      "type": "number"
+                    },
+                    "sra-analysis": {
+                      "type": "number"
+                    },
+                    "sra-submission": {
+                      "type": "number"
+                    },
+                    "sra-study": {
+                      "type": "number"
+                    },
+                    "jga-dataset": {
+                      "type": "number"
+                    },
+                    "jga-study": {
+                      "type": "number"
+                    },
+                    "jga-policy": {
+                      "type": "number"
+                    },
+                    "jga-dac": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "bioproject",
+                    "biosample",
+                    "sra-run",
+                    "sra-experiment",
+                    "sra-sample",
+                    "sra-analysis",
+                    "sra-submission",
+                    "sra-study",
+                    "jga-dataset",
+                    "jga-study",
+                    "jga-policy",
+                    "jga-dac"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}
