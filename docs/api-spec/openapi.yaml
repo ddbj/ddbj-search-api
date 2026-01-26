@@ -1,0 +1,697 @@
+openapi: 3.1.0
+info:
+  title: DDBJ Search API
+  description: |
+    DDBJ（DNA Data Bank of Japan）に登録されている生物学データベースのエントリを検索・取得するための RESTful API。
+    BioProject、BioSample、SRA、JGA の各データベースのデータを JSON および JSON-LD 形式で提供します。
+  version: 1.0.0
+
+servers:
+  - url: https://ddbj.nig.ac.jp/search
+    description: Production server
+  - url: http://localhost:8080
+    description: Development server
+
+tags:
+  - name: entries
+    description: エントリの検索・取得
+  - name: count
+    description: エントリ件数の取得
+
+paths:
+  /api/entries/:
+    get:
+      summary: 全タイプ一覧（検索）
+      description: 全データベースタイプを横断してエントリを検索します
+      operationId: listAllEntries
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/qFields"
+        - $ref: "#/components/parameters/qOperator"
+        - $ref: "#/components/parameters/types"
+        - $ref: "#/components/parameters/organism"
+        - $ref: "#/components/parameters/datePublished"
+        - $ref: "#/components/parameters/dateUpdated"
+        - $ref: "#/components/parameters/sort"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+        - $ref: "#/components/parameters/fields"
+      responses:
+        "200":
+          description: 検索結果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/entries/{type}/:
+    get:
+      summary: タイプ別一覧
+      description: 指定したデータベースタイプのエントリ一覧を取得します
+      operationId: listEntriesByType
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/qFields"
+        - $ref: "#/components/parameters/qOperator"
+        - $ref: "#/components/parameters/organism"
+        - $ref: "#/components/parameters/datePublished"
+        - $ref: "#/components/parameters/dateUpdated"
+        - $ref: "#/components/parameters/sort"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+        - $ref: "#/components/parameters/fields"
+        # BioProject 固有パラメータ
+        - $ref: "#/components/parameters/organization"
+        - $ref: "#/components/parameters/publication"
+        - $ref: "#/components/parameters/grant"
+        - $ref: "#/components/parameters/umbrella"
+      responses:
+        "200":
+          description: 検索結果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/entries/{type}/{id}:
+    get:
+      summary: 詳細（JSON）
+      description: 指定したエントリの詳細情報を JSON 形式で取得します
+      operationId: getEntry
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: エントリ詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/entries/{type}/{id}.json:
+    get:
+      summary: 詳細（JSON）※互換性
+      description: 指定したエントリの詳細情報を JSON 形式で取得します（後方互換性のため）
+      operationId: getEntryJson
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: エントリ詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/entries/{type}/{id}.jsonld:
+    get:
+      summary: 詳細（JSON-LD）
+      description: 指定したエントリの詳細情報を JSON-LD 形式で取得します
+      operationId: getEntryJsonLd
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: エントリ詳細（JSON-LD）
+          content:
+            application/ld+json:
+              schema:
+                $ref: "#/components/schemas/EntryDetailJsonLd"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/entries/{type}/bulk:
+    get:
+      summary: 一括取得（GET）
+      description: 複数のエントリを一括で取得します（JSON Lines 形式）
+      operationId: bulkGetEntries
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/type"
+        - name: ids
+          in: query
+          required: true
+          description: 取得するエントリ ID（カンマ区切り）
+          schema:
+            type: string
+            example: PRJNA16,PRJNA17,PRJNA18
+      responses:
+        "200":
+          description: エントリ一覧（JSON Lines）
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: JSON Lines 形式（1行1エントリ）
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      summary: 一括取得（POST）
+      description: 複数のエントリを一括で取得します（JSON Lines 形式）
+      operationId: bulkPostEntries
+      tags:
+        - entries
+      parameters:
+        - $ref: "#/components/parameters/type"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkRequest"
+      responses:
+        "200":
+          description: エントリ一覧（JSON Lines）
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: JSON Lines 形式（1行1エントリ）
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/count/types/:
+    get:
+      summary: タイプ別件数
+      description: 各データベースタイプのエントリ件数を取得します
+      operationId: countByTypes
+      tags:
+        - count
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/datePublished"
+        - $ref: "#/components/parameters/dateUpdated"
+      responses:
+        "200":
+          description: タイプ別件数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TypeCounts"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  parameters:
+    type:
+      name: type
+      in: path
+      required: true
+      description: データベースタイプ
+      schema:
+        $ref: "#/components/schemas/DbType"
+
+    id:
+      name: id
+      in: path
+      required: true
+      description: エントリ ID
+      schema:
+        type: string
+        example: PRJNA16
+
+    q:
+      name: q
+      in: query
+      required: false
+      description: フリーテキスト検索クエリ
+      schema:
+        type: string
+        example: cancer
+
+    qFields:
+      name: q.fields
+      in: query
+      required: false
+      description: 検索対象フィールド（カンマ区切り）
+      schema:
+        type: string
+        example: title,description
+
+    qOperator:
+      name: q.operator
+      in: query
+      required: false
+      description: 複数キーワードの結合方法
+      schema:
+        type: string
+        enum: [AND, OR]
+        default: OR
+
+    types:
+      name: types
+      in: query
+      required: false
+      description: タイプ絞り込み（カンマ区切り）
+      schema:
+        type: string
+        example: bioproject,biosample
+
+    organism:
+      name: organism
+      in: query
+      required: false
+      description: 生物種での絞り込み（Taxonomy ID）
+      schema:
+        type: string
+        example: "9606"
+
+    datePublished:
+      name: datePublished
+      in: query
+      required: false
+      description: 公開日範囲（開始,終了）
+      schema:
+        type: string
+        example: 2020-01-01,2021-12-31
+
+    dateUpdated:
+      name: dateUpdated
+      in: query
+      required: false
+      description: 更新日範囲（開始,終了）
+      schema:
+        type: string
+        example: 2020-01-01,2021-12-31
+
+    sort:
+      name: sort
+      in: query
+      required: false
+      description: ソート順（フィールド名:asc/desc）
+      schema:
+        type: string
+        example: datePublished:desc
+
+    page:
+      name: page
+      in: query
+      required: false
+      description: ページ番号
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    perPage:
+      name: perPage
+      in: query
+      required: false
+      description: 1ページあたりの件数
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+    fields:
+      name: fields
+      in: query
+      required: false
+      description: 取得フィールド指定（カンマ区切り）
+      schema:
+        type: string
+        example: identifier,title,organism
+
+    # BioProject 固有パラメータ
+    organization:
+      name: organization
+      in: query
+      required: false
+      description: 組織名での絞り込み（BioProject のみ）
+      schema:
+        type: string
+
+    publication:
+      name: publication
+      in: query
+      required: false
+      description: 出版物での絞り込み（BioProject のみ）
+      schema:
+        type: string
+
+    grant:
+      name: grant
+      in: query
+      required: false
+      description: 助成金での絞り込み（BioProject のみ）
+      schema:
+        type: string
+
+    umbrella:
+      name: umbrella
+      in: query
+      required: false
+      description: UmbrellaBioProject か否か（BioProject のみ）
+      schema:
+        type: string
+        enum: [TRUE, FALSE]
+
+  schemas:
+    DbType:
+      type: string
+      description: データベースタイプ
+      enum:
+        - bioproject
+        - biosample
+        - sra-submission
+        - sra-study
+        - sra-experiment
+        - sra-run
+        - sra-sample
+        - sra-analysis
+        - jga-study
+        - jga-dataset
+        - jga-dac
+        - jga-policy
+
+    Pagination:
+      type: object
+      description: ページネーション情報
+      required:
+        - page
+        - perPage
+        - total
+      properties:
+        page:
+          type: integer
+          description: 現在のページ番号
+          minimum: 1
+          example: 1
+        perPage:
+          type: integer
+          description: 1ページあたりの件数
+          minimum: 1
+          maximum: 100
+          example: 10
+        total:
+          type: integer
+          description: 総件数
+          minimum: 0
+          example: 10000
+
+    Organism:
+      type: object
+      description: 生物種情報
+      properties:
+        identifier:
+          type: string
+          description: Taxonomy ID
+          example: "9606"
+        name:
+          type: string
+          description: 生物種名
+          example: Homo sapiens
+
+    DbXref:
+      type: object
+      description: データベース参照
+      required:
+        - identifier
+        - type
+      properties:
+        identifier:
+          type: string
+          description: 参照先 ID
+          example: SAMN123
+        type:
+          $ref: "#/components/schemas/DbType"
+        url:
+          type: string
+          description: 参照先 URL
+          example: /api/entries/biosample/SAMN123
+
+    EntryListItem:
+      type: object
+      description: 一覧アイテム
+      required:
+        - identifier
+        - type
+        - title
+        - datePublished
+      properties:
+        identifier:
+          type: string
+          description: エントリ ID
+          example: PRJNA16
+        type:
+          $ref: "#/components/schemas/DbType"
+        title:
+          type: string
+          description: タイトル
+          example: Cancer Genome Project
+        organism:
+          $ref: "#/components/schemas/Organism"
+        datePublished:
+          type: string
+          format: date
+          description: 公開日
+          example: "2013-05-31"
+        dbXrefs:
+          type: array
+          description: 関連データベース参照
+          items:
+            $ref: "#/components/schemas/DbXref"
+
+    EntryListResponse:
+      type: object
+      description: 一覧レスポンス
+      required:
+        - pagination
+        - items
+      properties:
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntryListItem"
+
+    EntryDetail:
+      type: object
+      description: |
+        エントリ詳細。スキーマは ddbj-search-converter パッケージで定義されています。
+        タイプによって返却されるフィールドが異なります。
+      properties:
+        identifier:
+          type: string
+          description: エントリ ID
+        type:
+          $ref: "#/components/schemas/DbType"
+        title:
+          type: string
+          description: タイトル
+        description:
+          type: string
+          description: 説明
+        organism:
+          $ref: "#/components/schemas/Organism"
+        dateCreated:
+          type: string
+          format: date
+          description: 作成日
+        dateModified:
+          type: string
+          format: date
+          description: 更新日
+        datePublished:
+          type: string
+          format: date
+          description: 公開日
+      additionalProperties: true
+
+    EntryDetailJsonLd:
+      allOf:
+        - $ref: "#/components/schemas/EntryDetail"
+        - type: object
+          required:
+            - "@context"
+            - "@id"
+          properties:
+            "@context":
+              type: string
+              description: JSON-LD コンテキスト URL
+              example: https://raw.githubusercontent.com/ddbj/rdf/main/context/bioproject.jsonld
+            "@id":
+              type: string
+              description: エントリの URI
+              example: https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16
+
+    BulkRequest:
+      type: object
+      description: 一括取得リクエスト
+      required:
+        - ids
+      properties:
+        ids:
+          type: array
+          description: 取得するエントリ ID のリスト（最大1000件）
+          maxItems: 1000
+          items:
+            type: string
+          example:
+            - PRJNA16
+            - PRJNA17
+            - PRJNA18
+
+    TypeCounts:
+      type: object
+      description: タイプ別件数
+      required:
+        - bioproject
+        - biosample
+        - sra-submission
+        - sra-study
+        - sra-experiment
+        - sra-run
+        - sra-sample
+        - sra-analysis
+        - jga-study
+        - jga-dataset
+        - jga-dac
+        - jga-policy
+      properties:
+        bioproject:
+          type: integer
+          minimum: 0
+        biosample:
+          type: integer
+          minimum: 0
+        sra-submission:
+          type: integer
+          minimum: 0
+        sra-study:
+          type: integer
+          minimum: 0
+        sra-experiment:
+          type: integer
+          minimum: 0
+        sra-run:
+          type: integer
+          minimum: 0
+        sra-sample:
+          type: integer
+          minimum: 0
+        sra-analysis:
+          type: integer
+          minimum: 0
+        jga-study:
+          type: integer
+          minimum: 0
+        jga-dataset:
+          type: integer
+          minimum: 0
+        jga-dac:
+          type: integer
+          minimum: 0
+        jga-policy:
+          type: integer
+          minimum: 0
+
+    ProblemDetails:
+      type: object
+      description: RFC 7807 Problem Details
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          description: 問題タイプの URI
+          example: about:blank
+        title:
+          type: string
+          description: 問題の簡潔な説明
+          example: Not Found
+        status:
+          type: integer
+          description: HTTP ステータスコード
+          example: 404
+        detail:
+          type: string
+          description: 問題の詳細な説明
+          example: "The requested BioProject 'INVALID' was not found."
+        instance:
+          type: string
+          description: 問題が発生したリクエストパス
+          example: /api/entries/bioproject/INVALID
+
+  responses:
+    BadRequest:
+      description: リクエストパラメータが不正
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            detail: "Invalid parameter 'page': must be a positive integer."
+            instance: /api/entries/
+
+    NotFound:
+      description: 指定されたエントリが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: "The requested BioProject 'INVALID' was not found."
+            instance: /api/entries/bioproject/INVALID
+
+    InternalServerError:
+      description: サーバー内部エラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: about:blank
+            title: Internal Server Error
+            status: 500
+            detail: "The server encountered an internal error and was unable to complete your request."
+            instance: /api/entries/
