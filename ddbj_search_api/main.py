@@ -1,100 +1,73 @@
+import json
 import logging.config
+import sys
 
 import uvicorn
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.types import Message, Receive, Scope, Send
 
 from ddbj_search_api.config import LOGGER, PKG_DIR, get_config, logging_config
 from ddbj_search_api.routers import router
-from ddbj_search_api.schemas import ErrorResponse
+from ddbj_search_api.schemas import ProblemDetails
 
 
-def fix_error_handler(app: FastAPI) -> None:
+def setup_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         app_config = get_config()
         if app_config.debug:
             LOGGER.exception("Something http exception occurred.", exc_info=exc)
 
+        problem = ProblemDetails(
+            type="about:blank",
+            title=exc.detail if isinstance(exc.detail, str) else "Error",
+            status=exc.status_code,
+            detail=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+            instance=str(request.url.path),
+        )
         return JSONResponse(
             status_code=exc.status_code,
-            content=ErrorResponse(
-                msg=exc.detail,
-                status_code=exc.status_code,
-            ).model_dump()
+            content=problem.model_dump(exclude_none=True),
+            media_type="application/problem+json",
         )
 
     @app.exception_handler(RequestValidationError)
-    async def request_validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         app_config = get_config()
         if app_config.debug:
             LOGGER.exception("Request validation error occurred.", exc_info=exc)
+
+        problem = ProblemDetails(
+            type="about:blank",
+            title="Bad Request",
+            status=status.HTTP_400_BAD_REQUEST,
+            detail=json.dumps(exc.errors(), ensure_ascii=False, default=str),
+            instance=str(request.url.path),
+        )
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": exc.errors()}
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=problem.model_dump(exclude_none=True),
+            media_type="application/problem+json",
         )
 
     @app.exception_handler(Exception)
-    async def generic_exception_handler(_request: Request, _exc: Exception) -> JSONResponse:
-        # If a general Exception occurs, a traceback will be output without using LOGGER.
+    async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        LOGGER.exception("Unhandled exception occurred.", exc_info=exc)
+        problem = ProblemDetails(
+            type="about:blank",
+            title="Internal Server Error",
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The server encountered an internal error and was unable to complete your request.",
+            instance=str(request.url.path),
+        )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=ErrorResponse(
-                msg="The server encountered an internal error and was unable to complete your request.",
-                status_code=500,
-            ).model_dump()
+            content=problem.model_dump(exclude_none=True),
+            media_type="application/problem+json",
         )
-
-
-class CustomCORSMiddleware(CORSMiddleware):
-    """\
-    CORSMiddleware that returns CORS headers even if the Origin header is not present
-    """
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        method = scope["method"]
-        headers = Headers(scope=scope)
-
-        if method == "OPTIONS" and "access-control-request-method" in headers:
-            response = self.preflight_response(request_headers=headers)
-            await response(scope, receive, send)
-            return
-
-        await self.simple_response(scope, receive, send, request_headers=headers)
-
-    async def send(
-        self, message: Message, send: Send, request_headers: Headers
-    ) -> None:
-        if message["type"] != "http.response.start":
-            await send(message)
-            return
-
-        message.setdefault("headers", [])
-        headers = MutableHeaders(scope=message)
-        headers.update(self.simple_headers)
-        origin = request_headers.get("Origin", "*")
-        has_cookie = "cookie" in request_headers
-
-        # If request includes any cookie headers, then we must respond
-        # with the specific origin instead of '*'.
-        if self.allow_all_origins and has_cookie:
-            self.allow_explicit_origin(headers, origin)
-
-        # If we only allow specific origins, then we have to mirror back
-        # the Origin header in the response.
-        elif not self.allow_all_origins and self.is_allowed_origin(origin=origin):
-            self.allow_explicit_origin(headers, origin)
-
-        await send(message)
 
 
 def init_app_state() -> None:
@@ -109,19 +82,27 @@ def init_app_state() -> None:
 def create_app() -> FastAPI:
     app_config = get_config()
     logging.config.dictConfig(logging_config(app_config.debug))
+    url_prefix = app_config.url_prefix
 
     app = FastAPI(
-        root_path=app_config.url_prefix,
+        title="DDBJ Search API",
+        description="REST API for [DDBJ-Search](https://ddbj.nig.ac.jp/search)\n\nSource code: [ddbj/ddbj-search-api](https://github.com/ddbj/ddbj-search-api)",
+        version="1.0.0",
+        contact={"name": "Bioinformatics and DDBJ Center"},
+        license_info={"name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
+        docs_url=f"{url_prefix}/docs",
+        redoc_url=f"{url_prefix}/redoc",
+        openapi_url=f"{url_prefix}/openapi.json",
         debug=app_config.debug,
     )
     app.add_middleware(
-        CustomCORSMiddleware,
+        CORSMiddleware,
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.include_router(router)
-    fix_error_handler(app)
+    app.include_router(router, prefix=url_prefix)
+    setup_error_handlers(app)
 
     return app
 
@@ -138,6 +119,12 @@ def main() -> None:
         reload_dirs=[str(PKG_DIR)],
         factory=True,
     )
+
+
+def dump_openapi() -> None:
+    app = create_app()
+    json.dump(app.openapi(), sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

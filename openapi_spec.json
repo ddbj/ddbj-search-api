@@ -1,0 +1,5408 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DDBJ Search API",
+    "description": "REST API for [DDBJ-Search](https://ddbj.nig.ac.jp/search)\n\nSource code: [ddbj/ddbj-search-api](https://github.com/ddbj/ddbj-search-api)",
+    "contact": {
+      "name": "Bioinformatics and DDBJ Center"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/entries/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "All types search",
+        "description": "Search entries across all database types. Supports keyword search, filtering by type/organism/date, sorting, and pagination.",
+        "operationId": "list_all_entries_entries__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by database types (comma-separated, e.g., 'bioproject,biosample'). See DbType enum for valid values.",
+              "title": "Types"
+            },
+            "description": "Filter by database types (comma-separated, e.g., 'bioproject,biosample'). See DbType enum for valid values."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_Union_BioProject__BioSample__SRA__JGA__"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/bioproject/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "bioproject search",
+        "description": "Search BioProject entries. BioProject provides an organizational framework for project-level information. Supports additional filters: organization, publication, grant, umbrella.",
+        "operationId": "list_entries_bioproject_entries_bioproject__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          },
+          {
+            "name": "organization",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organization name (BioProject only).",
+              "title": "Organization"
+            },
+            "description": "Filter by organization name (BioProject only)."
+          },
+          {
+            "name": "publication",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication (BioProject only).",
+              "title": "Publication"
+            },
+            "description": "Filter by publication (BioProject only)."
+          },
+          {
+            "name": "grant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by grant (BioProject only).",
+              "title": "Grant"
+            },
+            "description": "Filter by grant (BioProject only)."
+          },
+          {
+            "name": "umbrella",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UmbrellaFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by umbrella BioProject status (BioProject only).",
+              "title": "Umbrella"
+            },
+            "description": "Filter by umbrella BioProject status (BioProject only)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_BioProject_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/biosample/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "biosample search",
+        "description": "Search BioSample entries. BioSample stores sample metadata describing biological source materials.",
+        "operationId": "list_entries_biosample_entries_biosample__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_BioSample_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/sra-submission/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "sra-submission search",
+        "description": "Search SRA Submission entries. Submissions represent a collection of metadata and data objects submitted to SRA.",
+        "operationId": "list_entries_sra_submission_entries_sra_submission__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_SRA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/sra-study/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "sra-study search",
+        "description": "Search SRA Study entries. Studies describe the overall goals and design of sequencing experiments.",
+        "operationId": "list_entries_sra_study_entries_sra_study__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_SRA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/sra-experiment/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "sra-experiment search",
+        "description": "Search SRA Experiment entries. Experiments describe library construction and sequencing methods.",
+        "operationId": "list_entries_sra_experiment_entries_sra_experiment__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_SRA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/sra-run/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "sra-run search",
+        "description": "Search SRA Run entries. Runs contain actual sequencing data produced by an experiment.",
+        "operationId": "list_entries_sra_run_entries_sra_run__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_SRA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/sra-sample/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "sra-sample search",
+        "description": "Search SRA Sample entries. Samples describe the biological specimens used in experiments.",
+        "operationId": "list_entries_sra_sample_entries_sra_sample__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_SRA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/sra-analysis/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "sra-analysis search",
+        "description": "Search SRA Analysis entries. Analyses describe processed data derived from sequencing reads.",
+        "operationId": "list_entries_sra_analysis_entries_sra_analysis__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_SRA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/jga-study/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "jga-study search",
+        "description": "Search JGA Study entries. JGA Studies describe controlled-access research projects.",
+        "operationId": "list_entries_jga_study_entries_jga_study__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_JGA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/jga-dataset/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "jga-dataset search",
+        "description": "Search JGA Dataset entries. JGA Datasets represent collections of controlled-access data files.",
+        "operationId": "list_entries_jga_dataset_entries_jga_dataset__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_JGA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/jga-dac/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "jga-dac search",
+        "description": "Search JGA DAC (Data Access Committee) entries. DACs manage access permissions for controlled-access data.",
+        "operationId": "list_entries_jga_dac_entries_jga_dac__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_JGA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/jga-policy/": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "jga-policy search",
+        "description": "Search JGA Policy entries. Policies describe the data access conditions set by the DAC.",
+        "operationId": "list_entries_jga_policy_entries_jga_policy__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only.",
+              "title": "Sort"
+            },
+            "description": "Sort order in 'field:direction' format (e.g., 'datePublished:desc'). Single-field sorting only."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of items per page (1-100, default: 10).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Number of items per page (1-100, default: 10)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse_JGA_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/{type}/bulk": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "Bulk get (GET)",
+        "description": "Bulk retrieve entries by IDs (GET). Returns entries in JSON Lines (NDJSON) format. Pass comma-separated IDs as a query parameter.",
+        "operationId": "bulk_get_entries_entries__type__bulk_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DbType"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Entry IDs (comma-separated)",
+              "title": "Ids"
+            },
+            "description": "Entry IDs (comma-separated)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries in JSON Lines format",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "Bulk get (POST)",
+        "description": "Bulk retrieve entries by IDs (POST). Returns entries in JSON Lines (NDJSON) format. Pass IDs in the request body.",
+        "operationId": "bulk_post_entries_entries__type__bulk_post",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DbType"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Entries in JSON Lines format",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/{type}/{id}": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "Entry detail (JSON)",
+        "description": "Retrieve a single entry by type and identifier. Returns the full entry detail in JSON format.",
+        "operationId": "get_entry_entries__type___id__get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DbType"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BioProject"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BioSample"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SRA"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JGA"
+                    }
+                  ],
+                  "title": "Response Get Entry Entries  Type   Id  Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/{type}/{id}.json": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "Entry detail (JSON) - compatibility",
+        "description": "Compatibility endpoint. Behaves identically to GET /entries/{type}/{id} but with an explicit .json extension.",
+        "operationId": "get_entry_json_entries__type___id__json_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DbType"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BioProject"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BioSample"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SRA"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JGA"
+                    }
+                  ],
+                  "title": "Response Get Entry Json Entries  Type   Id  Json Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/{type}/{id}.jsonld": {
+      "get": {
+        "tags": [
+          "entries"
+        ],
+        "summary": "Entry detail (JSON-LD)",
+        "description": "Retrieve entry in JSON-LD format. Returns the entry with JSON-LD @context and @id annotations.",
+        "operationId": "get_entry_jsonld_entries__type___id__jsonld_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DbType"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
+              "title": "Fields"
+            },
+            "description": "Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryDetailJsonLd"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/count/types/": {
+      "get": {
+        "tags": [
+          "count"
+        ],
+        "summary": "Count by types",
+        "description": "Count entries for each database type. Returns the number of entries per type, optionally filtered by keywords, organism, or date range.",
+        "operationId": "count_by_types_count_types__get",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome').",
+              "title": "Keywords"
+            },
+            "description": "Free-text search query. Supports comma-separated multiple values (e.g., 'cancer,genome')."
+          },
+          {
+            "name": "keywords.fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description').",
+              "title": "Keywords.Fields"
+            },
+            "description": "Restrict keyword search to specific fields (comma-separated, e.g., 'title,description')."
+          },
+          {
+            "name": "keywords.operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KeywordsOperator"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match.",
+              "title": "Keywords.Operator"
+            },
+            "description": "Logical operator for combining multiple keywords. 'AND' requires all keywords to match, 'OR' requires any keyword to match."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens).",
+              "title": "Organism"
+            },
+            "description": "Filter by organism using NCBI Taxonomy ID (e.g., '9606' for Homo sapiens)."
+          },
+          {
+            "name": "datePublished",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Datepublished"
+            },
+            "description": "Filter by publication date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          },
+          {
+            "name": "dateUpdated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates.",
+              "title": "Dateupdated"
+            },
+            "description": "Filter by last update date range in 'start,end' format (e.g., '2020-01-01,2024-12-31'). Use ISO 8601 dates."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TypeCounts"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/service-info": {
+      "get": {
+        "tags": [
+          "service-info"
+        ],
+        "summary": "Service info",
+        "description": "Returns application version and service metadata.",
+        "operationId": "get_service_info_service_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Agency": {
+        "properties": {
+          "abbreviation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbreviation"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "abbreviation",
+          "name"
+        ],
+        "title": "Agency"
+      },
+      "Attribute": {
+        "properties": {
+          "attribute_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribute Name"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "harmonized_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harmonized Name"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attribute_name",
+          "display_name",
+          "harmonized_name",
+          "content"
+        ],
+        "title": "Attribute"
+      },
+      "BioProject": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "BioProject",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "bioproject",
+            "title": "Type"
+          },
+          "objectType": {
+            "type": "string",
+            "enum": [
+              "UmbrellaBioProject",
+              "BioProject"
+            ],
+            "title": "Objecttype"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ddbj_search_converter__schema__Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "grant": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array",
+            "title": "Grant"
+          },
+          "externalLink": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            },
+            "type": "array",
+            "title": "Externallink"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "objectType",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished"
+        ],
+        "title": "BioProject"
+      },
+      "BioSample": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "BioSample",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "biosample",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ddbj_search_converter__schema__Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/Attribute"
+            },
+            "type": "array",
+            "title": "Attributes"
+          },
+          "model": {
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            },
+            "type": "array",
+            "title": "Model"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Package"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "attributes",
+          "model",
+          "package",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished"
+        ],
+        "title": "BioSample"
+      },
+      "BulkRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Ids",
+            "description": "List of entry IDs to retrieve (max 1000)",
+            "examples": [
+              [
+                "PRJNA16",
+                "PRJNA17",
+                "PRJNA18"
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "BulkRequest"
+      },
+      "DbType": {
+        "type": "string",
+        "enum": [
+          "bioproject",
+          "biosample",
+          "sra-submission",
+          "sra-study",
+          "sra-experiment",
+          "sra-run",
+          "sra-sample",
+          "sra-analysis",
+          "jga-study",
+          "jga-dataset",
+          "jga-dac",
+          "jga-policy"
+        ],
+        "title": "DbType"
+      },
+      "Distribution": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "encodingFormat": {
+            "type": "string",
+            "title": "Encodingformat"
+          },
+          "contentUrl": {
+            "type": "string",
+            "title": "Contenturl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "encodingFormat",
+          "contentUrl"
+        ],
+        "title": "Distribution"
+      },
+      "DownloadUrl": {
+        "properties": {
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "url"
+        ],
+        "title": "DownloadUrl"
+      },
+      "EntryDetailJsonLd": {
+        "properties": {
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier",
+            "description": "Entry ID"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Description"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ddbj_search_api__schemas__common__Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date"
+          },
+          "@context": {
+            "type": "string",
+            "title": "@Context",
+            "description": "JSON-LD context URL"
+          },
+          "@id": {
+            "type": "string",
+            "title": "@Id",
+            "description": "Entry URI"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "@context",
+          "@id"
+        ],
+        "title": "EntryDetailJsonLd"
+      },
+      "EntryListResponse_BioProject_": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BioProject"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pagination",
+          "items"
+        ],
+        "title": "EntryListResponse[BioProject]"
+      },
+      "EntryListResponse_BioSample_": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BioSample"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pagination",
+          "items"
+        ],
+        "title": "EntryListResponse[BioSample]"
+      },
+      "EntryListResponse_JGA_": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JGA"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pagination",
+          "items"
+        ],
+        "title": "EntryListResponse[JGA]"
+      },
+      "EntryListResponse_SRA_": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SRA"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pagination",
+          "items"
+        ],
+        "title": "EntryListResponse[SRA]"
+      },
+      "EntryListResponse_Union_BioProject__BioSample__SRA__JGA__": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/BioProject"
+                },
+                {
+                  "$ref": "#/components/schemas/BioSample"
+                },
+                {
+                  "$ref": "#/components/schemas/SRA"
+                },
+                {
+                  "$ref": "#/components/schemas/JGA"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pagination",
+          "items"
+        ],
+        "title": "EntryListResponse[Union[BioProject, BioSample, SRA, JGA]]"
+      },
+      "ExternalLink": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "label"
+        ],
+        "title": "ExternalLink"
+      },
+      "Grant": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "agency": {
+            "items": {
+              "$ref": "#/components/schemas/Agency"
+            },
+            "type": "array",
+            "title": "Agency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "agency"
+        ],
+        "title": "Grant"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JGA": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "jga",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "jga-study",
+              "jga-dataset",
+              "jga-dac",
+              "jga-policy"
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ddbj_search_converter__schema__Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "live",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "controlled-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished"
+        ],
+        "title": "JGA"
+      },
+      "KeywordsOperator": {
+        "type": "string",
+        "enum": [
+          "AND",
+          "OR"
+        ],
+        "title": "KeywordsOperator"
+      },
+      "Model": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Model"
+      },
+      "Organization": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "organizationType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizationtype"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "abbreviation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbreviation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "organizationType",
+          "role",
+          "url",
+          "abbreviation"
+        ],
+        "title": "Organization"
+      },
+      "Package": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "Package"
+      },
+      "Pagination": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page",
+            "description": "Current page number",
+            "examples": [
+              1
+            ]
+          },
+          "perPage": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Perpage",
+            "description": "Number of items per page",
+            "examples": [
+              10
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "description": "Total number of items",
+            "examples": [
+              10000
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "perPage",
+          "total"
+        ],
+        "title": "Pagination"
+      },
+      "ProblemDetails": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Problem type URI",
+            "default": "about:blank",
+            "examples": [
+              "about:blank"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short description of the problem",
+            "examples": [
+              "Not Found"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "title": "Status",
+            "description": "HTTP status code",
+            "examples": [
+              404
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "Detailed description",
+            "examples": [
+              "The requested BioProject 'INVALID' was not found."
+            ]
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance",
+            "description": "Request path where the problem occurred",
+            "examples": [
+              "/entries/bioproject/INVALID"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "ProblemDetails"
+      },
+      "Publication": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "Reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "DbType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbtype"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "date",
+          "Reference",
+          "url",
+          "DbType",
+          "status"
+        ],
+        "title": "Publication"
+      },
+      "SRA": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "sra",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "sra-submission",
+              "sra-study",
+              "sra-experiment",
+              "sra-run",
+              "sra-sample",
+              "sra-analysis"
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ddbj_search_converter__schema__Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "downloadUrl": {
+            "items": {
+              "$ref": "#/components/schemas/DownloadUrl"
+            },
+            "type": "array",
+            "title": "Downloadurl"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "dbXrefs",
+          "sameAs",
+          "downloadUrl",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished"
+        ],
+        "title": "SRA"
+      },
+      "ServiceInfo": {
+        "properties": {
+          "app-version": {
+            "type": "string",
+            "title": "App-Version",
+            "description": "Application version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "app-version"
+        ],
+        "title": "ServiceInfo"
+      },
+      "TypeCounts": {
+        "properties": {
+          "bioproject": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Bioproject"
+          },
+          "biosample": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Biosample"
+          },
+          "sra-submission": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sra-Submission"
+          },
+          "sra-study": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sra-Study"
+          },
+          "sra-experiment": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sra-Experiment"
+          },
+          "sra-run": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sra-Run"
+          },
+          "sra-sample": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sra-Sample"
+          },
+          "sra-analysis": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sra-Analysis"
+          },
+          "jga-study": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Jga-Study"
+          },
+          "jga-dataset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Jga-Dataset"
+          },
+          "jga-dac": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Jga-Dac"
+          },
+          "jga-policy": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Jga-Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bioproject",
+          "biosample",
+          "sra-submission",
+          "sra-study",
+          "sra-experiment",
+          "sra-run",
+          "sra-sample",
+          "sra-analysis",
+          "jga-study",
+          "jga-dataset",
+          "jga-dac",
+          "jga-policy"
+        ],
+        "title": "TypeCounts"
+      },
+      "UmbrellaFilter": {
+        "type": "string",
+        "enum": [
+          "TRUE",
+          "FALSE"
+        ],
+        "title": "UmbrellaFilter"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Xref": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "biosample",
+              "bioproject",
+              "sra-experiment",
+              "sra-run",
+              "sra-sample",
+              "sra-study",
+              "sra-submission",
+              "sra-analysis",
+              "jga-study",
+              "jga-dataset",
+              "jga-dac",
+              "jga-policy",
+              "gea",
+              "geo",
+              "hum-id",
+              "insdc-assembly",
+              "insdc-master",
+              "metabobank",
+              "pubmed-id",
+              "taxonomy",
+              "umbrella-bioproject"
+            ],
+            "title": "Type"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type",
+          "url"
+        ],
+        "title": "Xref"
+      },
+      "ddbj_search_api__schemas__common__Organism": {
+        "properties": {
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier",
+            "description": "Taxonomy ID",
+            "examples": [
+              "9606"
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Organism name",
+            "examples": [
+              "Homo sapiens"
+            ]
+          }
+        },
+        "type": "object",
+        "title": "Organism"
+      },
+      "ddbj_search_converter__schema__Organism": {
+        "properties": {
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "name"
+        ],
+        "title": "Organism"
+      }
+    }
+  }
+}
