@@ -3,7 +3,8 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-from ddbj_search_api.schemas import ConverterEntry, DbType, EntryDetail, EntryDetailJsonLd, ProblemDetails
+from ddbj_search_api.schemas import (ConverterEntry, DbType, EntryDetail,
+                                     EntryDetailJsonLd, ProblemDetails)
 
 router = APIRouter()
 
@@ -28,7 +29,7 @@ async def get_entry(
     ),
 ) -> EntryDetail:
     # TODO: Phase 2 - Implement ES get
-    return EntryDetail(identifier=id, type=type)
+    return EntryDetail(identifier=id, type=type)  # type: ignore[call-arg]
 
 
 @router.get(
@@ -51,7 +52,7 @@ async def get_entry_json(
     ),
 ) -> EntryDetail:
     # TODO: Phase 2 - Implement ES get
-    return EntryDetail(identifier=id, type=type)
+    return EntryDetail(identifier=id, type=type)  # type: ignore[call-arg]
 
 
 @router.get(
@@ -76,7 +77,7 @@ async def get_entry_jsonld(
 ) -> JSONResponse:
     # TODO: Phase 2 - Implement ES get + JSON-LD context
     data = EntryDetailJsonLd(
-        **{
+        **{  # type: ignore[arg-type]
             "@context": "",
             "@id": "",
             "identifier": id,

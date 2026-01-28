@@ -2,7 +2,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
-from ddbj_search_api.schemas import KeywordsOperator, ProblemDetails, TypeCounts
+from ddbj_search_api.schemas import (KeywordsOperator, ProblemDetails,
+                                     TypeCounts)
 
 router = APIRouter()
 

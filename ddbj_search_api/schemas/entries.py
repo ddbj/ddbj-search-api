@@ -1,6 +1,6 @@
 from typing import Generic, List, Optional, TypeVar, Union
 
-from ddbj_search_converter.schema import BioProject, BioSample, JGA, SRA
+from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 from pydantic import BaseModel, ConfigDict, Field
 
 from ddbj_search_api.schemas.common import DbType, DbXref, Organism, Pagination

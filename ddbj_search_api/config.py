@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ddbj_search_api.utils import inside_docker
+from ddbj_search_api.utils import inside_container
 
 PKG_DIR = Path(__file__).resolve().parent
 
@@ -24,7 +24,7 @@ class AppConfig(BaseSettings):
         env_prefix="DDBJ_SEARCH_API_",
     )
 
-    host: str = "0.0.0.0" if inside_docker() else "127.0.0.1"
+    host: str = "0.0.0.0" if inside_container() else "127.0.0.1"
     port: int = 8080
     debug: bool = False
     url_prefix: str = ""

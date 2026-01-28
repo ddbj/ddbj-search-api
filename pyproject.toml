@@ -24,7 +24,15 @@ Documentation = "https://github.com/ddbj/ddbj-search-api/blob/main/README.md"
 Repository = "https://github.com/ddbj/ddbj-search-api.git"
 
 [project.optional-dependencies]
-tests = ["isort", "mypy", "pylint", "pytest-cov", "pytest-mock", "pytest"]
+tests = [
+    "isort",
+    "mypy",
+    "pylint",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest",
+]
 
 [project.scripts]
 ddbj_search_api = "ddbj_search_api.main:main"
@@ -36,14 +44,20 @@ include = ["ddbj_search_api*"]
 [tool.pytest.ini_options]
 addopts = "--cov=ddbj_search_api --cov-report=html:tests/htmlcov"
 testpaths = ["tests/py_tests"]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.mypy]
-files = ["./ddbj_search_api/**/*.py"]
+files = ["./ddbj_search_api/**/*.py", "./tests/**/*.py"]
 follow_imports = "silent"
 strict = true
 
+[[tool.mypy.overrides]]
+module = "ddbj_search_converter.*"
+ignore_missing_imports = true
+
 [tool.pylint.messages_control]
 disable = [
+    "C0103", # Invalid name (enum members use lowercase)
     "C0114", # Missing module docstring
     "C0115", # Missing class docstring
     "C0116", # Missing function or method docstring
@@ -54,8 +68,15 @@ disable = [
     "R0912", # Too many branches
     "R0913", # Too many arguments
     "R0914", # Too many local variables
+    "R0915", # Too many statements
+    "R0917", # Too many positional arguments
+    "R1702", # Too many nested blocks
     "R1705", # Unnecessary "else" after "return"
     "W0511", # Fixme
+    "W0613", # Unused argument (FastAPI route params for TODO endpoints)
+    "W0621", # Redefining name from outer scope (pytest fixtures)
+    "W0622", # Redefining built-in (FastAPI path params: type, id)
     "W0718", # Broad exception caught
+    "W0719", # Exception type of Exception
     "I1101", # c-extension-no-member
 ]

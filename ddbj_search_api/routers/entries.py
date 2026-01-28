@@ -1,17 +1,12 @@
-from typing import Optional
+from collections.abc import Callable, Coroutine
+from typing import Any, Optional
 
 from fastapi import APIRouter, Query
 
-from ddbj_search_api.schemas import (
-    ConverterEntry,
-    DB_TYPE_TO_ENTRY_MODEL,
-    DbType,
-    EntryListResponse,
-    KeywordsOperator,
-    Pagination,
-    ProblemDetails,
-    UmbrellaFilter,
-)
+from ddbj_search_api.schemas import (DB_TYPE_TO_ENTRY_MODEL, ConverterEntry,
+                                     DbType, EntryListResponse,
+                                     KeywordsOperator, Pagination,
+                                     ProblemDetails, UmbrellaFilter)
 
 router = APIRouter()
 
@@ -54,7 +49,7 @@ async def list_all_entries(
     page: int = Query(1, ge=1, description="Page number (1-indexed)."),
     per_page: int = Query(10, ge=1, le=100, alias="perPage", description="Number of items per page (1-100, default: 10)."),
     fields: Optional[str] = Query(None, description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."),
-) -> EntryListResponse:
+) -> EntryListResponse[ConverterEntry]:
     # TODO: Phase 2 - Implement ES search
     return EntryListResponse(
         pagination=Pagination(page=page, perPage=per_page, total=0),
@@ -62,7 +57,9 @@ async def list_all_entries(
     )
 
 
-def _make_list_entries_handler(db_type: DbType, include_bioproject_params: bool):  # type: ignore[no-untyped-def]
+def _make_list_entries_handler(
+    db_type: DbType, include_bioproject_params: bool
+) -> Callable[..., Coroutine[Any, Any, EntryListResponse[Any]]]:
     if include_bioproject_params:
 
         async def list_entries_bioproject(
@@ -80,7 +77,7 @@ def _make_list_entries_handler(db_type: DbType, include_bioproject_params: bool)
             publication: Optional[str] = Query(None, description="Filter by publication (BioProject only)."),
             grant: Optional[str] = Query(None, description="Filter by grant (BioProject only)."),
             umbrella: Optional[UmbrellaFilter] = Query(None, description="Filter by umbrella BioProject status (BioProject only)."),
-        ) -> EntryListResponse:
+        ) -> EntryListResponse[Any]:
             # TODO: Phase 2 - Implement ES search
             return EntryListResponse(
                 pagination=Pagination(page=page, perPage=per_page, total=0),
@@ -103,7 +100,7 @@ def _make_list_entries_handler(db_type: DbType, include_bioproject_params: bool)
             page: int = Query(1, ge=1, description="Page number (1-indexed)."),
             per_page: int = Query(10, ge=1, le=100, alias="perPage", description="Number of items per page (1-100, default: 10)."),
             fields: Optional[str] = Query(None, description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."),
-        ) -> EntryListResponse:
+        ) -> EntryListResponse[Any]:
             # TODO: Phase 2 - Implement ES search
             return EntryListResponse(
                 pagination=Pagination(page=page, perPage=per_page, total=0),
@@ -122,7 +119,7 @@ for _db_type in DbType:
         f"/entries/{_db_type.value}/",
         _handler,
         methods=["GET"],
-        response_model=EntryListResponse[_entry_model],
+        response_model=EntryListResponse[_entry_model],  # type: ignore[valid-type]
         summary=f"{_db_type.value} search",
         description=TYPE_DESCRIPTIONS[_db_type.value],
         responses={

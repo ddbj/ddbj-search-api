@@ -1,3 +1,5 @@
+from collections.abc import AsyncGenerator
+
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
@@ -27,9 +29,9 @@ async def bulk_get_entries(
 ) -> StreamingResponse:
     # TODO: Phase 2 - Implement ES mget
 
-    async def empty_generator():  # type: ignore[return]
+    async def empty_generator() -> AsyncGenerator[bytes, None]:
         return
-        yield  # noqa: unreachable  # make it an async generator
+        yield b""  # noqa: unreachable  # make it an async generator
 
     return StreamingResponse(
         content=empty_generator(),
@@ -58,9 +60,9 @@ async def bulk_post_entries(
 ) -> StreamingResponse:
     # TODO: Phase 2 - Implement ES mget
 
-    async def empty_generator():  # type: ignore[return]
+    async def empty_generator() -> AsyncGenerator[bytes, None]:
         return
-        yield  # noqa: unreachable  # make it an async generator
+        yield b""  # noqa: unreachable  # make it an async generator
 
     return StreamingResponse(
         content=empty_generator(),

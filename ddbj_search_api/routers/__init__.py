@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
-from ddbj_search_api.routers import bulk, count, entries, entry_detail, service_info
+from ddbj_search_api.routers import (bulk, count, entries, entry_detail,
+                                     service_info)
 
 router = APIRouter()
 
