@@ -49,6 +49,11 @@ async def list_all_entries(
     page: int = Query(1, ge=1, description="Page number (1-indexed)."),
     per_page: int = Query(10, ge=1, le=100, alias="perPage", description="Number of items per page (1-100, default: 10)."),
     fields: Optional[str] = Query(None, description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."),
+    trim_properties: bool = Query(
+        False,
+        alias="trimProperties",
+        description="If true, exclude the 'properties' field from each entry in the response.",
+    ),
 ) -> EntryListResponse[ConverterEntry]:
     # TODO: Phase 2 - Implement ES search
     return EntryListResponse(
@@ -77,6 +82,11 @@ def _make_list_entries_handler(
             publication: Optional[str] = Query(None, description="Filter by publication (BioProject only)."),
             grant: Optional[str] = Query(None, description="Filter by grant (BioProject only)."),
             umbrella: Optional[UmbrellaFilter] = Query(None, description="Filter by umbrella BioProject status (BioProject only)."),
+            trim_properties: bool = Query(
+                False,
+                alias="trimProperties",
+                description="If true, exclude the 'properties' field from each entry in the response.",
+            ),
         ) -> EntryListResponse[Any]:
             # TODO: Phase 2 - Implement ES search
             return EntryListResponse(
@@ -100,6 +110,11 @@ def _make_list_entries_handler(
             page: int = Query(1, ge=1, description="Page number (1-indexed)."),
             per_page: int = Query(10, ge=1, le=100, alias="perPage", description="Number of items per page (1-100, default: 10)."),
             fields: Optional[str] = Query(None, description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned."),
+            trim_properties: bool = Query(
+                False,
+                alias="trimProperties",
+                description="If true, exclude the 'properties' field from each entry in the response.",
+            ),
         ) -> EntryListResponse[Any]:
             # TODO: Phase 2 - Implement ES search
             return EntryListResponse(

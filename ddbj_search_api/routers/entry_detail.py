@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from ddbj_search_api.schemas import (ConverterEntry, DbType, EntryDetail,
                                      EntryDetailJsonLd, ProblemDetails)
+from ddbj_search_api.utils import entry_to_dict
 
 router = APIRouter()
 
@@ -27,9 +28,15 @@ async def get_entry(
         None,
         description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
     ),
-) -> EntryDetail:
+    trim_properties: bool = Query(
+        False,
+        alias="trimProperties",
+        description="If true, exclude the 'properties' field from the response.",
+    ),
+) -> JSONResponse:
     # TODO: Phase 2 - Implement ES get
-    return EntryDetail(identifier=id, type=type)  # type: ignore[call-arg]
+    entry = EntryDetail(identifier=id, type=type)  # type: ignore[call-arg]
+    return JSONResponse(content=entry_to_dict(entry, trim_properties=trim_properties))
 
 
 @router.get(
@@ -50,9 +57,15 @@ async def get_entry_json(
         None,
         description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
     ),
-) -> EntryDetail:
+    trim_properties: bool = Query(
+        False,
+        alias="trimProperties",
+        description="If true, exclude the 'properties' field from the response.",
+    ),
+) -> JSONResponse:
     # TODO: Phase 2 - Implement ES get
-    return EntryDetail(identifier=id, type=type)  # type: ignore[call-arg]
+    entry = EntryDetail(identifier=id, type=type)  # type: ignore[call-arg]
+    return JSONResponse(content=entry_to_dict(entry, trim_properties=trim_properties))
 
 
 @router.get(
@@ -74,6 +87,11 @@ async def get_entry_jsonld(
         None,
         description="Select specific fields to include in the response (comma-separated, e.g., 'identifier,title,organism'). If omitted, all fields are returned.",
     ),
+    trim_properties: bool = Query(
+        False,
+        alias="trimProperties",
+        description="If true, exclude the 'properties' field from the response.",
+    ),
 ) -> JSONResponse:
     # TODO: Phase 2 - Implement ES get + JSON-LD context
     data = EntryDetailJsonLd(
@@ -85,6 +103,6 @@ async def get_entry_jsonld(
         }
     )
     return JSONResponse(
-        content=data.model_dump(by_alias=True),
+        content=entry_to_dict(data, trim_properties=trim_properties),
         media_type="application/ld+json",
     )

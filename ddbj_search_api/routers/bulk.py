@@ -26,6 +26,11 @@ router = APIRouter()
 async def bulk_get_entries(
     type: DbType,
     ids: str = Query(..., description="Entry IDs (comma-separated)"),
+    trim_properties: bool = Query(
+        False,
+        alias="trimProperties",
+        description="If true, exclude the 'properties' field from each entry in the response.",
+    ),
 ) -> StreamingResponse:
     # TODO: Phase 2 - Implement ES mget
 
@@ -57,6 +62,11 @@ async def bulk_get_entries(
 async def bulk_post_entries(
     type: DbType,
     body: BulkRequest,
+    trim_properties: bool = Query(
+        False,
+        alias="trimProperties",
+        description="If true, exclude the 'properties' field from each entry in the response.",
+    ),
 ) -> StreamingResponse:
     # TODO: Phase 2 - Implement ES mget
 
