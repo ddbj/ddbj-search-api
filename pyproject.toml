@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "ddbj-search-api"
@@ -15,7 +15,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "uvicorn[standard]",
-    "ddbj-search-converter@git+https://github.com/ddbj/ddbj-search-converter@new-sra",
+    "ddbj-search-converter@git+https://github.com/ddbj/ddbj-search-converter@main",
 ]
 
 [project.urls]
@@ -37,9 +37,6 @@ tests = [
 [project.scripts]
 ddbj_search_api = "ddbj_search_api.main:main"
 dump_openapi_spec = "ddbj_search_api.main:dump_openapi"
-
-[tool.setuptools.packages.find]
-include = ["ddbj_search_api*"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=ddbj_search_api --cov-report=html:tests/htmlcov"
@@ -80,3 +77,10 @@ disable = [
     "W0719", # Exception type of Exception
     "I1101", # c-extension-no-member
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["ddbj_search_api"]
+include = ["ddbj_search_api/py.typed"]
