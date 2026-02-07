@@ -28,8 +28,12 @@ class AppConfig(BaseSettings):
     port: int = 8080
     debug: bool = False
     url_prefix: str = ""
-    base_url: str = ""
     es_url: str = "https://ddbj.nig.ac.jp/search/resources"
+
+    # Public base URL for this service.
+    # Used for generating JSON-LD @id URIs and other external references.
+    # Example: https://ddbj.nig.ac.jp/search -> @id: https://ddbj.nig.ac.jp/search/entries/bioproject/PRJNA16
+    base_url: str = "https://ddbj.nig.ac.jp/search"
 
 
 def parse_args(args: Optional[List[str]] = None) -> Namespace:
@@ -61,12 +65,6 @@ def parse_args(args: Optional[List[str]] = None) -> Namespace:
         help="URL prefix for the service endpoints. (default: '', e.g., /search, /api)"
     )
     parser.add_argument(
-        "--base-url",
-        type=str,
-        metavar="URL",
-        help="Base URL for JSON-LD @id field. This field is generated using the format: {base_url}/entries/bioproject/{bioproject_id}.jsonld. (default: http://{host}:{port}{url_prefix})"
-    )
-    parser.add_argument(
         "--es-url",
         type=str,
         metavar="URL",
@@ -93,19 +91,11 @@ def get_config() -> AppConfig:
         overrides["debug"] = True
     if args.url_prefix is not None:
         overrides["url_prefix"] = args.url_prefix
-    if args.base_url is not None:
-        overrides["base_url"] = args.base_url
     if args.es_url is not None:
         overrides["es_url"] = args.es_url
 
     if overrides:
         settings = settings.model_copy(update=overrides)
-
-    # base_url が未設定なら host/port/url_prefix から生成
-    if not settings.base_url:
-        settings = settings.model_copy(
-            update={"base_url": f"http://{settings.host}:{settings.port}{settings.url_prefix}"}
-        )
 
     return settings
 

@@ -1,92 +1,145 @@
-# DDBJ-Search API
+# ddbj-search-api
 
-## Introduction
+[DDBJ-Search](https://ddbj.nig.ac.jp/search) の API サーバー実装。
 
-This repository contains the implementation of:
+## 概要
 
-- **API Server**
+DDBJ-Search API は、BioProject / BioSample / SRA / JGA データを検索・取得するための RESTful API サーバー。
 
-for [GitHub - ddbj/ddbj-search](https://github.com/ddbj/ddbj-search).  
-As of November 2024, both components are **Under Development**.
+**主な機能:**
 
-## API Specification
+- 全タイプ横断検索・タイプ別検索
+- エントリー詳細取得 (JSON / JSON-LD)
+- 一括取得 (NDJSON ストリーミング)
+- タイプ別件数取得
 
-Not yet written.
+**関連プロジェクト:**
 
-## API Server
+- [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) - データ投入用パイプラインツール
 
-### Deployment
+> **Note:** この API サーバーは ddbj-search-converter のサブプロジェクトとしてデプロイされる。API が参照する Elasticsearch は converter が管理しており、同一の Docker network (`ddbj-search-network`) を通じてアクセスする。
 
-The API Server can be deployed using Docker and Docker Compose. Follow these steps:
+## クイックスタート
+
+### 前提条件
+
+- Podman (本番/ステージング) または Docker (開発)
+- ddbj-search-converter の環境が起動済み (Elasticsearch が利用可能な状態)
+
+### 環境起動 (Dev)
 
 ```bash
-docker network create ddbj-search-network
+# 1. 環境変数を設定
+cp env.dev .env
+
+# 2. 起動
 docker compose up -d --build
+
+# 3. コンテナに入る
+docker compose exec app bash
+
+# 4. API サーバーを起動 (コンテナ内で実行)
+ddbj_search_api --debug
 ```
 
-The `ddbj_search_api` application, executed internally, accepts the following options:
+> **Note:** Docker network (`ddbj-search-network`) は ddbj-search-converter が作成・管理する。converter の環境を先に起動しておくこと。
+
+### 環境起動 (Staging / Production)
 
 ```bash
-$ docker compose exec app ddbj_search_api --help
-usage: ddbj_search_api [-h] [--host] [--port] [--debug] [--url-prefix] [--es-url]
+# 1. 環境変数と override を設定
+cp env.staging .env  # または env.production
+cp compose.override.podman.yml compose.override.yml
 
-DDBJ Search API
-
-options:
-  -h, --help     show this help message and exit
-  --host         Host address for the service. (default: 127.0.0.1)
-  --port         Port number for the service. (default: 8080)
-  --debug        Enable debug mode.
-  --url-prefix   URL prefix for the service endpoints. (default: '/search', e.g.,
-                 /dfast/api)
-  --base-url     Base URL for JSON-LD @id field. This field is generated using
-                 the format: {base_url}/entry/bioproject/{bioproject_id}.jsonld.
-                 (default: http://{host}:{port}{url_prefix})
-  --es-url       URL for Elasticsearch resources. (default:
-                 'https://ddbj.nig.ac.jp/search/resources')
+# 2. 起動 (API サーバーが自動起動する)
+podman-compose up -d --build
 ```
 
-While it is possible to configure these options directly, it is generally recommended to define them in the [compose.yml](./compose.yml) file as environment variables.
-
-Example configuration in `compose.yml`:
-
-```yaml
-    environment:
-      - DDBJ_SEARCH_API_DEBUG=False
-      - DDBJ_SEARCH_API_HOST=0.0.0.0
-      - DDBJ_SEARCH_API_PORT=8080
-      - DDBJ_SEARCH_API_BASE_URL=https://dev.ddbj.nig.ac.jp/search
-      - DDBJ_SEARCH_API_URL_PREFIX=/search
-      - DDBJ_SEARCH_API_ES_URL=https://ddbj.nig.ac.jp/search/resources
-```
-
-### API Server Test
-
-To verify that the API Server is functioning correctly, use the following test commands as examples:
+### 動作確認
 
 ```bash
-# Retrieve BioProject data in JSON format
-curl -X GET "http://localhost:8080/search/entry/bioproject/PRJNA16.json"
+# BioProject データ取得 (JSON)
+curl "http://localhost:8080/search/entries/bioproject/PRJNA16"
 
-# Retrieve BioSample data in JSON format
-curl -X GET "http://localhost:8080/search/entry/biosample/SAMN02953658.json"
-
-# Retrieve BioProject data in JSON-LD format
-curl -X GET "http://localhost:8080/search/entry/bioproject/PRJNA16.jsonld"
-
-# Retrieve BioSample data in JSON-LD format
-curl -X GET "http://localhost:8080/search/entry/biosample/SAMN02953658.jsonld"
+# BioSample データ取得 (JSON-LD)
+curl "http://localhost:8080/search/entries/biosample/SAMN02953658.jsonld"
 ```
 
-### Development
+## 環境構築
 
-To set up the development environment for the API Server, use the [compose.dev.yml](./compose.dev.yml) file. Follow these steps:
+### 環境ファイル
+
+| ファイル | 説明 |
+|---------|------|
+| `compose.yml` | 統合版 Docker Compose |
+| `compose.override.podman.yml` | Podman 用の差分設定 |
+| `env.dev` | 開発環境 (converter dev 環境の ES に接続) |
+| `env.staging` | ステージング環境 (converter 本番 ES に接続) |
+| `env.production` | 本番環境 (converter 本番 ES に接続) |
+
+### .env の設定項目
+
+`.env` ファイルで設定可能な項目。`env.*` ファイルをコピーして使用する。
+
+| 項目 | 説明 |
+|------|------|
+| `APP_CONTAINER_NAME` | コンテナ名 |
+| `DDBJ_SEARCH_API_DEBUG` | デバッグモードの有効化 (`True` / `False`) |
+| `DDBJ_SEARCH_API_HOST` | バインドするホストアドレス |
+| `DDBJ_SEARCH_API_PORT` | リッスンするポート番号 |
+| `DDBJ_SEARCH_API_URL_PREFIX` | API エンドポイントの URL プレフィックス (例: `/search`) |
+| `DDBJ_SEARCH_API_ES_URL` | Elasticsearch の URL (converter の ES コンテナを指定) |
+| `DDBJ_SEARCH_API_BASE_URL` | 公開ベース URL (JSON-LD の `@id` 生成に使用) |
+| `DDBJ_SEARCH_API_COMMAND` | コンテナ起動時のコマンド (`sleep infinity` / `ddbj_search_api`) |
+
+### Elasticsearch への接続
+
+API は converter が管理する Elasticsearch に Docker network 経由でアクセスする。
+
+| 環境 | ES コンテナ名 | ES_URL |
+|------|--------------|--------|
+| dev | `ddbj-search-es-dev` | `http://ddbj-search-es-dev:9200` |
+| staging/production | `ddbj-search-elasticsearch` | `http://ddbj-search-elasticsearch:9200` |
+
+## 開発
+
+### セットアップ
 
 ```bash
-docker network create ddbj-search-network-dev
-docker compose -f compose.dev.yml up -d --build
-docker compose -f compose.dev.yml exec app ddbj_search_api --debug
+# uv がインストールされていない場合
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 依存パッケージのインストール
+uv sync --extra tests
 ```
+
+### パッケージ管理
+
+```bash
+# パッケージ追加
+uv add <package>
+
+# 開発用パッケージ追加
+uv add --optional tests <package>
+
+# パッケージ削除
+uv remove <package>
+```
+
+`uv add` / `uv remove` で `pyproject.toml` と `uv.lock` が更新される。
+
+### テスト・リント
+
+```bash
+uv run pytest -s
+uv run pylint ./ddbj_search_api
+uv run mypy ./ddbj_search_api
+uv run isort ./ddbj_search_api
+```
+
+## ドキュメント
+
+- [API 仕様書](docs/api-spec.md)
 
 ## License
 

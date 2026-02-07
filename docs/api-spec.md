@@ -1,4 +1,4 @@
-# API Specification
+# API 仕様書
 
 ## 概要
 
@@ -7,10 +7,124 @@ DDBJ Search API は、BioProject / BioSample / SRA / JGA データを検索・�
 | 項目 | 値 |
 |------|------|
 | ベース URL | `/api` (設定で変更可能) |
-| 認証 | なし（パブリック API） |
+| 認証 | なし (パブリック API) |
 | レスポンス形式 | JSON / JSON-LD / NDJSON |
 
-## データタイプ (DbType)
+### OpenAPI ドキュメント
+
+インタラクティブな API ドキュメント (Swagger UI) は `/docs` で確認できる。
+
+| 環境 | URL |
+|------|-----|
+| Staging | `https://ddbj-staging.nig.ac.jp/search/api/docs` |
+| Production | `https://ddbj.nig.ac.jp/search/api/docs` |
+
+### 主要な設計ポイント
+
+- **横断検索とタイプ別検索**: 全 12 タイプを横断検索可能、タイプを絞り込んでの検索も可能
+- **JSON-LD 対応**: RDF 対応の JSON-LD 形式でエントリー詳細を取得可能
+- **一括取得 (Bulk API)**: 複数 ID を指定して一括取得。JSON Array / NDJSON 形式を選択可能
+- **スキーマ定義**: エントリーのスキーマは [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) で定義
+
+## エンドポイント一覧
+
+### Entries API (検索系)
+
+| Method | Path | 説明 |
+|--------|------|------|
+| GET | `/entries/` | 全タイプ横断検索 |
+| GET | `/entries/{type}/` | タイプ別検索 |
+
+### Entry Detail API (詳細取得系)
+
+| Method | Path | 説明 |
+|--------|------|------|
+| GET | `/entries/{type}/{id}` | エントリー詳細取得 (JSON) |
+| GET | `/entries/{type}/{id}.json` | エントリー詳細取得 (JSON、互換性) |
+| GET | `/entries/{type}/{id}.jsonld` | エントリー詳細取得 (JSON-LD) |
+
+### Bulk API (一括取得系)
+
+| Method | Path | 説明 |
+|--------|------|------|
+| GET | `/entries/{type}/bulk` | 一括取得 (GET) |
+| POST | `/entries/{type}/bulk` | 一括取得 (POST) |
+
+### Count API (件数取得系)
+
+| Method | Path | 説明 |
+|--------|------|------|
+| GET | `/count/types/` | タイプ別件数取得 |
+
+### Service Info API
+
+| Method | Path | 説明 |
+|--------|------|------|
+| GET | `/service-info` | サービス情報取得 |
+
+## 使用例 (ユースケース)
+
+### 基本的な検索フロー
+
+```plaintext
+1. GET /entries/?keywords=cancer
+   -> 全タイプ横断でキーワード検索
+   -> pagination.total で総件数を確認
+
+2. GET /count/types/?keywords=cancer (オプション)
+   -> タイプ別の件数を確認
+   -> どのタイプに多くヒットしているか把握
+
+3. GET /entries/bioproject/?keywords=cancer
+   -> BioProject に絞り込んで検索
+   -> items[] から目的のエントリーを探す
+
+4. GET /entries/bioproject/PRJNA12345
+   -> 詳細情報を取得
+
+5. GET /entries/bioproject/PRJNA12345.jsonld (RDF 利用時)
+   -> JSON-LD 形式で取得
+```
+
+### 一括取得のユースケース
+
+```plaintext
+# 少数 ID の場合: GET で ID をカンマ区切り指定
+GET /entries/bioproject/bulk?ids=PRJNA1,PRJNA2,PRJNA3
+
+# 多数 ID の場合: POST でリクエストボディに指定
+POST /entries/bioproject/bulk
+Content-Type: application/json
+{"ids":["PRJNA1","PRJNA2",...]}  # 最大 1000 件
+
+# レスポンス形式の選択
+# - format=json (デフォルト): 通常の JSON 配列形式
+# - format=ndjson: 1 行 1 エントリーの NDJSON 形式
+GET /entries/bioproject/bulk?ids=PRJNA1,PRJNA2&format=ndjson
+```
+
+### ページネーションの利用
+
+```plaintext
+# 1 ページ目を取得 (デフォルト: page=1, perPage=10)
+GET /entries/biosample/?keywords=human
+
+# レスポンスの pagination を確認
+{
+  "pagination": { "page": 1, "perPage": 10, "total": 1500 },
+  "items": [...]
+}
+
+# 次のページを取得
+GET /entries/biosample/?keywords=human&page=2
+
+# 1 ページあたりの件数を変更 (最大 100)
+GET /entries/biosample/?keywords=human&page=1&perPage=50
+```
+
+## 共通仕様
+
+### データタイプ (DbType)
 
 API で扱うデータベースタイプの一覧。
 
@@ -26,10 +140,8 @@ API で扱うデータベースタイプの一覧。
 | `sra-analysis` | シーケンシングリードから派生した処理済みデータ |
 | `jga-study` | JGA のアクセス制御研究プロジェクト |
 | `jga-dataset` | JGA のアクセス制御データファイルのコレクション |
-| `jga-dac` | データアクセス委員会（アクセス権限管理） |
+| `jga-dac` | データアクセス委員会 (アクセス権限管理) |
 | `jga-policy` | DAC が設定するデータアクセス条件 |
-
-## 共通仕様
 
 ### Content-Type
 
@@ -49,7 +161,7 @@ Access-Control-Allow-Methods: *
 Access-Control-Allow-Headers: *
 ```
 
-### エラーレスポンス (RFC 7807 ProblemDetails)
+### エラーレスポンス (RFC 7807)
 
 エラー時は RFC 7807 形式の JSON を返す。
 
@@ -63,14 +175,6 @@ Access-Control-Allow-Headers: *
 }
 ```
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `type` | string | 問題タイプ URI（通常 `about:blank`） |
-| `title` | string | 問題の短い説明 |
-| `status` | integer | HTTP ステータスコード |
-| `detail` | string? | 詳細な説明 |
-| `instance` | string? | 問題が発生したリクエストパス |
-
 ### ページネーション
 
 リスト系エンドポイントは `Pagination` オブジェクトを含む。
@@ -83,32 +187,26 @@ Access-Control-Allow-Headers: *
 }
 ```
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `page` | integer | 現在のページ番号（1 始まり） |
-| `perPage` | integer | 1 ページあたりの件数 |
-| `total` | integer | 総件数 |
-
 ### 日付形式
 
 ISO 8601 形式を使用。
 
 - 単一日付: `2020-01-01`
-- 範囲指定: `2020-01-01,2024-12-31`（カンマ区切りで開始日,終了日）
+- 範囲指定: `2020-01-01,2024-12-31` (カンマ区切りで開始日,終了日)
 
 ## クエリパラメータリファレンス
 
-### 検索パラメータ（共通）
+### 検索パラメータ (共通)
 
 | パラメータ | 型 | デフォルト | 説明 |
 |------------|------|----------|------|
-| `keywords` | string | - | フリーテキスト検索。カンマ区切りで複数指定可（例: `cancer,genome`） |
-| `keywords.fields` | string | - | キーワード検索対象フィールド（カンマ区切り、例: `title,description`） |
+| `keywords` | string | - | フリーテキスト検索。カンマ区切りで複数指定可 (例: `cancer,genome`) |
+| `keywords.fields` | string | - | キーワード検索対象フィールド (カンマ区切り、例: `title,description`) |
 | `keywords.operator` | enum | - | キーワード結合論理演算子。`AND`: すべて一致 / `OR`: いずれか一致 |
-| `organism` | string | - | NCBI Taxonomy ID でフィルタ（例: `9606` = Homo sapiens） |
-| `datePublished` | string | - | 公開日範囲（例: `2020-01-01,2024-12-31`） |
-| `dateUpdated` | string | - | 更新日範囲（例: `2020-01-01,2024-12-31`） |
-| `sort` | string | - | ソート順（例: `datePublished:desc`） |
+| `organism` | string | - | NCBI Taxonomy ID でフィルタ (例: `9606` = Homo sapiens) |
+| `datePublished` | string | - | 公開日範囲 (例: `2020-01-01,2024-12-31`) |
+| `dateUpdated` | string | - | 更新日範囲 (例: `2020-01-01,2024-12-31`) |
+| `sort` | string | - | ソート順 (例: `datePublished:desc`) |
 
 ### BioProject 固有パラメータ
 
@@ -125,44 +223,23 @@ ISO 8601 形式を使用。
 
 | パラメータ | 型 | デフォルト | 説明 |
 |------------|------|----------|------|
-| `page` | integer | `1` | ページ番号（1 以上） |
-| `perPage` | integer | `10` | 1 ページあたりの件数（1-100） |
-| `fields` | string | - | レスポンスに含めるフィールド（カンマ区切り、例: `identifier,title,organism`） |
+| `page` | integer | `1` | ページ番号 (1 以上) |
+| `perPage` | integer | `10` | 1 ページあたりの件数 (1-100) |
+| `fields` | string | - | レスポンスに含めるフィールド (カンマ区切り、例: `identifier,title,organism`) |
 | `trimProperties` | boolean | `false` | `true` で `properties` フィールドを除外 |
-| `types` | string | - | データタイプでフィルタ（カンマ区切り、例: `bioproject,biosample`）。`/entries/` のみ使用可 |
+| `types` | string | - | データタイプでフィルタ (カンマ区切り、例: `bioproject,biosample`)。`/entries/` のみ使用可 |
 
-## エンドポイント
+## Entries API 詳細
 
-### Entries（検索）
+### GET /entries/
 
-#### GET /entries/
+全タイプ横断検索。
 
-全タイプ横断検索
+**クエリパラメータ**:
 
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/entries/` |
-| レスポンス | `EntryListResponse` |
+検索パラメータ (共通) + レスポンス制御パラメータが使用可能。
 
-##### クエリパラメータ
-
-| パラメータ | 型 | 必須 | デフォルト | 説明 |
-|------------|----|----|----------|------|
-| `keywords` | string | - | - | フリーテキスト検索 |
-| `keywords.fields` | string | - | - | キーワード検索対象フィールド |
-| `keywords.operator` | enum | - | - | `AND` / `OR` |
-| `types` | string | - | - | データタイプでフィルタ（カンマ区切り） |
-| `organism` | string | - | - | Taxonomy ID でフィルタ |
-| `datePublished` | string | - | - | 公開日範囲 |
-| `dateUpdated` | string | - | - | 更新日範囲 |
-| `sort` | string | - | - | ソート順 |
-| `page` | integer | - | `1` | ページ番号 |
-| `perPage` | integer | - | `10` | 1 ページあたりの件数 |
-| `fields` | string | - | - | 取得フィールド |
-| `trimProperties` | boolean | - | `false` | properties 除外 |
-
-##### レスポンス例
+**レスポンス例**:
 
 ```json
 {
@@ -193,7 +270,7 @@ ISO 8601 形式を使用。
 }
 ```
 
-##### curl 例
+**curl 例**:
 
 ```bash
 # 基本検索
@@ -208,27 +285,21 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/?types=bioproject,biosample&page
 
 ---
 
-#### GET /entries/{type}/
+### GET /entries/{type}/
 
-タイプ別検索
+タイプ別検索。
 
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/entries/{type}/` |
-| レスポンス | `EntryListResponse` |
-
-##### パスパラメータ
+**パスパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |------------|----|----|------|
 | `type` | DbType | Yes | データタイプ |
 
-##### クエリパラメータ
+**クエリパラメータ**:
 
-共通検索パラメータ + レスポンス制御パラメータに加え、BioProject の場合は固有パラメータも使用可。
+検索パラメータ (共通) + レスポンス制御パラメータが使用可能。BioProject の場合は固有パラメータも使用可。
 
-##### curl 例
+**curl 例**:
 
 ```bash
 # BioProject 検索
@@ -241,35 +312,27 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/?umbrella=TRUE"
 curl "https://ddbj.nig.ac.jp/search/api/entries/biosample/?organism=9606"
 ```
 
----
+## Entry Detail API 詳細
 
-### Entry Detail（詳細取得）
+### GET /entries/{type}/{id}
 
-#### GET /entries/{type}/{id}
+エントリー詳細取得 (JSON)。
 
-エントリー詳細取得（JSON）
-
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/entries/{type}/{id}` |
-| レスポンス | `EntryDetail` |
-
-##### パスパラメータ
+**パスパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |------------|----|----|------|
 | `type` | DbType | Yes | データタイプ |
 | `id` | string | Yes | エントリー ID |
 
-##### クエリパラメータ
+**クエリパラメータ**:
 
-| パラメータ | 型 | 必須 | デフォルト | 説明 |
-|------------|----|----|----------|------|
-| `fields` | string | - | - | 取得フィールド（カンマ区切り） |
-| `trimProperties` | boolean | - | `false` | properties 除外 |
+| パラメータ | 型 | デフォルト | 説明 |
+|------------|------|----------|------|
+| `fields` | string | - | 取得フィールド (カンマ区切り) |
+| `trimProperties` | boolean | `false` | properties 除外 |
 
-##### レスポンス例
+**レスポンス例**:
 
 ```json
 {
@@ -287,7 +350,7 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/biosample/?organism=9606"
 }
 ```
 
-##### curl 例
+**curl 例**:
 
 ```bash
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16"
@@ -295,19 +358,13 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16"
 
 ---
 
-#### GET /entries/{type}/{id}.json
+### GET /entries/{type}/{id}.json
 
-エントリー詳細取得（JSON）- 互換性エンドポイント
-
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/entries/{type}/{id}.json` |
-| レスポンス | `EntryDetail` |
+エントリー詳細取得 (JSON) - 互換性エンドポイント。
 
 `GET /entries/{type}/{id}` と同一の動作。明示的な `.json` 拡張子による互換性エンドポイント。
 
-##### curl 例
+**curl 例**:
 
 ```bash
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.json"
@@ -315,32 +372,30 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.json"
 
 ---
 
-#### GET /entries/{type}/{id}.jsonld
+### GET /entries/{type}/{id}.jsonld
 
-エントリー詳細取得（JSON-LD）
+エントリー詳細取得 (JSON-LD)。
 
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/entries/{type}/{id}.jsonld` |
-| Content-Type | `application/ld+json` |
-| レスポンス | `EntryDetailJsonLd` |
-
-##### パスパラメータ
+**パスパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |------------|----|----|------|
 | `type` | DbType | Yes | データタイプ |
 | `id` | string | Yes | エントリー ID |
 
-##### クエリパラメータ
+**クエリパラメータ**:
 
-| パラメータ | 型 | 必須 | デフォルト | 説明 |
-|------------|----|----|----------|------|
-| `fields` | string | - | - | 取得フィールド（カンマ区切り） |
-| `trimProperties` | boolean | - | `false` | properties 除外 |
+| パラメータ | 型 | デフォルト | 説明 |
+|------------|------|----------|------|
+| `fields` | string | - | 取得フィールド (カンマ区切り) |
+| `trimProperties` | boolean | `false` | properties 除外 |
 
-##### レスポンス例
+**備考**:
+
+- Content-Type: `application/ld+json`
+- `@context` と `@id` フィールドが追加される
+
+**レスポンス例**:
 
 ```json
 {
@@ -358,41 +413,48 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.json"
 }
 ```
 
-##### curl 例
+**curl 例**:
 
 ```bash
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.jsonld"
 ```
 
----
+## Bulk API 詳細
 
-### Bulk（一括取得）【未実装】
+### GET /entries/{type}/bulk
 
-#### GET /entries/{type}/bulk
+一括取得 (GET)。
 
-一括取得（GET）
-
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/entries/{type}/bulk` |
-| Content-Type | `application/x-ndjson` |
-| レスポンス | NDJSON（1 行 1 エントリー） |
-
-##### パスパラメータ
+**パスパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |------------|----|----|------|
 | `type` | DbType | Yes | データタイプ |
 
-##### クエリパラメータ
+**クエリパラメータ**:
 
 | パラメータ | 型 | 必須 | デフォルト | 説明 |
 |------------|----|----|----------|------|
-| `ids` | string | Yes | - | エントリー ID（カンマ区切り） |
+| `ids` | string | Yes | - | エントリー ID (カンマ区切り) |
+| `format` | enum | - | `json` | レスポンス形式。`json`: JSON Array / `ndjson`: NDJSON (JSON Lines) |
 | `trimProperties` | boolean | - | `false` | properties 除外 |
 
-##### レスポンス例
+**備考**:
+
+- `format=json` (デフォルト): Content-Type は `application/json`、通常の JSON 配列
+- `format=ndjson`: Content-Type は `application/x-ndjson`、1 行 1 エントリー
+
+**レスポンス例 (JSON Array)**:
+
+```json
+[
+  {"identifier":"PRJNA16","type":"bioproject","title":"Project 1"},
+  {"identifier":"PRJNA17","type":"bioproject","title":"Project 2"},
+  {"identifier":"PRJNA18","type":"bioproject","title":"Project 3"}
+]
+```
+
+**レスポンス例 (NDJSON)**:
 
 ```
 {"identifier":"PRJNA16","type":"bioproject","title":"Project 1"}
@@ -400,84 +462,66 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.jsonld"
 {"identifier":"PRJNA18","type":"bioproject","title":"Project 3"}
 ```
 
-##### curl 例
+**curl 例**:
 
 ```bash
+# JSON Array 形式 (デフォルト)
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk?ids=PRJNA16,PRJNA17,PRJNA18"
+
+# NDJSON 形式
+curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk?ids=PRJNA16,PRJNA17,PRJNA18&format=ndjson"
 ```
 
 ---
 
-#### POST /entries/{type}/bulk
+### POST /entries/{type}/bulk
 
-一括取得（POST）
+一括取得 (POST)。
 
-| 項目 | 値 |
-|------|------|
-| メソッド | POST |
-| パス | `/entries/{type}/bulk` |
-| リクエスト Content-Type | `application/json` |
-| レスポンス Content-Type | `application/x-ndjson` |
-| レスポンス | NDJSON（1 行 1 エントリー） |
-
-##### パスパラメータ
+**パスパラメータ**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |------------|----|----|------|
 | `type` | DbType | Yes | データタイプ |
 
-##### クエリパラメータ
+**クエリパラメータ**:
 
-| パラメータ | 型 | 必須 | デフォルト | 説明 |
-|------------|----|----|----------|------|
-| `trimProperties` | boolean | - | `false` | properties 除外 |
+| パラメータ | 型 | デフォルト | 説明 |
+|------------|------|----------|------|
+| `format` | enum | `json` | レスポンス形式。`json`: JSON Array / `ndjson`: NDJSON (JSON Lines) |
+| `trimProperties` | boolean | `false` | properties 除外 |
 
-##### リクエストボディ
+**備考**:
 
-```json
-{
-  "ids": ["PRJNA16", "PRJNA17", "PRJNA18"]
-}
-```
+- リクエスト Content-Type: `application/json`
+- レスポンス Content-Type: `format` パラメータにより `application/json` または `application/x-ndjson`
+- 最大 1000 件まで指定可能
 
-| フィールド | 型 | 必須 | 説明 |
-|------------|----|----|------|
-| `ids` | string[] | Yes | エントリー ID リスト（最大 1000 件） |
-
-##### curl 例
+**curl 例**:
 
 ```bash
+# JSON Array 形式 (デフォルト)
 curl -X POST "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk" \
+  -H "Content-Type: application/json" \
+  -d '{"ids":["PRJNA16","PRJNA17","PRJNA18"]}'
+
+# NDJSON 形式
+curl -X POST "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk?format=ndjson" \
   -H "Content-Type: application/json" \
   -d '{"ids":["PRJNA16","PRJNA17","PRJNA18"]}'
 ```
 
----
+## Count API 詳細
 
-### Count（件数取得）【未実装】
+### GET /count/types/
 
-#### GET /count/types/
+タイプ別件数取得。
 
-タイプ別件数取得
+**クエリパラメータ**:
 
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/count/types/` |
-| レスポンス | `TypeCounts` |
+検索パラメータ (共通) が使用可能 (`sort` 以外)。
 
-##### クエリパラメータ
-
-| パラメータ | 型 | 必須 | デフォルト | 説明 |
-|------------|----|----|----------|------|
-| `keywords` | string | - | - | フリーテキスト検索 |
-| `keywords.fields` | string | - | - | キーワード検索対象フィールド |
-| `keywords.operator` | enum | - | - | `AND` / `OR` |
-| `organism` | string | - | - | Taxonomy ID でフィルタ |
-| `datePublished` | string | - | - | 公開日範囲 |
-| `dateUpdated` | string | - | - | 更新日範囲 |
-
-##### レスポンス例
+**レスポンス例**:
 
 ```json
 {
@@ -496,7 +540,7 @@ curl -X POST "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk" \
 }
 ```
 
-##### curl 例
+**curl 例**:
 
 ```bash
 # 全件数
@@ -506,21 +550,13 @@ curl "https://ddbj.nig.ac.jp/search/api/count/types/"
 curl "https://ddbj.nig.ac.jp/search/api/count/types/?keywords=cancer"
 ```
 
----
+## Service Info API 詳細
 
-### Service Info
+### GET /service-info
 
-#### GET /service-info
+サービス情報取得。
 
-サービス情報取得
-
-| 項目 | 値 |
-|------|------|
-| メソッド | GET |
-| パス | `/service-info` |
-| レスポンス | `ServiceInfo` |
-
-##### レスポンス例
+**レスポンス例**:
 
 ```json
 {
@@ -528,184 +564,176 @@ curl "https://ddbj.nig.ac.jp/search/api/count/types/?keywords=cancer"
 }
 ```
 
-##### curl 例
+**curl 例**:
 
 ```bash
 curl "https://ddbj.nig.ac.jp/search/api/service-info"
 ```
 
-## レスポンススキーマ
+## スキーマ定義
 
-### EntryListResponse
+### DbType
 
-リスト取得時のレスポンス。
+データベースタイプの Enum。
 
-```typescript
-{
-  pagination: Pagination;
-  items: EntryListItem[];
-}
+```python
+class DbType(str, Enum):
+    BIOPROJECT = "bioproject"
+    BIOSAMPLE = "biosample"
+    SRA_SUBMISSION = "sra-submission"
+    SRA_STUDY = "sra-study"
+    SRA_EXPERIMENT = "sra-experiment"
+    SRA_RUN = "sra-run"
+    SRA_SAMPLE = "sra-sample"
+    SRA_ANALYSIS = "sra-analysis"
+    JGA_STUDY = "jga-study"
+    JGA_DATASET = "jga-dataset"
+    JGA_DAC = "jga-dac"
+    JGA_POLICY = "jga-policy"
 ```
-
-### EntryListItem
-
-リスト内のエントリー。
-
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `identifier` | string | エントリー ID |
-| `type` | DbType | データタイプ |
-| `title` | string | タイトル |
-| `organism` | Organism? | 生物種情報 |
-| `datePublished` | string | 公開日 |
-| `dbXrefs` | DbXref[]? | 関連データベース参照 |
-
-### EntryDetail
-
-詳細取得時のレスポンス。タイプによりフィールドが異なる。
-
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `identifier` | string? | エントリー ID |
-| `type` | DbType? | データタイプ |
-| `title` | string? | タイトル |
-| `description` | string? | 説明 |
-| `organism` | Organism? | 生物種情報 |
-| `dateCreated` | string? | 作成日 |
-| `dateModified` | string? | 更新日 |
-| `datePublished` | string? | 公開日 |
-| (その他) | any | タイプ固有のフィールド |
-
-### EntryDetailJsonLd
-
-JSON-LD 形式のレスポンス。`EntryDetail` に加え以下のフィールドを含む。
-
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `@context` | string | JSON-LD コンテキスト URL |
-| `@id` | string | エントリー URI |
-
-### Organism
-
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `identifier` | string? | Taxonomy ID |
-| `name` | string? | 生物種名 |
-
-### DbXref
-
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `identifier` | string | 参照先 ID |
-| `type` | DbType | 参照先タイプ |
-| `url` | string? | 参照先 URL |
 
 ### Pagination
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `page` | integer | 現在のページ番号（1 始まり） |
-| `perPage` | integer | 1 ページあたりの件数 |
-| `total` | integer | 総件数 |
+ページネーション情報。
+
+```python
+class Pagination(BaseModel):
+    page: int       # 現在のページ番号 (1 始まり)
+    perPage: int    # 1 ページあたりの件数
+    total: int      # 総件数
+```
+
+### Organism
+
+生物種情報。
+
+```python
+class Organism(BaseModel):
+    identifier: str | None = None  # NCBI Taxonomy ID (例: "9606")
+    name: str | None = None        # 生物種名 (例: "Homo sapiens")
+```
+
+### DbXref
+
+データベース参照。
+
+```python
+class DbXref(BaseModel):
+    identifier: str           # 参照先 ID (例: "SAMN123")
+    type: DbType              # 参照先タイプ (例: "biosample")
+    url: str | None = None    # 参照先 URL (例: "/entries/biosample/SAMN123")
+```
 
 ### ProblemDetails
 
 RFC 7807 形式のエラーレスポンス。
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `type` | string | 問題タイプ URI |
-| `title` | string | 問題の短い説明 |
-| `status` | integer | HTTP ステータスコード |
-| `detail` | string? | 詳細な説明 |
-| `instance` | string? | 問題が発生したリクエストパス |
+```python
+class ProblemDetails(BaseModel):
+    type: str = "about:blank"       # 問題タイプ URI
+    title: str                      # 問題の短い説明 (例: "Not Found")
+    status: int                     # HTTP ステータスコード (例: 404)
+    detail: str | None = None       # 詳細な説明
+    instance: str | None = None     # 問題が発生したリクエストパス
+```
+
+### EntryListItem
+
+検索結果リスト内の各エントリー。
+
+```python
+class EntryListItem(BaseModel):
+    identifier: str                     # エントリー ID (例: "PRJNA16")
+    type: DbType                        # データタイプ (例: "bioproject")
+    title: str                          # タイトル
+    organism: Organism | None = None    # 生物種情報
+    datePublished: str                  # 公開日 (ISO 8601)
+    dbXrefs: list[DbXref] | None = None # 関連データベース参照
+```
+
+### EntryListResponse
+
+検索結果のレスポンス。
+
+```python
+class EntryListResponse(BaseModel):
+    pagination: Pagination      # ページネーション情報
+    items: list[EntryListItem]  # エントリーリスト
+```
+
+### EntryDetail
+
+エントリー詳細のレスポンス。タイプによりフィールドが異なる。
+
+```python
+class EntryDetail(BaseModel):
+    identifier: str | None = None           # エントリー ID
+    type: DbType | None = None              # データタイプ
+    title: str | None = None                # タイトル
+    description: str | None = None          # 説明
+    organism: Organism | None = None        # 生物種情報
+    dateCreated: str | None = None          # 作成日 (ISO 8601)
+    dateModified: str | None = None         # 更新日 (ISO 8601)
+    datePublished: str | None = None        # 公開日 (ISO 8601)
+    # ... タイプ固有のフィールドは ddbj-search-converter スキーマを参照
+```
+
+### EntryDetailJsonLd
+
+JSON-LD 形式のエントリー詳細。
+
+```python
+class EntryDetailJsonLd(EntryDetail):
+    context: str = Field(alias="@context")  # JSON-LD コンテキスト URL
+    id: str = Field(alias="@id")            # エントリー URI
+```
 
 ### TypeCounts
 
-タイプ別件数。
+タイプ別件数のレスポンス。
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `bioproject` | integer | BioProject 件数 |
-| `biosample` | integer | BioSample 件数 |
-| `sra-submission` | integer | SRA Submission 件数 |
-| `sra-study` | integer | SRA Study 件数 |
-| `sra-experiment` | integer | SRA Experiment 件数 |
-| `sra-run` | integer | SRA Run 件数 |
-| `sra-sample` | integer | SRA Sample 件数 |
-| `sra-analysis` | integer | SRA Analysis 件数 |
-| `jga-study` | integer | JGA Study 件数 |
-| `jga-dataset` | integer | JGA Dataset 件数 |
-| `jga-dac` | integer | JGA DAC 件数 |
-| `jga-policy` | integer | JGA Policy 件数 |
+```python
+class TypeCounts(BaseModel):
+    bioproject: int
+    biosample: int
+    sra_submission: int = Field(alias="sra-submission")
+    sra_study: int = Field(alias="sra-study")
+    sra_experiment: int = Field(alias="sra-experiment")
+    sra_run: int = Field(alias="sra-run")
+    sra_sample: int = Field(alias="sra-sample")
+    sra_analysis: int = Field(alias="sra-analysis")
+    jga_study: int = Field(alias="jga-study")
+    jga_dataset: int = Field(alias="jga-dataset")
+    jga_dac: int = Field(alias="jga-dac")
+    jga_policy: int = Field(alias="jga-policy")
+```
 
 ### ServiceInfo
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `app-version` | string | アプリケーションバージョン |
+サービス情報のレスポンス。
+
+```python
+class ServiceInfo(BaseModel):
+    app_version: str = Field(alias="app-version")  # アプリケーションバージョン
+```
 
 ### BulkRequest
 
-POST Bulk リクエストボディ。
+POST Bulk のリクエストボディ。
 
-| フィールド | 型 | 説明 |
-|------------|------|------|
-| `ids` | string[] | エントリー ID リスト（最大 1000 件） |
-
-## 使用例
-
-### 基本的な検索フロー
-
-```bash
-# 1. キーワードで全タイプ横断検索
-curl "https://ddbj.nig.ac.jp/search/api/entries/?keywords=cancer"
-
-# 2. 件数を確認
-curl "https://ddbj.nig.ac.jp/search/api/count/types/?keywords=cancer"
-
-# 3. BioProject に絞り込み
-curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/?keywords=cancer"
-
-# 4. 詳細を取得
-curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA12345"
-
-# 5. JSON-LD 形式で取得（RDF 利用時）
-curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA12345.jsonld"
+```python
+class BulkRequest(BaseModel):
+    ids: list[str]  # エントリー ID リスト (最大 1000 件)
 ```
 
-### 複数エントリーの一括取得
+### EntryDetail のタイプ別フィールド
 
-```bash
-# GET（少数の ID）
-curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk?ids=PRJNA1,PRJNA2,PRJNA3"
+`EntryDetail` の追加フィールドはデータタイプによって異なる。
+詳細は [ddbj-search-converter のスキーマ定義](https://github.com/ddbj/ddbj-search-converter) を参照。
 
-# POST（多数の ID）
-curl -X POST "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk" \
-  -H "Content-Type: application/json" \
-  -d '{"ids":["PRJNA1","PRJNA2","PRJNA3","PRJNA4","PRJNA5"]}'
-```
-
-### ページネーションの利用
-
-```bash
-# 2 ページ目、1 ページ 50 件
-curl "https://ddbj.nig.ac.jp/search/api/entries/biosample/?page=2&perPage=50"
-```
-
-### 日付範囲でフィルタ
-
-```bash
-# 2023 年に公開されたエントリー
-curl "https://ddbj.nig.ac.jp/search/api/entries/?datePublished=2023-01-01,2023-12-31"
-```
-
-### 特定フィールドのみ取得
-
-```bash
-# identifier と title のみ
-curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/?fields=identifier,title"
-
-# properties を除外（軽量化）
-curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/?trimProperties=true"
-```
+| タイプ | スキーマクラス |
+|--------|---------------|
+| bioproject | `BioProject` |
+| biosample | `BioSample` |
+| sra-* | `SRA` |
+| jga-* | `JGA` |

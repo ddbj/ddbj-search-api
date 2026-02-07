@@ -3,17 +3,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ddbj-search-api
-    container_name: ddbj-search-api
+    container_name: ${APP_CONTAINER_NAME}
+    volumes:
+      - .:/app:rw
+      - app-venv:/app/.venv
     environment:
-      - DDBJ_SEARCH_API_DEBUG=${DDBJ_SEARCH_API_DEBUG:-False}
-      - DDBJ_SEARCH_API_HOST=0.0.0.0
-      - DDBJ_SEARCH_API_PORT=8080
-      - DDBJ_SEARCH_API_URL_PREFIX=/search
-      - DDBJ_SEARCH_API_BASE_URL=${DDBJ_SEARCH_API_BASE_URL:-https://ddbj.nig.ac.jp/search}
-      - DDBJ_SEARCH_API_ES_URL=${DDBJ_SEARCH_API_ES_URL:-http:/ddbj-search-elasticsearch:9200}
+      TZ: "Asia/Tokyo"
+      DDBJ_SEARCH_API_DEBUG: ${DDBJ_SEARCH_API_DEBUG}
+      DDBJ_SEARCH_API_HOST: ${DDBJ_SEARCH_API_HOST}
+      DDBJ_SEARCH_API_PORT: ${DDBJ_SEARCH_API_PORT}
+      DDBJ_SEARCH_API_URL_PREFIX: ${DDBJ_SEARCH_API_URL_PREFIX}
+      DDBJ_SEARCH_API_ES_URL: ${DDBJ_SEARCH_API_ES_URL}
     working_dir: /app
-    command: [ "ddbj_search_api" ]
+    command: ${DDBJ_SEARCH_API_COMMAND}
     networks:
       - ddbj-search-network
     init: true
@@ -22,3 +24,7 @@ networks:
   ddbj-search-network:
     name: ddbj-search-network
     external: true
+
+volumes:
+  app-venv:
+    driver: local
