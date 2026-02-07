@@ -1,14 +1,40 @@
+"""Aggregate all API routers.
+
+Route registration order matters: bulk must come before entry_detail
+to avoid path conflicts (``/entries/{type}/bulk`` vs
+``/entries/{type}/{id}``).
+"""
+from typing import Any, Dict, Union
+
 from fastapi import APIRouter
 
-from ddbj_search_api.routers import (bulk, count, entries, entry_detail,
+from ddbj_search_api.routers import (bulk, entries, entry_detail, facets,
                                      service_info)
+from ddbj_search_api.schemas.common import ProblemDetails
 
-router = APIRouter()
+# Common error responses (RFC 7807) applied to all endpoints.
+PROBLEM_RESPONSES: Dict[Union[int, str], Dict[str, Any]] = {
+    400: {
+        "description": "Bad Request (e.g. deep paging limit exceeded).",
+        "model": ProblemDetails,
+    },
+    404: {
+        "description": "Not Found (entry does not exist or invalid type).",
+        "model": ProblemDetails,
+    },
+    422: {
+        "description": "Unprocessable Entity (parameter validation error).",
+        "model": ProblemDetails,
+    },
+    500: {
+        "description": "Internal Server Error.",
+        "model": ProblemDetails,
+    },
+}
 
-# NOTE: bulk must be included before entry_detail to avoid route collision
-# (/entries/{type}/bulk vs /entries/{type}/{id})
+router = APIRouter(responses=PROBLEM_RESPONSES)
 router.include_router(entries.router)
 router.include_router(bulk.router)
 router.include_router(entry_detail.router)
-router.include_router(count.router)
+router.include_router(facets.router)
 router.include_router(service_info.router)

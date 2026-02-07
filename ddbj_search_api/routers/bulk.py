@@ -1,80 +1,106 @@
-from collections.abc import AsyncGenerator
+"""Bulk API endpoint: POST /entries/{type}/bulk.
 
-from fastapi import APIRouter, Query
+Retrieve multiple entries by IDs in JSON Array or NDJSON format.
+
+Design: streaming responses using ``es_get_source_stream`` per ID.
+Each document is streamed directly from ES without loading the full
+body into API memory, keeping peak memory at one streaming chunk.
+"""
+import json
+from typing import Any, AsyncIterator, List
+
+import httpx
+from fastapi import APIRouter, Depends, Path
 from fastapi.responses import StreamingResponse
 
-from ddbj_search_api.schemas import BulkRequest, DbType, ProblemDetails
+from ddbj_search_api.es import get_es_client
+from ddbj_search_api.es.client import es_get_source_stream
+from ddbj_search_api.schemas.bulk import BulkRequest, BulkResponse
+from ddbj_search_api.schemas.common import DbType
+from ddbj_search_api.schemas.queries import BulkFormat, BulkQuery
 
-router = APIRouter()
+router = APIRouter(tags=["Bulk"])
 
 
-@router.get(
-    "/entries/{type}/bulk",
-    summary="Bulk get (GET)",
-    description="Bulk retrieve entries by IDs (GET). Returns entries in JSON Lines (NDJSON) format. Pass comma-separated IDs as a query parameter.",
-    responses={
-        200: {
-            "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
-            "description": "Entries in JSON Lines format",
-        },
-        400: {"model": ProblemDetails},
-        500: {"model": ProblemDetails},
-    },
-    response_class=StreamingResponse,
-    tags=["entries"],
-)
-async def bulk_get_entries(
-    type: DbType,
-    ids: str = Query(..., description="Entry IDs (comma-separated)"),
-    trim_properties: bool = Query(
-        False,
-        alias="trimProperties",
-        description="If true, exclude the 'properties' field from each entry in the response.",
-    ),
-) -> StreamingResponse:
-    # TODO: Phase 2 - Implement ES mget
+# --- Streaming generators ---
 
-    async def empty_generator() -> AsyncGenerator[bytes, None]:
-        return
-        yield b""  # noqa: unreachable  # make it an async generator
 
-    return StreamingResponse(
-        content=empty_generator(),
-        media_type="application/x-ndjson",
-    )
+async def _generate_bulk_json(
+    client: httpx.AsyncClient,
+    index: str,
+    ids: List[str],
+) -> AsyncIterator[bytes]:
+    """Stream ``{"entries":[...],"notFound":[...]}`` without loading all docs."""
+    yield b'{"entries":['
+    not_found: List[str] = []
+    first = True
+
+    for id_ in ids:
+        response = await es_get_source_stream(client, index, id_)
+        if response is None:
+            not_found.append(id_)
+            continue
+        if not first:
+            yield b","
+        first = False
+        async for chunk in response.aiter_bytes():
+            yield chunk
+        await response.aclose()
+
+    yield b'],"notFound":'
+    yield json.dumps(not_found).encode()
+    yield b"}"
+
+
+async def _generate_bulk_ndjson(
+    client: httpx.AsyncClient,
+    index: str,
+    ids: List[str],
+) -> AsyncIterator[bytes]:
+    """Stream one entry per line. notFound IDs are silently skipped."""
+    for id_ in ids:
+        response = await es_get_source_stream(client, index, id_)
+        if response is None:
+            continue
+        async for chunk in response.aiter_bytes():
+            yield chunk
+        yield b"\n"
+        await response.aclose()
+
+
+# --- Endpoint ---
 
 
 @router.post(
     "/entries/{type}/bulk",
-    summary="Bulk get (POST)",
-    description="Bulk retrieve entries by IDs (POST). Returns entries in JSON Lines (NDJSON) format. Pass IDs in the request body.",
-    responses={
-        200: {
-            "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
-            "description": "Entries in JSON Lines format",
-        },
-        400: {"model": ProblemDetails},
-        500: {"model": ProblemDetails},
-    },
-    response_class=StreamingResponse,
-    tags=["entries"],
-)
-async def bulk_post_entries(
-    type: DbType,
-    body: BulkRequest,
-    trim_properties: bool = Query(
-        False,
-        alias="trimProperties",
-        description="If true, exclude the 'properties' field from each entry in the response.",
+    response_model=BulkResponse,
+    summary="Bulk entry retrieval",
+    description=(
+        "Retrieve multiple entries by their IDs.  Up to 1000 IDs can be "
+        "specified per request.\n\n"
+        "**format=json** (default): returns ``{entries: [...], "
+        "notFound: [...]}``.\n\n"
+        "**format=ndjson**: returns one entry per line in NDJSON format "
+        "(Content-Type: application/x-ndjson).  IDs not found are not "
+        "included in the NDJSON output."
     ),
-) -> StreamingResponse:
-    # TODO: Phase 2 - Implement ES mget
+)
+async def bulk_entries(
+    body: BulkRequest,
+    type: DbType = Path(description="Database type."),
+    query: BulkQuery = Depends(),
+    client: httpx.AsyncClient = Depends(get_es_client),
+) -> Any:
+    """Bulk retrieve entries by IDs."""
+    index = type.value
 
-    async def empty_generator() -> AsyncGenerator[bytes, None]:
-        return
-        yield b""  # noqa: unreachable  # make it an async generator
+    if query.format == BulkFormat.ndjson:
+        return StreamingResponse(
+            _generate_bulk_ndjson(client, index, body.ids),
+            media_type="application/x-ndjson",
+        )
 
     return StreamingResponse(
-        content=empty_generator(),
-        media_type="application/x-ndjson",
+        _generate_bulk_json(client, index, body.ids),
+        media_type="application/json",
     )

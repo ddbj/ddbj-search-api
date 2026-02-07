@@ -161,9 +161,17 @@ uv run mypy ./ddbj_search_api
 uv run isort ./ddbj_search_api
 ```
 
+### OpenAPI spec 出力
+
+```bash
+uv run dump_openapi_spec > docs/openapi.json
+```
+
 ## ドキュメント
 
 - [API 仕様書](docs/api-spec.md)
+- [OpenAPI spec](docs/openapi.json)
+- [テスト方針](tests/testing.md)
 
 ## License
 

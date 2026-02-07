@@ -36,7 +36,7 @@ API サーバーは URL prefix `/search/api` の下にデプロイされる。
 - **JSON-LD 対応**: RDF 対応の JSON-LD 形式でエントリー詳細を取得可能
 - **一括取得 (Bulk API)**: 複数 ID を指定して一括取得。JSON Array / NDJSON 形式を選択可能
 - **タイプ別エンドポイント**: `/entries/{type}/` は `/entries/?types=X` と同等だが、タイプ固有パラメータ (BioProject の `umbrella` 等) を持つため独立エンドポイントとして提供
-- **`.json` 拡張子の規約**: `/{id}` と `/{id}.json` は異なるレスポンスを返す。`/{id}` はフロントエンド向け (dbXrefs 切り詰め + dbXrefsCount 付与)、`/{id}.json` はデータアクセス向け (ES ドキュメントそのまま)。同様に `/dbxrefs` (ページネーション) と `/dbxrefs.json` (全件一括) も異なる。つまり `.json` 拡張子は「**加工なしの生データ取得**」を意味する
+- **`.json` 拡張子の規約**: `/{id}` と `/{id}.json` は異なるレスポンスを返す。`/{id}` はフロントエンド向け (dbXrefs 切り詰め + dbXrefsCount 付与)、`/{id}.json` はデータアクセス向け (ES ドキュメントそのまま)。つまり `.json` 拡張子は「**加工なしの生データ取得**」を意味する
 - **`includeFacets` と `/facets` の使い分け**: `GET /entries/?includeFacets=true` は検索結果とファセットを 1 リクエストで取得 (フロントエンド向け)。`GET /facets` はファセットのみ取得 (検索結果リスト不要の場合)
 - **スキーマ定義**: エントリーのスキーマは [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) で定義
 
@@ -49,14 +49,13 @@ API サーバーは URL prefix `/search/api` の下にデプロイされる。
 | GET | `/entries/` | 全タイプ横断検索 |
 | GET | `/entries/{type}/` | タイプ別検索 |
 
-### Entry Detail API (詳細取得系: 5 エンドポイント)
+### Entry Detail API (詳細取得系: 4 エンドポイント)
 
 | Method | Path | 説明 |
 |--------|------|------|
 | GET | `/entries/{type}/{id}` | エントリー詳細取得 (JSON) |
 | GET | `/entries/{type}/{id}.json` | エントリー詳細取得 (JSON) |
 | GET | `/entries/{type}/{id}.jsonld` | エントリー詳細取得 (JSON-LD) |
-| GET | `/entries/{type}/{id}/dbxrefs` | dbXrefs 一覧 (ページネーション付き) |
 | GET | `/entries/{type}/{id}/dbxrefs.json` | dbXrefs 全件取得 |
 
 ### Bulk API (一括取得系: 1 エンドポイント)
@@ -96,7 +95,7 @@ API サーバーは URL prefix `/search/api` の下にデプロイされる。
 
 | Mixin 型 | 用途 | 合成先 |
 |----------|------|-------|
-| `PaginationQuery` | page, perPage | `EntriesQuery`, `EntriesTypeQuery`, `DbXrefsQuery` |
+| `PaginationQuery` | page, perPage | `EntriesQuery`, `EntriesTypeQuery` |
 | `SearchFilterQuery` | 検索フィルタ (keywords, organism, date*) | `EntriesQuery`, `EntriesTypeQuery`, `FacetsQuery`, `FacetsTypeQuery` |
 | `ResponseControlQuery` | レスポンス制御 (sort, fields, include*) | `EntriesQuery`, `EntriesTypeQuery` |
 
@@ -169,7 +168,7 @@ trailing slash なし (`/entries`) でも同じレスポンスを返す (リダ�
 |-----------|------|---------|
 | 400 | Bad Request | Deep paging 制限超過 (`page * perPage > 10000`) |
 | 404 | Not Found | エントリーが存在しない、不正な `{type}` |
-| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式、不正な `sort` フィールド、不正な `keywordFields` 値など) |
+| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外)、不正な `umbrella` 値 (`TRUE`/`FALSE` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値など) |
 | 500 | Internal Server Error | ES 接続エラー、その他サーバー内部エラー |
 
 400 と 422 の使い分け: リクエストのパラメータ型・形式・制約のバリデーションは 422、アプリケーションのビジネスルール違反 (deep paging 制限など) は 400 を返す。
@@ -238,7 +237,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 |------|----------|------|
 | `GET /entries/`, `GET /facets` | `types` | データタイプでフィルタ (カンマ区切り) |
 | `GET /entries/bioproject/`, `GET /facets/bioproject` | `organization`, `publication`, `grant` | テキストフィルタ |
-| | `umbrella` | `TRUE` / `FALSE` |
+| | `umbrella` | `TRUE` / `FALSE` (大文字小文字不問) |
 
 ### ファセット
 
@@ -291,7 +290,6 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 
 **専用エンドポイント**:
 
-- `GET /entries/{type}/{id}/dbxrefs`: ページネーション付きで dbXrefs を取得
 - `GET /entries/{type}/{id}/dbxrefs.json`: 全件を一括取得 (JSON 配列)
 
 ### Bulk API
@@ -317,7 +315,6 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 | `GET /entries/{type}/{id}` | `TypeIdParams` | `EntryDetailQuery` | — | `*DetailResponse` (4 種) |
 | `GET /entries/{type}/{id}.json` | `TypeIdParams` | — | — | `*EntryResponse` (4 種) |
 | `GET /entries/{type}/{id}.jsonld` | `TypeIdParams` | — | — | `*EntryJsonLdResponse` (4 種) |
-| `GET /entries/{type}/{id}/dbxrefs` | `TypeIdParams` | `DbXrefsQuery` | — | `DbXrefsListResponse` |
 | `GET /entries/{type}/{id}/dbxrefs.json` | `TypeIdParams` | — | — | `DbXrefsFullResponse` |
 | `POST /entries/{type}/bulk` | `TypeParams` | `BulkQuery` | `BulkRequest` | `BulkResponse` |
 | `GET /facets` | — | `FacetsQuery` | — | `FacetsResponse` |
@@ -337,7 +334,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 - `*DetailResponse`: フロントエンド向け。`dbXrefs` を切り詰め、`dbXrefsCount` を付与
 - `*EntryResponse`: ES ドキュメントそのまま。converter 型の別名
 - `*EntryJsonLdResponse`: ES ドキュメント + `@context`, `@id`
-- Bulk は `BulkResponse` (`entries` + `notFound`) を返す。NDJSON 形式では最終行に `notFound` を含むオブジェクトを出力
+- Bulk は `BulkResponse` (`entries` + `notFound`) を返す。NDJSON 形式ではエントリーのみ出力 (`notFound` は含まない)
 
 ### 型カタログ
 
@@ -360,11 +357,10 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 
 | 型名 | 合成元 | 追加フィールド |
 |------|-------|--------------|
-| `EntriesQuery` | Pagination + SearchFilter + ResponseControl | `types` |
-| `EntriesTypeQuery` | Pagination + SearchFilter + ResponseControl | — |
+| `EntriesQuery` | Pagination + SearchFilter + ResponseControl | `types`, `dbXrefsLimit` (0-1000, デフォルト: 100) |
+| `EntriesTypeQuery` | Pagination + SearchFilter + ResponseControl | `dbXrefsLimit` (0-1000, デフォルト: 100) |
 | `EntriesBioProjectQuery` | EntriesTypeQuery を拡張 | `organization`, `publication`, `grant`, `umbrella` |
 | `EntryDetailQuery` | — | `dbXrefsLimit` (0-1000, デフォルト: 100) |
-| `DbXrefsQuery` | Pagination | — |
 | `BulkQuery` | — | `format` (`json` / `ndjson`, デフォルト: `json`) |
 | `FacetsQuery` | SearchFilter | `types` |
 | `FacetsTypeQuery` | SearchFilter | — |
@@ -376,7 +372,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 |------|----------|
 | `BulkRequest` | `ids` (最大 1000 件) |
 
-#### Response (18 型)
+#### Response (17 型)
 
 | 型名 | 説明 |
 |------|------|
@@ -393,7 +389,6 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 | `BioSampleEntryJsonLdResponse` | BioSample JSON-LD |
 | `SraEntryJsonLdResponse` | SRA JSON-LD |
 | `JgaEntryJsonLdResponse` | JGA JSON-LD |
-| `DbXrefsListResponse` | dbXrefs ページネーション付きリスト |
 | `DbXrefsFullResponse` | dbXrefs 全件取得 |
 | `BulkResponse` | 一括取得レスポンス (entries: `list[*EntryResponse]` + notFound: `list[string]`) |
 | `FacetsResponse` | ファセット集計 |

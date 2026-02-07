@@ -1,131 +1,226 @@
+"""FastAPI application factory and entry points."""
 import json
-import logging.config
-import sys
+import logging
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import AsyncIterator, Optional
 
+import httpx
 import uvicorn
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ddbj_search_api.config import LOGGER, PKG_DIR, get_config, logging_config
+from ddbj_search_api.config import (AppConfig, get_config, logging_config,
+                                    parse_args)
 from ddbj_search_api.routers import router
-from ddbj_search_api.schemas import ProblemDetails
+
+logger = logging.getLogger(__name__)
+
+
+# === X-Request-ID middleware ===
+
+
+async def request_id_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Attach X-Request-ID to every request/response.
+
+    If the client supplies ``X-Request-ID``, echo it back; otherwise
+    generate a new UUID.
+    """
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+
+    return response
+
+
+# === Error handlers ===
+
+
+def _problem_json(
+    status: int,
+    title: str,
+    detail: str,
+    request: Request,
+) -> JSONResponse:
+    """Build an RFC 7807 Problem Details JSON response."""
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    body = {
+        "type": "about:blank",
+        "title": title,
+        "status": status,
+        "detail": detail,
+        "instance": str(request.url.path),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "requestId": request_id,
+    }
+
+    return JSONResponse(
+        status_code=status,
+        content=body,
+        media_type="application/problem+json",
+    )
 
 
 def setup_error_handlers(app: FastAPI) -> None:
-    @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        app_config = get_config()
-        if app_config.debug:
-            LOGGER.exception("Something http exception occurred.", exc_info=exc)
+    """Register exception handlers that return RFC 7807 responses."""
 
-        problem = ProblemDetails(
-            type="about:blank",
-            title=exc.detail if isinstance(exc.detail, str) else "Error",
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        request: Request,
+        exc: StarletteHTTPException,
+    ) -> JSONResponse:
+        return _problem_json(
             status=exc.status_code,
-            detail=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
-            instance=str(request.url.path),
-        )
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=problem.model_dump(exclude_none=True),
-            media_type="application/problem+json",
+            title=exc.detail if isinstance(exc.detail, str) else "Error",
+            detail=str(exc.detail),
+            request=request,
         )
 
     @app.exception_handler(RequestValidationError)
-    async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-        app_config = get_config()
-        if app_config.debug:
-            LOGGER.exception("Request validation error occurred.", exc_info=exc)
-
-        problem = ProblemDetails(
-            type="about:blank",
-            title="Bad Request",
-            status=status.HTTP_400_BAD_REQUEST,
-            detail=json.dumps(exc.errors(), ensure_ascii=False, default=str),
-            instance=str(request.url.path),
+    async def validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        details = "; ".join(
+            f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}"
+            for e in exc.errors()
         )
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content=problem.model_dump(exclude_none=True),
-            media_type="application/problem+json",
+
+        return _problem_json(
+            status=422,
+            title="Unprocessable Entity",
+            detail=details,
+            request=request,
+        )
+
+    @app.exception_handler(NotImplementedError)
+    async def not_implemented_handler(
+        request: Request,
+        exc: NotImplementedError,
+    ) -> JSONResponse:
+        return _problem_json(
+            status=501,
+            title="Not Implemented",
+            detail="This endpoint is not yet implemented.",
+            request=request,
         )
 
     @app.exception_handler(Exception)
-    async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        LOGGER.exception("Unhandled exception occurred.", exc_info=exc)
-        problem = ProblemDetails(
-            type="about:blank",
+    async def generic_exception_handler(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        logger.exception("Unhandled exception: %s", exc)
+
+        return _problem_json(
+            status=500,
             title="Internal Server Error",
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="The server encountered an internal error and was unable to complete your request.",
-            instance=str(request.url.path),
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=problem.model_dump(exclude_none=True),
-            media_type="application/problem+json",
+            detail="An unexpected error occurred.",
+            request=request,
         )
 
 
-def init_app_state() -> None:
-    LOGGER.info("=== Initializing app state ===")
-
-    app_config = get_config()
-    LOGGER.info("App config: %s", app_config)
-
-    LOGGER.info("=== App state initialized ===")
+# === Lifespan ===
 
 
-def create_app() -> FastAPI:
-    app_config = get_config()
-    logging.config.dictConfig(logging_config(app_config.debug))
-    url_prefix = app_config.url_prefix
+def _make_lifespan(config: AppConfig):  # type: ignore[no-untyped-def]
+    """Create a lifespan context manager for the given config."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.es_client = httpx.AsyncClient(base_url=config.es_url)
+        yield
+        await app.state.es_client.aclose()
+
+    return lifespan
+
+
+# === App factory ===
+
+
+def create_app(config: Optional[AppConfig] = None) -> FastAPI:
+    """Create and configure the FastAPI application."""
+    if config is None:
+        config = get_config()
 
     app = FastAPI(
         title="DDBJ Search API",
-        description="REST API for [DDBJ-Search](https://ddbj.nig.ac.jp/search)\n\nSource code: [ddbj/ddbj-search-api](https://github.com/ddbj/ddbj-search-api)",
-        version="1.0.0",
-        contact={"name": "Bioinformatics and DDBJ Center"},
-        license_info={"name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
-        docs_url=f"{url_prefix}/docs",
-        redoc_url=f"{url_prefix}/redoc",
-        openapi_url=f"{url_prefix}/openapi.json",
-        debug=app_config.debug,
+        description=(
+            "RESTful API for searching and retrieving BioProject, "
+            "BioSample, SRA, and JGA entries from DDBJ."
+        ),
+        version="0.1.0",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        redirect_slashes=False,
+        root_path=config.url_prefix,
+        lifespan=_make_lifespan(config),
     )
+
+    # CORS: allow all origins
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.include_router(router, prefix=url_prefix)
+
+    # X-Request-ID middleware
+    app.middleware("http")(request_id_middleware)
+
+    # Error handlers
     setup_error_handlers(app)
+
+    # Routers
+    app.include_router(router)
+
+    # Customize OpenAPI: remove FastAPI's default HTTPValidationError/
+    # ValidationError schemas (we use ProblemDetails for all errors).
+    _original_openapi = app.openapi
+
+    def custom_openapi():  # type: ignore[no-untyped-def]
+        schema = _original_openapi()
+        schemas = schema.get("components", {}).get("schemas", {})
+        schemas.pop("HTTPValidationError", None)
+        schemas.pop("ValidationError", None)
+
+        return schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
 
     return app
 
 
+# === Entry points ===
+
+
 def main() -> None:
-    app_config = get_config()
-    logging.config.dictConfig(logging_config(app_config.debug))
-    init_app_state()
+    """CLI entry point: start the API server via uvicorn."""
+    args = parse_args()
+    config = get_config(
+        host=args.host,
+        port=args.port,
+    )
+    log_config = logging_config(config.debug)
+
     uvicorn.run(
         "ddbj_search_api.main:create_app",
-        host=app_config.host,
-        port=app_config.port,
-        reload=app_config.debug,
-        reload_dirs=[str(PKG_DIR)],
         factory=True,
+        host=config.host,
+        port=config.port,
+        reload=config.debug,
+        log_config=log_config,
     )
 
 
 def dump_openapi() -> None:
+    """CLI entry point: print OpenAPI spec as JSON to stdout."""
     app = create_app()
-    json.dump(app.openapi(), sys.stdout, indent=2, ensure_ascii=False)
-    sys.stdout.write("\n")
-
-
-if __name__ == "__main__":
-    main()
+    spec = app.openapi()
+    print(json.dumps(spec, indent=2, ensure_ascii=False))

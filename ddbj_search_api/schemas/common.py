@@ -1,10 +1,13 @@
+"""Common schema types shared across the API."""
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DbType(str, Enum):
+    """Database types supported by the API (12 types)."""
+
     bioproject = "bioproject"
     biosample = "biosample"
     sra_submission = "sra-submission"
@@ -19,43 +22,135 @@ class DbType(str, Enum):
     jga_policy = "jga-policy"
 
 
-class KeywordsOperator(str, Enum):
-    AND = "AND"
-    OR = "OR"
-
-
-class UmbrellaFilter(str, Enum):
-    TRUE = "TRUE"
-    FALSE = "FALSE"
-
-
 class Pagination(BaseModel):
-    page: int = Field(..., ge=1, examples=[1], description="Current page number")
-    per_page: int = Field(
-        ...,
-        ge=1,
-        le=100,
-        alias="perPage",
-        examples=[10],
-        description="Number of items per page",
+    """Offset-based pagination metadata."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    page: int = Field(description="Current page number (1-based).")
+    per_page: int = Field(alias="perPage", description="Items per page.")
+    total: int = Field(description="Total number of matching items.")
+
+
+class FacetBucket(BaseModel):
+    """A single bucket in a facet aggregation."""
+
+    value: str = Field(description="Facet value (e.g. organism name, status).")
+    count: int = Field(description="Number of entries matching this value.")
+
+
+class Facets(BaseModel):
+    """Facet aggregation results.
+
+    Common facets (organism, status, accessibility) are always present.
+    ``type`` is included only for cross-type searches.
+    ``objectType`` is included only for bioproject-type searches.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: Optional[List[FacetBucket]] = Field(
+        default=None,
+        description="Entry count per database type (cross-type search only).",
     )
-    total: int = Field(..., ge=0, examples=[10000], description="Total number of items")
+    organism: List[FacetBucket] = Field(
+        description="Entry count per organism.",
+    )
+    status: List[FacetBucket] = Field(
+        description="Entry count per status.",
+    )
+    accessibility: List[FacetBucket] = Field(
+        description="Entry count per accessibility level.",
+    )
+    object_type: Optional[List[FacetBucket]] = Field(
+        default=None,
+        alias="objectType",
+        description="Umbrella / non-umbrella count (bioproject only).",
+    )
 
 
-class Organism(BaseModel):
-    identifier: Optional[str] = Field(None, examples=["9606"], description="Taxonomy ID")
-    name: Optional[str] = Field(None, examples=["Homo sapiens"], description="Organism name")
+# DbXrefsCount: mapping from XrefType to count
+DbXrefsCount = Dict[str, int]
 
 
-class DbXref(BaseModel):
-    identifier: str = Field(..., examples=["SAMN123"], description="Reference ID")
-    type: DbType
-    url: Optional[str] = Field(None, examples=["/entries/biosample/SAMN123"], description="Reference URL")
+class EntryListItem(BaseModel):
+    """Summary representation of an entry in search result lists.
+
+    The actual fields vary by database type.  Common fields shared by all
+    types are declared here; type-specific fields are captured by
+    ``extra="allow"``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    identifier: str = Field(description="Entry accession identifier.")
+    type: str = Field(description="Database type (e.g. 'bioproject').")
+    url: Optional[str] = Field(default=None, description="Canonical URL.")
+    title: Optional[str] = Field(default=None, description="Entry title.")
+    description: Optional[str] = Field(
+        default=None,
+        description="Entry description.",
+    )
+    organism: Optional[Any] = Field(
+        default=None,
+        description="Organism information.",
+    )
+    status: Optional[str] = Field(default=None, description="INSDC status.")
+    accessibility: Optional[str] = Field(
+        default=None,
+        description="Access level.",
+    )
+    date_published: Optional[str] = Field(
+        default=None,
+        alias="datePublished",
+        description="Publication date (ISO 8601).",
+    )
+    date_modified: Optional[str] = Field(
+        default=None,
+        alias="dateModified",
+        description="Last modification date (ISO 8601).",
+    )
+    date_created: Optional[str] = Field(
+        default=None,
+        alias="dateCreated",
+        description="Creation date (ISO 8601).",
+    )
+    db_xrefs: Optional[List[Any]] = Field(
+        default=None,
+        alias="dbXrefs",
+        description="Cross-references (truncated by dbXrefsLimit).",
+    )
+    db_xrefs_count: Optional[DbXrefsCount] = Field(
+        default=None,
+        alias="dbXrefsCount",
+        description="Cross-reference counts per type.",
+    )
+    properties: Optional[Any] = Field(
+        default=None,
+        description="Type-specific properties.",
+    )
 
 
 class ProblemDetails(BaseModel):
-    type: str = Field("about:blank", examples=["about:blank"], description="Problem type URI")
-    title: str = Field(..., examples=["Not Found"], description="Short description of the problem")
-    status: int = Field(..., examples=[404], description="HTTP status code")
-    detail: Optional[str] = Field(None, examples=["The requested BioProject 'INVALID' was not found."], description="Detailed description")
-    instance: Optional[str] = Field(None, examples=["/entries/bioproject/INVALID"], description="Request path where the problem occurred")
+    """RFC 7807 Problem Details error response."""
+
+    type: str = Field(
+        default="about:blank",
+        description="Problem type URI.",
+    )
+    title: str = Field(description="Short human-readable summary.")
+    status: int = Field(description="HTTP status code.")
+    detail: str = Field(description="Human-readable explanation.")
+    instance: Optional[str] = Field(
+        default=None,
+        description="Request path where the error occurred.",
+    )
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="Error timestamp (ISO 8601).",
+    )
+    request_id: Optional[str] = Field(
+        default=None,
+        alias="requestId",
+        description="Request tracking ID (same as X-Request-ID header).",
+    )

@@ -1,7 +1,10 @@
-from pydantic import BaseModel, ConfigDict, Field
+"""Service info response schema."""
+from pydantic import BaseModel, Field
 
 
-class ServiceInfo(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+class ServiceInfoResponse(BaseModel):
+    """Response for GET /service-info."""
 
-    app_version: str = Field(..., alias="app-version", description="Application version")
+    name: str = Field(description="Service name.")
+    version: str = Field(description="Service version.")
+    description: str = Field(description="Service description.")

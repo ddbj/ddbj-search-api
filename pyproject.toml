@@ -25,13 +25,14 @@ Repository = "https://github.com/ddbj/ddbj-search-api.git"
 
 [project.optional-dependencies]
 tests = [
-    "isort",
-    "mypy",
-    "pylint",
-    "pytest-asyncio",
-    "pytest-cov",
-    "pytest-mock",
     "pytest",
+    "pytest-mock",
+    "pytest-cov",
+    "pytest-asyncio",
+    "pylint",
+    "mypy",
+    "isort",
+    "hypothesis",
 ]
 
 [project.scripts]
@@ -40,7 +41,7 @@ dump_openapi_spec = "ddbj_search_api.main:dump_openapi"
 
 [tool.pytest.ini_options]
 addopts = "--cov=ddbj_search_api --cov-report=html:tests/htmlcov"
-testpaths = ["tests/py_tests"]
+testpaths = ["tests/unit"]
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.mypy]
@@ -56,6 +57,7 @@ disable = [
     "C0116", # Missing function or method docstring
     "C0301", # Line too long
     "R0801", # Similar lines in 2 files
+    "R0902", # Too many instance attributes (query param classes)
     "R0903", # Too few public methods
     "R0911", # Too many return statements
     "R0912", # Too many branches
