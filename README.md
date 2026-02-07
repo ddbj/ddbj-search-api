@@ -1,6 +1,6 @@
 # ddbj-search-api
 
-[DDBJ-Search](https://ddbj.nig.ac.jp/search) の API サーバー実装。
+[DDBJ-Search](https://ddbj.nig.ac.jp/search) の RESTful API サーバー実装。
 
 ## 概要
 
@@ -15,7 +15,9 @@ DDBJ-Search API は、BioProject / BioSample / SRA / JGA データを検索・�
 
 **関連プロジェクト:**
 
+- [ddbj-search](https://github.com/ddbj/ddbj-search) - nginx reverse proxy
 - [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) - データ投入用パイプラインツール (Elasticsearch 管理)
+- [ddbj-search-front](https://github.com/ddbj/ddbj-search-front) - フロントエンド
 
 ### システム構成
 

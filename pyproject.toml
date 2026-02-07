@@ -48,10 +48,6 @@ files = ["./ddbj_search_api/**/*.py", "./tests/**/*.py"]
 follow_imports = "silent"
 strict = true
 
-[[tool.mypy.overrides]]
-module = "ddbj_search_converter.*"
-ignore_missing_imports = true
-
 [tool.pylint.messages_control]
 disable = [
     "C0103", # Invalid name (enum members use lowercase)
