@@ -1,10 +1,13 @@
 import logging
+import os
 import sys
 from argparse import ArgumentParser, Namespace
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ddbj_search_api.utils import inside_container
@@ -14,6 +17,21 @@ PKG_DIR = Path(__file__).resolve().parent
 
 BIOPROJECT_CONTEXT_URL = "https://raw.githubusercontent.com/ddbj/rdf/main/context/bioproject.jsonld"
 BIOSAMPLE_CONTEXT_URL = "https://raw.githubusercontent.com/ddbj/rdf/main/context/biosample.jsonld"
+
+
+# === Environment ===
+
+
+class Env(str, Enum):
+    DEV = "dev"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
+def get_env() -> Env:
+    """DDBJ_SEARCH_ENV 環境変数から実行環境を取得する。デフォルトは production。"""
+
+    return Env(os.environ.get("DDBJ_SEARCH_ENV", Env.PRODUCTION.value))
 
 
 # === Global Configuration ===
@@ -26,7 +44,6 @@ class AppConfig(BaseSettings):
 
     host: str = "0.0.0.0" if inside_container() else "127.0.0.1"
     port: int = 8080
-    debug: bool = False
     url_prefix: str = ""
     es_url: str = "https://ddbj.nig.ac.jp/search/resources"
 
@@ -34,6 +51,13 @@ class AppConfig(BaseSettings):
     # Used for generating JSON-LD @id URIs and other external references.
     # Example: https://ddbj.nig.ac.jp/search -> @id: https://ddbj.nig.ac.jp/search/entries/bioproject/PRJNA16
     base_url: str = "https://ddbj.nig.ac.jp/search"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def debug(self) -> bool:
+        """dev/staging は debug モード、production は非 debug モード。DDBJ_SEARCH_ENV から導出。"""
+
+        return get_env() != Env.PRODUCTION
 
 
 def parse_args(args: Optional[List[str]] = None) -> Namespace:
@@ -52,11 +76,6 @@ def parse_args(args: Optional[List[str]] = None) -> Namespace:
         type=int,
         metavar="PORT",
         help="Port number for the service. (default: 8080)"
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug mode."
     )
     parser.add_argument(
         "--url-prefix",
@@ -87,8 +106,6 @@ def get_config() -> AppConfig:
         overrides["host"] = args.host
     if args.port is not None:
         overrides["port"] = args.port
-    if args.debug:
-        overrides["debug"] = True
     if args.url_prefix is not None:
         overrides["url_prefix"] = args.url_prefix
     if args.es_url is not None:

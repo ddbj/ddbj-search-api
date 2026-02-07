@@ -3,15 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${APP_CONTAINER_NAME}
+    container_name: ddbj-search-api-${DDBJ_SEARCH_ENV}
     volumes:
       - .:/app:rw
       - app-venv:/app/.venv
     environment:
-      TZ: "Asia/Tokyo"
-      DDBJ_SEARCH_API_DEBUG: ${DDBJ_SEARCH_API_DEBUG}
-      DDBJ_SEARCH_API_HOST: ${DDBJ_SEARCH_API_HOST}
-      DDBJ_SEARCH_API_PORT: ${DDBJ_SEARCH_API_PORT}
+      TZ: ${TZ:-Asia/Tokyo}
+      DDBJ_SEARCH_ENV: ${DDBJ_SEARCH_ENV}
       DDBJ_SEARCH_API_URL_PREFIX: ${DDBJ_SEARCH_API_URL_PREFIX}
       DDBJ_SEARCH_API_ES_URL: ${DDBJ_SEARCH_API_ES_URL}
     working_dir: /app
@@ -22,7 +20,7 @@ services:
 
 networks:
   ddbj-search-network:
-    name: ddbj-search-network
+    name: ddbj-search-network-${DDBJ_SEARCH_ENV}
     external: true
 
 volumes:

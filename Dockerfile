@@ -28,7 +28,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY ddbj_search_api ./ddbj_search_api
 
-RUN uv sync --frozen --extra tests
+RUN uv sync --extra tests -P ddbj-search-converter
 
 COPY . .
 
