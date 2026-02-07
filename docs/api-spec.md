@@ -6,9 +6,23 @@ DDBJ Search API は、BioProject / BioSample / SRA / JGA データを検索・�
 
 | 項目 | 値 |
 |------|------|
-| ベース URL | `/api` (設定で変更可能) |
 | 認証 | なし (パブリック API) |
 | レスポンス形式 | JSON / JSON-LD / NDJSON |
+| エラー形式 | RFC 7807 (Problem Details) |
+
+### デプロイ構成
+
+API サーバーは設定可能な URL prefix の下にデプロイされる。
+システム全体のネットワーク構成は [ddbj-search/docs/network-architecture.md](https://github.com/ddbj/ddbj-search/blob/main/docs/network-architecture.md) を参照。
+
+| 環境 | URL prefix | ベース URL |
+|------|-----------|-----------|
+| 開発 | `/search/api` | `http://localhost:8080/search/api` |
+| ステージング | `/search/api` | `https://ddbj-staging.nig.ac.jp/search/api` |
+| 本番 | `/search/api` | `https://ddbj.nig.ac.jp/search/api` |
+
+本仕様書では、エンドポイントパスを prefix なしの相対パス (例: `/entries/`) で記述する。
+実際のリクエストでは prefix を付与する (例: `https://ddbj.nig.ac.jp/search/api/entries/`)。
 
 ### OpenAPI ドキュメント
 
@@ -40,7 +54,7 @@ DDBJ Search API は、BioProject / BioSample / SRA / JGA データを検索・�
 | Method | Path | 説明 |
 |--------|------|------|
 | GET | `/entries/{type}/{id}` | エントリー詳細取得 (JSON) |
-| GET | `/entries/{type}/{id}.json` | エントリー詳細取得 (JSON、互換性) |
+| GET | `/entries/{type}/{id}.json` | エントリー詳細取得 (JSON) |
 | GET | `/entries/{type}/{id}.jsonld` | エントリー詳細取得 (JSON-LD) |
 
 ### Bulk API (一括取得系)
@@ -68,57 +82,57 @@ DDBJ Search API は、BioProject / BioSample / SRA / JGA データを検索・�
 
 ```plaintext
 1. GET /entries/?keywords=cancer
-   -> 全タイプ横断でキーワード検索
-   -> pagination.total で総件数を確認
+   -> All types search by keyword
+   -> Check pagination.total for hit count
 
-2. GET /count/types/?keywords=cancer (オプション)
-   -> タイプ別の件数を確認
-   -> どのタイプに多くヒットしているか把握
+2. GET /count/types/?keywords=cancer (optional)
+   -> Check per-type counts
+   -> Identify which types have most hits
 
 3. GET /entries/bioproject/?keywords=cancer
-   -> BioProject に絞り込んで検索
-   -> items[] から目的のエントリーを探す
+   -> Search within BioProject
+   -> Browse items[] to find target entries
 
 4. GET /entries/bioproject/PRJNA12345
-   -> 詳細情報を取得
+   -> Retrieve entry detail
 
-5. GET /entries/bioproject/PRJNA12345.jsonld (RDF 利用時)
-   -> JSON-LD 形式で取得
+5. GET /entries/bioproject/PRJNA12345.jsonld (for RDF)
+   -> Retrieve entry detail in JSON-LD
 ```
 
 ### 一括取得のユースケース
 
 ```plaintext
-# 少数 ID の場合: GET で ID をカンマ区切り指定
+# Few IDs: Use GET with comma-separated IDs
 GET /entries/bioproject/bulk?ids=PRJNA1,PRJNA2,PRJNA3
 
-# 多数 ID の場合: POST でリクエストボディに指定
+# Many IDs: Use POST with request body
 POST /entries/bioproject/bulk
 Content-Type: application/json
-{"ids":["PRJNA1","PRJNA2",...]}  # 最大 1000 件
+{"ids":["PRJNA1","PRJNA2",...]}  # max 1000
 
-# レスポンス形式の選択
-# - format=json (デフォルト): 通常の JSON 配列形式
-# - format=ndjson: 1 行 1 エントリーの NDJSON 形式
+# Response format selection
+# - format=json (default): JSON Array
+# - format=ndjson: 1 entry per line (NDJSON)
 GET /entries/bioproject/bulk?ids=PRJNA1,PRJNA2&format=ndjson
 ```
 
 ### ページネーションの利用
 
 ```plaintext
-# 1 ページ目を取得 (デフォルト: page=1, perPage=10)
+# Page 1 (default: page=1, perPage=10)
 GET /entries/biosample/?keywords=human
 
-# レスポンスの pagination を確認
+# Response pagination
 {
   "pagination": { "page": 1, "perPage": 10, "total": 1500 },
   "items": [...]
 }
 
-# 次のページを取得
+# Next page
 GET /entries/biosample/?keywords=human&page=2
 
-# 1 ページあたりの件数を変更 (最大 100)
+# Change items per page (max 100)
 GET /entries/biosample/?keywords=human&page=1&perPage=50
 ```
 
@@ -283,8 +297,6 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/?keywords=cancer,genome"
 curl "https://ddbj.nig.ac.jp/search/api/entries/?types=bioproject,biosample&page=2&perPage=20"
 ```
 
----
-
 ### GET /entries/{type}/
 
 タイプ別検索。
@@ -356,8 +368,6 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/biosample/?organism=9606"
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16"
 ```
 
----
-
 ### GET /entries/{type}/{id}.json
 
 エントリー詳細取得 (JSON) - 互換性エンドポイント。
@@ -369,8 +379,6 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16"
 ```bash
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.json"
 ```
-
----
 
 ### GET /entries/{type}/{id}.jsonld
 
@@ -400,7 +408,7 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16.json"
 ```json
 {
   "@context": "https://raw.githubusercontent.com/ddbj/rdf/main/context/bioproject.jsonld",
-  "@id": "https://ddbj.nig.ac.jp/search/entries/bioproject/PRJNA16",
+  "@id": "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJNA16",
   "identifier": "PRJNA16",
   "type": "bioproject",
   "title": "Cancer Genome Project",
@@ -471,8 +479,6 @@ curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk?ids=PRJNA16,PRJN
 # NDJSON 形式
 curl "https://ddbj.nig.ac.jp/search/api/entries/bioproject/bulk?ids=PRJNA16,PRJNA17,PRJNA18&format=ndjson"
 ```
-
----
 
 ### POST /entries/{type}/bulk
 

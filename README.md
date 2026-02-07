@@ -15,9 +15,19 @@ DDBJ-Search API は、BioProject / BioSample / SRA / JGA データを検索・�
 
 **関連プロジェクト:**
 
-- [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) - データ投入用パイプラインツール
+- [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) - データ投入用パイプラインツール (Elasticsearch 管理)
 
-> **Note:** この API サーバーは ddbj-search-converter のサブプロジェクトとしてデプロイされる。API が参照する Elasticsearch は converter が管理しており、同一の Docker network (`ddbj-search-network`) を通じてアクセスする。
+### システム構成
+
+```
+Internal nginx (ddbj-search-network)
+  -> /search/api/* -> ddbj-search-api (this project)
+  -> /search/*     -> ddbj-search-front (frontend)
+```
+
+API サーバーは ddbj-search-converter が管理する Elasticsearch を参照する。
+同一の Docker network (`ddbj-search-network`) を通じてアクセスする。
+詳細は [ddbj-search/docs/network-architecture.md](https://github.com/ddbj/ddbj-search/blob/main/docs/network-architecture.md) を参照。
 
 ## クイックスタート
 
@@ -59,10 +69,10 @@ podman-compose up -d --build
 
 ```bash
 # BioProject データ取得 (JSON)
-curl "http://localhost:8080/search/entries/bioproject/PRJNA16"
+curl "http://localhost:8080/search/api/entries/bioproject/PRJNA16"
 
 # BioSample データ取得 (JSON-LD)
-curl "http://localhost:8080/search/entries/biosample/SAMN02953658.jsonld"
+curl "http://localhost:8080/search/api/entries/biosample/SAMN02953658.jsonld"
 ```
 
 ## 環境構築
@@ -87,7 +97,7 @@ curl "http://localhost:8080/search/entries/biosample/SAMN02953658.jsonld"
 | `DDBJ_SEARCH_API_DEBUG` | デバッグモードの有効化 (`True` / `False`) |
 | `DDBJ_SEARCH_API_HOST` | バインドするホストアドレス |
 | `DDBJ_SEARCH_API_PORT` | リッスンするポート番号 |
-| `DDBJ_SEARCH_API_URL_PREFIX` | API エンドポイントの URL プレフィックス (例: `/search`) |
+| `DDBJ_SEARCH_API_URL_PREFIX` | API エンドポイントの URL プレフィックス (例: `/search/api`) |
 | `DDBJ_SEARCH_API_ES_URL` | Elasticsearch の URL (converter の ES コンテナを指定) |
 | `DDBJ_SEARCH_API_BASE_URL` | 公開ベース URL (JSON-LD の `@id` 生成に使用) |
 | `DDBJ_SEARCH_API_COMMAND` | コンテナ起動時のコマンド (`sleep infinity` / `ddbj_search_api`) |
