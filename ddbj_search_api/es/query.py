@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 # API field name → ES field name mapping
 _SORT_FIELD_MAP: Dict[str, str] = {
     "datePublished": "datePublished",
-    "dateUpdated": "dateModified",
+    "dateModified": "dateModified",
 }
 
 _VALID_SORT_DIRECTIONS = {"asc", "desc"}
@@ -121,27 +121,31 @@ def _parse_keywords(keywords: Optional[str]) -> List[str]:
 
 def build_search_query(
     keywords: Optional[str] = None,
-    keyword_fields: Optional[str] = None,
+    keyword_fields: Optional[Union[str, List[str]]] = None,
     keyword_operator: str = "AND",
     organism: Optional[str] = None,
     date_published_from: Optional[str] = None,
     date_published_to: Optional[str] = None,
-    date_updated_from: Optional[str] = None,
-    date_updated_to: Optional[str] = None,
+    date_modified_from: Optional[str] = None,
+    date_modified_to: Optional[str] = None,
     types: Optional[str] = None,
     organization: Optional[str] = None,
     publication: Optional[str] = None,
     grant: Optional[str] = None,
     umbrella: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Build ES query dict from search parameters."""
+    """Build ES query dict from search parameters.
+
+    ``keyword_fields`` accepts either a pre-validated ``List[str]`` or a
+    raw comma-separated string (which will be validated here).
+    """
     keyword_list = _parse_keywords(keywords)
     filters = _build_filter_clauses(
         organism=organism,
         date_published_from=date_published_from,
         date_published_to=date_published_to,
-        date_updated_from=date_updated_from,
-        date_updated_to=date_updated_to,
+        date_modified_from=date_modified_from,
+        date_modified_to=date_modified_to,
         types=types,
         organization=organization,
         publication=publication,
@@ -152,7 +156,10 @@ def build_search_query(
     if not keyword_list and not filters:
         return {"match_all": {}}
 
-    fields = validate_keyword_fields(keyword_fields)
+    if isinstance(keyword_fields, list):
+        fields = keyword_fields
+    else:
+        fields = validate_keyword_fields(keyword_fields)
     bool_query: Dict[str, Any] = {}
 
     if keyword_list:
@@ -176,8 +183,8 @@ def _build_filter_clauses(
     organism: Optional[str] = None,
     date_published_from: Optional[str] = None,
     date_published_to: Optional[str] = None,
-    date_updated_from: Optional[str] = None,
-    date_updated_to: Optional[str] = None,
+    date_modified_from: Optional[str] = None,
+    date_modified_to: Optional[str] = None,
     types: Optional[str] = None,
     organization: Optional[str] = None,
     publication: Optional[str] = None,
@@ -199,12 +206,12 @@ def _build_filter_clauses(
     if date_pub_range:
         clauses.append({"range": {"datePublished": date_pub_range}})
 
-    # dateUpdated → dateModified in ES
+    # dateModified range
     date_mod_range: Dict[str, str] = {}
-    if date_updated_from:
-        date_mod_range["gte"] = date_updated_from
-    if date_updated_to:
-        date_mod_range["lte"] = date_updated_to
+    if date_modified_from:
+        date_mod_range["gte"] = date_modified_from
+    if date_modified_to:
+        date_mod_range["lte"] = date_modified_to
     if date_mod_range:
         clauses.append({"range": {"dateModified": date_mod_range}})
 

@@ -94,17 +94,17 @@ class SearchFilterQuery:
             alias="datePublishedTo",
             description="Publication date range end (YYYY-MM-DD).",
         ),
-        date_updated_from: Optional[str] = Query(
+        date_modified_from: Optional[str] = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
-            alias="dateUpdatedFrom",
-            description="Update date range start (YYYY-MM-DD).",
+            alias="dateModifiedFrom",
+            description="Modification date range start (YYYY-MM-DD).",
         ),
-        date_updated_to: Optional[str] = Query(
+        date_modified_to: Optional[str] = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
-            alias="dateUpdatedTo",
-            description="Update date range end (YYYY-MM-DD).",
+            alias="dateModifiedTo",
+            description="Modification date range end (YYYY-MM-DD).",
         ),
     ):
         self.keywords = keywords
@@ -113,8 +113,8 @@ class SearchFilterQuery:
         self.organism = organism
         self.date_published_from = date_published_from
         self.date_published_to = date_published_to
-        self.date_updated_from = date_updated_from
-        self.date_updated_to = date_updated_to
+        self.date_modified_from = date_modified_from
+        self.date_modified_to = date_modified_to
 
 
 class ResponseControlQuery:
@@ -129,7 +129,7 @@ class ResponseControlQuery:
             default=None,
             description=(
                 "Sort order as '{field}:{direction}'. "
-                "Fields: datePublished, dateUpdated. "
+                "Fields: datePublished, dateModified. "
                 "Direction: asc, desc. "
                 "Default: relevance (search score)."
             ),
@@ -161,10 +161,14 @@ class ResponseControlQuery:
         self.include_facets = include_facets
 
 
-# === Endpoint-specific query classes ===
+# === Shared endpoint query classes ===
 
-class EntriesTypesQuery:
-    """Extra parameter for cross-type search (GET /entries/)."""
+
+class TypesFilterQuery:
+    """Filter by database types (comma-separated).
+
+    Used by: EntriesQuery, FacetsQuery.
+    """
 
     def __init__(
         self,
@@ -174,6 +178,31 @@ class EntriesTypesQuery:
         ),
     ):
         self.types = types
+
+
+class DbXrefsLimitQuery:
+    """dbXrefs truncation limit.
+
+    Used by: EntriesQuery, EntriesTypeQuery.
+    """
+
+    def __init__(
+        self,
+        db_xrefs_limit: int = Query(
+            default=100,
+            ge=0,
+            le=1000,
+            alias="dbXrefsLimit",
+            description=(
+                "Maximum number of dbXrefs to return (0-1000). "
+                "Use 0 to omit dbXrefs but still get dbXrefsCount."
+            ),
+        ),
+    ):
+        self.db_xrefs_limit = db_xrefs_limit
+
+
+# === Endpoint-specific query classes ===
 
 
 class BioProjectExtraQuery:

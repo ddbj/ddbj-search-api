@@ -22,6 +22,23 @@ from ddbj_search_api.schemas.queries import BulkFormat, BulkQuery
 router = APIRouter(tags=["Bulk"])
 
 
+# --- Helpers ---
+
+
+async def _read_source_bytes(response: httpx.Response) -> bytes:
+    """Read all bytes from an ES _source stream and strip trailing whitespace.
+
+    ES ``_source`` responses end with ``\\n``; stripping it prevents
+    malformed JSON in array mode and empty lines in NDJSON mode.
+    """
+    chunks: List[bytes] = []
+    async for chunk in response.aiter_bytes():
+        chunks.append(chunk)
+    await response.aclose()
+
+    return b"".join(chunks).rstrip()
+
+
 # --- Streaming generators ---
 
 
@@ -43,9 +60,7 @@ async def _generate_bulk_json(
         if not first:
             yield b","
         first = False
-        async for chunk in response.aiter_bytes():
-            yield chunk
-        await response.aclose()
+        yield await _read_source_bytes(response)
 
     yield b'],"notFound":'
     yield json.dumps(not_found).encode()
@@ -62,10 +77,8 @@ async def _generate_bulk_ndjson(
         response = await es_get_source_stream(client, index, id_)
         if response is None:
             continue
-        async for chunk in response.aiter_bytes():
-            yield chunk
+        yield await _read_source_bytes(response)
         yield b"\n"
-        await response.aclose()
 
 
 # --- Endpoint ---

@@ -22,6 +22,82 @@ from ddbj_search_api.schemas.entries import (
 )
 from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 
+# Minimal required data for each converter type.
+
+_COMMON_OPTIONAL = {
+    "name": None,
+    "organism": None,
+    "title": None,
+    "description": None,
+    "dateCreated": None,
+    "dateModified": None,
+    "datePublished": None,
+}
+
+_BIOPROJECT_BASE = {
+    "identifier": "PRJDB1",
+    "properties": {},
+    "distribution": [],
+    "isPartOf": "BioProject",
+    "type": "bioproject",
+    "objectType": "BioProject",
+    "url": "https://example.com/PRJDB1",
+    "organization": [],
+    "publication": [],
+    "grant": [],
+    "externalLink": [],
+    "dbXrefs": [],
+    "sameAs": [],
+    "status": "live",
+    "accessibility": "public-access",
+    **_COMMON_OPTIONAL,
+}
+
+_BIOSAMPLE_BASE = {
+    "identifier": "SAMD00000001",
+    "properties": {},
+    "distribution": [],
+    "isPartOf": "BioSample",
+    "type": "biosample",
+    "url": "https://example.com/SAMD00000001",
+    "attributes": [],
+    "model": [],
+    "package": None,
+    "dbXrefs": [],
+    "sameAs": [],
+    "status": "live",
+    "accessibility": "public-access",
+    **_COMMON_OPTIONAL,
+}
+
+_SRA_BASE = {
+    "identifier": "DRR000001",
+    "properties": {},
+    "distribution": [],
+    "isPartOf": "sra",
+    "type": "sra-run",
+    "url": "https://example.com/DRR000001",
+    "dbXrefs": [],
+    "sameAs": [],
+    "status": "live",
+    "accessibility": "public-access",
+    **_COMMON_OPTIONAL,
+}
+
+_JGA_BASE = {
+    "identifier": "JGAS000001",
+    "properties": {},
+    "distribution": [],
+    "isPartOf": "jga",
+    "type": "jga-study",
+    "url": "https://example.com/JGAS000001",
+    "dbXrefs": [],
+    "sameAs": [],
+    "status": "live",
+    "accessibility": "controlled-access",
+    **_COMMON_OPTIONAL,
+}
+
 
 # === EntryListResponse ===
 
@@ -80,82 +156,82 @@ class TestEntryListResponse:
 
 
 class TestDetailResponse:
-    """Detail responses: truncated dbXrefs + dbXrefsCount."""
+    """Detail responses: converter type + dbXrefsCount."""
 
-    DETAIL_CLASSES = [
-        BioProjectDetailResponse,
-        BioSampleDetailResponse,
-        SraDetailResponse,
-        JgaDetailResponse,
+    DETAIL_CASES = [
+        (BioProjectDetailResponse, _BIOPROJECT_BASE),
+        (BioSampleDetailResponse, _BIOSAMPLE_BASE),
+        (SraDetailResponse, _SRA_BASE),
+        (JgaDetailResponse, _JGA_BASE),
     ]
 
     @pytest.mark.parametrize(
-        "cls",
-        DETAIL_CLASSES,
+        "cls,base",
+        DETAIL_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_basic_construction(self, cls: type) -> None:
-        obj = cls(
-            identifier="TEST001",
-            type="bioproject",
-            dbXrefs=[{"identifier": "BS1", "type": "biosample", "url": "http://x"}],
-            dbXrefsCount={"biosample": 10},
-        )
-        assert obj.identifier == "TEST001"
+    def test_basic_construction(self, cls: type, base: dict) -> None:
+        obj = cls(**base, dbXrefsCount={"biosample": 10})
+        assert obj.identifier == base["identifier"]
         assert obj.db_xrefs_count == {"biosample": 10}
 
     @pytest.mark.parametrize(
-        "cls",
-        DETAIL_CLASSES,
+        "cls,parent",
+        [
+            (BioProjectDetailResponse, BioProject),
+            (BioSampleDetailResponse, BioSample),
+            (SraDetailResponse, SRA),
+            (JgaDetailResponse, JGA),
+        ],
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_extra_fields_allowed(self, cls: type) -> None:
-        obj = cls(
-            identifier="TEST001",
-            type="bioproject",
-            dbXrefs=[],
-            dbXrefsCount={},
-            title="Extra field test",
-            organism={"identifier": "9606", "name": "Homo sapiens"},
-        )
-        assert obj.model_extra is not None
-        assert "title" in obj.model_extra
+    def test_inherits_from_converter_type(
+        self, cls: type, parent: type,
+    ) -> None:
+        assert issubclass(cls, parent)
 
     @pytest.mark.parametrize(
-        "cls",
-        DETAIL_CLASSES,
+        "cls,base",
+        DETAIL_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_alias_serialization(self, cls: type) -> None:
-        obj = cls(
-            identifier="TEST001",
-            type="bioproject",
-            dbXrefs=[],
-            dbXrefsCount={"biosample": 5},
-        )
+    def test_converter_fields_are_real_fields(
+        self, cls: type, base: dict,
+    ) -> None:
+        data = {**base, "title": "Test Title", "dbXrefsCount": {}}
+        obj = cls(**data)
+        assert obj.title == "Test Title"
+        assert "title" not in (obj.model_extra or {})
+
+    @pytest.mark.parametrize(
+        "cls,base",
+        DETAIL_CASES,
+        ids=["BioProject", "BioSample", "SRA", "JGA"],
+    )
+    def test_alias_serialization(self, cls: type, base: dict) -> None:
+        obj = cls(**base, dbXrefsCount={"biosample": 5})
         data = obj.model_dump(by_alias=True)
         assert "dbXrefs" in data
         assert "dbXrefsCount" in data
-        assert "db_xrefs" not in data
         assert "db_xrefs_count" not in data
 
     @pytest.mark.parametrize(
-        "cls",
-        DETAIL_CLASSES,
+        "cls,base",
+        DETAIL_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_missing_required_field_raises_error(self, cls: type) -> None:
+    def test_missing_db_xrefs_count_raises_error(
+        self, cls: type, base: dict,
+    ) -> None:
         with pytest.raises(ValidationError):
-            cls(identifier="TEST001", type="bioproject")  # type: ignore[call-arg]
+            cls(**base)  # type: ignore[call-arg]
 
     def test_empty_db_xrefs_with_count(self) -> None:
         obj = BioProjectDetailResponse(
-            identifier="PRJDB1",
-            type="bioproject",
-            dbXrefs=[],
+            **_BIOPROJECT_BASE,
             dbXrefsCount={"biosample": 1000},
         )
-        assert obj.db_xrefs == []
+        assert obj.dbXrefs == []
         assert obj.db_xrefs_count == {"biosample": 1000}
 
 
@@ -182,44 +258,42 @@ class TestEntryResponse:
 
 
 class TestJsonLdResponse:
-    """JSON-LD responses: ES document + @context, @id."""
+    """JSON-LD responses: converter type + @context, @id."""
 
-    JSON_LD_CLASSES = [
-        BioProjectEntryJsonLdResponse,
-        BioSampleEntryJsonLdResponse,
-        SraEntryJsonLdResponse,
-        JgaEntryJsonLdResponse,
+    JSON_LD_CASES = [
+        (BioProjectEntryJsonLdResponse, _BIOPROJECT_BASE),
+        (BioSampleEntryJsonLdResponse, _BIOSAMPLE_BASE),
+        (SraEntryJsonLdResponse, _SRA_BASE),
+        (JgaEntryJsonLdResponse, _JGA_BASE),
     ]
 
     @pytest.mark.parametrize(
-        "cls",
-        JSON_LD_CLASSES,
+        "cls,base",
+        JSON_LD_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_basic_construction(self, cls: type) -> None:
+    def test_basic_construction(self, cls: type, base: dict) -> None:
         obj = cls(
             **{
                 "@context": "https://schema.org",
-                "@id": "https://example.com/PRJDB1",
-                "identifier": "PRJDB1",
-                "type": "bioproject",
+                "@id": "https://example.com/entry1",
+                **base,
             }
         )
         assert obj.at_context == "https://schema.org"
-        assert obj.at_id == "https://example.com/PRJDB1"
+        assert obj.at_id == "https://example.com/entry1"
 
     @pytest.mark.parametrize(
-        "cls",
-        JSON_LD_CLASSES,
+        "cls,base",
+        JSON_LD_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_alias_serialization(self, cls: type) -> None:
+    def test_alias_serialization(self, cls: type, base: dict) -> None:
         obj = cls(
             **{
                 "@context": "https://schema.org",
-                "@id": "https://example.com/ID1",
-                "identifier": "ID1",
-                "type": "bioproject",
+                "@id": "https://example.com/entry1",
+                **base,
             }
         )
         data = obj.model_dump(by_alias=True)
@@ -229,37 +303,53 @@ class TestJsonLdResponse:
         assert "at_id" not in data
 
     @pytest.mark.parametrize(
-        "cls",
-        JSON_LD_CLASSES,
+        "cls,base",
+        JSON_LD_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_extra_fields_allowed(self, cls: type) -> None:
-        obj = cls(
-            **{
-                "@context": "https://schema.org",
-                "@id": "https://example.com/ID1",
-                "identifier": "ID1",
-                "type": "bioproject",
-                "title": "Test entry",
-            }
-        )
-        assert obj.model_extra is not None
-        assert "title" in obj.model_extra
+    def test_converter_fields_are_real_fields(
+        self, cls: type, base: dict,
+    ) -> None:
+        data = {
+            "@context": "https://schema.org",
+            "@id": "https://example.com/entry1",
+            **base,
+            "title": "Test entry",
+        }
+        obj = cls(**data)
+        assert obj.title == "Test entry"
+        assert "title" not in (obj.model_extra or {})
 
     @pytest.mark.parametrize(
-        "cls",
-        JSON_LD_CLASSES,
+        "cls,base",
+        JSON_LD_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_missing_context_raises_error(self, cls: type) -> None:
+    def test_missing_context_raises_error(
+        self, cls: type, base: dict,
+    ) -> None:
         with pytest.raises(ValidationError):
             cls(
                 **{
-                    "@id": "https://example.com/ID1",
-                    "identifier": "ID1",
-                    "type": "bioproject",
+                    "@id": "https://example.com/entry1",
+                    **base,
                 }
             )
+
+    @pytest.mark.parametrize(
+        "cls,parent",
+        [
+            (BioProjectEntryJsonLdResponse, BioProject),
+            (BioSampleEntryJsonLdResponse, BioSample),
+            (SraEntryJsonLdResponse, SRA),
+            (JgaEntryJsonLdResponse, JGA),
+        ],
+        ids=["BioProject", "BioSample", "SRA", "JGA"],
+    )
+    def test_inherits_from_converter_type(
+        self, cls: type, parent: type,
+    ) -> None:
+        assert issubclass(cls, parent)
 
 
 # === DB_TYPE_TO_ENTRY_MODEL mapping ===

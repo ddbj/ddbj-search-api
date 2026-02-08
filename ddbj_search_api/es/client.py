@@ -9,6 +9,21 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 
+async def es_ping(client: httpx.AsyncClient) -> bool:
+    """Check if Elasticsearch is reachable.
+
+    Returns ``True`` if ES responds to ``GET /``, ``False`` otherwise.
+    """
+    try:
+        response = await client.get("/")
+        response.raise_for_status()
+
+        return True
+    except (httpx.HTTPError, Exception):
+
+        return False
+
+
 async def es_search(
     client: httpx.AsyncClient,
     index: str,
@@ -60,6 +75,68 @@ async def es_mget(
     return response.json()  # type: ignore[no-any-return]
 
 
+_TRUNCATE_SCRIPT = (
+    "def xrefs = params._source.containsKey('dbXrefs')"
+    " ? params._source.dbXrefs : [];"
+    " if (xrefs == null) { return []; }"
+    " int limit = params.limit;"
+    " if (limit >= xrefs.size()) { return xrefs; }"
+    " List result = new ArrayList();"
+    " for (int i = 0; i < limit; i++)"
+    " { result.add(xrefs.get(i)); }"
+    " return result;"
+)
+
+_COUNT_SCRIPT = (
+    "def xrefs = params._source.containsKey('dbXrefs')"
+    " ? params._source.dbXrefs : [];"
+    " if (xrefs == null) { return [:]; }"
+    " Map counts = new HashMap();"
+    " for (def x : xrefs) {"
+    "   String t = x.containsKey('type')"
+    "     ? x['type'] : 'unknown';"
+    "   counts.put(t,"
+    "     counts.containsKey(t)"
+    "       ? counts.get(t) + 1 : 1);"
+    " }"
+    " return counts;"
+)
+
+
+def build_db_xrefs_script_fields(limit: int) -> Dict[str, Any]:
+    """Build ES script_fields for dbXrefs truncation and counting."""
+
+    return {
+        "dbXrefsTruncated": {
+            "script": {
+                "lang": "painless",
+                "source": _TRUNCATE_SCRIPT,
+                "params": {"limit": limit},
+            },
+        },
+        "dbXrefsCountByType": {
+            "script": {
+                "lang": "painless",
+                "source": _COUNT_SCRIPT,
+            },
+        },
+    }
+
+
+def parse_script_fields_hit(hit: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge script_fields results into a hit's _source.
+
+    Extracts ``dbXrefsTruncated`` → ``dbXrefs`` and
+    ``dbXrefsCountByType`` → ``dbXrefsCount`` from ES ``fields``.
+    """
+    source: Dict[str, Any] = dict(hit["_source"])
+    fields = hit.get("fields", {})
+    source["dbXrefs"] = fields.get("dbXrefsTruncated", [[]])[0]
+    source["dbXrefsCount"] = fields.get("dbXrefsCountByType", [{}])[0]
+
+    return source
+
+
 async def es_search_with_script_fields(
     client: httpx.AsyncClient,
     index: str,
@@ -79,44 +156,7 @@ async def es_search_with_script_fields(
         "query": {"term": {"_id": id_}},
         "size": 1,
         "_source": {"excludes": ["dbXrefs"]},
-        "script_fields": {
-            "dbXrefsTruncated": {
-                "script": {
-                    "lang": "painless",
-                    "source": (
-                        "def xrefs = doc.containsKey('dbXrefs')"
-                        " ? params._source.dbXrefs : [];"
-                        " if (xrefs == null) { return []; }"
-                        " int limit = params.limit;"
-                        " if (limit >= xrefs.size()) { return xrefs; }"
-                        " List result = new ArrayList();"
-                        " for (int i = 0; i < limit; i++)"
-                        " { result.add(xrefs.get(i)); }"
-                        " return result;"
-                    ),
-                    "params": {"limit": db_xrefs_limit},
-                },
-            },
-            "dbXrefsCountByType": {
-                "script": {
-                    "lang": "painless",
-                    "source": (
-                        "def xrefs = doc.containsKey('dbXrefs')"
-                        " ? params._source.dbXrefs : [];"
-                        " if (xrefs == null) { return [:]; }"
-                        " Map counts = new HashMap();"
-                        " for (def x : xrefs) {"
-                        "   String t = x.containsKey('type')"
-                        "     ? x['type'] : 'unknown';"
-                        "   counts.put(t,"
-                        "     counts.containsKey(t)"
-                        "       ? counts.get(t) + 1 : 1);"
-                        " }"
-                        " return counts;"
-                    ),
-                },
-            },
-        },
+        "script_fields": build_db_xrefs_script_fields(db_xrefs_limit),
     }
     response = await client.post(f"/{index}/_search", json=body)
     response.raise_for_status()
@@ -126,13 +166,7 @@ async def es_search_with_script_fields(
     if not hits:
         return None
 
-    hit = hits[0]
-    source: Dict[str, Any] = hit["_source"]
-    fields = hit.get("fields", {})
-    source["dbXrefs"] = fields.get("dbXrefsTruncated", [[]])[0]
-    source["dbXrefsCount"] = fields.get("dbXrefsCountByType", [{}])[0]
-
-    return source
+    return parse_script_fields_hit(hits[0])
 
 
 async def es_get_source_stream(

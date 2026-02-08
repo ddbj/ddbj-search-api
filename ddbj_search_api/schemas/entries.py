@@ -3,7 +3,7 @@
 Covers search results (EntryListResponse) and entry detail responses
 (*DetailResponse, *EntryResponse, *EntryJsonLdResponse).
 """
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,50 +32,35 @@ class EntryListResponse(BaseModel):
 # === Detail responses (frontend-oriented: truncated dbXrefs + dbXrefsCount) ===
 
 
-class BioProjectDetailResponse(BaseModel):
-    """BioProject entry detail with truncated dbXrefs and dbXrefsCount.
+class BioProjectDetailResponse(BioProject):
+    """BioProject entry detail with truncated dbXrefs and dbXrefsCount."""
 
-    All BioProject fields plus ``dbXrefsCount`` for frontend display.
-    """
+    model_config = ConfigDict(populate_by_name=True)
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-    identifier: str
-    type: str
-    db_xrefs: List[Any] = Field(alias="dbXrefs")
     db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
 
 
-class BioSampleDetailResponse(BaseModel):
+class BioSampleDetailResponse(BioSample):
     """BioSample entry detail with truncated dbXrefs and dbXrefsCount."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
-    identifier: str
-    type: str
-    db_xrefs: List[Any] = Field(alias="dbXrefs")
     db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
 
 
-class SraDetailResponse(BaseModel):
+class SraDetailResponse(SRA):
     """SRA entry detail with truncated dbXrefs and dbXrefsCount."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
-    identifier: str
-    type: str
-    db_xrefs: List[Any] = Field(alias="dbXrefs")
     db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
 
 
-class JgaDetailResponse(BaseModel):
+class JgaDetailResponse(JGA):
     """JGA entry detail with truncated dbXrefs and dbXrefsCount."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
-    identifier: str
-    type: str
-    db_xrefs: List[Any] = Field(alias="dbXrefs")
     db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
 
 
@@ -98,48 +83,40 @@ EntryResponse = Union[BioProject, BioSample, SRA, JGA]
 # === JSON-LD responses ===
 
 
-class BioProjectEntryJsonLdResponse(BaseModel):
+class BioProjectEntryJsonLdResponse(BioProject):
     """BioProject entry in JSON-LD format."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
     at_context: str = Field(alias="@context")
     at_id: str = Field(alias="@id")
-    identifier: str
-    type: str
 
 
-class BioSampleEntryJsonLdResponse(BaseModel):
+class BioSampleEntryJsonLdResponse(BioSample):
     """BioSample entry in JSON-LD format."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
     at_context: str = Field(alias="@context")
     at_id: str = Field(alias="@id")
-    identifier: str
-    type: str
 
 
-class SraEntryJsonLdResponse(BaseModel):
+class SraEntryJsonLdResponse(SRA):
     """SRA entry in JSON-LD format."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
     at_context: str = Field(alias="@context")
     at_id: str = Field(alias="@id")
-    identifier: str
-    type: str
 
 
-class JgaEntryJsonLdResponse(BaseModel):
+class JgaEntryJsonLdResponse(JGA):
     """JGA entry in JSON-LD format."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True)
 
     at_context: str = Field(alias="@context")
     at_id: str = Field(alias="@id")
-    identifier: str
-    type: str
 
 
 EntryJsonLdResponse = Union[

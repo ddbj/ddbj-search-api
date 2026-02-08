@@ -89,7 +89,10 @@ async def get_entry_json(
     """Get raw ES document (streaming)."""
     response = await es_get_source_stream(client, type.value, id)
     if response is None:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {type.value} '{id}' was not found.",
+        )
 
     return StreamingResponse(
         response.aiter_bytes(),
@@ -119,7 +122,10 @@ async def get_entry_jsonld(
     """Get entry as JSON-LD (streaming with @context/@id injection)."""
     response = await es_get_source_stream(client, type.value, id)
     if response is None:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {type.value} '{id}' was not found.",
+        )
 
     config = get_config()
     context_url = JSONLD_CONTEXT_URLS[type.value]
@@ -154,7 +160,10 @@ async def get_dbxrefs_full(
         client, type.value, id, source_includes="dbXrefs",
     )
     if response is None:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {type.value} '{id}' was not found.",
+        )
 
     return StreamingResponse(
         response.aiter_bytes(),
@@ -191,6 +200,9 @@ async def get_entry_detail(
         client, type.value, id, query.db_xrefs_limit,
     )
     if source is None:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {type.value} '{id}' was not found.",
+        )
 
     return JSONResponse(content=source)

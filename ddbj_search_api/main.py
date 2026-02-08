@@ -1,4 +1,5 @@
 """FastAPI application factory and entry points."""
+import http
 import json
 import logging
 import uuid
@@ -41,6 +42,26 @@ async def request_id_middleware(request: Request, call_next):  # type: ignore[no
 # === Error handlers ===
 
 
+_STATUS_TITLES = {
+    400: "Bad Request",
+    404: "Not Found",
+    422: "Unprocessable Entity",
+    500: "Internal Server Error",
+    501: "Not Implemented",
+}
+
+
+def _http_status_title(status_code: int) -> str:
+    """Derive a human-readable title from an HTTP status code."""
+    title = _STATUS_TITLES.get(status_code)
+    if title is not None:
+        return title
+    try:
+        return http.HTTPStatus(status_code).phrase
+    except ValueError:
+        return "Error"
+
+
 def _problem_json(
     status: int,
     title: str,
@@ -76,7 +97,7 @@ def setup_error_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return _problem_json(
             status=exc.status_code,
-            title=exc.detail if isinstance(exc.detail, str) else "Error",
+            title=_http_status_title(exc.status_code),
             detail=str(exc.detail),
             request=request,
         )

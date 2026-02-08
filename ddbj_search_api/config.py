@@ -1,7 +1,6 @@
 """Application configuration via pydantic-settings."""
 import argparse
 from enum import Enum
-from functools import lru_cache
 from typing import Dict, Optional
 
 from pydantic import computed_field
@@ -85,22 +84,30 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-@lru_cache(maxsize=1)
+_config: Optional[AppConfig] = None
+
+
 def get_config(
     host: Optional[str] = None,
     port: Optional[int] = None,
 ) -> AppConfig:
-    """Get the singleton application config.
+    """Get the application config, creating it on first call.
 
     CLI argument overrides are applied on top of env-var settings.
     """
+    global _config  # pylint: disable=global-statement
+    if _config is not None:
+        return _config
+
     config = AppConfig()
     if host is not None:
         object.__setattr__(config, "host", host)
     if port is not None:
         object.__setattr__(config, "port", port)
 
-    return config
+    _config = config
+
+    return _config
 
 
 def logging_config(debug: bool) -> Dict[str, object]:

@@ -88,13 +88,12 @@ class TestBuildSort:
         result = build_sort("datePublished:desc")
         assert result == [{"datePublished": {"order": "desc"}}]
 
-    def test_date_updated_maps_to_date_modified_asc(self) -> None:
-        """API 'dateUpdated' maps to ES field 'dateModified'."""
-        result = build_sort("dateUpdated:asc")
+    def test_date_modified_asc(self) -> None:
+        result = build_sort("dateModified:asc")
         assert result == [{"dateModified": {"order": "asc"}}]
 
-    def test_date_updated_maps_to_date_modified_desc(self) -> None:
-        result = build_sort("dateUpdated:desc")
+    def test_date_modified_desc(self) -> None:
+        result = build_sort("dateModified:desc")
         assert result == [{"dateModified": {"order": "desc"}}]
 
 
@@ -339,16 +338,16 @@ class TestBuildSearchQueryFilters:
         assert date_filter["range"]["datePublished"]["gte"] == "2024-01-01"
         assert date_filter["range"]["datePublished"]["lte"] == "2024-12-31"
 
-    # --- Date updated (maps to dateModified in ES) ---
+    # --- Date modified ---
 
-    def test_date_updated_from_maps_to_date_modified(self) -> None:
-        result = build_search_query(date_updated_from="2024-06-01")
+    def test_date_modified_from(self) -> None:
+        result = build_search_query(date_modified_from="2024-06-01")
         filters = result["bool"]["filter"]
         date_filter = _find_filter(filters, "range", "dateModified")
         assert date_filter["range"]["dateModified"]["gte"] == "2024-06-01"
 
-    def test_date_updated_to_maps_to_date_modified(self) -> None:
-        result = build_search_query(date_updated_to="2024-06-30")
+    def test_date_modified_to(self) -> None:
+        result = build_search_query(date_modified_to="2024-06-30")
         filters = result["bool"]["filter"]
         date_filter = _find_filter(filters, "range", "dateModified")
         assert date_filter["range"]["dateModified"]["lte"] == "2024-06-30"

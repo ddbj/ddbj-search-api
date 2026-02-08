@@ -218,13 +218,13 @@ ISO 8601 形式 (`YYYY-MM-DD`) を使用する。範囲指定は `From` / `To` �
 | `keywordOperator` | string | `AND` | キーワードの結合条件。`AND` (すべて一致) / `OR` (いずれか一致) |
 | `organism` | string | — | NCBI Taxonomy ID (例: `9606`) |
 | `datePublishedFrom` / `datePublishedTo` | string | — | 公開日の範囲 (ISO 8601: `YYYY-MM-DD`) |
-| `dateUpdatedFrom` / `dateUpdatedTo` | string | — | 更新日の範囲 (ISO 8601: `YYYY-MM-DD`) |
+| `dateModifiedFrom` / `dateModifiedTo` | string | — | 更新日の範囲 (ISO 8601: `YYYY-MM-DD`) |
 
 **レスポンス制御** (`ResponseControlQuery`):
 
 | パラメータ | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
-| `sort` | string | — | ソート順。形式: `{field}:{direction}`。ソート可能フィールド: `datePublished`, `dateUpdated`。direction: `asc` / `desc`。未指定時は relevance (検索スコア) 順 |
+| `sort` | string | — | ソート順。形式: `{field}:{direction}`。ソート可能フィールド: `datePublished`, `dateModified`。direction: `asc` / `desc`。未指定時は relevance (検索スコア) 順 |
 | `fields` | string | — | レスポンスに含めるフィールドを限定 (カンマ区切り)。ES ドキュメントのトップレベルフィールド名を指定 (例: `identifier,organism,datePublished`) |
 | `includeProperties` | boolean | `true` | `true` で `properties` フィールドを含める |
 | `includeFacets` | boolean | `false` | `true` で検索結果にファセット集計を含める。`GET /facets` と異なり検索結果リストと同時に取得できる |
@@ -350,7 +350,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 | 型名 | フィールド |
 |------|----------|
 | `PaginationQuery` | `page`, `perPage` |
-| `SearchFilterQuery` | `keywords`, `keywordFields`, `keywordOperator`, `organism`, `datePublishedFrom`, `datePublishedTo`, `dateUpdatedFrom`, `dateUpdatedTo` |
+| `SearchFilterQuery` | `keywords`, `keywordFields`, `keywordOperator`, `organism`, `datePublishedFrom`, `datePublishedTo`, `dateModifiedFrom`, `dateModifiedTo` |
 | `ResponseControlQuery` | `sort`, `fields`, `includeProperties`, `includeFacets` |
 
 #### Endpoint Query (9 型)
@@ -392,7 +392,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 | `DbXrefsFullResponse` | dbXrefs 全件取得 |
 | `BulkResponse` | 一括取得レスポンス (entries: `list[*EntryResponse]` + notFound: `list[string]`) |
 | `FacetsResponse` | ファセット集計 |
-| `ServiceInfoResponse` | サービス情報 |
+| `ServiceInfoResponse` | サービス情報 (name, version, description, elasticsearch) |
 
 #### ドメインモデル (5 型)
 

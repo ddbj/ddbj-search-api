@@ -17,12 +17,13 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.schemas.queries import (BioProjectExtraQuery,
                                              BulkFormat, BulkQuery,
-                                             EntriesTypesQuery,
+                                             DbXrefsLimitQuery,
                                              EntryDetailQuery,
                                              KeywordOperator,
                                              PaginationQuery,
                                              ResponseControlQuery,
-                                             SearchFilterQuery)
+                                             SearchFilterQuery,
+                                             TypesFilterQuery)
 
 
 # === Enums ===
@@ -106,8 +107,8 @@ class TestSearchFilterQuery:
             organism=None,
             date_published_from=None,
             date_published_to=None,
-            date_updated_from=None,
-            date_updated_to=None,
+            date_modified_from=None,
+            date_modified_to=None,
         )
         assert q.keywords is None
         assert q.keyword_fields is None
@@ -122,8 +123,8 @@ class TestSearchFilterQuery:
             organism="9606",
             date_published_from="2024-01-01",
             date_published_to="2024-12-31",
-            date_updated_from="2024-06-01",
-            date_updated_to="2024-06-30",
+            date_modified_from="2024-06-01",
+            date_modified_to="2024-06-30",
         )
         assert q.keywords == "cancer,human"
         assert q.keyword_fields == "title,description"
@@ -131,8 +132,8 @@ class TestSearchFilterQuery:
         assert q.organism == "9606"
         assert q.date_published_from == "2024-01-01"
         assert q.date_published_to == "2024-12-31"
-        assert q.date_updated_from == "2024-06-01"
-        assert q.date_updated_to == "2024-06-30"
+        assert q.date_modified_from == "2024-06-01"
+        assert q.date_modified_to == "2024-06-30"
 
 
 # === ResponseControlQuery ===
@@ -166,19 +167,42 @@ class TestResponseControlQuery:
         assert q.include_facets is True
 
 
-# === EntriesTypesQuery ===
+# === TypesFilterQuery ===
 
 
-class TestEntriesTypesQuery:
-    """EntriesTypesQuery: types parameter."""
+class TestTypesFilterQuery:
+    """TypesFilterQuery: types parameter."""
 
     def test_stores_none(self) -> None:
-        q = EntriesTypesQuery(types=None)
+        q = TypesFilterQuery(types=None)
         assert q.types is None
 
     def test_stores_value(self) -> None:
-        q = EntriesTypesQuery(types="bioproject,biosample")
+        q = TypesFilterQuery(types="bioproject,biosample")
         assert q.types == "bioproject,biosample"
+
+
+# === DbXrefsLimitQuery ===
+
+
+class TestDbXrefsLimitQuery:
+    """DbXrefsLimitQuery: dbXrefsLimit parameter."""
+
+    def test_stores_default_value(self) -> None:
+        q = DbXrefsLimitQuery(db_xrefs_limit=100)
+        assert q.db_xrefs_limit == 100
+
+    def test_stores_custom_value(self) -> None:
+        q = DbXrefsLimitQuery(db_xrefs_limit=500)
+        assert q.db_xrefs_limit == 500
+
+    def test_stores_zero(self) -> None:
+        q = DbXrefsLimitQuery(db_xrefs_limit=0)
+        assert q.db_xrefs_limit == 0
+
+    def test_stores_max(self) -> None:
+        q = DbXrefsLimitQuery(db_xrefs_limit=1000)
+        assert q.db_xrefs_limit == 1000
 
 
 # === BioProjectExtraQuery ===

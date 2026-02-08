@@ -432,11 +432,11 @@ class TestEntriesSortValidation:
         )
         assert resp.status_code == 200
 
-    def test_valid_sort_date_updated(
+    def test_valid_sort_date_modified(
         self, app_with_es: TestClient
     ) -> None:
         resp = app_with_es.get(
-            "/entries/", params={"sort": "dateUpdated:desc"}
+            "/entries/", params={"sort": "dateModified:desc"}
         )
         assert resp.status_code == 200
 
@@ -632,23 +632,30 @@ class TestEntriesTypeSearch:
 
 
 class TestEntriesDbXrefs:
-    """dbXrefs truncation and dbXrefsCount in list results."""
+    """dbXrefs truncation and dbXrefsCount in list results.
+
+    Search results now use script_fields: ES returns ``_source`` without
+    dbXrefs and ``fields`` with ``dbXrefsTruncated`` / ``dbXrefsCountByType``.
+    """
 
     def test_db_xrefs_truncated(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        xrefs = [
+        truncated = [
             {"type": "biosample", "identifier": f"SAMD{i}"}
-            for i in range(200)
+            for i in range(10)
         ]
         mock_es_search.return_value = make_es_search_response(
             hits=[{
                 "_source": {
                     "identifier": "PRJDB1",
                     "type": "bioproject",
-                    "dbXrefs": xrefs,
+                },
+                "fields": {
+                    "dbXrefsTruncated": [truncated],
+                    "dbXrefsCountByType": [{"biosample": 200}],
                 },
             }],
             total=1,
@@ -667,16 +674,15 @@ class TestEntriesDbXrefs:
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        xrefs = [
-            {"type": "biosample", "identifier": f"SAMD{i}"}
-            for i in range(50)
-        ]
         mock_es_search.return_value = make_es_search_response(
             hits=[{
                 "_source": {
                     "identifier": "PRJDB1",
                     "type": "bioproject",
-                    "dbXrefs": xrefs,
+                },
+                "fields": {
+                    "dbXrefsTruncated": [[]],
+                    "dbXrefsCountByType": [{"biosample": 50}],
                 },
             }],
             total=1,
@@ -695,7 +701,7 @@ class TestEntriesDbXrefs:
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        xrefs = (
+        truncated = (
             [{"type": "biosample", "identifier": f"SAMD{i}"} for i in range(5)]
             + [{"type": "sra-study", "identifier": f"SRP{i}"} for i in range(3)]
         )
@@ -704,7 +710,10 @@ class TestEntriesDbXrefs:
                 "_source": {
                     "identifier": "PRJDB1",
                     "type": "bioproject",
-                    "dbXrefs": xrefs,
+                },
+                "fields": {
+                    "dbXrefsTruncated": [truncated],
+                    "dbXrefsCountByType": [{"biosample": 5, "sra-study": 3}],
                 },
             }],
             total=1,
@@ -723,13 +732,17 @@ class TestEntriesDbXrefs:
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        """Entry without dbXrefs: no dbXrefsCount added."""
+        """Entry without dbXrefs: script_fields return empty defaults."""
         mock_es_search.return_value = make_es_search_response(
             hits=[{
                 "_source": {
                     "identifier": "PRJDB1",
                     "type": "bioproject",
                     "title": "No xrefs",
+                },
+                "fields": {
+                    "dbXrefsTruncated": [[]],
+                    "dbXrefsCountByType": [{}],
                 },
             }],
             total=1,
@@ -738,8 +751,8 @@ class TestEntriesDbXrefs:
         assert resp.status_code == 200
         body = resp.json()
         item = body["items"][0]
-        assert item.get("dbXrefs") is None
-        assert item.get("dbXrefsCount") is None
+        assert item["dbXrefs"] == []
+        assert item["dbXrefsCount"] == {}
 
 
 # === ES error handling ===

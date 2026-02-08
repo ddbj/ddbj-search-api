@@ -7,21 +7,24 @@ import logging
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_search
+from ddbj_search_api.es.client import (build_db_xrefs_script_fields, es_search,
+                                       parse_script_fields_hit)
 from ddbj_search_api.es.query import (build_facet_aggs, build_search_query,
                                       build_sort, build_source_filter,
                                       pagination_to_from_size,
                                       validate_keyword_fields)
-from ddbj_search_api.schemas.common import DbType, Pagination
+from ddbj_search_api.schemas.common import DbType, EntryListItem, Pagination
 from ddbj_search_api.schemas.entries import EntryListResponse
 from ddbj_search_api.schemas.queries import (BioProjectExtraQuery,
+                                             DbXrefsLimitQuery,
                                              PaginationQuery,
                                              ResponseControlQuery,
-                                             SearchFilterQuery)
-from ddbj_search_api.utils import parse_es_hits, parse_facets
+                                             SearchFilterQuery,
+                                             TypesFilterQuery)
+from ddbj_search_api.utils import parse_facets
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +49,6 @@ def _validate_deep_paging(page: int, per_page: int) -> None:
         )
 
 
-def _validate_params(
-    sort_param: Optional[str],
-    keyword_fields: Optional[str],
-) -> None:
-    """Validate sort and keywordFields; raise 422 on invalid input."""
-    try:
-        build_sort(sort_param)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    try:
-        validate_keyword_fields(keyword_fields)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
 async def _do_search(
     client: httpx.AsyncClient,
     index: str,
@@ -81,19 +68,28 @@ async def _do_search(
     # 1. Deep paging check
     _validate_deep_paging(pagination.page, pagination.per_page)
 
-    # 2. Validate sort and keywordFields
-    _validate_params(response_control.sort, search_filter.keyword_fields)
+    # 2. Validate and build sort
+    try:
+        sort = build_sort(response_control.sort)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # 3. Build ES query
+    # 3. Validate keyword fields
+    try:
+        fields = validate_keyword_fields(search_filter.keyword_fields)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 4. Build ES query
     query = build_search_query(
         keywords=search_filter.keywords,
-        keyword_fields=search_filter.keyword_fields,
+        keyword_fields=fields,
         keyword_operator=search_filter.keyword_operator.value,
         organism=search_filter.organism,
         date_published_from=search_filter.date_published_from,
         date_published_to=search_filter.date_published_to,
-        date_updated_from=search_filter.date_updated_from,
-        date_updated_to=search_filter.date_updated_to,
+        date_modified_from=search_filter.date_modified_from,
+        date_modified_to=search_filter.date_modified_to,
         types=types,
         organization=organization,
         publication=publication,
@@ -101,11 +97,8 @@ async def _do_search(
         umbrella=umbrella,
     )
 
-    # 4. Pagination → from/size
+    # 5. Pagination → from/size
     from_, size = pagination_to_from_size(pagination.page, pagination.per_page)
-
-    # 5. Sort
-    sort = build_sort(response_control.sort)
 
     # 6. Source filter
     source = build_source_filter(
@@ -118,11 +111,21 @@ async def _do_search(
         "query": query,
         "from": from_,
         "size": size,
+        "script_fields": build_db_xrefs_script_fields(db_xrefs_limit),
     }
     if sort is not None:
         body["sort"] = sort
-    if source is not None:
+
+    # _source: merge user filter with dbXrefs exclusion
+    if isinstance(source, list):
         body["_source"] = source
+    elif isinstance(source, dict):
+        excludes = list(source.get("excludes", []))
+        if "dbXrefs" not in excludes:
+            excludes.append("dbXrefs")
+        body["_source"] = {"excludes": excludes}
+    else:
+        body["_source"] = {"excludes": ["dbXrefs"]}
 
     # 8. Facet aggregations
     if response_control.include_facets:
@@ -138,7 +141,10 @@ async def _do_search(
     raw_hits = es_resp["hits"]["hits"]
     total = es_resp["hits"]["total"]["value"]
 
-    items = parse_es_hits(raw_hits, db_xrefs_limit)
+    items = [
+        EntryListItem(**parse_script_fields_hit(hit))
+        for hit in raw_hits
+    ]
 
     facets = None
     if response_control.include_facets and "aggregations" in es_resp:
@@ -166,20 +172,8 @@ async def _list_all_entries(
     pagination: PaginationQuery = Depends(),
     search_filter: SearchFilterQuery = Depends(),
     response_control: ResponseControlQuery = Depends(),
-    types: Optional[str] = Query(
-        default=None,
-        description="Filter by database types (comma-separated).",
-    ),
-    db_xrefs_limit: int = Query(
-        default=100,
-        ge=0,
-        le=1000,
-        alias="dbXrefsLimit",
-        description=(
-            "Maximum number of dbXrefs to return (0-1000). "
-            "Use 0 to omit dbXrefs but still get dbXrefsCount."
-        ),
-    ),
+    types_filter: TypesFilterQuery = Depends(),
+    db_xrefs: DbXrefsLimitQuery = Depends(),
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> EntryListResponse:
     """Search entries across all database types.
@@ -195,9 +189,9 @@ async def _list_all_entries(
         pagination=pagination,
         search_filter=search_filter,
         response_control=response_control,
-        db_xrefs_limit=db_xrefs_limit,
+        db_xrefs_limit=db_xrefs.db_xrefs_limit,
         is_cross_type=True,
-        types=types,
+        types=types_filter.types,
     )
 
 
@@ -235,16 +229,7 @@ def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
             search_filter: SearchFilterQuery = Depends(),
             response_control: ResponseControlQuery = Depends(),
             bioproject_extra: BioProjectExtraQuery = Depends(),
-            db_xrefs_limit: int = Query(
-                default=100,
-                ge=0,
-                le=1000,
-                alias="dbXrefsLimit",
-                description=(
-                    "Maximum number of dbXrefs to return (0-1000). "
-                    "Use 0 to omit dbXrefs but still get dbXrefsCount."
-                ),
-            ),
+            db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
         ) -> EntryListResponse:
 
@@ -254,7 +239,7 @@ def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
                 pagination=pagination,
                 search_filter=search_filter,
                 response_control=response_control,
-                db_xrefs_limit=db_xrefs_limit,
+                db_xrefs_limit=db_xrefs.db_xrefs_limit,
                 is_cross_type=False,
                 db_type=db_type.value,
                 organization=bioproject_extra.organization,
@@ -274,16 +259,7 @@ def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
             pagination: PaginationQuery = Depends(),
             search_filter: SearchFilterQuery = Depends(),
             response_control: ResponseControlQuery = Depends(),
-            db_xrefs_limit: int = Query(
-                default=100,
-                ge=0,
-                le=1000,
-                alias="dbXrefsLimit",
-                description=(
-                    "Maximum number of dbXrefs to return (0-1000). "
-                    "Use 0 to omit dbXrefs but still get dbXrefsCount."
-                ),
-            ),
+            db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
         ) -> EntryListResponse:
 
@@ -293,7 +269,7 @@ def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
                 pagination=pagination,
                 search_filter=search_filter,
                 response_control=response_control,
-                db_xrefs_limit=db_xrefs_limit,
+                db_xrefs_limit=db_xrefs.db_xrefs_limit,
                 is_cross_type=False,
                 db_type=db_type.value,
             )

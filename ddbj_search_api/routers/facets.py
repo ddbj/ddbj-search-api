@@ -7,7 +7,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_search
@@ -16,7 +16,8 @@ from ddbj_search_api.es.query import (build_facet_aggs, build_search_query,
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.facets import FacetsResponse
 from ddbj_search_api.schemas.queries import (BioProjectExtraQuery,
-                                             SearchFilterQuery)
+                                             SearchFilterQuery,
+                                             TypesFilterQuery)
 from ddbj_search_api.utils import parse_facets
 
 logger = logging.getLogger(__name__)
@@ -25,14 +26,6 @@ router = APIRouter(tags=["Facets"])
 
 
 # --- Shared logic ---
-
-
-def _validate_keyword_fields(keyword_fields: Optional[str]) -> None:
-    """Validate keywordFields; raise 422 on invalid input."""
-    try:
-        validate_keyword_fields(keyword_fields)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 async def _do_facets(
@@ -48,17 +41,20 @@ async def _do_facets(
     umbrella: Optional[str] = None,
 ) -> FacetsResponse:
     """Execute facet aggregation against ES and build the response."""
-    _validate_keyword_fields(search_filter.keyword_fields)
+    try:
+        fields = validate_keyword_fields(search_filter.keyword_fields)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     query = build_search_query(
         keywords=search_filter.keywords,
-        keyword_fields=search_filter.keyword_fields,
+        keyword_fields=fields,
         keyword_operator=search_filter.keyword_operator.value,
         organism=search_filter.organism,
         date_published_from=search_filter.date_published_from,
         date_published_to=search_filter.date_published_to,
-        date_updated_from=search_filter.date_updated_from,
-        date_updated_to=search_filter.date_updated_to,
+        date_modified_from=search_filter.date_modified_from,
+        date_modified_to=search_filter.date_modified_to,
         types=types,
         organization=organization,
         publication=publication,
@@ -93,10 +89,7 @@ async def _do_facets(
 
 async def _get_facets(
     search_filter: SearchFilterQuery = Depends(),
-    types: Optional[str] = Query(
-        default=None,
-        description="Filter by database types (comma-separated).",
-    ),
+    types_filter: TypesFilterQuery = Depends(),
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> FacetsResponse:
     """Get facet counts across all database types.
@@ -111,7 +104,7 @@ async def _get_facets(
         index="entries",
         search_filter=search_filter,
         is_cross_type=True,
-        types=types,
+        types=types_filter.types,
     )
 
 
