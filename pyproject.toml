@@ -37,7 +37,7 @@ tests = [
 
 [project.scripts]
 ddbj_search_api = "ddbj_search_api.main:main"
-dump_openapi_spec = "ddbj_search_api.main:dump_openapi"
+dump_openapi_spec = "ddbj_search_api.main:dump_openapi_spec"
 
 [tool.pytest.ini_options]
 addopts = "--cov=ddbj_search_api --cov-report=html:tests/htmlcov"

@@ -203,6 +203,13 @@ class TestFacetsEsQuery:
         type_filter = [f for f in filters if "terms" in f and "type" in f["terms"]]
         assert len(type_filter) == 1
 
+    def test_invalid_types_returns_422(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets?types=invalid-type")
+        assert resp.status_code == 422
+
 
 # === Search filter validation ===
 
@@ -263,6 +270,122 @@ class TestFacetsDateValidation:
             params={"datePublishedFrom": "2024-01-15T00:00:00"},
         )
         assert resp.status_code == 422
+
+    def test_from_after_to_accepted(
+        self, app_with_facets: TestClient
+    ) -> None:
+        """from > to is accepted (ES returns 0 results, not an error)."""
+        resp = app_with_facets.get(
+            "/facets",
+            params={
+                "datePublishedFrom": "2025-12-31",
+                "datePublishedTo": "2024-01-01",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_same_from_and_to_accepted(
+        self, app_with_facets: TestClient
+    ) -> None:
+        resp = app_with_facets.get(
+            "/facets",
+            params={
+                "datePublishedFrom": "2024-06-15",
+                "datePublishedTo": "2024-06-15",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_feb_30_returns_422(
+        self, app_with_facets: TestClient
+    ) -> None:
+        resp = app_with_facets.get(
+            "/facets", params={"datePublishedFrom": "2024-02-30"}
+        )
+        assert resp.status_code == 422
+
+    def test_month_13_returns_422(
+        self, app_with_facets: TestClient
+    ) -> None:
+        resp = app_with_facets.get(
+            "/facets", params={"datePublishedFrom": "2024-13-01"}
+        )
+        assert resp.status_code == 422
+
+
+# === Organism filter ===
+
+
+class TestFacetsOrganismFilter:
+    """Organism filter on facets endpoint."""
+
+    def test_organism_passed_to_es(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets?organism=9606")
+        body = mock_es_search_facets.call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        term_filters = [
+            f for f in filters
+            if "term" in f and "organism.identifier" in f["term"]
+        ]
+        assert len(term_filters) == 1
+        assert term_filters[0]["term"]["organism.identifier"] == "9606"
+
+
+# === keywordOperator ===
+
+
+class TestFacetsKeywordOperator:
+    """keywordOperator validation on facets endpoint."""
+
+    def test_keyword_operator_or(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get(
+            "/facets?keywords=cancer,tumor&keywordOperator=OR"
+        )
+        body = mock_es_search_facets.call_args[0][2]
+        assert "should" in body["query"]["bool"]
+
+    def test_keyword_operator_invalid_returns_422(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets?keywordOperator=INVALID")
+        assert resp.status_code == 422
+
+
+# === Empty/whitespace keywords ===
+
+
+class TestFacetsEmptyKeywords:
+    """Empty and whitespace-only keywords on facets endpoint."""
+
+    def test_empty_keywords_accepted(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets?keywords=")
+        assert resp.status_code == 200
+
+    def test_whitespace_keywords_accepted(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets?keywords=%20%20")
+        assert resp.status_code == 200
+
+    def test_comma_only_keywords_accepted(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets?keywords=,")
+        assert resp.status_code == 200
 
 
 # === Umbrella parameter validation ===

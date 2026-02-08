@@ -127,9 +127,10 @@ Access-Control-Allow-Headers: *
 
 ### Trailing Slash
 
-コレクション (リスト) 系エンドポイントの canonical パスは trailing slash 付き (例: `/entries/`)。
-trailing slash なし (`/entries`) でも同じレスポンスを返す (リダイレクトしない)。
-個別リソース (例: `/entries/{type}/{id}`) には trailing slash を付けない。
+Entries API のコレクション (リスト) 系エンドポイントは trailing slash 付きを canonical パスとする (例: `/entries/`, `/entries/{type}/`)。trailing slash なし (`/entries`) でも同じレスポンスを返す (リダイレクトしない)。
+
+Facets API (`/facets`, `/facets/{type}`) は trailing slash なしのみをサポートする。
+個別リソース (例: `/entries/{type}/{id}`) にも trailing slash を付けない。
 
 ### リクエスト追跡 (X-Request-ID)
 
@@ -138,7 +139,7 @@ trailing slash なし (`/entries`) でも同じレスポンスを返す (リダ�
 
 ### エラーレスポンス (RFC 7807)
 
-エラー時は [RFC 7807 Problem Details](https://tools.ietf.org/html/rfc7807) 形式の JSON を返す。
+エラー時は [RFC 7807 Problem Details](https://tools.ietf.org/html/rfc7807) 形式の JSON を返す。Content-Type は `application/problem+json` を使用する。
 
 ```json
 {
@@ -168,7 +169,7 @@ trailing slash なし (`/entries`) でも同じレスポンスを返す (リダ�
 |-----------|------|---------|
 | 400 | Bad Request | Deep paging 制限超過 (`page * perPage > 10000`) |
 | 404 | Not Found | エントリーが存在しない、不正な `{type}` |
-| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外)、不正な `umbrella` 値 (`TRUE`/`FALSE` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値など) |
+| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `umbrella` 値 (`TRUE`/`FALSE` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値など) |
 | 500 | Internal Server Error | ES 接続エラー、その他サーバー内部エラー |
 
 400 と 422 の使い分け: リクエストのパラメータ型・形式・制約のバリデーションは 422、アプリケーションのビジネスルール違反 (deep paging 制限など) は 400 を返す。
@@ -225,7 +226,7 @@ ISO 8601 形式 (`YYYY-MM-DD`) を使用する。範囲指定は `From` / `To` �
 | パラメータ | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
 | `sort` | string | — | ソート順。形式: `{field}:{direction}`。ソート可能フィールド: `datePublished`, `dateModified`。direction: `asc` / `desc`。未指定時は relevance (検索スコア) 順 |
-| `fields` | string | — | レスポンスに含めるフィールドを限定 (カンマ区切り)。ES ドキュメントのトップレベルフィールド名を指定 (例: `identifier,organism,datePublished`) |
+| `fields` | string | — (全フィールド) | レスポンスに含めるフィールドを限定 (カンマ区切り)。ES ドキュメントのトップレベルフィールド名を指定 (例: `identifier,organism,datePublished`)。未指定時はすべてのフィールドを返す |
 | `includeProperties` | boolean | `true` | `true` で `properties` フィールドを含める |
 | `includeFacets` | boolean | `false` | `true` で検索結果にファセット集計を含める。`GET /facets` と異なり検索結果リストと同時に取得できる |
 
@@ -290,7 +291,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 
 **専用エンドポイント**:
 
-- `GET /entries/{type}/{id}/dbxrefs.json`: 全件を一括取得 (JSON 配列)
+- `GET /entries/{type}/{id}/dbxrefs.json`: 全件を一括取得 (`DbXrefsFullResponse` 形式: `{"dbXrefs": [...]}` オブジェクト)
 
 ### Bulk API
 
@@ -376,7 +377,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 
 | 型名 | 説明 |
 |------|------|
-| `EntryListResponse` | 検索結果リスト (pagination + items: `list[EntryListItem]`) |
+| `EntryListResponse` | 検索結果リスト (pagination + items: `list[EntryListItem]` + facets: `Optional[Facets]`)。`includeFacets=true` のとき `facets` にファセット集計が含まれる |
 | `BioProjectDetailResponse` | BioProject 詳細 (dbXrefs 切り詰め + dbXrefsCount) |
 | `BioSampleDetailResponse` | BioSample 詳細 (dbXrefs 切り詰め + dbXrefsCount) |
 | `SraDetailResponse` | SRA 詳細 (dbXrefs 切り詰め + dbXrefsCount) |
@@ -401,7 +402,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 | `Pagination` | ページネーション情報 (page, perPage, total) |
 | `EntryListItem` | 検索結果リスト内の各エントリー (サマリー) |
 | `Facets` | ファセット集計データ (フィールド名 → 値別カウント) |
-| `DbXrefsCount` | dbXrefs のタイプ別カウント |
+| `DbXrefsCount` | dbXrefs のタイプ別カウント (`Dict[str, int]`)。キーはデータベースタイプ名、値は件数 (例: `{"biosample": 200, "sra-study": 50}`) |
 | `ProblemDetails` | RFC 7807 エラーレスポンス |
 
 #### ddbj-search-converter 由来 (6 型)

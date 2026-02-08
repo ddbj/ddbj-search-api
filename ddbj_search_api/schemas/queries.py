@@ -4,10 +4,13 @@ Each class is used as a FastAPI ``Depends()`` dependency.  Mixin classes
 (PaginationQuery, SearchFilterQuery, ResponseControlQuery) are composed
 at the endpoint level via multiple ``Depends()`` parameters.
 """
+import datetime as dt
 from enum import Enum
 from typing import Optional
 
 from fastapi import HTTPException, Query
+
+from ddbj_search_api.schemas.common import DbType
 
 # === Enums for query parameters ===
 
@@ -23,6 +26,30 @@ class BulkFormat(str, Enum):
 
     json = "json"
     ndjson = "ndjson"
+
+
+_VALID_DB_TYPES = {e.value for e in DbType}
+
+
+def _validate_date(value: Optional[str], param_name: str) -> None:
+    """Validate that a date string is a real calendar date.
+
+    The regex ``^\\d{4}-\\d{2}-\\d{2}$`` on the Query parameter already
+    rejects non-YYYY-MM-DD formats.  This function catches semantically
+    invalid dates such as ``2024-02-30`` or ``2024-13-01``.
+    """
+    if value is None:
+        return
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Invalid date for {param_name}: '{value}'. "
+                "Must be a valid calendar date in YYYY-MM-DD format."
+            ),
+        ) from exc
 
 
 # === Mixin query classes ===
@@ -107,6 +134,11 @@ class SearchFilterQuery:
             description="Modification date range end (YYYY-MM-DD).",
         ),
     ):
+        _validate_date(date_published_from, "datePublishedFrom")
+        _validate_date(date_published_to, "datePublishedTo")
+        _validate_date(date_modified_from, "dateModifiedFrom")
+        _validate_date(date_modified_to, "dateModifiedTo")
+
         self.keywords = keywords
         self.keyword_fields = keyword_fields
         self.keyword_operator = keyword_operator
@@ -177,6 +209,19 @@ class TypesFilterQuery:
             description="Filter by database types (comma-separated).",
         ),
     ):
+        if types is not None:
+            type_list = [t.strip() for t in types.split(",")]
+            type_list = [t for t in type_list if t]
+            if type_list:
+                invalid = [t for t in type_list if t not in _VALID_DB_TYPES]
+                if invalid:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Invalid types: {', '.join(invalid)}. "
+                            f"Allowed: {', '.join(sorted(_VALID_DB_TYPES))}."
+                        ),
+                    )
         self.types = types
 
 

@@ -373,6 +373,235 @@ class TestEntriesSearch:
         index = call_args[1]["index"] if "index" in call_args[1] else call_args[0][1]
         assert index == "entries"
 
+    def test_organism_filter_passed_to_es(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/", params={"organism": "9606"})
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        term_filters = [
+            f for f in filters
+            if "term" in f and "organism.identifier" in f["term"]
+        ]
+        assert len(term_filters) == 1
+        assert term_filters[0]["term"]["organism.identifier"] == "9606"
+
+    def test_keyword_operator_or(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/",
+            params={"keywords": "cancer,tumor", "keywordOperator": "OR"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        assert "should" in body["query"]["bool"]
+        assert "minimum_should_match" in body["query"]["bool"]
+
+    def test_keyword_operator_and_default(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/",
+            params={"keywords": "cancer,tumor"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        assert "must" in body["query"]["bool"]
+
+    def test_keyword_operator_invalid_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"keywordOperator": "INVALID"}
+        )
+        assert resp.status_code == 422
+
+
+# === includeProperties ===
+
+
+class TestEntriesIncludeProperties:
+    """includeProperties parameter behaviour."""
+
+    def test_include_properties_true_by_default(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(
+            hits=[{
+                "_source": {
+                    "identifier": "PRJDB1",
+                    "type": "bioproject",
+                    "properties": {"key": "val"},
+                },
+                "fields": {},
+            }],
+            total=1,
+        )
+        resp = app_with_es.get("/entries/")
+        body = resp.json()
+        assert body["items"][0].get("properties") is not None
+
+    def test_include_properties_false_excludes_field(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(
+            hits=[{
+                "_source": {
+                    "identifier": "PRJDB1",
+                    "type": "bioproject",
+                },
+                "fields": {},
+            }],
+            total=1,
+        )
+        resp = app_with_es.get(
+            "/entries/", params={"includeProperties": "false"}
+        )
+        body = resp.json()
+        assert "properties" not in body["items"][0]
+
+    def test_include_properties_false_sends_source_excludes(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/", params={"includeProperties": "false"}
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        source = body["_source"]
+        assert isinstance(source, dict)
+        assert "properties" in source["excludes"]
+
+
+# === types parameter validation ===
+
+
+class TestEntriesTypesFilter:
+    """types parameter validation and filtering."""
+
+    def test_valid_types_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"types": "bioproject,biosample"}
+        )
+        assert resp.status_code == 200
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        type_filter = [
+            f for f in filters
+            if "terms" in f and "type" in f["terms"]
+        ]
+        assert len(type_filter) == 1
+        assert set(type_filter[0]["terms"]["type"]) == {
+            "bioproject", "biosample",
+        }
+
+    def test_single_type_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"types": "bioproject"}
+        )
+        assert resp.status_code == 200
+
+    def test_empty_types_uses_match_all(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """Empty types string is treated as no filter."""
+        app_with_es.get("/entries/", params={"types": ""})
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        assert body["query"] == {"match_all": {}}
+
+    def test_invalid_type_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"types": "invalid-type"}
+        )
+        assert resp.status_code == 422
+
+    def test_mixed_valid_invalid_types_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"types": "bioproject,invalid"}
+        )
+        assert resp.status_code == 422
+
+    def test_all_12_types_accepted(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        all_types = ",".join(db_type_values)
+        resp = app_with_es.get(
+            "/entries/", params={"types": all_types}
+        )
+        assert resp.status_code == 200
+
+
+# === Empty/whitespace keywords ===
+
+
+class TestEntriesEmptyKeywords:
+    """Empty and whitespace-only keywords behaviour."""
+
+    def test_empty_keywords_treated_as_no_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/", params={"keywords": ""})
+        assert resp.status_code == 200
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        assert body["query"] == {"match_all": {}}
+
+    def test_whitespace_keywords_treated_as_no_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/", params={"keywords": "   "})
+        assert resp.status_code == 200
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        assert body["query"] == {"match_all": {}}
+
+    def test_comma_only_keywords_treated_as_no_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/", params={"keywords": ","})
+        assert resp.status_code == 200
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        assert body["query"] == {"match_all": {}}
+
 
 # === Deep paging ===
 
@@ -603,6 +832,54 @@ class TestEntriesTypeSearch:
         query = body["query"]
         # umbrella=TRUE → filter has objectType term
         assert query != {"match_all": {}}
+
+    def test_bioproject_organization_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/bioproject/",
+            params={"organization": "DDBJ"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        nested = [f for f in filters if "nested" in f]
+        assert len(nested) == 1
+        assert nested[0]["nested"]["path"] == "organization"
+
+    def test_bioproject_publication_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/bioproject/",
+            params={"publication": "genomics"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        nested = [f for f in filters if "nested" in f]
+        assert len(nested) == 1
+        assert nested[0]["nested"]["path"] == "publication"
+
+    def test_bioproject_grant_filter(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/bioproject/",
+            params={"grant": "JSPS"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        nested = [f for f in filters if "nested" in f]
+        assert len(nested) == 1
+        assert nested[0]["nested"]["path"] == "grant"
 
     def test_type_facets_no_type_field(
         self,
@@ -850,3 +1127,186 @@ class TestEntriesEsError:
         mock_es_search.side_effect = Exception("ES connection refused")
         resp = app_with_es.get("/entries/")
         assert resp.status_code == 500
+
+
+# === Date range edge cases ===
+
+
+class TestEntriesDateRangeEdgeCases:
+    """Date range parameter edge cases."""
+
+    def test_from_after_to_accepted(
+        self, app_with_es: TestClient
+    ) -> None:
+        """from > to is accepted (ES returns 0 results, not an error)."""
+        resp = app_with_es.get(
+            "/entries/",
+            params={
+                "datePublishedFrom": "2025-12-31",
+                "datePublishedTo": "2024-01-01",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_date_modified_from_after_to_accepted(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={
+                "dateModifiedFrom": "2025-06-01",
+                "dateModifiedTo": "2024-06-01",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_same_from_and_to_accepted(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={
+                "datePublishedFrom": "2024-06-15",
+                "datePublishedTo": "2024-06-15",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_feb_30_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        """Feb 30 passes regex but fails semantic date validation."""
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedFrom": "2024-02-30"}
+        )
+        assert resp.status_code == 422
+
+    def test_month_13_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        """Month 13 passes regex but fails semantic date validation."""
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedFrom": "2024-13-01"}
+        )
+        assert resp.status_code == 422
+
+    def test_feb_29_leap_year_accepted(
+        self, app_with_es: TestClient
+    ) -> None:
+        """Feb 29 in a leap year is a valid date."""
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedFrom": "2024-02-29"}
+        )
+        assert resp.status_code == 200
+
+    def test_feb_29_non_leap_year_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        """Feb 29 in a non-leap year is invalid."""
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedFrom": "2023-02-29"}
+        )
+        assert resp.status_code == 422
+
+    def test_day_00_returns_422(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedFrom": "2024-01-00"}
+        )
+        assert resp.status_code == 422
+
+    def test_only_from_accepted(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedFrom": "2024-01-01"}
+        )
+        assert resp.status_code == 200
+
+    def test_only_to_accepted(
+        self, app_with_es: TestClient
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/", params={"datePublishedTo": "2024-12-31"}
+        )
+        assert resp.status_code == 200
+
+
+# === PBT: search parameter combinations ===
+
+
+class TestEntriesSearchPBT:
+    """Property-based tests for search parameter combinations."""
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        max_examples=20,
+    )
+    @given(
+        page=st.integers(min_value=1, max_value=100),
+        per_page=st.integers(min_value=1, max_value=100),
+    )
+    def test_valid_pagination_always_accepted(
+        self, app_with_es: TestClient, page: int, per_page: int
+    ) -> None:
+        """Any valid page/perPage within range returns 200 or 400 (deep paging)."""
+        resp = app_with_es.get(
+            "/entries/", params={"page": page, "perPage": per_page}
+        )
+        if page * per_page > 10000:
+            assert resp.status_code == 400
+        else:
+            assert resp.status_code == 200
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        max_examples=20,
+    )
+    @given(
+        sort=st.sampled_from([
+            "datePublished:asc", "datePublished:desc",
+            "dateModified:asc", "dateModified:desc",
+        ]),
+    )
+    def test_valid_sort_always_accepted(
+        self, app_with_es: TestClient, sort: str
+    ) -> None:
+        resp = app_with_es.get("/entries/", params={"sort": sort})
+        assert resp.status_code == 200
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        max_examples=20,
+    )
+    @given(
+        field=st.text(
+            alphabet=st.characters(whitelist_categories=("L",)),
+            min_size=1, max_size=10,
+        ),
+    )
+    def test_invalid_sort_field_always_422(
+        self, app_with_es: TestClient, field: str
+    ) -> None:
+        if field in ("datePublished", "dateModified"):
+            return  # skip valid fields
+        resp = app_with_es.get(
+            "/entries/", params={"sort": f"{field}:asc"}
+        )
+        assert resp.status_code == 422
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        max_examples=20,
+    )
+    @given(
+        operator=st.sampled_from(["AND", "OR"]),
+    )
+    def test_valid_keyword_operator_accepted(
+        self, app_with_es: TestClient, operator: str
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"keywords": "test", "keywordOperator": operator},
+        )
+        assert resp.status_code == 200

@@ -222,6 +222,48 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         schemas.pop("HTTPValidationError", None)
         schemas.pop("ValidationError", None)
 
+        # Add servers (root_path is not reflected in static openapi())
+        schema["servers"] = [{"url": config.url_prefix}]
+
+        _error_codes = {"400", "404", "422", "500"}
+        for path, path_item in schema.get("paths", {}).items():
+            for operation in path_item.values():
+                if not isinstance(operation, dict):
+                    continue
+                responses = operation.get("responses", {})
+
+                # Remove inapplicable error codes per endpoint.
+                # 400: only paginated list endpoints (deep paging).
+                _is_list = (
+                    path == "/entries/"
+                    or (path.startswith("/entries/")
+                        and path.endswith("/")
+                        and "{" not in path)
+                )
+                if not _is_list:
+                    responses.pop("400", None)
+
+                # 404: only endpoints with {type}/{id} or per-type path.
+                if path in ("/entries/", "/facets", "/service-info"):
+                    responses.pop("404", None)
+
+                # 422: not needed for /service-info or extension
+                # endpoints that have no query params.
+                if path == "/service-info":
+                    responses.pop("422", None)
+                if path.endswith((".json", ".jsonld")):
+                    responses.pop("422", None)
+
+                # Fix error Content-Type: application/problem+json
+                for status_code, resp in responses.items():
+                    if status_code in _error_codes:
+                        content = resp.get("content", {})
+                        for media_type in list(content.keys()):
+                            if media_type != "application/problem+json":
+                                content["application/problem+json"] = (
+                                    content.pop(media_type)
+                                )
+
         return schema
 
     app.openapi = custom_openapi  # type: ignore[method-assign]
@@ -251,7 +293,7 @@ def main() -> None:
     )
 
 
-def dump_openapi() -> None:
+def dump_openapi_spec() -> None:
     """CLI entry point: print OpenAPI spec as JSON to stdout."""
     app = create_app()
     spec = app.openapi()

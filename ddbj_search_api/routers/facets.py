@@ -114,7 +114,6 @@ router.add_api_route(
     methods=["GET"],
     response_model=FacetsResponse,
     summary="Cross-type facet aggregation",
-    tags=["Facets"],
 )
 
 
@@ -178,5 +177,4 @@ for _db_type in DbType:
         methods=["GET"],
         response_model=FacetsResponse,
         summary=f"Facet aggregation for {_db_type.value}",
-        tags=["Facets"],
     )
