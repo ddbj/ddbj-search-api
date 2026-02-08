@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import (build_db_xrefs_script_fields, es_search,
@@ -63,7 +64,7 @@ async def _do_search(
     publication: Optional[str] = None,
     grant: Optional[str] = None,
     umbrella: Optional[str] = None,
-) -> EntryListResponse:
+) -> Any:
     """Execute search against ES and build the response."""
     # 1. Deep paging check
     _validate_deep_paging(pagination.page, pagination.per_page)
@@ -155,7 +156,7 @@ async def _do_search(
             db_type=db_type,
         )
 
-    return EntryListResponse(
+    response = EntryListResponse(
         pagination=Pagination(
             page=pagination.page,
             per_page=pagination.per_page,  # type: ignore[call-arg]
@@ -164,6 +165,29 @@ async def _do_search(
         items=items,
         facets=facets,
     )
+
+    # When includeProperties=false, use exclude_unset to drop Pydantic
+    # default fields (like properties=None) that ES correctly excluded.
+    if not response_control.include_properties:
+        pagination_dict = response.pagination.model_dump(  # pylint: disable=no-member
+            by_alias=True,
+        )
+        items_list = [
+            item.model_dump(by_alias=True, exclude_unset=True)
+            for item in response.items
+        ]
+        facets_dict = (
+            response.facets.model_dump(by_alias=True)  # pylint: disable=no-member
+            if response.facets is not None else None
+        )
+
+        return JSONResponse(content={
+            "pagination": pagination_dict,
+            "items": items_list,
+            "facets": facets_dict,
+        })
+
+    return response
 
 
 # === GET /entries/ (cross-type search) ===
@@ -176,7 +200,7 @@ async def _list_all_entries(
     types_filter: TypesFilterQuery = Depends(),
     db_xrefs: DbXrefsLimitQuery = Depends(),
     client: httpx.AsyncClient = Depends(get_es_client),
-) -> EntryListResponse:
+) -> Any:
     """Search entries across all database types.
 
     Supports keyword search, organism/date filtering, pagination,
@@ -232,7 +256,7 @@ def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
             bioproject_extra: BioProjectExtraQuery = Depends(),
             db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
-        ) -> EntryListResponse:
+        ) -> Any:
 
             return await _do_search(
                 client=client,
@@ -262,7 +286,7 @@ def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
             response_control: ResponseControlQuery = Depends(),
             db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
-        ) -> EntryListResponse:
+        ) -> Any:
 
             return await _do_search(
                 client=client,

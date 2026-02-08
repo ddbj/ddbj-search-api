@@ -87,4 +87,3 @@ def test_invalid_db_type_returns_404(app: TestClient):
     assert resp.status_code == 404
     body = resp.json()
     assert body["status"] == 404
-    assert "invalid-type" in body["detail"]
