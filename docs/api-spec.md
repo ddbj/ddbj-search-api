@@ -2,7 +2,7 @@
 
 ## 概要
 
-DDBJ-Search API は、BioProject / BioSample / SRA / JGA データを検索・取得するための RESTful API サーバー。
+DDBJ Search API は、BioProject / BioSample / SRA / JGA データを検索・取得するための RESTful API サーバー。
 認証なしのパブリック API として提供する。
 
 設計方針やシステム全体のネットワーク構成は [ddbj-search/docs/network-architecture.md](https://github.com/ddbj/ddbj-search/blob/main/docs/network-architecture.md) を参照。
