@@ -14,6 +14,12 @@ from ddbj_search_api.main import create_app
 def _make_app(config: AppConfig) -> TestClient:
     """Create a TestClient with get_es_client overridden."""
     fake_client = AsyncMock(spec=httpx.AsyncClient)
+    # es_ping calls response.raise_for_status() synchronously;
+    # ensure the mock response's raise_for_status is a regular MagicMock
+    # to avoid "coroutine never awaited" warnings.
+    fake_response = AsyncMock()
+    fake_response.raise_for_status = MagicMock()
+    fake_client.get.return_value = fake_response
     application = create_app(config)
     application.dependency_overrides[get_es_client] = lambda: fake_client
 

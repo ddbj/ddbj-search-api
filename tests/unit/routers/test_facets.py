@@ -68,12 +68,13 @@ class TestFacetsTypeRouting:
         resp = app_with_facets.get(f"/facets/{db_type}")
         assert resp.status_code == 200
 
-    def test_invalid_type_returns_error(
+    def test_invalid_type_returns_404(
         self,
         app_with_facets: TestClient,
     ) -> None:
+        """Invalid facet type returns 404 (no matching route)."""
         resp = app_with_facets.get("/facets/invalid-type")
-        assert resp.status_code in (404, 422)
+        assert resp.status_code == 404
 
 
 # === Response structure ===

@@ -107,6 +107,17 @@ def setup_error_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        # Path-level {type} enum error → 404 Not Found
+        for error in exc.errors():
+            loc = error.get("loc", ())
+            if len(loc) >= 2 and loc[0] == "path" and loc[1] == "type":
+                return _problem_json(
+                    status=404,
+                    title="Not Found",
+                    detail=f"Unknown database type: '{error.get('input', '')}'",
+                    request=request,
+                )
+
         details = "; ".join(
             f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}"
             for e in exc.errors()

@@ -38,11 +38,12 @@ class TestEntryDetailRouting:
         resp = app_with_entry_detail.get(f"/entries/{db_type}/TEST001")
         assert resp.status_code == 200
 
-    def test_invalid_type_returns_422(
+    def test_invalid_type_returns_404(
         self, app_with_entry_detail: TestClient,
     ) -> None:
+        """Invalid DB type in path returns 404 Not Found."""
         resp = app_with_entry_detail.get("/entries/invalid-type/TEST001")
-        assert resp.status_code == 422
+        assert resp.status_code == 404
 
 
 # === Routing: GET /entries/{type}/{id}.json ===

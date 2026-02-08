@@ -118,7 +118,8 @@ async def _do_search(
 
     # _source: merge user filter with dbXrefs exclusion
     if isinstance(source, list):
-        body["_source"] = source
+        filtered = [f for f in source if f != "dbXrefs"]
+        body["_source"] = filtered
     elif isinstance(source, dict):
         excludes = list(source.get("excludes", []))
         if "dbXrefs" not in excludes:

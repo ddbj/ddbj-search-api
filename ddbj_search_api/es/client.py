@@ -4,7 +4,7 @@ Thin async wrapper around httpx for ES REST API calls.
 Each function accepts an ``httpx.AsyncClient`` as the first argument,
 allowing dependency injection and easy mocking in tests.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -38,38 +38,6 @@ async def es_search(
     """
     request_body = {**body, "track_total_hits": True}
     response = await client.post(f"/{index}/_search", json=request_body)
-    response.raise_for_status()
-
-    return response.json()  # type: ignore[no-any-return]
-
-
-async def es_get_doc(
-    client: httpx.AsyncClient,
-    index: str,
-    id_: str,
-) -> Optional[Dict[str, Any]]:
-    """Retrieve a single document by ID.
-
-    Returns the document ``_source`` dict, or ``None`` if not found.
-    """
-    response = await client.get(f"/{index}/_doc/{id_}")
-    if response.status_code == 404:
-        return None
-    response.raise_for_status()
-
-    return response.json()["_source"]  # type: ignore[no-any-return]
-
-
-async def es_mget(
-    client: httpx.AsyncClient,
-    index: str,
-    ids: List[str],
-) -> Dict[str, Any]:
-    """Retrieve multiple documents by IDs.
-
-    Returns the raw ES mget response dict.
-    """
-    response = await client.post(f"/{index}/_mget", json={"ids": ids})
     response.raise_for_status()
 
     return response.json()  # type: ignore[no-any-return]
@@ -131,7 +99,9 @@ def parse_script_fields_hit(hit: Dict[str, Any]) -> Dict[str, Any]:
     """
     source: Dict[str, Any] = dict(hit["_source"])
     fields = hit.get("fields", {})
-    source["dbXrefs"] = fields.get("dbXrefsTruncated", [[]])[0]
+    # ES flattens script_fields arrays: [[{a},{b}]] becomes [{a},{b}].
+    # Use the full list as dbXrefs (each element is one xref dict).
+    source["dbXrefs"] = fields.get("dbXrefsTruncated", [])
     source["dbXrefsCount"] = fields.get("dbXrefsCountByType", [{}])[0]
 
     return source
@@ -197,21 +167,3 @@ async def es_get_source_stream(
     response.raise_for_status()
 
     return response
-
-
-async def es_count(
-    client: httpx.AsyncClient,
-    index: str,
-    query: Optional[Dict[str, Any]] = None,
-) -> int:
-    """Count documents matching a query.
-
-    Returns the total count.
-    """
-    body: Dict[str, Any] = {}
-    if query is not None:
-        body["query"] = query
-    response = await client.post(f"/{index}/_count", json=body)
-    response.raise_for_status()
-
-    return response.json()["count"]  # type: ignore[no-any-return]

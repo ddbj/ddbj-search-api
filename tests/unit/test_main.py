@@ -163,9 +163,13 @@ class TestErrorHandlerValidation:
         assert body["title"] == "Unprocessable Entity"
         assert "detail" in body
 
-    def test_invalid_db_type_returns_422(self, app: TestClient) -> None:
+    def test_invalid_db_type_returns_404(self, app: TestClient) -> None:
+        """Invalid DB type in path returns 404 Not Found."""
         resp = app.get("/entries/invalid-type/PRJDB1")
-        assert resp.status_code == 422
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["status"] == 404
+        assert "invalid-type" in body["detail"]
 
 
 class TestErrorHandlerNotFound:

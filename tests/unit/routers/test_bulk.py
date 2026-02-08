@@ -85,12 +85,13 @@ class TestBulkRouting:
         resp = _bulk_post(app_with_bulk, ["TEST001"], db_type=db_type)
         assert resp.status_code == 200
 
-    def test_invalid_type_returns_422(self, app: TestClient) -> None:
+    def test_invalid_type_returns_404(self, app: TestClient) -> None:
+        """Invalid DB type in path returns 404 Not Found."""
         resp = app.post(
             "/entries/invalid-type/bulk",
             json={"ids": ["TEST001"]},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 404
 
 
 # === Request body validation ===

@@ -1,71 +1,7 @@
 """Utility helpers."""
-import pathlib
 from typing import Any, Dict, List, Optional
 
-from ddbj_search_api.schemas.common import EntryListItem, FacetBucket, Facets
-
-
-def entry_to_dict(
-    entry: Any,
-    include_properties: bool = True,
-) -> Dict[str, Any]:
-    """Convert a Pydantic entry model to a serializable dict.
-
-    Args:
-        entry: A converter Pydantic model (BioProject, BioSample, SRA, JGA).
-        include_properties: If False, drop the ``properties`` field.
-
-    Returns:
-        A dict ready for JSON serialization (using aliases).
-    """
-    data: Dict[str, Any] = entry.model_dump(by_alias=True)
-    if not include_properties:
-        data.pop("properties", None)
-
-    return data
-
-
-def truncate_db_xrefs(
-    db_xrefs: List[Dict[str, Any]],
-    limit: int,
-) -> List[Dict[str, Any]]:
-    """Truncate dbXrefs to the given limit."""
-
-    return db_xrefs[:limit]
-
-
-def count_db_xrefs_by_type(
-    db_xrefs: List[Dict[str, Any]],
-) -> Dict[str, int]:
-    """Count dbXrefs grouped by their type field."""
-    counts: Dict[str, int] = {}
-    for xref in db_xrefs:
-        xref_type = xref.get("type", "unknown")
-        counts[xref_type] = counts.get(xref_type, 0) + 1
-
-    return counts
-
-
-def parse_es_hits(
-    hits: List[Dict[str, Any]],
-    db_xrefs_limit: int,
-) -> List[EntryListItem]:
-    """Convert ES hits to entry list items with dbXrefs handling.
-
-    For each hit:
-    - If ``dbXrefs`` exists, truncate and add ``dbXrefsCount``.
-    - Otherwise, leave as-is.
-    """
-    items: List[EntryListItem] = []
-    for hit in hits:
-        source = dict(hit["_source"])
-        db_xrefs = source.get("dbXrefs")
-        if db_xrefs is not None:
-            source["dbXrefsCount"] = count_db_xrefs_by_type(db_xrefs)
-            source["dbXrefs"] = truncate_db_xrefs(db_xrefs, db_xrefs_limit)
-        items.append(EntryListItem(**source))
-
-    return items
+from ddbj_search_api.schemas.common import FacetBucket, Facets
 
 
 def parse_facets(
@@ -92,13 +28,4 @@ def parse_facets(
         status=_buckets("status"),
         accessibility=_buckets("accessibility"),
         object_type=object_type_facet,  # type: ignore[call-arg]
-    )
-
-
-def inside_container() -> bool:
-    """Detect whether we are running inside a Docker/Podman container."""
-
-    return (
-        pathlib.Path("/.dockerenv").exists()
-        or pathlib.Path("/run/.containerenv").exists()
     )

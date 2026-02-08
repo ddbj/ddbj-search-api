@@ -16,38 +16,6 @@
         "operationId": "_list_all_entries_entries__get",
         "parameters": [
           {
-            "name": "types",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by database types (comma-separated).",
-              "title": "Types"
-            },
-            "description": "Filter by database types (comma-separated)."
-          },
-          {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -178,7 +146,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -191,13 +159,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -210,10 +178,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -228,10 +196,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -274,6 +242,38 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by database types (comma-separated).",
+              "title": "Types"
+            },
+            "description": "Filter by database types (comma-separated)."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -340,20 +340,6 @@
         "operationId": "list_bioproject_entries_entries_bioproject__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -484,7 +470,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -497,13 +483,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -516,10 +502,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -534,10 +520,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -652,6 +638,20 @@
               "title": "Umbrella"
             },
             "description": "Filter by umbrella status: TRUE or FALSE (case-insensitive)."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -718,20 +718,6 @@
         "operationId": "list_biosample_entries_entries_biosample__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -862,7 +848,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -875,13 +861,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -894,10 +880,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -912,10 +898,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -958,6 +944,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1024,20 +1024,6 @@
         "operationId": "list_sra_submission_entries_entries_sra_submission__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -1168,7 +1154,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -1181,13 +1167,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -1200,10 +1186,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -1218,10 +1204,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -1264,6 +1250,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1330,20 +1330,6 @@
         "operationId": "list_sra_study_entries_entries_sra_study__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -1474,7 +1460,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -1487,13 +1473,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -1506,10 +1492,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -1524,10 +1510,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -1570,6 +1556,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1636,20 +1636,6 @@
         "operationId": "list_sra_experiment_entries_entries_sra_experiment__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -1780,7 +1766,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -1793,13 +1779,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -1812,10 +1798,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -1830,10 +1816,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -1876,6 +1862,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1942,20 +1942,6 @@
         "operationId": "list_sra_run_entries_entries_sra_run__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2086,7 +2072,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -2099,13 +2085,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -2118,10 +2104,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -2136,10 +2122,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -2182,6 +2168,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -2248,20 +2248,6 @@
         "operationId": "list_sra_sample_entries_entries_sra_sample__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2392,7 +2378,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -2405,13 +2391,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -2424,10 +2410,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -2442,10 +2428,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -2488,6 +2474,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -2554,20 +2554,6 @@
         "operationId": "list_sra_analysis_entries_entries_sra_analysis__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2698,7 +2684,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -2711,13 +2697,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -2730,10 +2716,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -2748,10 +2734,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -2794,6 +2780,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -2860,20 +2860,6 @@
         "operationId": "list_jga_study_entries_entries_jga_study__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -3004,7 +2990,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -3017,13 +3003,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -3036,10 +3022,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -3054,10 +3040,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -3100,6 +3086,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -3166,20 +3166,6 @@
         "operationId": "list_jga_dataset_entries_entries_jga_dataset__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -3310,7 +3296,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -3323,13 +3309,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -3342,10 +3328,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -3360,10 +3346,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -3406,6 +3392,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -3472,20 +3472,6 @@
         "operationId": "list_jga_dac_entries_entries_jga_dac__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -3616,7 +3602,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -3629,13 +3615,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -3648,10 +3634,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -3666,10 +3652,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -3712,6 +3698,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -3778,20 +3778,6 @@
         "operationId": "list_jga_policy_entries_entries_jga_policy__get",
         "parameters": [
           {
-            "name": "dbXrefsLimit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 1000,
-              "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
-              "default": 100,
-              "title": "Dbxrefslimit"
-            },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
-          },
-          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -3922,7 +3908,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -3935,13 +3921,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -3954,10 +3940,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "sort",
@@ -3972,10 +3958,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score).",
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
               "title": "Sort"
             },
-            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateUpdated. Direction: asc, desc. Default: relevance (search score)."
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
           },
           {
             "name": "fields",
@@ -4018,6 +4004,20 @@
               "title": "Includefacets"
             },
             "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -4122,6 +4122,12 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BulkResponse"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "description": "One JSON object per line (NDJSON). Each line is an entry document."
                 }
               }
             }
@@ -4576,24 +4582,6 @@
         "operationId": "_get_facets_facets_get",
         "parameters": [
           {
-            "name": "types",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by database types (comma-separated).",
-              "title": "Types"
-            },
-            "description": "Filter by database types (comma-separated)."
-          },
-          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -4697,7 +4685,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -4710,13 +4698,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -4729,10 +4717,28 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by database types (comma-separated).",
+              "title": "Types"
+            },
+            "description": "Filter by database types (comma-separated)."
           }
         ],
         "responses": {
@@ -4903,7 +4909,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -4916,13 +4922,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -4935,10 +4941,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           },
           {
             "name": "organization",
@@ -5181,7 +5187,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -5194,13 +5200,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -5213,10 +5219,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -5387,7 +5393,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -5400,13 +5406,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -5419,10 +5425,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -5593,7 +5599,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -5606,13 +5612,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -5625,10 +5631,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -5799,7 +5805,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -5812,13 +5818,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -5831,10 +5837,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -6005,7 +6011,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -6018,13 +6024,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -6037,10 +6043,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -6211,7 +6217,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -6224,13 +6230,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -6243,10 +6249,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -6417,7 +6423,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -6430,13 +6436,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -6449,10 +6455,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -6623,7 +6629,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -6636,13 +6642,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -6655,10 +6661,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -6829,7 +6835,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -6842,13 +6848,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -6861,10 +6867,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -7035,7 +7041,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -7048,13 +7054,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -7067,10 +7073,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -7241,7 +7247,7 @@
             "description": "Publication date range end (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedFrom",
+            "name": "dateModifiedFrom",
             "in": "query",
             "required": false,
             "schema": {
@@ -7254,13 +7260,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range start (YYYY-MM-DD).",
-              "title": "Dateupdatedfrom"
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
             },
-            "description": "Update date range start (YYYY-MM-DD)."
+            "description": "Modification date range start (YYYY-MM-DD)."
           },
           {
-            "name": "dateUpdatedTo",
+            "name": "dateModifiedTo",
             "in": "query",
             "required": false,
             "schema": {
@@ -7273,10 +7279,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Update date range end (YYYY-MM-DD).",
-              "title": "Dateupdatedto"
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
             },
-            "description": "Update date range end (YYYY-MM-DD)."
+            "description": "Modification date range end (YYYY-MM-DD)."
           }
         ],
         "responses": {
@@ -7339,7 +7345,7 @@
           "Service Info"
         ],
         "summary": "Get service information",
-        "description": "Returns service metadata including name and version.",
+        "description": "Returns service metadata including name, version, and Elasticsearch connectivity status.",
         "operationId": "get_service_info_service_info_get",
         "responses": {
           "200": {
@@ -7694,14 +7700,173 @@
             "type": "string",
             "title": "Identifier"
           },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "BioProject",
+            "title": "Ispartof"
+          },
           "type": {
             "type": "string",
+            "const": "bioproject",
             "title": "Type"
           },
+          "objectType": {
+            "type": "string",
+            "enum": [
+              "UmbrellaBioProject",
+              "BioProject"
+            ],
+            "title": "Objecttype"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "grant": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array",
+            "title": "Grant"
+          },
+          "externalLink": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            },
+            "type": "array",
+            "title": "Externallink"
+          },
           "dbXrefs": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
             "type": "array",
             "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
           },
           "dbXrefsCount": {
             "additionalProperties": {
@@ -7711,19 +7876,209 @@
             "title": "Dbxrefscount"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
           "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
           "type",
+          "objectType",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
           "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
           "dbXrefsCount"
         ],
         "title": "BioProjectDetailResponse",
-        "description": "BioProject entry detail with truncated dbXrefs and dbXrefsCount.\n\nAll BioProject fields plus ``dbXrefsCount`` for frontend display."
+        "description": "BioProject entry detail with truncated dbXrefs and dbXrefsCount."
       },
       "BioProjectEntryJsonLdResponse": {
         "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "BioProject",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "bioproject",
+            "title": "Type"
+          },
+          "objectType": {
+            "type": "string",
+            "enum": [
+              "UmbrellaBioProject",
+              "BioProject"
+            ],
+            "title": "Objecttype"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "grant": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array",
+            "title": "Grant"
+          },
+          "externalLink": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            },
+            "type": "array",
+            "title": "Externallink"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
           "@context": {
             "type": "string",
             "title": "@Context"
@@ -7731,23 +8086,34 @@
           "@id": {
             "type": "string",
             "title": "@Id"
-          },
-          "identifier": {
-            "type": "string",
-            "title": "Identifier"
-          },
-          "type": {
-            "type": "string",
-            "title": "Type"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
-          "@context",
-          "@id",
           "identifier",
-          "type"
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "objectType",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
+          "@context",
+          "@id"
         ],
         "title": "BioProjectEntryJsonLdResponse",
         "description": "BioProject entry in JSON-LD format."
@@ -7946,14 +8312,161 @@
             "type": "string",
             "title": "Identifier"
           },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "BioSample",
+            "title": "Ispartof"
+          },
           "type": {
             "type": "string",
+            "const": "biosample",
             "title": "Type"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/Attribute"
+            },
+            "type": "array",
+            "title": "Attributes"
+          },
+          "model": {
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            },
+            "type": "array",
+            "title": "Model"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Package"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "dbXrefs": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
             "type": "array",
             "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
           },
           "dbXrefsCount": {
             "additionalProperties": {
@@ -7963,12 +8476,28 @@
             "title": "Dbxrefscount"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
           "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
           "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "attributes",
+          "model",
+          "package",
           "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
           "dbXrefsCount"
         ],
         "title": "BioSampleDetailResponse",
@@ -7976,6 +8505,166 @@
       },
       "BioSampleEntryJsonLdResponse": {
         "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "BioSample",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "biosample",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/Attribute"
+            },
+            "type": "array",
+            "title": "Attributes"
+          },
+          "model": {
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            },
+            "type": "array",
+            "title": "Model"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Package"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
           "@context": {
             "type": "string",
             "title": "@Context"
@@ -7983,23 +8672,32 @@
           "@id": {
             "type": "string",
             "title": "@Id"
-          },
-          "identifier": {
-            "type": "string",
-            "title": "Identifier"
-          },
-          "type": {
-            "type": "string",
-            "title": "Type"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
-          "@context",
-          "@id",
           "identifier",
-          "type"
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "attributes",
+          "model",
+          "package",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
+          "@context",
+          "@id"
         ],
         "title": "BioSampleEntryJsonLdResponse",
         "description": "BioSample entry in JSON-LD format."
@@ -8652,14 +9350,134 @@
             "type": "string",
             "title": "Identifier"
           },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "jga",
+            "title": "Ispartof"
+          },
           "type": {
             "type": "string",
+            "enum": [
+              "jga-study",
+              "jga-dataset",
+              "jga-dac",
+              "jga-policy"
+            ],
             "title": "Type"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "dbXrefs": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
             "type": "array",
             "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "live",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "controlled-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
           },
           "dbXrefsCount": {
             "additionalProperties": {
@@ -8669,12 +9487,25 @@
             "title": "Dbxrefscount"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
           "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
           "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
           "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
           "dbXrefsCount"
         ],
         "title": "JgaDetailResponse",
@@ -8682,6 +9513,139 @@
       },
       "JgaEntryJsonLdResponse": {
         "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "jga",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "jga-study",
+              "jga-dataset",
+              "jga-dac",
+              "jga-policy"
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "live",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "controlled-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
           "@context": {
             "type": "string",
             "title": "@Context"
@@ -8689,23 +9653,29 @@
           "@id": {
             "type": "string",
             "title": "@Id"
-          },
-          "identifier": {
-            "type": "string",
-            "title": "Identifier"
-          },
-          "type": {
-            "type": "string",
-            "title": "Type"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
-          "@context",
-          "@id",
           "identifier",
-          "type"
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
+          "@context",
+          "@id"
         ],
         "title": "JgaEntryJsonLdResponse",
         "description": "JGA entry in JSON-LD format."
@@ -9221,13 +10191,23 @@
             "type": "string",
             "title": "Description",
             "description": "Service description."
+          },
+          "elasticsearch": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "title": "Elasticsearch",
+            "description": "Elasticsearch status: 'ok' or 'unavailable'."
           }
         },
         "type": "object",
         "required": [
           "name",
           "version",
-          "description"
+          "description",
+          "elasticsearch"
         ],
         "title": "ServiceInfoResponse",
         "description": "Response for GET /service-info."
@@ -9238,14 +10218,144 @@
             "type": "string",
             "title": "Identifier"
           },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "sra",
+            "title": "Ispartof"
+          },
           "type": {
             "type": "string",
+            "enum": [
+              "sra-submission",
+              "sra-study",
+              "sra-experiment",
+              "sra-run",
+              "sra-sample",
+              "sra-analysis"
+            ],
             "title": "Type"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "dbXrefs": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
             "type": "array",
             "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
           },
           "dbXrefsCount": {
             "additionalProperties": {
@@ -9255,12 +10365,25 @@
             "title": "Dbxrefscount"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
           "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
           "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
           "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
           "dbXrefsCount"
         ],
         "title": "SraDetailResponse",
@@ -9268,6 +10391,149 @@
       },
       "SraEntryJsonLdResponse": {
         "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "sra",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "sra-submission",
+              "sra-study",
+              "sra-experiment",
+              "sra-run",
+              "sra-sample",
+              "sra-analysis"
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "unpublished",
+              "suppressed",
+              "withdrawn"
+            ],
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "enum": [
+              "public-access",
+              "controlled-access"
+            ],
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
           "@context": {
             "type": "string",
             "title": "@Context"
@@ -9275,23 +10541,29 @@
           "@id": {
             "type": "string",
             "title": "@Id"
-          },
-          "identifier": {
-            "type": "string",
-            "title": "Identifier"
-          },
-          "type": {
-            "type": "string",
-            "title": "Type"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
-          "@context",
-          "@id",
           "identifier",
-          "type"
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "name",
+          "url",
+          "organism",
+          "title",
+          "description",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dateCreated",
+          "dateModified",
+          "datePublished",
+          "@context",
+          "@id"
         ],
         "title": "SraEntryJsonLdResponse",
         "description": "SRA entry in JSON-LD format."

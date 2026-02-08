@@ -174,13 +174,13 @@ class TestValidationErrorFormat:
 
 
 class TestInvalidTypeInPath:
-    """Invalid {type} in path returns 422."""
+    """Invalid {type} in path returns 404."""
 
-    def test_unknown_type_returns_422(
+    def test_unknown_type_returns_404(
         self, app_with_es: TestClient
     ) -> None:
         resp = app_with_es.get("/entries/unknown-type/")
-        assert resp.status_code in (404, 422)
+        assert resp.status_code == 404
 
 
 # === Date parameter validation ===
@@ -654,7 +654,7 @@ class TestEntriesDbXrefs:
                     "type": "bioproject",
                 },
                 "fields": {
-                    "dbXrefsTruncated": [truncated],
+                    "dbXrefsTruncated": truncated,
                     "dbXrefsCountByType": [{"biosample": 200}],
                 },
             }],
@@ -681,7 +681,6 @@ class TestEntriesDbXrefs:
                     "type": "bioproject",
                 },
                 "fields": {
-                    "dbXrefsTruncated": [[]],
                     "dbXrefsCountByType": [{"biosample": 50}],
                 },
             }],
@@ -712,7 +711,7 @@ class TestEntriesDbXrefs:
                     "type": "bioproject",
                 },
                 "fields": {
-                    "dbXrefsTruncated": [truncated],
+                    "dbXrefsTruncated": truncated,
                     "dbXrefsCountByType": [{"biosample": 5, "sra-study": 3}],
                 },
             }],
@@ -740,10 +739,7 @@ class TestEntriesDbXrefs:
                     "type": "bioproject",
                     "title": "No xrefs",
                 },
-                "fields": {
-                    "dbXrefsTruncated": [[]],
-                    "dbXrefsCountByType": [{}],
-                },
+                "fields": {},
             }],
             total=1,
         )
@@ -753,6 +749,91 @@ class TestEntriesDbXrefs:
         item = body["items"][0]
         assert item["dbXrefs"] == []
         assert item["dbXrefsCount"] == {}
+
+
+# === _source filter: dbXrefs always excluded ===
+
+
+class TestEntriesSourceFilter:
+    """_source filter always excludes dbXrefs from ES request."""
+
+    def test_fields_param_excludes_db_xrefs(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """fields=identifier,type,dbXrefs → _source should NOT contain dbXrefs."""
+        app_with_es.get(
+            "/entries/",
+            params={"fields": "identifier,type,dbXrefs"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        source = body["_source"]
+        assert isinstance(source, list)
+        assert "dbXrefs" not in source
+
+    def test_fields_param_passes_other_fields(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """fields=identifier,type → _source contains requested fields."""
+        app_with_es.get(
+            "/entries/",
+            params={"fields": "identifier,type"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        source = body["_source"]
+        assert isinstance(source, list)
+        assert "identifier" in source
+        assert "type" in source
+
+    def test_no_fields_excludes_db_xrefs(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """Default (no fields) → _source excludes dbXrefs."""
+        app_with_es.get("/entries/")
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        source = body["_source"]
+        assert isinstance(source, dict)
+        assert "dbXrefs" in source["excludes"]
+
+
+# === Facet aggregation size ===
+
+
+class TestEntriesFacetAggSize:
+    """Facet aggregations use size=50."""
+
+    def test_facet_aggs_have_size_50(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(
+            total=0,
+            aggregations={
+                "type": {"buckets": []},
+                "organism": {"buckets": []},
+                "status": {"buckets": []},
+                "accessibility": {"buckets": []},
+            },
+        )
+        app_with_es.get(
+            "/entries/", params={"includeFacets": "true"}
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        aggs = body["aggs"]
+        for agg_name in ("organism", "status", "accessibility", "type"):
+            assert aggs[agg_name]["terms"]["size"] == 50, (
+                f"{agg_name} should have size=50"
+            )
 
 
 # === ES error handling ===

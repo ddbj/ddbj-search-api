@@ -97,6 +97,21 @@ async def _generate_bulk_ndjson(
         "(Content-Type: application/x-ndjson).  IDs not found are not "
         "included in the NDJSON output."
     ),
+    responses={
+        200: {
+            "content": {
+                "application/x-ndjson": {
+                    "schema": {
+                        "type": "string",
+                        "description": (
+                            "One JSON object per line (NDJSON). "
+                            "Each line is an entry document."
+                        ),
+                    },
+                },
+            },
+        },
+    },
 )
 async def bulk_entries(
     body: BulkRequest,

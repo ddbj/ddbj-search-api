@@ -9,9 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from ddbj_search_api.es.client import (es_count, es_get_doc,
-                                      es_get_source_stream, es_mget,
-                                      es_search,
+from ddbj_search_api.es.client import (es_get_source_stream, es_search,
                                       es_search_with_script_fields)
 
 
@@ -136,183 +134,6 @@ class TestEsSearchErrors:
 
 
 # ===================================================================
-# es_get_doc
-# ===================================================================
-
-
-class TestEsGetDoc:
-    """es_get_doc sends GET to /{index}/_doc/{id}."""
-
-    @pytest.mark.asyncio()
-    async def test_returns_source_on_found(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        source = {"identifier": "PRJDB1234", "type": "bioproject"}
-        mock_client.get.return_value = _mock_response(
-            {"_source": source, "found": True},
-        )
-
-        result = await es_get_doc(mock_client, "bioproject", "PRJDB1234")
-        assert result == source
-
-    @pytest.mark.asyncio()
-    async def test_returns_none_on_404(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.get.return_value = _mock_response(
-            {"found": False}, status_code=404,
-        )
-
-        result = await es_get_doc(mock_client, "bioproject", "NOTEXIST")
-        assert result is None
-
-    @pytest.mark.asyncio()
-    async def test_gets_correct_endpoint(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.get.return_value = _mock_response(
-            {"_source": {}, "found": True},
-        )
-
-        await es_get_doc(mock_client, "biosample", "SAMD00001")
-
-        call_args = mock_client.get.call_args
-        assert call_args[0][0] == "/biosample/_doc/SAMD00001"
-
-
-class TestEsGetDocErrors:
-    """es_get_doc raises on non-404 errors."""
-
-    @pytest.mark.asyncio()
-    async def test_raises_on_500(self, mock_client: AsyncMock) -> None:
-        mock_client.get.return_value = _mock_response(
-            {"error": "internal"}, status_code=500,
-        )
-        with pytest.raises(httpx.HTTPStatusError):
-            await es_get_doc(mock_client, "bioproject", "PRJDB1")
-
-
-# ===================================================================
-# es_mget
-# ===================================================================
-
-
-class TestEsMget:
-    """es_mget sends POST to /{index}/_mget."""
-
-    @pytest.mark.asyncio()
-    async def test_returns_response_json(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        es_response = {
-            "docs": [
-                {"_source": {"identifier": "PRJDB1"}, "found": True},
-                {"found": False, "_id": "PRJDB999"},
-            ],
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        result = await es_mget(mock_client, "bioproject", ["PRJDB1", "PRJDB999"])
-        assert result == es_response
-
-    @pytest.mark.asyncio()
-    async def test_posts_to_correct_endpoint(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.post.return_value = _mock_response({"docs": []})
-
-        await es_mget(mock_client, "biosample", ["SAMD1"])
-
-        call_args = mock_client.post.call_args
-        assert call_args[0][0] == "/biosample/_mget"
-
-    @pytest.mark.asyncio()
-    async def test_sends_ids_in_body(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.post.return_value = _mock_response({"docs": []})
-
-        await es_mget(mock_client, "bioproject", ["PRJDB1", "PRJDB2"])
-
-        body = mock_client.post.call_args[1]["json"]
-        assert body == {"ids": ["PRJDB1", "PRJDB2"]}
-
-
-class TestEsMgetErrors:
-
-    @pytest.mark.asyncio()
-    async def test_raises_on_500(self, mock_client: AsyncMock) -> None:
-        mock_client.post.return_value = _mock_response(
-            {"error": "internal"}, status_code=500,
-        )
-        with pytest.raises(httpx.HTTPStatusError):
-            await es_mget(mock_client, "bioproject", ["PRJDB1"])
-
-
-# ===================================================================
-# es_count
-# ===================================================================
-
-
-class TestEsCount:
-    """es_count sends POST to /{index}/_count."""
-
-    @pytest.mark.asyncio()
-    async def test_returns_count_integer(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.post.return_value = _mock_response({"count": 42})
-
-        result = await es_count(mock_client, "entries")
-        assert result == 42
-
-    @pytest.mark.asyncio()
-    async def test_posts_to_correct_endpoint(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.post.return_value = _mock_response({"count": 0})
-
-        await es_count(mock_client, "bioproject")
-
-        call_args = mock_client.post.call_args
-        assert call_args[0][0] == "/bioproject/_count"
-
-    @pytest.mark.asyncio()
-    async def test_sends_query_in_body(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.post.return_value = _mock_response({"count": 10})
-        query = {"match_all": {}}
-
-        await es_count(mock_client, "entries", query=query)
-
-        body = mock_client.post.call_args[1]["json"]
-        assert body == {"query": {"match_all": {}}}
-
-    @pytest.mark.asyncio()
-    async def test_no_query_sends_empty_body(
-        self, mock_client: AsyncMock,
-    ) -> None:
-        mock_client.post.return_value = _mock_response({"count": 100})
-
-        await es_count(mock_client, "entries")
-
-        body = mock_client.post.call_args[1]["json"]
-        assert body == {}
-
-
-class TestEsCountErrors:
-
-    @pytest.mark.asyncio()
-    async def test_raises_on_500(self, mock_client: AsyncMock) -> None:
-        mock_client.post.return_value = _mock_response(
-            {"error": "internal"}, status_code=500,
-        )
-        with pytest.raises(httpx.HTTPStatusError):
-            await es_count(mock_client, "entries")
-
-
-# ===================================================================
 # es_search_with_script_fields
 # ===================================================================
 
@@ -333,9 +154,9 @@ class TestEsSearchWithScriptFields:
                         "type": "bioproject",
                     },
                     "fields": {
-                        "dbXrefsTruncated": [[
+                        "dbXrefsTruncated": [
                             {"identifier": "BS1", "type": "biosample"},
-                        ]],
+                        ],
                         "dbXrefsCountByType": [{"biosample": 5}],
                     },
                 }],
@@ -408,6 +229,66 @@ class TestEsSearchWithScriptFields:
         assert "dbXrefsCountByType" in body["script_fields"]
         limit_param = body["script_fields"]["dbXrefsTruncated"]["script"]["params"]["limit"]
         assert limit_param == 200
+
+
+    @pytest.mark.asyncio()
+    async def test_normalizes_single_db_xref(
+        self, mock_client: AsyncMock,
+    ) -> None:
+        """Single xref: ES returns [{...}], result is a one-element list."""
+        es_response = {
+            "hits": {
+                "total": {"value": 1, "relation": "eq"},
+                "hits": [{
+                    "_source": {
+                        "identifier": "PRJDB2",
+                        "type": "bioproject",
+                    },
+                    "fields": {
+                        "dbXrefsTruncated": [
+                            {"identifier": "BS1", "type": "biosample"},
+                        ],
+                        "dbXrefsCountByType": [{"biosample": 1}],
+                    },
+                }],
+            },
+        }
+        mock_client.post.return_value = _mock_response(es_response)
+
+        result = await es_search_with_script_fields(
+            mock_client, "bioproject", "PRJDB2", 100,
+        )
+        assert result is not None
+        assert result["dbXrefs"] == [
+            {"identifier": "BS1", "type": "biosample"},
+        ]
+        assert result["dbXrefsCount"] == {"biosample": 1}
+
+    @pytest.mark.asyncio()
+    async def test_handles_empty_db_xrefs(
+        self, mock_client: AsyncMock,
+    ) -> None:
+        """Zero xrefs: ES omits the key, result is an empty list."""
+        es_response = {
+            "hits": {
+                "total": {"value": 1, "relation": "eq"},
+                "hits": [{
+                    "_source": {
+                        "identifier": "PRJDB3",
+                        "type": "bioproject",
+                    },
+                    "fields": {},
+                }],
+            },
+        }
+        mock_client.post.return_value = _mock_response(es_response)
+
+        result = await es_search_with_script_fields(
+            mock_client, "bioproject", "PRJDB3", 100,
+        )
+        assert result is not None
+        assert result["dbXrefs"] == []
+        assert result["dbXrefsCount"] == {}
 
 
 class TestEsSearchWithScriptFieldsErrors:

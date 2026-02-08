@@ -261,15 +261,15 @@ def build_facet_aggs(
 ) -> Dict[str, Any]:
     """Build ES aggregation queries for facets."""
     aggs: Dict[str, Any] = {
-        "organism": {"terms": {"field": "organism.name"}},
-        "status": {"terms": {"field": "status"}},
-        "accessibility": {"terms": {"field": "accessibility"}},
+        "organism": {"terms": {"field": "organism.name", "size": 50}},
+        "status": {"terms": {"field": "status", "size": 50}},
+        "accessibility": {"terms": {"field": "accessibility", "size": 50}},
     }
 
     if is_cross_type:
-        aggs["type"] = {"terms": {"field": "type"}}
+        aggs["type"] = {"terms": {"field": "type", "size": 50}}
 
     if db_type == "bioproject":
-        aggs["objectType"] = {"terms": {"field": "objectType"}}
+        aggs["objectType"] = {"terms": {"field": "objectType", "size": 50}}
 
     return aggs
