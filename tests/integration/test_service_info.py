@@ -1,8 +1,11 @@
 """Integration tests for GET /service-info."""
+
+from __future__ import annotations
+
 from fastapi.testclient import TestClient
 
 
-def test_service_info_returns_ok_status(app: TestClient):
+def test_service_info_returns_ok_status(app: TestClient) -> None:
     """ES is reachable so elasticsearch field should be 'ok'."""
     resp = app.get("/service-info")
 
@@ -11,7 +14,7 @@ def test_service_info_returns_ok_status(app: TestClient):
     assert body["elasticsearch"] == "ok"
 
 
-def test_service_info_response_structure(app: TestClient):
+def test_service_info_response_structure(app: TestClient) -> None:
     """Response contains required fields: name, version, description,
     elasticsearch."""
     resp = app.get("/service-info")

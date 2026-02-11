@@ -5,14 +5,15 @@
 - GET /entries/{type}/{id}.jsonld   (JSON-LD format)
 - GET /entries/{type}/{id}/dbxrefs.json (full dbXrefs)
 """
-from typing import Tuple
+
+from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
 
 @pytest.fixture(scope="session")
-def bioproject_id(app: TestClient) -> Tuple[str, str]:
+def bioproject_id(app: TestClient) -> tuple[str, str]:
     """Dynamically fetch a bioproject entry ID from ES."""
     resp = app.get(
         "/entries/bioproject/",
@@ -27,7 +28,7 @@ def bioproject_id(app: TestClient) -> Tuple[str, str]:
 
 
 @pytest.fixture(scope="session")
-def biosample_id(app: TestClient) -> Tuple[str, str]:
+def biosample_id(app: TestClient) -> tuple[str, str]:
     """Dynamically fetch a biosample entry ID from ES."""
     resp = app.get(
         "/entries/biosample/",
@@ -46,8 +47,8 @@ def biosample_id(app: TestClient) -> Tuple[str, str]:
 
 def test_entry_detail_returns_200(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """Detail endpoint returns 200 for a known entry."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}")
@@ -60,8 +61,8 @@ def test_entry_detail_returns_200(
 
 def test_entry_detail_has_db_xrefs_count(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """Detail response includes dbXrefsCount."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}")
@@ -71,7 +72,7 @@ def test_entry_detail_has_db_xrefs_count(
     assert isinstance(body["dbXrefsCount"], dict)
 
 
-def test_entry_detail_not_found(app: TestClient):
+def test_entry_detail_not_found(app: TestClient) -> None:
     """Non-existent ID returns 404."""
     resp = app.get("/entries/bioproject/NONEXISTENT_ID_99999")
 
@@ -85,8 +86,8 @@ def test_entry_detail_not_found(app: TestClient):
 
 def test_entry_json_returns_raw_document(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """The .json endpoint returns the raw ES document."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}.json")
@@ -99,8 +100,8 @@ def test_entry_json_returns_raw_document(
 
 def test_entry_json_contains_full_db_xrefs(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """The .json endpoint returns the full dbXrefs (no truncation)."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}.json")
@@ -112,7 +113,7 @@ def test_entry_json_contains_full_db_xrefs(
     assert "dbXrefsCount" not in body
 
 
-def test_entry_json_not_found(app: TestClient):
+def test_entry_json_not_found(app: TestClient) -> None:
     """Non-existent ID returns 404 for .json endpoint."""
     resp = app.get("/entries/bioproject/NONEXISTENT_ID_99999.json")
 
@@ -124,8 +125,8 @@ def test_entry_json_not_found(app: TestClient):
 
 def test_entry_jsonld_has_context_and_id(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """JSON-LD response includes @context and @id fields."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}.jsonld")
@@ -139,8 +140,8 @@ def test_entry_jsonld_has_context_and_id(
 
 def test_entry_jsonld_content_type(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """JSON-LD response has application/ld+json content type."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}.jsonld")
@@ -148,7 +149,7 @@ def test_entry_jsonld_content_type(
     assert "application/ld+json" in resp.headers["content-type"]
 
 
-def test_entry_jsonld_not_found(app: TestClient):
+def test_entry_jsonld_not_found(app: TestClient) -> None:
     """Non-existent ID returns 404 for .jsonld endpoint."""
     resp = app.get("/entries/bioproject/NONEXISTENT_ID_99999.jsonld")
 
@@ -160,8 +161,8 @@ def test_entry_jsonld_not_found(app: TestClient):
 
 def test_dbxrefs_json_returns_full_xrefs(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """The dbxrefs.json endpoint returns a dbXrefs array."""
     db_type, entry_id = bioproject_id
     resp = app.get(f"/entries/{db_type}/{entry_id}/dbxrefs.json")
@@ -172,7 +173,7 @@ def test_dbxrefs_json_returns_full_xrefs(
     assert isinstance(body["dbXrefs"], list)
 
 
-def test_dbxrefs_json_not_found(app: TestClient):
+def test_dbxrefs_json_not_found(app: TestClient) -> None:
     """Non-existent ID returns 404 for dbxrefs.json endpoint."""
     resp = app.get("/entries/bioproject/NONEXISTENT_ID_99999/dbxrefs.json")
 
@@ -184,8 +185,8 @@ def test_dbxrefs_json_not_found(app: TestClient):
 
 def test_entry_detail_biosample(
     app: TestClient,
-    biosample_id: Tuple[str, str],
-):
+    biosample_id: tuple[str, str],
+) -> None:
     """Detail endpoint works for biosample type too."""
     db_type, entry_id = biosample_id
     resp = app.get(f"/entries/{db_type}/{entry_id}")
@@ -201,8 +202,8 @@ def test_entry_detail_biosample(
 
 def test_entry_detail_db_xrefs_limit_default(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """Default dbXrefsLimit works correctly after bug fix.
 
     dbXrefs should be a list (not a dict).
@@ -222,8 +223,8 @@ def test_entry_detail_db_xrefs_limit_default(
 
 def test_entry_detail_db_xrefs_count_consistency(
     app: TestClient,
-    bioproject_id: Tuple[str, str],
-):
+    bioproject_id: tuple[str, str],
+) -> None:
     """Sum of dbXrefsCount matches total xrefs from dbxrefs.json."""
     db_type, entry_id = bioproject_id
 

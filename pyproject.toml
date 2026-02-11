@@ -29,9 +29,8 @@ tests = [
     "pytest-mock",
     "pytest-cov",
     "pytest-asyncio",
-    "pylint",
+    "ruff",
     "mypy",
-    "isort",
     "hypothesis",
 ]
 
@@ -49,32 +48,64 @@ files = ["./ddbj_search_api/**/*.py", "./tests/**/*.py"]
 follow_imports = "silent"
 strict = true
 
-[tool.pylint.messages_control]
-disable = [
-    "C0103", # Invalid name (enum members use lowercase)
-    "C0114", # Missing module docstring
-    "C0115", # Missing class docstring
-    "C0116", # Missing function or method docstring
-    "C0301", # Line too long
-    "R0801", # Similar lines in 2 files
-    "R0902", # Too many instance attributes (query param classes)
-    "R0903", # Too few public methods
-    "R0911", # Too many return statements
-    "R0912", # Too many branches
-    "R0913", # Too many arguments
-    "R0914", # Too many local variables
-    "R0915", # Too many statements
-    "R0917", # Too many positional arguments
-    "R1702", # Too many nested blocks
-    "R1705", # Unnecessary "else" after "return"
-    "W0511", # Fixme
-    "W0613", # Unused argument (FastAPI route params for TODO endpoints)
-    "W0621", # Redefining name from outer scope (pytest fixtures)
-    "W0622", # Redefining built-in (FastAPI path params: type, id)
-    "W0718", # Broad exception caught
-    "W0719", # Exception type of Exception
-    "I1101", # c-extension-no-member
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    # --- formatter と競合 ---
+    "COM812",   # trailing comma
+    "ISC001",   # implicit string concatenation
+    # --- docstring (既存コードに合わせて除外) ---
+    "D",        # pydocstyle 全体
+    # --- FastAPI / Pydantic パターン ---
+    "B008",     # function call in default argument (Depends/Query/Path)
+    "PLR0913",  # too many arguments
+    "PLR0917",  # too many positional arguments
+    "ARG001",   # unused function argument (FastAPI deps, pytest fixtures)
+    "ARG002",   # unused method argument
+    "A002",     # builtin variable shadowing (type, id, format)
+    "A001",     # builtin shadowing
+    "N815",     # mixedCase variable (Pydantic alias: dbXrefs 等)
+    # --- 複雑度 (既存コードに合わせて段階的に) ---
+    "PLR0911",  # too many return statements
+    "PLR0912",  # too many branches
+    "C901",     # too complex
+    "PLR0914",  # too many local variables
+    "PLR0915",  # too many statements
+    # --- その他 ---
+    "RET505",   # unnecessary else after return
+    "ANN",      # flake8-annotations (mypy strict で代替)
+    "FBT",      # flake8-boolean-trap (FastAPI query params で頻出)
+    "S",        # bandit (セキュリティスキャンは別途)
+    "EM",       # flake8-errmsg
+    "TRY003",   # long exception message
+    "SLF001",   # private member access (テストで使用)
+    "TC",       # flake8-type-checking (from __future__ import annotations で十分)
+    "TRY300",   # consider moving to else block (style)
+    "BLE001",   # blind exception (ES ping で意図的に全例外を catch)
+    "PLR2004",  # magic values (HTTP status codes 等、自明な定数)
+    "T201",     # print (CLI entrypoint で使用)
+    "SIM108",   # ternary operator (可読性を優先)
+    "PERF401",  # list comprehension (既存コードに合わせて段階的に)
+    "INP001",   # implicit namespace package (tests/ に __init__.py 不要)
+    "PT006",    # parametrize arg type (string style で統一)
+    "PT011",    # pytest.raises too broad (段階的に改善)
+    "RUF012",   # ClassVar annotation (テストデータクラスで頻出)
+    "FAST002",  # FastAPI Annotated style (段階的に移行)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ARG001",   # unused arguments (pytest fixtures)
+    "PLR2004",  # magic values in assertions
+    "SLF001",   # private member access
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ddbj_search_api"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

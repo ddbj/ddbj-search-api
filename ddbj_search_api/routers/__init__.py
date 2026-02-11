@@ -4,16 +4,18 @@ Route registration order matters: bulk must come before entry_detail
 to avoid path conflicts (``/entries/{type}/bulk`` vs
 ``/entries/{type}/{id}``).
 """
-from typing import Any, Dict, Union
+
+from __future__ import annotations
+
+from typing import Any
 
 from fastapi import APIRouter
 
-from ddbj_search_api.routers import (bulk, entries, entry_detail, facets,
-                                     service_info)
+from ddbj_search_api.routers import bulk, entries, entry_detail, facets, service_info
 from ddbj_search_api.schemas.common import ProblemDetails
 
 # Common error responses (RFC 7807) applied to all endpoints.
-PROBLEM_RESPONSES: Dict[Union[int, str], Dict[str, Any]] = {
+PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {
         "description": "Bad Request (e.g. deep paging limit exceeded).",
         "model": ProblemDetails,

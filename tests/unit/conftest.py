@@ -1,5 +1,9 @@
 """Shared fixtures for unit tests."""
-from typing import Any, Dict, List, Optional
+
+from __future__ import annotations
+
+import collections.abc
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -26,14 +30,14 @@ def _make_app(config: AppConfig) -> TestClient:
     return TestClient(application)
 
 
-@pytest.fixture()
+@pytest.fixture
 def config() -> AppConfig:
     """Create a fresh AppConfig with defaults (no lru_cache)."""
 
     return AppConfig()
 
 
-@pytest.fixture()
+@pytest.fixture
 def app(config: AppConfig) -> TestClient:
     """Create a TestClient using a fresh AppConfig."""
 
@@ -44,11 +48,11 @@ def make_es_search_response(
     hits: Any = None,
     total: int = 0,
     aggregations: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build a minimal ES search response dict."""
     if hits is None:
         hits = []
-    resp: Dict[str, Any] = {
+    resp: dict[str, Any] = {
         "hits": {
             "total": {"value": total, "relation": "eq"},
             "hits": hits,
@@ -60,8 +64,8 @@ def make_es_search_response(
     return resp
 
 
-@pytest.fixture()
-def mock_es_search():
+@pytest.fixture
+def mock_es_search() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_search and yield the AsyncMock.
 
     Default return value is an empty search response.
@@ -75,7 +79,7 @@ def mock_es_search():
         yield mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def app_with_es(config: AppConfig, mock_es_search: AsyncMock) -> TestClient:
     """TestClient with es_search mocked (no real ES required).
 
@@ -98,7 +102,7 @@ def make_mock_stream_response(body: bytes) -> httpx.Response:
     response = MagicMock(spec=httpx.Response)
     response.status_code = 200
 
-    async def _aiter_bytes():  # type: ignore[no-untyped-def]
+    async def _aiter_bytes() -> collections.abc.AsyncIterator[bytes]:
         yield body
 
     response.aiter_bytes = _aiter_bytes
@@ -107,8 +111,8 @@ def make_mock_stream_response(body: bytes) -> httpx.Response:
     return response
 
 
-@pytest.fixture()
-def mock_es_search_with_script_fields():
+@pytest.fixture
+def mock_es_search_with_script_fields() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_search_with_script_fields in the entry_detail router."""
     with patch(
         "ddbj_search_api.routers.entry_detail.es_search_with_script_fields",
@@ -118,8 +122,8 @@ def mock_es_search_with_script_fields():
         yield mock
 
 
-@pytest.fixture()
-def mock_es_get_source_stream():
+@pytest.fixture
+def mock_es_get_source_stream() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_get_source_stream in the entry_detail router."""
     with patch(
         "ddbj_search_api.routers.entry_detail.es_get_source_stream",
@@ -129,7 +133,7 @@ def mock_es_get_source_stream():
         yield mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def app_with_entry_detail(
     config: AppConfig,
     mock_es_search_with_script_fields: AsyncMock,
@@ -146,8 +150,8 @@ def app_with_entry_detail(
 # --- Bulk API fixtures ---
 
 
-@pytest.fixture()
-def mock_es_get_source_stream_bulk():
+@pytest.fixture
+def mock_es_get_source_stream_bulk() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_get_source_stream in the bulk router.
 
     Default return value is None (not found).
@@ -161,7 +165,7 @@ def mock_es_get_source_stream_bulk():
         yield mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def app_with_bulk(
     config: AppConfig,
     mock_es_get_source_stream_bulk: AsyncMock,
@@ -178,14 +182,14 @@ def app_with_bulk(
 
 
 def make_facets_aggregations(
-    organism: Optional[List[Dict[str, Any]]] = None,
-    status: Optional[List[Dict[str, Any]]] = None,
-    accessibility: Optional[List[Dict[str, Any]]] = None,
-    type_buckets: Optional[List[Dict[str, Any]]] = None,
-    object_type: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    organism: list[dict[str, Any]] | None = None,
+    status: list[dict[str, Any]] | None = None,
+    accessibility: list[dict[str, Any]] | None = None,
+    type_buckets: list[dict[str, Any]] | None = None,
+    object_type: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build aggregation data for facets tests."""
-    aggs: Dict[str, Any] = {
+    aggs: dict[str, Any] = {
         "organism": {"buckets": organism or []},
         "status": {"buckets": status or []},
         "accessibility": {"buckets": accessibility or []},
@@ -198,8 +202,8 @@ def make_facets_aggregations(
     return aggs
 
 
-@pytest.fixture()
-def mock_es_search_facets():
+@pytest.fixture
+def mock_es_search_facets() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_search in the facets router.
 
     Default return value is an empty search response with empty facets.
@@ -216,7 +220,7 @@ def mock_es_search_facets():
         yield mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def app_with_facets(
     config: AppConfig,
     mock_es_search_facets: AsyncMock,

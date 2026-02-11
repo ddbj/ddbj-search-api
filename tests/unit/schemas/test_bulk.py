@@ -1,4 +1,7 @@
 """Tests for ddbj_search_api.schemas.bulk."""
+
+from __future__ import annotations
+
 import pytest
 from ddbj_search_converter.schema import BioProject
 from hypothesis import given
@@ -7,7 +10,6 @@ from pydantic import ValidationError
 
 from ddbj_search_api.schemas.bulk import BulkRequest, BulkResponse
 from tests.unit.strategies import valid_bulk_ids
-
 
 # === BulkRequest ===
 
@@ -42,7 +44,7 @@ class TestBulkRequestPBT:
     """Property-based tests for BulkRequest."""
 
     @given(ids=valid_bulk_ids)
-    def test_valid_ids_accepted(self, ids: list) -> None:
+    def test_valid_ids_accepted(self, ids: list[str]) -> None:
         req = BulkRequest(ids=ids)
         assert req.ids == ids
         assert len(req.ids) <= 1000
@@ -130,13 +132,9 @@ class TestBulkResponsePBT:
         n_entries=st.integers(min_value=0, max_value=10),
         n_not_found=st.integers(min_value=0, max_value=10),
     )
-    def test_entries_and_not_found_sizes_match(
-        self, n_entries: int, n_not_found: int
-    ) -> None:
-        entries = [
-            _make_bioproject(f"PRJDB{i}") for i in range(n_entries)
-        ]
+    def test_entries_and_not_found_sizes_match(self, n_entries: int, n_not_found: int) -> None:
+        entries = [_make_bioproject(f"PRJDB{i}") for i in range(n_entries)]
         not_found = [f"MISSING{i}" for i in range(n_not_found)]
-        resp = BulkResponse(entries=entries, notFound=not_found)
+        resp = BulkResponse(entries=entries, notFound=not_found)  # type: ignore[arg-type]
         assert len(resp.entries) == n_entries
         assert len(resp.not_found) == n_not_found

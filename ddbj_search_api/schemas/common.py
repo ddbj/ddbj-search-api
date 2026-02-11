@@ -1,6 +1,9 @@
 """Common schema types shared across the API."""
+
+from __future__ import annotations
+
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,20 +52,20 @@ class Facets(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    type: Optional[List[FacetBucket]] = Field(
+    type: list[FacetBucket] | None = Field(
         default=None,
         description="Entry count per database type (cross-type search only).",
     )
-    organism: List[FacetBucket] = Field(
+    organism: list[FacetBucket] = Field(
         description="Entry count per organism.",
     )
-    status: List[FacetBucket] = Field(
+    status: list[FacetBucket] = Field(
         description="Entry count per status.",
     )
-    accessibility: List[FacetBucket] = Field(
+    accessibility: list[FacetBucket] = Field(
         description="Entry count per accessibility level.",
     )
-    object_type: Optional[List[FacetBucket]] = Field(
+    object_type: list[FacetBucket] | None = Field(
         default=None,
         alias="objectType",
         description="Umbrella / non-umbrella count (bioproject only).",
@@ -70,7 +73,7 @@ class Facets(BaseModel):
 
 
 # DbXrefsCount: mapping from XrefType to count
-DbXrefsCount = Dict[str, int]
+DbXrefsCount = dict[str, int]
 
 
 class EntryListItem(BaseModel):
@@ -85,47 +88,47 @@ class EntryListItem(BaseModel):
 
     identifier: str = Field(description="Entry accession identifier.")
     type: str = Field(description="Database type (e.g. 'bioproject').")
-    url: Optional[str] = Field(default=None, description="Canonical URL.")
-    title: Optional[str] = Field(default=None, description="Entry title.")
-    description: Optional[str] = Field(
+    url: str | None = Field(default=None, description="Canonical URL.")
+    title: str | None = Field(default=None, description="Entry title.")
+    description: str | None = Field(
         default=None,
         description="Entry description.",
     )
-    organism: Optional[Any] = Field(
+    organism: Any | None = Field(
         default=None,
         description="Organism information.",
     )
-    status: Optional[str] = Field(default=None, description="INSDC status.")
-    accessibility: Optional[str] = Field(
+    status: str | None = Field(default=None, description="INSDC status.")
+    accessibility: str | None = Field(
         default=None,
         description="Access level.",
     )
-    date_published: Optional[str] = Field(
+    date_published: str | None = Field(
         default=None,
         alias="datePublished",
         description="Publication date (ISO 8601).",
     )
-    date_modified: Optional[str] = Field(
+    date_modified: str | None = Field(
         default=None,
         alias="dateModified",
         description="Last modification date (ISO 8601).",
     )
-    date_created: Optional[str] = Field(
+    date_created: str | None = Field(
         default=None,
         alias="dateCreated",
         description="Creation date (ISO 8601).",
     )
-    db_xrefs: Optional[List[Any]] = Field(
+    db_xrefs: list[Any] | None = Field(
         default=None,
         alias="dbXrefs",
         description="Cross-references (truncated by dbXrefsLimit).",
     )
-    db_xrefs_count: Optional[DbXrefsCount] = Field(
+    db_xrefs_count: DbXrefsCount | None = Field(
         default=None,
         alias="dbXrefsCount",
         description="Cross-reference counts per type.",
     )
-    properties: Optional[Any] = Field(
+    properties: Any | None = Field(
         default=None,
         description="Type-specific properties.",
     )
@@ -141,15 +144,15 @@ class ProblemDetails(BaseModel):
     title: str = Field(description="Short human-readable summary.")
     status: int = Field(description="HTTP status code.")
     detail: str = Field(description="Human-readable explanation.")
-    instance: Optional[str] = Field(
+    instance: str | None = Field(
         default=None,
         description="Request path where the error occurred.",
     )
-    timestamp: Optional[str] = Field(
+    timestamp: str | None = Field(
         default=None,
         description="Error timestamp (ISO 8601).",
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         alias="requestId",
         description="Request tracking ID (same as X-Request-ID header).",

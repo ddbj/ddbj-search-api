@@ -3,6 +3,10 @@
 Tests mock ES client functions to verify routing, response construction,
 streaming, JSON-LD injection, and parameter validation.
 """
+
+from __future__ import annotations
+
+import collections.abc
 import json
 from unittest.mock import AsyncMock
 
@@ -14,7 +18,6 @@ from hypothesis import strategies as st
 from ddbj_search_api.routers.entry_detail import _inject_jsonld_prefix
 from tests.unit.conftest import make_mock_stream_response
 from tests.unit.strategies import db_type_values
-
 
 # === Routing: GET /entries/{type}/{id} ===
 
@@ -39,7 +42,8 @@ class TestEntryDetailRouting:
         assert resp.status_code == 200
 
     def test_invalid_type_returns_404(
-        self, app_with_entry_detail: TestClient,
+        self,
+        app_with_entry_detail: TestClient,
     ) -> None:
         """Invalid DB type in path returns 404 Not Found."""
         resp = app_with_entry_detail.get("/entries/invalid-type/TEST001")
@@ -238,11 +242,13 @@ class TestEntryJsonLdResponse:
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        body = json.dumps({
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "title": "Test Project",
-        }).encode()
+        body = json.dumps(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+                "title": "Test Project",
+            }
+        ).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.jsonld")
         data = resp.json()
@@ -270,9 +276,11 @@ class TestDbxrefsFullResponse:
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        body = json.dumps({
-            "dbXrefs": [{"identifier": "BS1", "type": "biosample"}],
-        }).encode()
+        body = json.dumps(
+            {
+                "dbXrefs": [{"identifier": "BS1", "type": "biosample"}],
+            }
+        ).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1/dbxrefs.json",
@@ -290,8 +298,9 @@ class TestDbxrefsFullResponse:
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         app_with_entry_detail.get("/entries/bioproject/PRJDB1/dbxrefs.json")
         call_args = mock_es_get_source_stream.call_args
-        assert call_args[1].get("source_includes") == "dbXrefs" or \
-            (len(call_args[0]) >= 4 and call_args[0][3] == "dbXrefs")
+        assert call_args[1].get("source_includes") == "dbXrefs" or (
+            len(call_args[0]) >= 4 and call_args[0][3] == "dbXrefs"
+        )
 
     def test_404_when_not_found(
         self,
@@ -311,14 +320,16 @@ class TestDbxrefsFullResponse:
 class TestInjectJsonLdPrefix:
     """Unit tests for the JSON-LD prefix injection helper."""
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_single_chunk_injection(self) -> None:
-        async def _stream():  # type: ignore[no-untyped-def]
+        async def _stream() -> collections.abc.AsyncIterator[bytes]:
             yield b'{"identifier":"X"}'
 
         chunks = []
         async for chunk in _inject_jsonld_prefix(
-            _stream(), "http://ctx", "http://id",
+            _stream(),
+            "http://ctx",
+            "http://id",
         ):
             chunks.append(chunk)
 
@@ -327,17 +338,19 @@ class TestInjectJsonLdPrefix:
         assert result["@id"] == "http://id"
         assert result["identifier"] == "X"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_multi_chunk_injection(self) -> None:
         """Brace in first chunk, rest in second."""
 
-        async def _stream():  # type: ignore[no-untyped-def]
+        async def _stream() -> collections.abc.AsyncIterator[bytes]:
             yield b'{"ident'
             yield b'ifier":"X"}'
 
         chunks = []
         async for chunk in _inject_jsonld_prefix(
-            _stream(), "http://ctx", "http://id",
+            _stream(),
+            "http://ctx",
+            "http://id",
         ):
             chunks.append(chunk)
 
@@ -346,16 +359,18 @@ class TestInjectJsonLdPrefix:
         assert result["@id"] == "http://id"
         assert result["identifier"] == "X"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_special_chars_in_url(self) -> None:
         """URLs with special chars are properly JSON-escaped."""
 
-        async def _stream():  # type: ignore[no-untyped-def]
+        async def _stream() -> collections.abc.AsyncIterator[bytes]:
             yield b'{"key":"val"}'
 
         chunks = []
         async for chunk in _inject_jsonld_prefix(
-            _stream(), "http://example.com/a&b", "http://example.com/c?d=1",
+            _stream(),
+            "http://example.com/a&b",
+            "http://example.com/c?d=1",
         ):
             chunks.append(chunk)
 
@@ -371,7 +386,8 @@ class TestDbXrefsLimitValidation:
     """dbXrefsLimit query parameter boundary values."""
 
     def test_minus_1_returns_422(
-        self, app_with_entry_detail: TestClient,
+        self,
+        app_with_entry_detail: TestClient,
     ) -> None:
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
@@ -385,8 +401,10 @@ class TestDbXrefsLimitValidation:
         mock_es_search_with_script_fields: AsyncMock,
     ) -> None:
         mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1", "type": "bioproject",
-            "dbXrefs": [], "dbXrefsCount": {},
+            "identifier": "PRJDB1",
+            "type": "bioproject",
+            "dbXrefs": [],
+            "dbXrefsCount": {},
         }
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
@@ -400,8 +418,10 @@ class TestDbXrefsLimitValidation:
         mock_es_search_with_script_fields: AsyncMock,
     ) -> None:
         mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1", "type": "bioproject",
-            "dbXrefs": [], "dbXrefsCount": {},
+            "identifier": "PRJDB1",
+            "type": "bioproject",
+            "dbXrefs": [],
+            "dbXrefsCount": {},
         }
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
@@ -410,7 +430,8 @@ class TestDbXrefsLimitValidation:
         assert resp.status_code != 422
 
     def test_1001_returns_422(
-        self, app_with_entry_detail: TestClient,
+        self,
+        app_with_entry_detail: TestClient,
     ) -> None:
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
@@ -425,7 +446,9 @@ class TestDbXrefsLimitValidationPBT:
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
     @given(limit=st.integers(max_value=-1))
     def test_negative_returns_422(
-        self, app_with_entry_detail: TestClient, limit: int,
+        self,
+        app_with_entry_detail: TestClient,
+        limit: int,
         mock_es_search_with_script_fields: AsyncMock,
     ) -> None:
         resp = app_with_entry_detail.get(
@@ -437,7 +460,9 @@ class TestDbXrefsLimitValidationPBT:
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
     @given(limit=st.integers(min_value=1001, max_value=10000))
     def test_over_1000_returns_422(
-        self, app_with_entry_detail: TestClient, limit: int,
+        self,
+        app_with_entry_detail: TestClient,
+        limit: int,
         mock_es_search_with_script_fields: AsyncMock,
     ) -> None:
         resp = app_with_entry_detail.get(
@@ -449,12 +474,16 @@ class TestDbXrefsLimitValidationPBT:
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
     @given(limit=st.integers(min_value=0, max_value=1000))
     def test_valid_range_accepted(
-        self, app_with_entry_detail: TestClient, limit: int,
+        self,
+        app_with_entry_detail: TestClient,
+        limit: int,
         mock_es_search_with_script_fields: AsyncMock,
     ) -> None:
         mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1", "type": "bioproject",
-            "dbXrefs": [], "dbXrefsCount": {},
+            "identifier": "PRJDB1",
+            "type": "bioproject",
+            "dbXrefs": [],
+            "dbXrefsCount": {},
         }
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",

@@ -1,4 +1,7 @@
 """Service info endpoint: GET /service-info."""
+
+from __future__ import annotations
+
 import importlib.metadata
 
 import httpx
@@ -15,10 +18,7 @@ router = APIRouter(tags=["Service Info"])
     "/service-info",
     response_model=ServiceInfoResponse,
     summary="Get service information",
-    description=(
-        "Returns service metadata including name, version, "
-        "and Elasticsearch connectivity status."
-    ),
+    description=("Returns service metadata including name, version, and Elasticsearch connectivity status."),
 )
 async def get_service_info(
     client: httpx.AsyncClient = Depends(get_es_client),
@@ -30,9 +30,6 @@ async def get_service_info(
     return ServiceInfoResponse(
         name="DDBJ Search API",
         version=version,
-        description=(
-            "RESTful API for searching and retrieving BioProject, "
-            "BioSample, SRA, and JGA entries."
-        ),
+        description=("RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries."),
         elasticsearch="ok" if is_healthy else "unavailable",
     )

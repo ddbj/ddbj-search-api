@@ -1,4 +1,7 @@
 """Elasticsearch integration: client and query builder."""
+
+from __future__ import annotations
+
 import httpx
 from fastapi import Request
 

@@ -1,5 +1,6 @@
 """Bulk API request and response schemas."""
-from typing import List, Union
+
+from __future__ import annotations
 
 from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 from pydantic import BaseModel, Field
@@ -8,7 +9,7 @@ from pydantic import BaseModel, Field
 class BulkRequest(BaseModel):
     """Request body for POST /entries/{type}/bulk."""
 
-    ids: List[str] = Field(
+    ids: list[str] = Field(
         max_length=1000,
         description="List of entry identifiers to retrieve (max 1000).",
     )
@@ -21,10 +22,10 @@ class BulkResponse(BaseModel):
     ``notFound`` lists IDs that could not be found.
     """
 
-    entries: List[Union[BioProject, BioSample, SRA, JGA]] = Field(
+    entries: list[BioProject | BioSample | SRA | JGA] = Field(
         description="Found entries (raw ES documents).",
     )
-    not_found: List[str] = Field(
+    not_found: list[str] = Field(
         alias="notFound",
         description="IDs that were not found.",
     )

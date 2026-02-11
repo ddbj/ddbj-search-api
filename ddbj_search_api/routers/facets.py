@@ -3,21 +3,21 @@
 Retrieve facet aggregation counts without full search results.
 Uses ``es_search`` with ``size=0`` to get only aggregation buckets.
 """
+
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_search
-from ddbj_search_api.es.query import (build_facet_aggs, build_search_query,
-                                      validate_keyword_fields)
+from ddbj_search_api.es.query import build_facet_aggs, build_search_query, validate_keyword_fields
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.facets import FacetsResponse
-from ddbj_search_api.schemas.queries import (BioProjectExtraQuery,
-                                             SearchFilterQuery,
-                                             TypesFilterQuery)
+from ddbj_search_api.schemas.queries import BioProjectExtraQuery, SearchFilterQuery, TypesFilterQuery
 from ddbj_search_api.utils import parse_facets
 
 logger = logging.getLogger(__name__)
@@ -33,12 +33,12 @@ async def _do_facets(
     index: str,
     search_filter: SearchFilterQuery,
     is_cross_type: bool = False,
-    db_type: Optional[str] = None,
-    types: Optional[str] = None,
-    organization: Optional[str] = None,
-    publication: Optional[str] = None,
-    grant: Optional[str] = None,
-    umbrella: Optional[str] = None,
+    db_type: str | None = None,
+    types: str | None = None,
+    organization: str | None = None,
+    publication: str | None = None,
+    grant: str | None = None,
+    umbrella: str | None = None,
 ) -> FacetsResponse:
     """Execute facet aggregation against ES and build the response."""
     try:
@@ -67,7 +67,7 @@ async def _do_facets(
         db_type=db_type,
     )
 
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "query": query,
         "size": 0,
         "aggs": aggs,
@@ -120,7 +120,7 @@ router.add_api_route(
 # --- GET /facets/{type} (type-specific) ---
 
 
-def _make_type_facets_handler(db_type: DbType):  # type: ignore[no-untyped-def]
+def _make_type_facets_handler(db_type: DbType) -> Any:
     """Factory: create a type-specific facets handler."""
     if db_type == DbType.bioproject:
 

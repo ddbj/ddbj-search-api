@@ -1,4 +1,7 @@
 """Tests for ddbj_search_api.schemas.service_info."""
+
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 

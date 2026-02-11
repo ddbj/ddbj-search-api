@@ -6,8 +6,12 @@ Design: streaming responses using ``es_get_source_stream`` per ID.
 Each document is streamed directly from ES without loading the full
 body into API memory, keeping peak memory at one streaming chunk.
 """
+
+from __future__ import annotations
+
+import collections.abc
 import json
-from typing import Any, AsyncIterator, List
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Path
@@ -31,7 +35,7 @@ async def _read_source_bytes(response: httpx.Response) -> bytes:
     ES ``_source`` responses end with ``\\n``; stripping it prevents
     malformed JSON in array mode and empty lines in NDJSON mode.
     """
-    chunks: List[bytes] = []
+    chunks: list[bytes] = []
     async for chunk in response.aiter_bytes():
         chunks.append(chunk)
     await response.aclose()
@@ -45,11 +49,11 @@ async def _read_source_bytes(response: httpx.Response) -> bytes:
 async def _generate_bulk_json(
     client: httpx.AsyncClient,
     index: str,
-    ids: List[str],
-) -> AsyncIterator[bytes]:
+    ids: list[str],
+) -> collections.abc.AsyncIterator[bytes]:
     """Stream ``{"entries":[...],"notFound":[...]}`` without loading all docs."""
     yield b'{"entries":['
-    not_found: List[str] = []
+    not_found: list[str] = []
     first = True
 
     for id_ in ids:
@@ -70,8 +74,8 @@ async def _generate_bulk_json(
 async def _generate_bulk_ndjson(
     client: httpx.AsyncClient,
     index: str,
-    ids: List[str],
-) -> AsyncIterator[bytes]:
+    ids: list[str],
+) -> collections.abc.AsyncIterator[bytes]:
     """Stream one entry per line. notFound IDs are silently skipped."""
     for id_ in ids:
         response = await es_get_source_stream(client, index, id_)
@@ -103,10 +107,7 @@ async def _generate_bulk_ndjson(
                 "application/x-ndjson": {
                     "schema": {
                         "type": "string",
-                        "description": (
-                            "One JSON object per line (NDJSON). "
-                            "Each line is an entry document."
-                        ),
+                        "description": ("One JSON object per line (NDJSON). Each line is an entry document."),
                     },
                 },
             },

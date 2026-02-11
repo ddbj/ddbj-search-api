@@ -1,14 +1,13 @@
 """Tests for ddbj_search_api.schemas.common."""
+
+from __future__ import annotations
+
 import pytest
 from hypothesis import given
-from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from ddbj_search_api.schemas.common import (DbType, EntryListItem,
-                                            FacetBucket, Facets, Pagination,
-                                            ProblemDetails)
-from tests.unit.strategies import (valid_facet_count, valid_facet_value,
-                                   valid_page, valid_per_page, valid_total)
+from ddbj_search_api.schemas.common import DbType, EntryListItem, FacetBucket, Facets, Pagination, ProblemDetails
+from tests.unit.strategies import valid_facet_count, valid_facet_value, valid_page, valid_per_page, valid_total
 
 # === DbType ===
 
@@ -67,7 +66,7 @@ class TestPagination:
         assert "per_page" not in data
 
     def test_populate_by_name(self) -> None:
-        p = Pagination(page=1, per_page=10, total=100)
+        p = Pagination(page=1, per_page=10, total=100)  # type: ignore[call-arg]
         assert p.per_page == 10
 
 
@@ -75,18 +74,14 @@ class TestPaginationPBT:
     """Property-based tests for Pagination."""
 
     @given(page=valid_page, per_page=valid_per_page, total=valid_total)
-    def test_valid_values_accepted(
-        self, page: int, per_page: int, total: int
-    ) -> None:
+    def test_valid_values_accepted(self, page: int, per_page: int, total: int) -> None:
         p = Pagination(page=page, perPage=per_page, total=total)
         assert p.page == page
         assert p.per_page == per_page
         assert p.total == total
 
     @given(page=valid_page, per_page=valid_per_page, total=valid_total)
-    def test_roundtrip_serialization(
-        self, page: int, per_page: int, total: int
-    ) -> None:
+    def test_roundtrip_serialization(self, page: int, per_page: int, total: int) -> None:
         p = Pagination(page=page, perPage=per_page, total=total)
         data = p.model_dump(by_alias=True)
         restored = Pagination(**data)
@@ -219,7 +214,7 @@ class TestEntryListItem:
         item = EntryListItem(
             identifier="PRJDB1",
             type="bioproject",
-            customField="extra_value",
+            customField="extra_value",  # type: ignore[call-arg]
         )
         assert item.model_extra is not None
         assert item.model_extra["customField"] == "extra_value"

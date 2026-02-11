@@ -4,7 +4,10 @@ Thin async wrapper around httpx for ES REST API calls.
 Each function accepts an ``httpx.AsyncClient`` as the first argument,
 allowing dependency injection and easy mocking in tests.
 """
-from typing import Any, Dict, Optional
+
+from __future__ import annotations
+
+from typing import Any
 
 import httpx
 
@@ -20,15 +23,14 @@ async def es_ping(client: httpx.AsyncClient) -> bool:
 
         return True
     except (httpx.HTTPError, Exception):
-
         return False
 
 
 async def es_search(
     client: httpx.AsyncClient,
     index: str,
-    body: Dict[str, Any],
-) -> Dict[str, Any]:
+    body: dict[str, Any],
+) -> dict[str, Any]:
     """Execute a search query against Elasticsearch.
 
     ``track_total_hits`` is always set to ``True`` so the total count
@@ -40,7 +42,8 @@ async def es_search(
     response = await client.post(f"/{index}/_search", json=request_body)
     response.raise_for_status()
 
-    return response.json()  # type: ignore[no-any-return]
+    result: dict[str, Any] = response.json()
+    return result
 
 
 _TRUNCATE_SCRIPT = (
@@ -71,7 +74,7 @@ _COUNT_SCRIPT = (
 )
 
 
-def build_db_xrefs_script_fields(limit: int) -> Dict[str, Any]:
+def build_db_xrefs_script_fields(limit: int) -> dict[str, Any]:
     """Build ES script_fields for dbXrefs truncation and counting."""
 
     return {
@@ -91,13 +94,13 @@ def build_db_xrefs_script_fields(limit: int) -> Dict[str, Any]:
     }
 
 
-def parse_script_fields_hit(hit: Dict[str, Any]) -> Dict[str, Any]:
+def parse_script_fields_hit(hit: dict[str, Any]) -> dict[str, Any]:
     """Merge script_fields results into a hit's _source.
 
     Extracts ``dbXrefsTruncated`` → ``dbXrefs`` and
     ``dbXrefsCountByType`` → ``dbXrefsCount`` from ES ``fields``.
     """
-    source: Dict[str, Any] = dict(hit["_source"])
+    source: dict[str, Any] = dict(hit["_source"])
     fields = hit.get("fields", {})
     # ES flattens script_fields arrays: [[{a},{b}]] becomes [{a},{b}].
     # Use the full list as dbXrefs (each element is one xref dict).
@@ -112,7 +115,7 @@ async def es_search_with_script_fields(
     index: str,
     id_: str,
     db_xrefs_limit: int,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Search for a single document with script_fields for dbXrefs truncation.
 
     Uses Painless scripting to truncate ``dbXrefs`` and compute per-type
@@ -122,7 +125,7 @@ async def es_search_with_script_fields(
     ``dbXrefsTruncated`` and ``dbXrefsCountByType`` from script_fields,
     or ``None`` if not found.
     """
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "query": {"term": {"_id": id_}},
         "size": 1,
         "_source": {"excludes": ["dbXrefs"]},
@@ -143,15 +146,15 @@ async def es_get_source_stream(
     client: httpx.AsyncClient,
     index: str,
     id_: str,
-    source_includes: Optional[str] = None,
-) -> Optional[httpx.Response]:
+    source_includes: str | None = None,
+) -> httpx.Response | None:
     """Open a streaming connection to ES ``_source`` endpoint.
 
     Returns an ``httpx.Response`` with the body stream open.
     The caller is responsible for closing the response via ``aclose()``.
     Returns ``None`` if the document is not found (404).
     """
-    params: Dict[str, str] = {}
+    params: dict[str, str] = {}
     if source_includes is not None:
         params["_source_includes"] = source_includes
 

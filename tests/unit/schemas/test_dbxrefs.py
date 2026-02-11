@@ -1,9 +1,11 @@
 """Tests for ddbj_search_api.schemas.dbxrefs."""
+
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
-
 
 # === DbXrefsFullResponse ===
 

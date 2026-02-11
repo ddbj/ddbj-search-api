@@ -9,8 +9,11 @@ Routes with file extensions (.json, .jsonld) and sub-paths (/dbxrefs.json)
 are registered BEFORE the bare ``/{id}`` route so that FastAPI matches
 the more specific patterns first.
 """
+
+from __future__ import annotations
+
+import collections.abc
 import json
-from typing import AsyncIterator
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path
@@ -19,13 +22,10 @@ from starlette.background import BackgroundTask
 
 from ddbj_search_api.config import JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import (es_get_source_stream,
-                                       es_search_with_script_fields)
+from ddbj_search_api.es.client import es_get_source_stream, es_search_with_script_fields
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
-from ddbj_search_api.schemas.entries import (DetailResponse,
-                                             EntryJsonLdResponse,
-                                             EntryResponse)
+from ddbj_search_api.schemas.entries import DetailResponse, EntryJsonLdResponse, EntryResponse
 from ddbj_search_api.schemas.queries import EntryDetailQuery
 
 router = APIRouter(tags=["Entry Detail"])
@@ -39,20 +39,18 @@ class JsonLdResponse(JSONResponse):
 
 # --- Helper: JSON-LD prefix injection ---
 
+
 async def _inject_jsonld_prefix(
-    stream: AsyncIterator[bytes],
+    stream: collections.abc.AsyncIterator[bytes],
     context_url: str,
     at_id: str,
-) -> AsyncIterator[bytes]:
+) -> collections.abc.AsyncIterator[bytes]:
     """Inject ``@context`` and ``@id`` into the first ``{`` of a JSON stream.
 
     Replaces the leading ``{`` with
     ``{"@context":"...","@id":"...",`` and passes through the rest.
     """
-    prefix = (
-        '{"@context":' + json.dumps(context_url)
-        + ',"@id":' + json.dumps(at_id) + ","
-    )
+    prefix = '{"@context":' + json.dumps(context_url) + ',"@id":' + json.dumps(at_id) + ","
     injected = False
 
     async for chunk in stream:
@@ -60,7 +58,7 @@ async def _inject_jsonld_prefix(
             text = chunk.decode("utf-8")
             brace_pos = text.find("{")
             if brace_pos != -1:
-                text = text[:brace_pos] + prefix + text[brace_pos + 1:]
+                text = text[:brace_pos] + prefix + text[brace_pos + 1 :]
                 injected = True
             yield text.encode("utf-8")
         else:
@@ -69,6 +67,7 @@ async def _inject_jsonld_prefix(
 
 # --- GET /entries/{type}/{id}.json ---
 # Registered before /{id} to prevent {id} from matching "X.json".
+
 
 @router.get(
     "/entries/{type}/{id}.json",
@@ -103,6 +102,7 @@ async def get_entry_json(
 
 # --- GET /entries/{type}/{id}.jsonld ---
 
+
 @router.get(
     "/entries/{type}/{id}.jsonld",
     response_model=EntryJsonLdResponse,
@@ -132,7 +132,9 @@ async def get_entry_jsonld(
     at_id = f"{config.base_url}/entries/{type.value}/{id}"
 
     body = _inject_jsonld_prefix(
-        response.aiter_bytes(), context_url, at_id,
+        response.aiter_bytes(),
+        context_url,
+        at_id,
     )
 
     return StreamingResponse(
@@ -143,6 +145,7 @@ async def get_entry_jsonld(
 
 
 # --- GET /entries/{type}/{id}/dbxrefs.json ---
+
 
 @router.get(
     "/entries/{type}/{id}/dbxrefs.json",
@@ -157,7 +160,10 @@ async def get_dbxrefs_full(
 ) -> StreamingResponse:
     """Get all dbXrefs (streaming)."""
     response = await es_get_source_stream(
-        client, type.value, id, source_includes="dbXrefs",
+        client,
+        type.value,
+        id,
+        source_includes="dbXrefs",
     )
     if response is None:
         raise HTTPException(
@@ -174,6 +180,7 @@ async def get_dbxrefs_full(
 
 # --- GET /entries/{type}/{id} ---
 # Registered last: catch-all for bare IDs (no extension).
+
 
 @router.get(
     "/entries/{type}/{id}",
@@ -197,7 +204,10 @@ async def get_entry_detail(
 ) -> JSONResponse:
     """Get entry detail (truncated dbXrefs + dbXrefsCount)."""
     source = await es_search_with_script_fields(
-        client, type.value, id, query.db_xrefs_limit,
+        client,
+        type.value,
+        id,
+        query.db_xrefs_limit,
     )
     if source is None:
         raise HTTPException(

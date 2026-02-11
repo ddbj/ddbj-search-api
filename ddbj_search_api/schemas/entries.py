@@ -3,13 +3,13 @@
 Covers search results (EntryListResponse) and entry detail responses
 (*DetailResponse, *EntryResponse, *EntryJsonLdResponse).
 """
-from typing import Dict, List, Optional, Union
+
+from __future__ import annotations
 
 from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 from pydantic import BaseModel, ConfigDict, Field
 
-from ddbj_search_api.schemas.common import (DbXrefsCount, EntryListItem,
-                                            Facets, Pagination)
+from ddbj_search_api.schemas.common import DbXrefsCount, EntryListItem, Facets, Pagination
 
 # === Search result response ===
 
@@ -20,10 +20,10 @@ class EntryListResponse(BaseModel):
     pagination: Pagination = Field(
         description="Pagination metadata.",
     )
-    items: List[EntryListItem] = Field(
+    items: list[EntryListItem] = Field(
         description="Matching entries (summary representation).",
     )
-    facets: Optional[Facets] = Field(
+    facets: Facets | None = Field(
         default=None,
         description="Facet aggregation (present when includeFacets=true).",
     )
@@ -64,12 +64,7 @@ class JgaDetailResponse(JGA):
     db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
 
 
-DetailResponse = Union[
-    BioProjectDetailResponse,
-    BioSampleDetailResponse,
-    SraDetailResponse,
-    JgaDetailResponse,
-]
+DetailResponse = BioProjectDetailResponse | BioSampleDetailResponse | SraDetailResponse | JgaDetailResponse
 
 # === Raw entry responses (data-access: ES document as-is) ===
 
@@ -78,7 +73,7 @@ BioSampleEntryResponse = BioSample
 SraEntryResponse = SRA
 JgaEntryResponse = JGA
 
-EntryResponse = Union[BioProject, BioSample, SRA, JGA]
+EntryResponse = BioProject | BioSample | SRA | JGA
 
 # === JSON-LD responses ===
 
@@ -119,16 +114,13 @@ class JgaEntryJsonLdResponse(JGA):
     at_id: str = Field(alias="@id")
 
 
-EntryJsonLdResponse = Union[
-    BioProjectEntryJsonLdResponse,
-    BioSampleEntryJsonLdResponse,
-    SraEntryJsonLdResponse,
-    JgaEntryJsonLdResponse,
-]
+EntryJsonLdResponse = (
+    BioProjectEntryJsonLdResponse | BioSampleEntryJsonLdResponse | SraEntryJsonLdResponse | JgaEntryJsonLdResponse
+)
 
 # === Mapping from DbType to converter model ===
 
-DB_TYPE_TO_ENTRY_MODEL: Dict[str, type] = {
+DB_TYPE_TO_ENTRY_MODEL: dict[str, type] = {
     "bioproject": BioProject,
     "biosample": BioSample,
     "sra-submission": SRA,

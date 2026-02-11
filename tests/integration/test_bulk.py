@@ -1,4 +1,7 @@
 """Integration tests for POST /entries/{type}/bulk."""
+
+from __future__ import annotations
+
 import json
 
 import pytest
@@ -6,7 +9,7 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture(scope="session")
-def bioproject_ids(app: TestClient):
+def bioproject_ids(app: TestClient) -> list[str]:
     """Fetch a few bioproject IDs for bulk tests."""
     resp = app.get(
         "/entries/bioproject/",
@@ -24,8 +27,8 @@ def bioproject_ids(app: TestClient):
 
 def test_bulk_json_returns_entries(
     app: TestClient,
-    bioproject_ids: list,
-):
+    bioproject_ids: list[str],
+) -> None:
     """Bulk endpoint returns entries and notFound in JSON format."""
     resp = app.post(
         "/entries/bioproject/bulk",
@@ -42,8 +45,8 @@ def test_bulk_json_returns_entries(
 
 def test_bulk_json_not_found_ids(
     app: TestClient,
-    bioproject_ids: list,
-):
+    bioproject_ids: list[str],
+) -> None:
     """Non-existent IDs appear in the notFound array."""
     fake_ids = ["NONEXISTENT_1", "NONEXISTENT_2"]
     all_ids = bioproject_ids[:1] + fake_ids
@@ -58,7 +61,7 @@ def test_bulk_json_not_found_ids(
     assert set(body["notFound"]) == set(fake_ids)
 
 
-def test_bulk_json_all_not_found(app: TestClient):
+def test_bulk_json_all_not_found(app: TestClient) -> None:
     """All IDs missing: entries is empty, notFound has all IDs."""
     fake_ids = ["NONEXISTENT_A", "NONEXISTENT_B"]
     resp = app.post(
@@ -77,8 +80,8 @@ def test_bulk_json_all_not_found(app: TestClient):
 
 def test_bulk_ndjson_returns_lines(
     app: TestClient,
-    bioproject_ids: list,
-):
+    bioproject_ids: list[str],
+) -> None:
     """NDJSON format returns one entry per line."""
     resp = app.post(
         "/entries/bioproject/bulk",
@@ -89,10 +92,7 @@ def test_bulk_ndjson_returns_lines(
     assert resp.status_code == 200
     assert "application/x-ndjson" in resp.headers["content-type"]
 
-    lines = [
-        line for line in resp.text.strip().split("\n")
-        if line.strip()
-    ]
+    lines = [line for line in resp.text.strip().split("\n") if line.strip()]
     assert len(lines) == len(bioproject_ids)
 
     for line in lines:
@@ -100,7 +100,7 @@ def test_bulk_ndjson_returns_lines(
         assert "identifier" in entry
 
 
-def test_bulk_ndjson_skips_not_found(app: TestClient):
+def test_bulk_ndjson_skips_not_found(app: TestClient) -> None:
     """NDJSON format silently skips non-existent IDs."""
     fake_ids = ["NONEXISTENT_X", "NONEXISTENT_Y"]
     resp = app.post(
@@ -116,7 +116,7 @@ def test_bulk_ndjson_skips_not_found(app: TestClient):
 # === Empty IDs ===
 
 
-def test_bulk_json_empty_ids(app: TestClient):
+def test_bulk_json_empty_ids(app: TestClient) -> None:
     """Empty IDs list returns empty entries and notFound."""
     resp = app.post(
         "/entries/bioproject/bulk",
@@ -134,8 +134,8 @@ def test_bulk_json_empty_ids(app: TestClient):
 
 def test_bulk_json_content_type(
     app: TestClient,
-    bioproject_ids: list,
-):
+    bioproject_ids: list[str],
+) -> None:
     """JSON bulk response has application/json content type."""
     resp = app.post(
         "/entries/bioproject/bulk",

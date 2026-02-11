@@ -4,15 +4,18 @@ Each class is used as a FastAPI ``Depends()`` dependency.  Mixin classes
 (PaginationQuery, SearchFilterQuery, ResponseControlQuery) are composed
 at the endpoint level via multiple ``Depends()`` parameters.
 """
+
+from __future__ import annotations
+
 import datetime as dt
 from enum import Enum
-from typing import Optional
 
 from fastapi import HTTPException, Query
 
 from ddbj_search_api.schemas.common import DbType
 
 # === Enums for query parameters ===
+
 
 class KeywordOperator(str, Enum):
     """Boolean operator for combining keywords."""
@@ -31,7 +34,7 @@ class BulkFormat(str, Enum):
 _VALID_DB_TYPES = {e.value for e in DbType}
 
 
-def _validate_date(value: Optional[str], param_name: str) -> None:
+def _validate_date(value: str | None, param_name: str) -> None:
     """Validate that a date string is a real calendar date.
 
     The regex ``^\\d{4}-\\d{2}-\\d{2}$`` on the Query parameter already
@@ -45,14 +48,12 @@ def _validate_date(value: Optional[str], param_name: str) -> None:
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"Invalid date for {param_name}: '{value}'. "
-                "Must be a valid calendar date in YYYY-MM-DD format."
-            ),
+            detail=(f"Invalid date for {param_name}: '{value}'. Must be a valid calendar date in YYYY-MM-DD format."),
         ) from exc
 
 
 # === Mixin query classes ===
+
 
 class PaginationQuery:
     """Pagination parameters (page, perPage).
@@ -87,11 +88,11 @@ class SearchFilterQuery:
 
     def __init__(
         self,
-        keywords: Optional[str] = Query(
+        keywords: str | None = Query(
             default=None,
             description="Search keywords (comma-separated for multiple).",
         ),
-        keyword_fields: Optional[str] = Query(
+        keyword_fields: str | None = Query(
             default=None,
             alias="keywordFields",
             description=(
@@ -105,29 +106,29 @@ class SearchFilterQuery:
             alias="keywordOperator",
             description="Boolean operator for keywords: AND or OR.",
         ),
-        organism: Optional[str] = Query(
+        organism: str | None = Query(
             default=None,
             description="NCBI Taxonomy ID (e.g. '9606').",
         ),
-        date_published_from: Optional[str] = Query(
+        date_published_from: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="datePublishedFrom",
             description="Publication date range start (YYYY-MM-DD).",
         ),
-        date_published_to: Optional[str] = Query(
+        date_published_to: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="datePublishedTo",
             description="Publication date range end (YYYY-MM-DD).",
         ),
-        date_modified_from: Optional[str] = Query(
+        date_modified_from: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="dateModifiedFrom",
             description="Modification date range start (YYYY-MM-DD).",
         ),
-        date_modified_to: Optional[str] = Query(
+        date_modified_to: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="dateModifiedTo",
@@ -157,7 +158,7 @@ class ResponseControlQuery:
 
     def __init__(
         self,
-        sort: Optional[str] = Query(
+        sort: str | None = Query(
             default=None,
             description=(
                 "Sort order as '{field}:{direction}'. "
@@ -166,7 +167,7 @@ class ResponseControlQuery:
                 "Default: relevance (search score)."
             ),
         ),
-        fields: Optional[str] = Query(
+        fields: str | None = Query(
             default=None,
             description=(
                 "Limit response to specific top-level fields "
@@ -182,9 +183,7 @@ class ResponseControlQuery:
         include_facets: bool = Query(
             default=False,
             alias="includeFacets",
-            description=(
-                "Include facet aggregation alongside search results."
-            ),
+            description=("Include facet aggregation alongside search results."),
         ),
     ):
         self.sort = sort
@@ -204,7 +203,7 @@ class TypesFilterQuery:
 
     def __init__(
         self,
-        types: Optional[str] = Query(
+        types: str | None = Query(
             default=None,
             description="Filter by database types (comma-separated).",
         ),
@@ -217,10 +216,7 @@ class TypesFilterQuery:
                 if invalid:
                     raise HTTPException(
                         status_code=422,
-                        detail=(
-                            f"Invalid types: {', '.join(invalid)}. "
-                            f"Allowed: {', '.join(sorted(_VALID_DB_TYPES))}."
-                        ),
+                        detail=(f"Invalid types: {', '.join(invalid)}. Allowed: {', '.join(sorted(_VALID_DB_TYPES))}."),
                     )
         self.types = types
 
@@ -239,8 +235,7 @@ class DbXrefsLimitQuery:
             le=1000,
             alias="dbXrefsLimit",
             description=(
-                "Maximum number of dbXrefs to return (0-1000). "
-                "Use 0 to omit dbXrefs but still get dbXrefsCount."
+                "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
             ),
         ),
     ):
@@ -258,24 +253,21 @@ class BioProjectExtraQuery:
 
     def __init__(
         self,
-        organization: Optional[str] = Query(
+        organization: str | None = Query(
             default=None,
             description="Filter by organization name (text search).",
         ),
-        publication: Optional[str] = Query(
+        publication: str | None = Query(
             default=None,
             description="Filter by publication (text search).",
         ),
-        grant: Optional[str] = Query(
+        grant: str | None = Query(
             default=None,
             description="Filter by grant (text search).",
         ),
-        umbrella: Optional[str] = Query(
+        umbrella: str | None = Query(
             default=None,
-            description=(
-                "Filter by umbrella status: TRUE or FALSE "
-                "(case-insensitive)."
-            ),
+            description=("Filter by umbrella status: TRUE or FALSE (case-insensitive)."),
         ),
     ):
         self.organization = organization
@@ -286,10 +278,7 @@ class BioProjectExtraQuery:
             if umbrella not in ("TRUE", "FALSE"):
                 raise HTTPException(
                     status_code=422,
-                    detail=(
-                        "Invalid umbrella value: "
-                        "must be TRUE or FALSE (case-insensitive)."
-                    ),
+                    detail=("Invalid umbrella value: must be TRUE or FALSE (case-insensitive)."),
                 )
         self.umbrella = umbrella
 
@@ -308,8 +297,7 @@ class EntryDetailQuery:
             le=1000,
             alias="dbXrefsLimit",
             description=(
-                "Maximum number of dbXrefs to return (0-1000). "
-                "Use 0 to omit dbXrefs but still get dbXrefsCount."
+                "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
             ),
         ),
     ):
@@ -323,10 +311,7 @@ class BulkQuery:
         self,
         format: BulkFormat = Query(
             default=BulkFormat.json,
-            description=(
-                "Response format: 'json' (JSON Array) or "
-                "'ndjson' (Newline Delimited JSON)."
-            ),
+            description=("Response format: 'json' (JSON Array) or 'ndjson' (Newline Delimited JSON)."),
         ),
     ):
         self.format = format

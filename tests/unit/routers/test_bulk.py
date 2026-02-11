@@ -3,8 +3,11 @@
 Tests cover routing, request validation, JSON/NDJSON response formats,
 ES interaction, error handling, and property-based invariants.
 """
+
+from __future__ import annotations
+
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -19,11 +22,10 @@ from ddbj_search_api.main import create_app
 from tests.unit.conftest import make_mock_stream_response
 from tests.unit.strategies import db_type_values, short_id
 
-
 # === Helpers ===
 
 
-def _make_source(id_: str) -> Dict[str, Any]:
+def _make_source(id_: str) -> dict[str, Any]:
     """Build a minimal ES _source document."""
 
     return {
@@ -35,9 +37,9 @@ def _make_source(id_: str) -> Dict[str, Any]:
 
 def _bulk_post(
     client: TestClient,
-    ids: List[str],
+    ids: list[str],
     db_type: str = "bioproject",
-    format_: Optional[str] = None,
+    format_: str | None = None,
 ) -> Any:
     """POST to /entries/{type}/bulk with optional format."""
     params = {}
@@ -53,8 +55,8 @@ def _bulk_post(
 
 def _setup_found_and_not_found(
     mock: AsyncMock,
-    found_ids: List[str],
-    not_found_ids: List[str],
+    found_ids: list[str],
+    not_found_ids: list[str],
 ) -> None:
     """Configure mock to return found entries for found_ids, None for not_found_ids."""
     found_set = set(found_ids)
@@ -172,7 +174,9 @@ class TestBulkJsonResponse:
     ) -> None:
         ids = ["PRJDB001", "PRJDB002"]
         _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk, ids, [],
+            mock_es_get_source_stream_bulk,
+            ids,
+            [],
         )
         resp = _bulk_post(app_with_bulk, ids)
         assert resp.status_code == 200
@@ -190,7 +194,9 @@ class TestBulkJsonResponse:
         found = ["PRJDB001"]
         not_found = ["MISSING001", "MISSING002"]
         _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk, found, not_found,
+            mock_es_get_source_stream_bulk,
+            found,
+            not_found,
         )
         resp = _bulk_post(app_with_bulk, found + not_found)
         data = resp.json()
@@ -259,7 +265,9 @@ class TestBulkNdjsonResponse:
         mock_es_get_source_stream_bulk: AsyncMock,
     ) -> None:
         _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk, ["PRJDB001"], [],
+            mock_es_get_source_stream_bulk,
+            ["PRJDB001"],
+            [],
         )
         resp = _bulk_post(app_with_bulk, ["PRJDB001"], format_="ndjson")
         assert "application/x-ndjson" in resp.headers["content-type"]
@@ -271,7 +279,9 @@ class TestBulkNdjsonResponse:
     ) -> None:
         ids = ["PRJDB001", "PRJDB002", "PRJDB003"]
         _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk, ids, [],
+            mock_es_get_source_stream_bulk,
+            ids,
+            [],
         )
         resp = _bulk_post(app_with_bulk, ids, format_="ndjson")
         lines = resp.text.strip().split("\n")
@@ -289,10 +299,14 @@ class TestBulkNdjsonResponse:
         found = ["PRJDB001"]
         not_found = ["MISSING001", "MISSING002"]
         _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk, found, not_found,
+            mock_es_get_source_stream_bulk,
+            found,
+            not_found,
         )
         resp = _bulk_post(
-            app_with_bulk, found + not_found, format_="ndjson",
+            app_with_bulk,
+            found + not_found,
+            format_="ndjson",
         )
         lines = resp.text.strip().split("\n")
         assert len(lines) == 1
@@ -305,7 +319,9 @@ class TestBulkNdjsonResponse:
     ) -> None:
         ids = ["PRJDB001", "PRJDB002"]
         _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk, ids, [],
+            mock_es_get_source_stream_bulk,
+            ids,
+            [],
         )
         resp = _bulk_post(app_with_bulk, ids, format_="ndjson")
         for line in resp.text.strip().split("\n"):
@@ -324,7 +340,9 @@ class TestBulkNdjsonResponse:
     ) -> None:
         """All IDs missing: empty NDJSON output."""
         resp = _bulk_post(
-            app_with_bulk, ["MISSING001"], format_="ndjson",
+            app_with_bulk,
+            ["MISSING001"],
+            format_="ndjson",
         )
         assert resp.text == ""
 
@@ -352,10 +370,7 @@ class TestBulkEsInteraction:
         ids = ["A001", "A002", "A003"]
         _bulk_post(app_with_bulk, ids)
         assert mock_es_get_source_stream_bulk.call_count == 3
-        called_ids = [
-            call[0][2]
-            for call in mock_es_get_source_stream_bulk.call_args_list
-        ]
+        called_ids = [call[0][2] for call in mock_es_get_source_stream_bulk.call_args_list]
         assert called_ids == ids
 
 
@@ -381,7 +396,7 @@ class TestBulkEsError:
             application = create_app(config)
             application.dependency_overrides[get_es_client] = lambda: fake_client
             client = TestClient(application, raise_server_exceptions=True)
-            with pytest.raises(Exception):
+            with pytest.raises(Exception, match="ES down"):
                 client.post(
                     "/entries/bioproject/bulk",
                     json={"ids": ["TEST001"]},
@@ -401,8 +416,8 @@ class TestBulkPBT:
     )
     def test_entries_plus_not_found_equals_ids(
         self,
-        found: List[str],
-        not_found: List[str],
+        found: list[str],
+        not_found: list[str],
     ) -> None:
         """len(entries) + len(notFound) == len(ids) (JSON format)."""
         # Deduplicate to avoid collisions between found and not_found
@@ -423,6 +438,4 @@ class TestBulkPBT:
             client = TestClient(application, raise_server_exceptions=False)
             resp = _bulk_post(client, all_ids)
             data = resp.json()
-            assert (
-                len(data["entries"]) + len(data["notFound"]) == len(all_ids)
-            )
+            assert len(data["entries"]) + len(data["notFound"]) == len(all_ids)

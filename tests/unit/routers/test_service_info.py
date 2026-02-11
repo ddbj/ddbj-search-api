@@ -1,4 +1,7 @@
 """Tests for GET /service-info endpoint."""
+
+from __future__ import annotations
+
 import importlib.metadata
 from unittest.mock import AsyncMock, patch
 

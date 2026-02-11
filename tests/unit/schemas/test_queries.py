@@ -11,20 +11,25 @@ in router tests via TestClient.
 
 Here we test: enum values, attribute storage, and custom-value acceptance.
 """
+
+from __future__ import annotations
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from ddbj_search_api.schemas.queries import (BioProjectExtraQuery,
-                                             BulkFormat, BulkQuery,
-                                             DbXrefsLimitQuery,
-                                             EntryDetailQuery,
-                                             KeywordOperator,
-                                             PaginationQuery,
-                                             ResponseControlQuery,
-                                             SearchFilterQuery,
-                                             TypesFilterQuery)
-
+from ddbj_search_api.schemas.queries import (
+    BioProjectExtraQuery,
+    BulkFormat,
+    BulkQuery,
+    DbXrefsLimitQuery,
+    EntryDetailQuery,
+    KeywordOperator,
+    PaginationQuery,
+    ResponseControlQuery,
+    SearchFilterQuery,
+    TypesFilterQuery,
+)
 
 # === Enums ===
 

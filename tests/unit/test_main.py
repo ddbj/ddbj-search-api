@@ -3,6 +3,9 @@
 Tests the app factory, X-Request-ID middleware, CORS headers,
 error handlers, and OpenAPI customisation.
 """
+
+from __future__ import annotations
+
 import uuid
 
 import pytest
@@ -11,7 +14,6 @@ from fastapi.testclient import TestClient
 
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.main import create_app
-
 
 # === App factory ===
 
@@ -43,9 +45,7 @@ class TestCreateApp:
 class TestXRequestIdMiddleware:
     """X-Request-ID: generated or echoed in every response."""
 
-    def test_generates_uuid_when_not_provided(
-        self, app: TestClient
-    ) -> None:
+    def test_generates_uuid_when_not_provided(self, app: TestClient) -> None:
         resp = app.get("/service-info")
         request_id = resp.headers.get("X-Request-ID")
         assert request_id is not None
@@ -99,25 +99,27 @@ class TestErrorHandlerNotImplemented:
     real endpoints are now implemented.
     """
 
-    @pytest.fixture()
+    @pytest.fixture
     def app_with_not_implemented(self) -> TestClient:
         """Create an app with a route that raises NotImplementedError."""
         application = create_app(AppConfig())
 
         @application.get("/test-not-implemented")
-        async def _raise_not_implemented():  # type: ignore[no-untyped-def]
+        async def _raise_not_implemented() -> None:
             raise NotImplementedError
 
         return TestClient(application, raise_server_exceptions=False)
 
     def test_status_code_501(
-        self, app_with_not_implemented: TestClient,
+        self,
+        app_with_not_implemented: TestClient,
     ) -> None:
         resp = app_with_not_implemented.get("/test-not-implemented")
         assert resp.status_code == 501
 
     def test_problem_details_structure(
-        self, app_with_not_implemented: TestClient,
+        self,
+        app_with_not_implemented: TestClient,
     ) -> None:
         resp = app_with_not_implemented.get("/test-not-implemented")
         body = resp.json()
@@ -130,13 +132,15 @@ class TestErrorHandlerNotImplemented:
         assert "requestId" in body
 
     def test_content_type_is_problem_json(
-        self, app_with_not_implemented: TestClient,
+        self,
+        app_with_not_implemented: TestClient,
     ) -> None:
         resp = app_with_not_implemented.get("/test-not-implemented")
         assert "application/problem+json" in resp.headers["content-type"]
 
     def test_request_id_in_body_matches_header(
-        self, app_with_not_implemented: TestClient,
+        self,
+        app_with_not_implemented: TestClient,
     ) -> None:
         resp = app_with_not_implemented.get(
             "/test-not-implemented",
@@ -154,9 +158,7 @@ class TestErrorHandlerValidation:
         resp = app.get("/entries/", params={"perPage": -1})
         assert resp.status_code == 422
 
-    def test_validation_error_has_problem_details(
-        self, app: TestClient
-    ) -> None:
+    def test_validation_error_has_problem_details(self, app: TestClient) -> None:
         resp = app.get("/entries/", params={"perPage": -1})
         body = resp.json()
         assert body["status"] == 422

@@ -156,9 +156,9 @@ uv remove <package>
 
 ```bash
 uv run pytest -s
-uv run pylint ./ddbj_search_api
-uv run mypy ./ddbj_search_api
-uv run isort ./ddbj_search_api
+uv run ruff check ./ddbj_search_api ./tests
+uv run ruff format ./ddbj_search_api ./tests
+uv run mypy ./ddbj_search_api ./tests
 ```
 
 ### OpenAPI spec 出力

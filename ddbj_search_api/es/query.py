@@ -2,10 +2,13 @@
 
 Pure functions that convert API parameters to Elasticsearch query DSL.
 """
-from typing import Any, Dict, List, Optional, Tuple, Union
+
+from __future__ import annotations
+
+from typing import Any
 
 # API field name → ES field name mapping
-_SORT_FIELD_MAP: Dict[str, str] = {
+_SORT_FIELD_MAP: dict[str, str] = {
     "datePublished": "datePublished",
     "dateModified": "dateModified",
 }
@@ -16,7 +19,7 @@ _DEFAULT_KEYWORD_FIELDS = ["identifier", "title", "name", "description"]
 
 _VALID_KEYWORD_FIELDS = set(_DEFAULT_KEYWORD_FIELDS)
 
-_UMBRELLA_MAP: Dict[str, str] = {
+_UMBRELLA_MAP: dict[str, str] = {
     "TRUE": "UmbrellaBioProject",
     "FALSE": "BioProject",
 }
@@ -25,15 +28,15 @@ _UMBRELLA_MAP: Dict[str, str] = {
 def pagination_to_from_size(
     page: int,
     per_page: int,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Convert page/perPage to ES from/size."""
     from_ = (page - 1) * per_page
     return (from_, per_page)
 
 
 def build_sort(
-    sort_param: Optional[str],
-) -> Optional[List[Dict[str, Any]]]:
+    sort_param: str | None,
+) -> list[dict[str, Any]] | None:
     """Convert sort string to ES sort list.
 
     Returns None for relevance scoring (default).
@@ -45,20 +48,17 @@ def build_sort(
     parts = sort_param.split(":")
     if len(parts) != 2:
         raise ValueError(
-            f"Invalid sort format: '{sort_param}'. "
-            "Expected '{field}:{direction}'.",
+            f"Invalid sort format: '{sort_param}'. Expected '{{field}}:{{direction}}'.",
         )
 
     field, direction = parts
     if not field or field not in _SORT_FIELD_MAP:
         raise ValueError(
-            f"Invalid sort field: '{field}'. "
-            f"Allowed: {', '.join(sorted(_SORT_FIELD_MAP))}.",
+            f"Invalid sort field: '{field}'. Allowed: {', '.join(sorted(_SORT_FIELD_MAP))}.",
         )
     if not direction or direction not in _VALID_SORT_DIRECTIONS:
         raise ValueError(
-            f"Invalid sort direction: '{direction}'. "
-            f"Allowed: {', '.join(sorted(_VALID_SORT_DIRECTIONS))}.",
+            f"Invalid sort direction: '{direction}'. Allowed: {', '.join(sorted(_VALID_SORT_DIRECTIONS))}.",
         )
 
     es_field = _SORT_FIELD_MAP[field]
@@ -66,8 +66,8 @@ def build_sort(
 
 
 def validate_keyword_fields(
-    keyword_fields: Optional[str],
-) -> List[str]:
+    keyword_fields: str | None,
+) -> list[str]:
     """Validate and parse keywordFields parameter.
 
     Returns the list of valid field names to search.
@@ -82,24 +82,22 @@ def validate_keyword_fields(
 
     if not fields:
         raise ValueError(
-            "Invalid keywordFields: empty value. "
-            f"Allowed: {', '.join(sorted(_VALID_KEYWORD_FIELDS))}.",
+            f"Invalid keywordFields: empty value. Allowed: {', '.join(sorted(_VALID_KEYWORD_FIELDS))}.",
         )
 
     invalid = [f for f in fields if f not in _VALID_KEYWORD_FIELDS]
     if invalid:
         raise ValueError(
-            f"Invalid keywordFields: {', '.join(invalid)}. "
-            f"Allowed: {', '.join(sorted(_VALID_KEYWORD_FIELDS))}.",
+            f"Invalid keywordFields: {', '.join(invalid)}. Allowed: {', '.join(sorted(_VALID_KEYWORD_FIELDS))}.",
         )
 
     return fields
 
 
 def build_source_filter(
-    fields: Optional[str],
+    fields: str | None,
     include_properties: bool,
-) -> Optional[Union[List[str], Dict[str, Any]]]:
+) -> list[str] | dict[str, Any] | None:
     """Build ES _source parameter from fields/includeProperties."""
     if fields is not None:
         parsed = [f.strip() for f in fields.split(",")]
@@ -111,7 +109,7 @@ def build_source_filter(
     return None
 
 
-def _parse_keywords(keywords: Optional[str]) -> List[str]:
+def _parse_keywords(keywords: str | None) -> list[str]:
     """Split comma-separated keywords, stripping whitespace."""
     if not keywords:
         return []
@@ -120,23 +118,23 @@ def _parse_keywords(keywords: Optional[str]) -> List[str]:
 
 
 def build_search_query(
-    keywords: Optional[str] = None,
-    keyword_fields: Optional[Union[str, List[str]]] = None,
+    keywords: str | None = None,
+    keyword_fields: str | list[str] | None = None,
     keyword_operator: str = "AND",
-    organism: Optional[str] = None,
-    date_published_from: Optional[str] = None,
-    date_published_to: Optional[str] = None,
-    date_modified_from: Optional[str] = None,
-    date_modified_to: Optional[str] = None,
-    types: Optional[str] = None,
-    organization: Optional[str] = None,
-    publication: Optional[str] = None,
-    grant: Optional[str] = None,
-    umbrella: Optional[str] = None,
-) -> Dict[str, Any]:
+    organism: str | None = None,
+    date_published_from: str | None = None,
+    date_published_to: str | None = None,
+    date_modified_from: str | None = None,
+    date_modified_to: str | None = None,
+    types: str | None = None,
+    organization: str | None = None,
+    publication: str | None = None,
+    grant: str | None = None,
+    umbrella: str | None = None,
+) -> dict[str, Any]:
     """Build ES query dict from search parameters.
 
-    ``keyword_fields`` accepts either a pre-validated ``List[str]`` or a
+    ``keyword_fields`` accepts either a pre-validated ``list[str]`` or a
     raw comma-separated string (which will be validated here).
     """
     keyword_list = _parse_keywords(keywords)
@@ -160,13 +158,10 @@ def build_search_query(
         fields = keyword_fields
     else:
         fields = validate_keyword_fields(keyword_fields)
-    bool_query: Dict[str, Any] = {}
+    bool_query: dict[str, Any] = {}
 
     if keyword_list:
-        multi_matches = [
-            {"multi_match": {"query": kw, "fields": fields}}
-            for kw in keyword_list
-        ]
+        multi_matches = [{"multi_match": {"query": kw, "fields": fields}} for kw in keyword_list]
         if keyword_operator == "OR":
             bool_query["should"] = multi_matches
             bool_query["minimum_should_match"] = 1
@@ -180,25 +175,25 @@ def build_search_query(
 
 
 def _build_filter_clauses(
-    organism: Optional[str] = None,
-    date_published_from: Optional[str] = None,
-    date_published_to: Optional[str] = None,
-    date_modified_from: Optional[str] = None,
-    date_modified_to: Optional[str] = None,
-    types: Optional[str] = None,
-    organization: Optional[str] = None,
-    publication: Optional[str] = None,
-    grant: Optional[str] = None,
-    umbrella: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    organism: str | None = None,
+    date_published_from: str | None = None,
+    date_published_to: str | None = None,
+    date_modified_from: str | None = None,
+    date_modified_to: str | None = None,
+    types: str | None = None,
+    organization: str | None = None,
+    publication: str | None = None,
+    grant: str | None = None,
+    umbrella: str | None = None,
+) -> list[dict[str, Any]]:
     """Build list of ES filter clauses."""
-    clauses: List[Dict[str, Any]] = []
+    clauses: list[dict[str, Any]] = []
 
     if organism:
         clauses.append({"term": {"organism.identifier": organism}})
 
     # datePublished range
-    date_pub_range: Dict[str, str] = {}
+    date_pub_range: dict[str, str] = {}
     if date_published_from:
         date_pub_range["gte"] = date_published_from
     if date_published_to:
@@ -207,7 +202,7 @@ def _build_filter_clauses(
         clauses.append({"range": {"datePublished": date_pub_range}})
 
     # dateModified range
-    date_mod_range: Dict[str, str] = {}
+    date_mod_range: dict[str, str] = {}
     if date_modified_from:
         date_mod_range["gte"] = date_modified_from
     if date_modified_to:
@@ -229,38 +224,44 @@ def _build_filter_clauses(
         )
 
     if organization:
-        clauses.append({
-            "nested": {
-                "path": "organization",
-                "query": {"match": {"organization.name": organization}},
-            },
-        })
+        clauses.append(
+            {
+                "nested": {
+                    "path": "organization",
+                    "query": {"match": {"organization.name": organization}},
+                },
+            }
+        )
 
     if publication:
-        clauses.append({
-            "nested": {
-                "path": "publication",
-                "query": {"match": {"publication.title": publication}},
-            },
-        })
+        clauses.append(
+            {
+                "nested": {
+                    "path": "publication",
+                    "query": {"match": {"publication.title": publication}},
+                },
+            }
+        )
 
     if grant:
-        clauses.append({
-            "nested": {
-                "path": "grant",
-                "query": {"match": {"grant.title": grant}},
-            },
-        })
+        clauses.append(
+            {
+                "nested": {
+                    "path": "grant",
+                    "query": {"match": {"grant.title": grant}},
+                },
+            }
+        )
 
     return clauses
 
 
 def build_facet_aggs(
     is_cross_type: bool = False,
-    db_type: Optional[str] = None,
-) -> Dict[str, Any]:
+    db_type: str | None = None,
+) -> dict[str, Any]:
     """Build ES aggregation queries for facets."""
-    aggs: Dict[str, Any] = {
+    aggs: dict[str, Any] = {
         "organism": {"terms": {"field": "organism.name", "size": 50}},
         "status": {"terms": {"field": "status", "size": 50}},
         "accessibility": {"terms": {"field": "accessibility", "size": 50}},

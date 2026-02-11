@@ -1,9 +1,14 @@
 """Tests for ddbj_search_api.schemas.entries."""
+
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
+from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 from pydantic import ValidationError
 
-from ddbj_search_api.schemas.common import (EntryListItem, Facets,
-                                            FacetBucket, Pagination)
+from ddbj_search_api.schemas.common import EntryListItem, FacetBucket, Facets, Pagination
 from ddbj_search_api.schemas.entries import (
     DB_TYPE_TO_ENTRY_MODEL,
     BioProjectDetailResponse,
@@ -20,7 +25,6 @@ from ddbj_search_api.schemas.entries import (
     SraEntryJsonLdResponse,
     SraEntryResponse,
 )
-from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 
 # Minimal required data for each converter type.
 
@@ -34,7 +38,7 @@ _COMMON_OPTIONAL = {
     "datePublished": None,
 }
 
-_BIOPROJECT_BASE = {
+_BIOPROJECT_BASE: dict[str, Any] = {
     "identifier": "PRJDB1",
     "properties": {},
     "distribution": [],
@@ -53,7 +57,7 @@ _BIOPROJECT_BASE = {
     **_COMMON_OPTIONAL,
 }
 
-_BIOSAMPLE_BASE = {
+_BIOSAMPLE_BASE: dict[str, Any] = {
     "identifier": "SAMD00000001",
     "properties": {},
     "distribution": [],
@@ -70,7 +74,7 @@ _BIOSAMPLE_BASE = {
     **_COMMON_OPTIONAL,
 }
 
-_SRA_BASE = {
+_SRA_BASE: dict[str, Any] = {
     "identifier": "DRR000001",
     "properties": {},
     "distribution": [],
@@ -84,7 +88,7 @@ _SRA_BASE = {
     **_COMMON_OPTIONAL,
 }
 
-_JGA_BASE = {
+_JGA_BASE: dict[str, Any] = {
     "identifier": "JGAS000001",
     "properties": {},
     "distribution": [],
@@ -170,7 +174,7 @@ class TestDetailResponse:
         DETAIL_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_basic_construction(self, cls: type, base: dict) -> None:
+    def test_basic_construction(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(**base, dbXrefsCount={"biosample": 10})
         assert obj.identifier == base["identifier"]
         assert obj.db_xrefs_count == {"biosample": 10}
@@ -186,7 +190,9 @@ class TestDetailResponse:
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
     def test_inherits_from_converter_type(
-        self, cls: type, parent: type,
+        self,
+        cls: type,
+        parent: type,
     ) -> None:
         assert issubclass(cls, parent)
 
@@ -196,7 +202,9 @@ class TestDetailResponse:
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
     def test_converter_fields_are_real_fields(
-        self, cls: type, base: dict,
+        self,
+        cls: type,
+        base: dict[str, Any],
     ) -> None:
         data = {**base, "title": "Test Title", "dbXrefsCount": {}}
         obj = cls(**data)
@@ -208,7 +216,7 @@ class TestDetailResponse:
         DETAIL_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_alias_serialization(self, cls: type, base: dict) -> None:
+    def test_alias_serialization(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(**base, dbXrefsCount={"biosample": 5})
         data = obj.model_dump(by_alias=True)
         assert "dbXrefs" in data
@@ -221,10 +229,12 @@ class TestDetailResponse:
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
     def test_missing_db_xrefs_count_raises_error(
-        self, cls: type, base: dict,
+        self,
+        cls: type,
+        base: dict[str, Any],
     ) -> None:
         with pytest.raises(ValidationError):
-            cls(**base)  # type: ignore[call-arg]
+            cls(**base)
 
     def test_empty_db_xrefs_with_count(self) -> None:
         obj = BioProjectDetailResponse(
@@ -272,7 +282,7 @@ class TestJsonLdResponse:
         JSON_LD_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_basic_construction(self, cls: type, base: dict) -> None:
+    def test_basic_construction(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(
             **{
                 "@context": "https://schema.org",
@@ -288,7 +298,7 @@ class TestJsonLdResponse:
         JSON_LD_CASES,
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
-    def test_alias_serialization(self, cls: type, base: dict) -> None:
+    def test_alias_serialization(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(
             **{
                 "@context": "https://schema.org",
@@ -308,7 +318,9 @@ class TestJsonLdResponse:
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
     def test_converter_fields_are_real_fields(
-        self, cls: type, base: dict,
+        self,
+        cls: type,
+        base: dict[str, Any],
     ) -> None:
         data = {
             "@context": "https://schema.org",
@@ -326,7 +338,9 @@ class TestJsonLdResponse:
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
     def test_missing_context_raises_error(
-        self, cls: type, base: dict,
+        self,
+        cls: type,
+        base: dict[str, Any],
     ) -> None:
         with pytest.raises(ValidationError):
             cls(
@@ -347,7 +361,9 @@ class TestJsonLdResponse:
         ids=["BioProject", "BioSample", "SRA", "JGA"],
     )
     def test_inherits_from_converter_type(
-        self, cls: type, parent: type,
+        self,
+        cls: type,
+        parent: type,
     ) -> None:
         assert issubclass(cls, parent)
 
@@ -378,7 +394,5 @@ class TestDbTypeToEntryModel:
             ("jga-policy", JGA),
         ],
     )
-    def test_type_maps_to_correct_model(
-        self, db_type: str, expected_model: type
-    ) -> None:
+    def test_type_maps_to_correct_model(self, db_type: str, expected_model: type) -> None:
         assert DB_TYPE_TO_ENTRY_MODEL[db_type] is expected_model

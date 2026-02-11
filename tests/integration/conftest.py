@@ -4,8 +4,11 @@ Integration tests run against a real Elasticsearch instance.
 The ES URL is controlled by DDBJ_SEARCH_INTEGRATION_ES_URL
 (default: http://localhost:9200).
 """
+
+from __future__ import annotations
+
+import collections.abc
 import os
-from typing import Iterator
 
 import httpx
 import pytest
@@ -21,7 +24,7 @@ ES_URL = os.environ.get(
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_es():
+def ensure_es() -> None:
     """Skip all integration tests when ES is not reachable."""
     try:
         resp = httpx.get(ES_URL, timeout=5.0)
@@ -48,7 +51,7 @@ def config(es_url: str) -> AppConfig:
 
 
 @pytest.fixture(scope="session")
-def app(config: AppConfig) -> Iterator[TestClient]:
+def app(config: AppConfig) -> collections.abc.Iterator[TestClient]:
     """Create a TestClient connected to real ES (no mocks).
 
     Uses context manager to ensure lifespan (es_client setup) runs.

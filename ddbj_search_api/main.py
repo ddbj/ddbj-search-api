@@ -1,11 +1,15 @@
 """FastAPI application factory and entry points."""
+
+from __future__ import annotations
+
+import collections.abc
 import http
 import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import AsyncIterator, Optional
+from typing import Any
 
 import httpx
 import uvicorn
@@ -14,9 +18,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 
-from ddbj_search_api.config import (AppConfig, get_config, logging_config,
-                                    parse_args)
+from ddbj_search_api.config import AppConfig, get_config, logging_config, parse_args
 from ddbj_search_api.routers import router
 
 logger = logging.getLogger(__name__)
@@ -25,7 +29,7 @@ logger = logging.getLogger(__name__)
 # === X-Request-ID middleware ===
 
 
-async def request_id_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+async def request_id_middleware(request: Request, call_next: Any) -> Response:
     """Attach X-Request-ID to every request/response.
 
     If the client supplies ``X-Request-ID``, echo it back; otherwise
@@ -33,7 +37,7 @@ async def request_id_middleware(request: Request, call_next):  # type: ignore[no
     """
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     request.state.request_id = request_id
-    response = await call_next(request)
+    response: Response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
 
     return response
@@ -118,10 +122,7 @@ def setup_error_handlers(app: FastAPI) -> None:
                     request=request,
                 )
 
-        details = "; ".join(
-            f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}"
-            for e in exc.errors()
-        )
+        details = "; ".join(f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors())
 
         return _problem_json(
             status=422,
@@ -160,11 +161,11 @@ def setup_error_handlers(app: FastAPI) -> None:
 # === Lifespan ===
 
 
-def _make_lifespan(config: AppConfig):  # type: ignore[no-untyped-def]
+def _make_lifespan(config: AppConfig) -> Any:
     """Create a lifespan context manager for the given config."""
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> collections.abc.AsyncIterator[None]:
         app.state.es_client = httpx.AsyncClient(base_url=config.es_url)
         yield
         await app.state.es_client.aclose()
@@ -175,17 +176,14 @@ def _make_lifespan(config: AppConfig):  # type: ignore[no-untyped-def]
 # === App factory ===
 
 
-def create_app(config: Optional[AppConfig] = None) -> FastAPI:
+def create_app(config: AppConfig | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     if config is None:
         config = get_config()
 
     app = FastAPI(
         title="DDBJ Search API",
-        description=(
-            "RESTful API for searching and retrieving BioProject, "
-            "BioSample, SRA, and JGA entries from DDBJ."
-        ),
+        description=("RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ."),
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
@@ -216,7 +214,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     # ValidationError schemas (we use ProblemDetails for all errors).
     _original_openapi = app.openapi
 
-    def custom_openapi():  # type: ignore[no-untyped-def]
+    def custom_openapi() -> dict[str, Any]:
         schema = _original_openapi()
         schemas = schema.get("components", {}).get("schemas", {})
         schemas.pop("HTTPValidationError", None)
@@ -234,11 +232,8 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
 
                 # Remove inapplicable error codes per endpoint.
                 # 400: only paginated list endpoints (deep paging).
-                _is_list = (
-                    path == "/entries/"
-                    or (path.startswith("/entries/")
-                        and path.endswith("/")
-                        and "{" not in path)
+                _is_list = path == "/entries/" or (
+                    path.startswith("/entries/") and path.endswith("/") and "{" not in path
                 )
                 if not _is_list:
                     responses.pop("400", None)
@@ -260,9 +255,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                         content = resp.get("content", {})
                         for media_type in list(content.keys()):
                             if media_type != "application/problem+json":
-                                content["application/problem+json"] = (
-                                    content.pop(media_type)
-                                )
+                                content["application/problem+json"] = content.pop(media_type)
 
         return schema
 

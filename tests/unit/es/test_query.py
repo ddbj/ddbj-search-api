@@ -3,6 +3,11 @@
 Tests verify the conversion from API parameters to Elasticsearch query DSL.
 All functions are pure (no I/O), so no mocks are needed.
 """
+
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -15,7 +20,6 @@ from ddbj_search_api.es.query import (
     pagination_to_from_size,
     validate_keyword_fields,
 )
-
 
 # ===================================================================
 # pagination_to_from_size
@@ -53,7 +57,9 @@ class TestPaginationToFromSizePBT:
         per_page=st.integers(min_value=1, max_value=100),
     )
     def test_from_equals_page_minus_one_times_per_page(
-        self, page: int, per_page: int,
+        self,
+        page: int,
+        per_page: int,
     ) -> None:
         from_, size = pagination_to_from_size(page, per_page)
         assert from_ == (page - 1) * per_page
@@ -365,7 +371,8 @@ class TestBuildSearchQueryFilters:
         filters = result["bool"]["filter"]
         type_filter = _find_filter(filters, "terms", "type")
         assert set(type_filter["terms"]["type"]) == {
-            "bioproject", "biosample",
+            "bioproject",
+            "biosample",
         }
 
 
@@ -503,16 +510,24 @@ class TestBuildFacetAggsPBT:
 
     @given(
         is_cross_type=st.booleans(),
-        db_type=st.sampled_from([
-            None, "bioproject", "biosample",
-            "sra-study", "jga-study",
-        ]),
+        db_type=st.sampled_from(
+            [
+                None,
+                "bioproject",
+                "biosample",
+                "sra-study",
+                "jga-study",
+            ]
+        ),
     )
     def test_common_facets_always_included(
-        self, is_cross_type: bool, db_type: str,
+        self,
+        is_cross_type: bool,
+        db_type: str,
     ) -> None:
         result = build_facet_aggs(
-            is_cross_type=is_cross_type, db_type=db_type,
+            is_cross_type=is_cross_type,
+            db_type=db_type,
         )
         assert "organism" in result
         assert "status" in result
@@ -525,10 +540,10 @@ class TestBuildFacetAggsPBT:
 
 
 def _find_filter(
-    filters: list,
+    filters: list[dict[str, Any]],
     query_type: str,
     field: str,
-) -> dict:
+) -> dict[str, Any]:
     """Find a filter clause by query type and field name."""
     for f in filters:
         if query_type in f and field in f[query_type]:
@@ -538,7 +553,7 @@ def _find_filter(
     )
 
 
-def _find_nested_filter(filters: list, path: str) -> dict:
+def _find_nested_filter(filters: list[dict[str, Any]], path: str) -> dict[str, Any]:
     """Find a nested filter clause by path."""
     for f in filters:
         if "nested" in f and f["nested"]["path"] == path:

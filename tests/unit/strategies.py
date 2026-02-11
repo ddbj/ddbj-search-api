@@ -1,5 +1,6 @@
 """Hypothesis custom strategies for ddbj-search-api tests."""
-from typing import List
+
+from __future__ import annotations
 
 from hypothesis import strategies as st
 
@@ -7,7 +8,7 @@ from ddbj_search_api.schemas.common import DbType
 
 # === DbType ===
 
-db_type_values: List[str] = [e.value for e in DbType]
+db_type_values: list[str] = [e.value for e in DbType]
 valid_db_types = st.sampled_from(db_type_values)
 
 # === Pagination ===

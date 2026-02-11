@@ -3,28 +3,36 @@
 Cross-type and type-specific search with pagination, filtering,
 sorting, and optional facet aggregation.
 """
+
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import (build_db_xrefs_script_fields, es_search,
-                                       parse_script_fields_hit)
-from ddbj_search_api.es.query import (build_facet_aggs, build_search_query,
-                                      build_sort, build_source_filter,
-                                      pagination_to_from_size,
-                                      validate_keyword_fields)
+from ddbj_search_api.es.client import build_db_xrefs_script_fields, es_search, parse_script_fields_hit
+from ddbj_search_api.es.query import (
+    build_facet_aggs,
+    build_search_query,
+    build_sort,
+    build_source_filter,
+    pagination_to_from_size,
+    validate_keyword_fields,
+)
 from ddbj_search_api.schemas.common import DbType, EntryListItem, Pagination
 from ddbj_search_api.schemas.entries import EntryListResponse
-from ddbj_search_api.schemas.queries import (BioProjectExtraQuery,
-                                             DbXrefsLimitQuery,
-                                             PaginationQuery,
-                                             ResponseControlQuery,
-                                             SearchFilterQuery,
-                                             TypesFilterQuery)
+from ddbj_search_api.schemas.queries import (
+    BioProjectExtraQuery,
+    DbXrefsLimitQuery,
+    PaginationQuery,
+    ResponseControlQuery,
+    SearchFilterQuery,
+    TypesFilterQuery,
+)
 from ddbj_search_api.utils import parse_facets
 
 logger = logging.getLogger(__name__)
@@ -58,12 +66,12 @@ async def _do_search(
     response_control: ResponseControlQuery,
     db_xrefs_limit: int,
     is_cross_type: bool = False,
-    db_type: Optional[str] = None,
-    types: Optional[str] = None,
-    organization: Optional[str] = None,
-    publication: Optional[str] = None,
-    grant: Optional[str] = None,
-    umbrella: Optional[str] = None,
+    db_type: str | None = None,
+    types: str | None = None,
+    organization: str | None = None,
+    publication: str | None = None,
+    grant: str | None = None,
+    umbrella: str | None = None,
 ) -> Any:
     """Execute search against ES and build the response."""
     # 1. Deep paging check
@@ -108,7 +116,7 @@ async def _do_search(
     )
 
     # 7. Build request body
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "query": query,
         "from": from_,
         "size": size,
@@ -143,10 +151,7 @@ async def _do_search(
     raw_hits = es_resp["hits"]["hits"]
     total = es_resp["hits"]["total"]["value"]
 
-    items = [
-        EntryListItem(**parse_script_fields_hit(hit))
-        for hit in raw_hits
-    ]
+    items = [EntryListItem(**parse_script_fields_hit(hit)) for hit in raw_hits]
 
     facets = None
     if response_control.include_facets and "aggregations" in es_resp:
@@ -169,23 +174,19 @@ async def _do_search(
     # When includeProperties=false, use exclude_unset to drop Pydantic
     # default fields (like properties=None) that ES correctly excluded.
     if not response_control.include_properties:
-        pagination_dict = response.pagination.model_dump(  # pylint: disable=no-member
+        pagination_dict = response.pagination.model_dump(
             by_alias=True,
         )
-        items_list = [
-            item.model_dump(by_alias=True, exclude_unset=True)
-            for item in response.items
-        ]
-        facets_dict = (
-            response.facets.model_dump(by_alias=True)  # pylint: disable=no-member
-            if response.facets is not None else None
-        )
+        items_list = [item.model_dump(by_alias=True, exclude_unset=True) for item in response.items]
+        facets_dict = response.facets.model_dump(by_alias=True) if response.facets is not None else None
 
-        return JSONResponse(content={
-            "pagination": pagination_dict,
-            "items": items_list,
-            "facets": facets_dict,
-        })
+        return JSONResponse(
+            content={
+                "pagination": pagination_dict,
+                "items": items_list,
+                "facets": facets_dict,
+            }
+        )
 
     return response
 
@@ -241,7 +242,7 @@ router.add_api_route(
 # === GET /entries/{type}/ (type-specific search) ===
 
 
-def _make_type_search_handler(db_type: DbType):  # type: ignore[no-untyped-def]
+def _make_type_search_handler(db_type: DbType) -> Any:
     """Factory: create a type-specific search handler.
 
     BioProject gets extra filter parameters (organization, publication,

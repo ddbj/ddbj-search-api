@@ -3,21 +3,22 @@
 Tests cover routing, response structure, ES query construction,
 search filter validation, BioProject-specific parameters, and errors.
 """
-from typing import Any, Dict
+
+from __future__ import annotations
+
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.unit.conftest import (make_es_search_response,
-                                 make_facets_aggregations)
+from tests.unit.conftest import make_es_search_response, make_facets_aggregations
 from tests.unit.strategies import db_type_values
-
 
 # === Helpers ===
 
 
-def _facets_aggs_with_data() -> Dict[str, Any]:
+def _facets_aggs_with_data() -> dict[str, Any]:
     """Build aggregation data with sample buckets."""
 
     return make_facets_aggregations(
@@ -238,42 +239,26 @@ class TestFacetsSearchFilter:
 class TestFacetsDateValidation:
     """Date parameter format validation (YYYY-MM-DD only)."""
 
-    def test_valid_date_accepted(
-        self, app_with_facets: TestClient
-    ) -> None:
-        resp = app_with_facets.get(
-            "/facets", params={"datePublishedFrom": "2024-01-15"}
-        )
+    def test_valid_date_accepted(self, app_with_facets: TestClient) -> None:
+        resp = app_with_facets.get("/facets", params={"datePublishedFrom": "2024-01-15"})
         assert resp.status_code == 200
 
-    def test_slash_date_returns_422(
-        self, app_with_facets: TestClient
-    ) -> None:
-        resp = app_with_facets.get(
-            "/facets", params={"datePublishedFrom": "2024/01/15"}
-        )
+    def test_slash_date_returns_422(self, app_with_facets: TestClient) -> None:
+        resp = app_with_facets.get("/facets", params={"datePublishedFrom": "2024/01/15"})
         assert resp.status_code == 422
 
-    def test_no_dash_date_returns_422(
-        self, app_with_facets: TestClient
-    ) -> None:
-        resp = app_with_facets.get(
-            "/facets", params={"datePublishedFrom": "20240115"}
-        )
+    def test_no_dash_date_returns_422(self, app_with_facets: TestClient) -> None:
+        resp = app_with_facets.get("/facets", params={"datePublishedFrom": "20240115"})
         assert resp.status_code == 422
 
-    def test_datetime_returns_422(
-        self, app_with_facets: TestClient
-    ) -> None:
+    def test_datetime_returns_422(self, app_with_facets: TestClient) -> None:
         resp = app_with_facets.get(
             "/facets",
             params={"datePublishedFrom": "2024-01-15T00:00:00"},
         )
         assert resp.status_code == 422
 
-    def test_from_after_to_accepted(
-        self, app_with_facets: TestClient
-    ) -> None:
+    def test_from_after_to_accepted(self, app_with_facets: TestClient) -> None:
         """from > to is accepted (ES returns 0 results, not an error)."""
         resp = app_with_facets.get(
             "/facets",
@@ -284,9 +269,7 @@ class TestFacetsDateValidation:
         )
         assert resp.status_code == 200
 
-    def test_same_from_and_to_accepted(
-        self, app_with_facets: TestClient
-    ) -> None:
+    def test_same_from_and_to_accepted(self, app_with_facets: TestClient) -> None:
         resp = app_with_facets.get(
             "/facets",
             params={
@@ -296,20 +279,12 @@ class TestFacetsDateValidation:
         )
         assert resp.status_code == 200
 
-    def test_feb_30_returns_422(
-        self, app_with_facets: TestClient
-    ) -> None:
-        resp = app_with_facets.get(
-            "/facets", params={"datePublishedFrom": "2024-02-30"}
-        )
+    def test_feb_30_returns_422(self, app_with_facets: TestClient) -> None:
+        resp = app_with_facets.get("/facets", params={"datePublishedFrom": "2024-02-30"})
         assert resp.status_code == 422
 
-    def test_month_13_returns_422(
-        self, app_with_facets: TestClient
-    ) -> None:
-        resp = app_with_facets.get(
-            "/facets", params={"datePublishedFrom": "2024-13-01"}
-        )
+    def test_month_13_returns_422(self, app_with_facets: TestClient) -> None:
+        resp = app_with_facets.get("/facets", params={"datePublishedFrom": "2024-13-01"})
         assert resp.status_code == 422
 
 
@@ -327,10 +302,7 @@ class TestFacetsOrganismFilter:
         app_with_facets.get("/facets?organism=9606")
         body = mock_es_search_facets.call_args[0][2]
         filters = body["query"]["bool"]["filter"]
-        term_filters = [
-            f for f in filters
-            if "term" in f and "organism.identifier" in f["term"]
-        ]
+        term_filters = [f for f in filters if "term" in f and "organism.identifier" in f["term"]]
         assert len(term_filters) == 1
         assert term_filters[0]["term"]["organism.identifier"] == "9606"
 
@@ -346,9 +318,7 @@ class TestFacetsKeywordOperator:
         app_with_facets: TestClient,
         mock_es_search_facets: AsyncMock,
     ) -> None:
-        app_with_facets.get(
-            "/facets?keywords=cancer,tumor&keywordOperator=OR"
-        )
+        app_with_facets.get("/facets?keywords=cancer,tumor&keywordOperator=OR")
         body = mock_es_search_facets.call_args[0][2]
         assert "should" in body["query"]["bool"]
 
@@ -402,9 +372,7 @@ class TestFacetsUmbrellaValidation:
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
-        resp = app_with_facets.get(
-            "/facets/bioproject", params={"umbrella": "TRUE"}
-        )
+        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "TRUE"})
         assert resp.status_code == 200
 
     def test_umbrella_false_accepted(
@@ -415,9 +383,7 @@ class TestFacetsUmbrellaValidation:
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
-        resp = app_with_facets.get(
-            "/facets/bioproject", params={"umbrella": "FALSE"}
-        )
+        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "FALSE"})
         assert resp.status_code == 200
 
     def test_umbrella_lowercase_accepted(
@@ -428,9 +394,7 @@ class TestFacetsUmbrellaValidation:
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
-        resp = app_with_facets.get(
-            "/facets/bioproject", params={"umbrella": "true"}
-        )
+        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "true"})
         assert resp.status_code == 200
 
     def test_umbrella_mixed_case_accepted(
@@ -441,27 +405,21 @@ class TestFacetsUmbrellaValidation:
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
-        resp = app_with_facets.get(
-            "/facets/bioproject", params={"umbrella": "True"}
-        )
+        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "True"})
         assert resp.status_code == 200
 
     def test_umbrella_invalid_returns_422(
         self,
         app_with_facets: TestClient,
     ) -> None:
-        resp = app_with_facets.get(
-            "/facets/bioproject", params={"umbrella": "invalid"}
-        )
+        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "invalid"})
         assert resp.status_code == 422
 
     def test_umbrella_empty_returns_422(
         self,
         app_with_facets: TestClient,
     ) -> None:
-        resp = app_with_facets.get(
-            "/facets/bioproject", params={"umbrella": ""}
-        )
+        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": ""})
         assert resp.status_code == 422
 
 
@@ -545,10 +503,7 @@ class TestFacetsBioProjectExtra:
         query = body["query"]
         assert "bool" in query
         filters = query["bool"]["filter"]
-        object_type_filter = [
-            f for f in filters
-            if "term" in f and "objectType" in f["term"]
-        ]
+        object_type_filter = [f for f in filters if "term" in f and "objectType" in f["term"]]
         assert len(object_type_filter) == 1
 
     def test_organization_filter_reflected(

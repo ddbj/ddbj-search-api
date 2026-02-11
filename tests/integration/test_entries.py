@@ -1,13 +1,15 @@
 """Integration tests for GET /entries/ and GET /entries/{type}/."""
+
+from __future__ import annotations
+
 from fastapi.testclient import TestClient
 
 from ddbj_search_api.schemas.common import DbType
 
-
 # === Cross-type search: GET /entries/ ===
 
 
-def test_entries_cross_type_returns_results(app: TestClient):
+def test_entries_cross_type_returns_results(app: TestClient) -> None:
     """Cross-type search returns at least one result."""
     resp = app.get("/entries/", params={"perPage": 1})
 
@@ -17,7 +19,7 @@ def test_entries_cross_type_returns_results(app: TestClient):
     assert len(body["items"]) >= 1
 
 
-def test_entries_cross_type_response_structure(app: TestClient):
+def test_entries_cross_type_response_structure(app: TestClient) -> None:
     """Response has pagination and items with required fields."""
     resp = app.get("/entries/", params={"perPage": 1})
     body = resp.json()
@@ -32,20 +34,17 @@ def test_entries_cross_type_response_structure(app: TestClient):
     assert "type" in item
 
 
-def test_entries_cross_type_trailing_slash(app: TestClient):
+def test_entries_cross_type_trailing_slash(app: TestClient) -> None:
     """Both /entries/ and /entries return the same structure."""
     resp_slash = app.get("/entries/", params={"perPage": 1})
     resp_bare = app.get("/entries", params={"perPage": 1})
 
     assert resp_slash.status_code == 200
     assert resp_bare.status_code == 200
-    assert (
-        resp_slash.json()["pagination"]["total"]
-        == resp_bare.json()["pagination"]["total"]
-    )
+    assert resp_slash.json()["pagination"]["total"] == resp_bare.json()["pagination"]["total"]
 
 
-def test_entries_cross_type_pagination(app: TestClient):
+def test_entries_cross_type_pagination(app: TestClient) -> None:
     """Page and perPage parameters control results."""
     resp_p1 = app.get("/entries/", params={"page": 1, "perPage": 2})
     resp_p2 = app.get("/entries/", params={"page": 2, "perPage": 2})
@@ -65,7 +64,7 @@ def test_entries_cross_type_pagination(app: TestClient):
         assert ids_p1 != ids_p2
 
 
-def test_entries_cross_type_keyword_search(app: TestClient):
+def test_entries_cross_type_keyword_search(app: TestClient) -> None:
     """Keyword search narrows results (total should be <= unfiltered)."""
     resp_all = app.get("/entries/", params={"perPage": 1})
     total_all = resp_all.json()["pagination"]["total"]
@@ -80,7 +79,7 @@ def test_entries_cross_type_keyword_search(app: TestClient):
     assert total_kw <= total_all
 
 
-def test_entries_cross_type_sort_date_published(app: TestClient):
+def test_entries_cross_type_sort_date_published(app: TestClient) -> None:
     """Sort by datePublished:desc returns entries in descending order."""
     resp = app.get(
         "/entries/",
@@ -89,17 +88,13 @@ def test_entries_cross_type_sort_date_published(app: TestClient):
 
     assert resp.status_code == 200
     items = resp.json()["items"]
-    dates = [
-        item["datePublished"]
-        for item in items
-        if item.get("datePublished") is not None
-    ]
+    dates = [item["datePublished"] for item in items if item.get("datePublished") is not None]
 
     for i in range(len(dates) - 1):
         assert dates[i] >= dates[i + 1]
 
 
-def test_entries_cross_type_deep_paging_limit(app: TestClient):
+def test_entries_cross_type_deep_paging_limit(app: TestClient) -> None:
     """page * perPage > 10000 returns 400."""
     resp = app.get("/entries/", params={"page": 101, "perPage": 100})
 
@@ -108,7 +103,7 @@ def test_entries_cross_type_deep_paging_limit(app: TestClient):
     assert body["status"] == 400
 
 
-def test_entries_cross_type_with_facets(app: TestClient):
+def test_entries_cross_type_with_facets(app: TestClient) -> None:
     """includeFacets=true returns facets in response."""
     resp = app.get(
         "/entries/",
@@ -125,16 +120,13 @@ def test_entries_cross_type_with_facets(app: TestClient):
     assert "type" in facets
 
 
-def test_entries_cross_type_db_xrefs_count(app: TestClient):
+def test_entries_cross_type_db_xrefs_count(app: TestClient) -> None:
     """With dbXrefsLimit=0, items include dbXrefsCount with empty dbXrefs."""
     resp = app.get("/entries/", params={"perPage": 10, "dbXrefsLimit": 0})
 
     assert resp.status_code == 200
     items = resp.json()["items"]
-    items_with_xrefs = [
-        item for item in items
-        if item.get("dbXrefsCount") is not None
-    ]
+    items_with_xrefs = [item for item in items if item.get("dbXrefsCount") is not None]
 
     for item in items_with_xrefs:
         assert isinstance(item["dbXrefsCount"], dict)
@@ -144,7 +136,7 @@ def test_entries_cross_type_db_xrefs_count(app: TestClient):
 # === Type-specific search: GET /entries/{type}/ ===
 
 
-def test_entries_type_specific_returns_results(app: TestClient):
+def test_entries_type_specific_returns_results(app: TestClient) -> None:
     """Each DB type endpoint returns data (if index has entries)."""
     for db_type in DbType:
         resp = app.get(
@@ -158,7 +150,7 @@ def test_entries_type_specific_returns_results(app: TestClient):
         assert "items" in body
 
 
-def test_entries_type_specific_items_match_type(app: TestClient):
+def test_entries_type_specific_items_match_type(app: TestClient) -> None:
     """Items returned from type-specific search have the correct type."""
     resp = app.get("/entries/bioproject/", params={"perPage": 5})
 
@@ -167,20 +159,17 @@ def test_entries_type_specific_items_match_type(app: TestClient):
         assert item["type"] == "bioproject"
 
 
-def test_entries_type_specific_trailing_slash(app: TestClient):
+def test_entries_type_specific_trailing_slash(app: TestClient) -> None:
     """Both /entries/bioproject/ and /entries/bioproject work."""
     resp_slash = app.get("/entries/bioproject/", params={"perPage": 1})
     resp_bare = app.get("/entries/bioproject", params={"perPage": 1})
 
     assert resp_slash.status_code == 200
     assert resp_bare.status_code == 200
-    assert (
-        resp_slash.json()["pagination"]["total"]
-        == resp_bare.json()["pagination"]["total"]
-    )
+    assert resp_slash.json()["pagination"]["total"] == resp_bare.json()["pagination"]["total"]
 
 
-def test_entries_type_specific_pagination(app: TestClient):
+def test_entries_type_specific_pagination(app: TestClient) -> None:
     """Pagination works for type-specific search."""
     resp = app.get(
         "/entries/bioproject/",
@@ -195,7 +184,7 @@ def test_entries_type_specific_pagination(app: TestClient):
 # === Bug fix verification: dbXrefsLimit default (100) ===
 
 
-def test_entries_db_xrefs_limit_default(app: TestClient):
+def test_entries_db_xrefs_limit_default(app: TestClient) -> None:
     """Default dbXrefsLimit=100 works correctly after bug fix.
 
     Items should have dbXrefs as a list (not a dict).
@@ -212,21 +201,21 @@ def test_entries_db_xrefs_limit_default(app: TestClient):
 # === Validation: perPage, page boundaries ===
 
 
-def test_entries_per_page_zero_returns_422(app: TestClient):
+def test_entries_per_page_zero_returns_422(app: TestClient) -> None:
     """perPage=0 is out of range (1-100), returns 422."""
     resp = app.get("/entries/", params={"perPage": 0})
 
     assert resp.status_code == 422
 
 
-def test_entries_per_page_101_returns_422(app: TestClient):
+def test_entries_per_page_101_returns_422(app: TestClient) -> None:
     """perPage=101 is out of range (1-100), returns 422."""
     resp = app.get("/entries/", params={"perPage": 101})
 
     assert resp.status_code == 422
 
 
-def test_entries_page_zero_returns_422(app: TestClient):
+def test_entries_page_zero_returns_422(app: TestClient) -> None:
     """page=0 is out of range (>=1), returns 422."""
     resp = app.get("/entries/", params={"page": 0})
 
@@ -236,7 +225,7 @@ def test_entries_page_zero_returns_422(app: TestClient):
 # === keywordOperator ===
 
 
-def test_entries_keyword_operator_or(app: TestClient):
+def test_entries_keyword_operator_or(app: TestClient) -> None:
     """keywordOperator=OR returns results matching any keyword."""
     resp = app.get(
         "/entries/",
@@ -254,7 +243,7 @@ def test_entries_keyword_operator_or(app: TestClient):
 # === datePublishedFrom / datePublishedTo ===
 
 
-def test_entries_date_published_filter(app: TestClient):
+def test_entries_date_published_filter(app: TestClient) -> None:
     """Date filter narrows results."""
     resp_all = app.get("/entries/", params={"perPage": 1})
     total_all = resp_all.json()["pagination"]["total"]
@@ -276,7 +265,7 @@ def test_entries_date_published_filter(app: TestClient):
 # === fields parameter ===
 
 
-def test_entries_fields_limits_response(app: TestClient):
+def test_entries_fields_limits_response(app: TestClient) -> None:
     """fields parameter limits which fields are returned."""
     resp = app.get(
         "/entries/",
@@ -292,7 +281,7 @@ def test_entries_fields_limits_response(app: TestClient):
 # === includeProperties=false ===
 
 
-def test_entries_include_properties_false(app: TestClient):
+def test_entries_include_properties_false(app: TestClient) -> None:
     """includeProperties=false excludes 'properties' field from items."""
     resp_with = app.get(
         "/entries/bioproject/",
@@ -305,22 +294,17 @@ def test_entries_include_properties_false(app: TestClient):
 
     assert resp_with.status_code == 200
     assert resp_without.status_code == 200
-    assert (
-        resp_with.json()["pagination"]["total"]
-        == resp_without.json()["pagination"]["total"]
-    )
+    assert resp_with.json()["pagination"]["total"] == resp_without.json()["pagination"]["total"]
 
     # Verify properties field is actually excluded
     for item in resp_without.json()["items"]:
-        assert "properties" not in item, (
-            f"properties should be excluded for {item.get('identifier')}"
-        )
+        assert "properties" not in item, f"properties should be excluded for {item.get('identifier')}"
 
 
 # === includeFacets=false (explicit) ===
 
 
-def test_entries_include_facets_false(app: TestClient):
+def test_entries_include_facets_false(app: TestClient) -> None:
     """includeFacets=false (default) returns no facets."""
     resp = app.get(
         "/entries/",
@@ -335,7 +319,7 @@ def test_entries_include_facets_false(app: TestClient):
 # === types parameter (cross-type filtering) ===
 
 
-def test_entries_types_filter(app: TestClient):
+def test_entries_types_filter(app: TestClient) -> None:
     """types parameter filters to specified types only."""
     resp = app.get(
         "/entries/",
@@ -350,7 +334,7 @@ def test_entries_types_filter(app: TestClient):
 # === Deep paging boundary value ===
 
 
-def test_entries_deep_paging_boundary_ok(app: TestClient):
+def test_entries_deep_paging_boundary_ok(app: TestClient) -> None:
     """page=100, perPage=100 (exactly 10000) returns 200."""
     resp = app.get(
         "/entries/",
@@ -363,7 +347,7 @@ def test_entries_deep_paging_boundary_ok(app: TestClient):
 # === sort: dateModified ===
 
 
-def test_entries_sort_date_modified_asc(app: TestClient):
+def test_entries_sort_date_modified_asc(app: TestClient) -> None:
     """sort=dateModified:asc returns entries in ascending order."""
     resp = app.get(
         "/entries/",
@@ -372,11 +356,7 @@ def test_entries_sort_date_modified_asc(app: TestClient):
 
     assert resp.status_code == 200
     items = resp.json()["items"]
-    dates = [
-        item["dateModified"]
-        for item in items
-        if item.get("dateModified") is not None
-    ]
+    dates = [item["dateModified"] for item in items if item.get("dateModified") is not None]
 
     for i in range(len(dates) - 1):
         assert dates[i] <= dates[i + 1]
@@ -385,7 +365,7 @@ def test_entries_sort_date_modified_asc(app: TestClient):
 # === Invalid sort ===
 
 
-def test_entries_invalid_sort_returns_422(app: TestClient):
+def test_entries_invalid_sort_returns_422(app: TestClient) -> None:
     """Invalid sort field returns 422."""
     resp = app.get(
         "/entries/",

@@ -1,18 +1,17 @@
 """Application configuration via pydantic-settings."""
+
+from __future__ import annotations
+
 import argparse
 from enum import Enum
-from typing import Dict, Optional
 
 from pydantic import computed_field
 from pydantic_settings import BaseSettings
 
 # JSON-LD @context URLs per database type.
 # Context files are maintained in ddbj-search-converter/ontology/.
-_CONTEXT_BASE = (
-    "https://raw.githubusercontent.com"
-    "/ddbj/ddbj-search-converter/main/ontology"
-)
-JSONLD_CONTEXT_URLS: Dict[str, str] = {
+_CONTEXT_BASE = "https://raw.githubusercontent.com/ddbj/ddbj-search-converter/main/ontology"
+JSONLD_CONTEXT_URLS: dict[str, str] = {
     "bioproject": f"{_CONTEXT_BASE}/bioproject.jsonld",
     "biosample": f"{_CONTEXT_BASE}/biosample.jsonld",
     "sra-submission": f"{_CONTEXT_BASE}/sra.jsonld",
@@ -84,18 +83,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-_config: Optional[AppConfig] = None
+_config: AppConfig | None = None
 
 
 def get_config(
-    host: Optional[str] = None,
-    port: Optional[int] = None,
+    host: str | None = None,
+    port: int | None = None,
 ) -> AppConfig:
     """Get the application config, creating it on first call.
 
     CLI argument overrides are applied on top of env-var settings.
     """
-    global _config  # pylint: disable=global-statement
+    global _config  # noqa: PLW0603
     if _config is not None:
         return _config
 
@@ -110,7 +109,7 @@ def get_config(
     return _config
 
 
-def logging_config(debug: bool) -> Dict[str, object]:
+def logging_config(debug: bool) -> dict[str, object]:
     """Build uvicorn-compatible logging configuration."""
     level = "DEBUG" if debug else "INFO"
 

@@ -1,8 +1,10 @@
 """Tests for ddbj_search_api.config."""
+
+from __future__ import annotations
+
 import pytest
 
 from ddbj_search_api.config import AppConfig, Env, logging_config
-
 
 # === AppConfig defaults ===
 
@@ -70,9 +72,7 @@ class TestAppConfigEnvOverrides:
         assert config.env == Env.production
         assert config.debug is False
 
-    def test_url_prefix_from_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_url_prefix_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DDBJ_SEARCH_API_URL_PREFIX", "/custom/prefix")
         config = AppConfig()
         assert config.url_prefix == "/custom/prefix"
