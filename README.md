@@ -44,6 +44,11 @@ API サーバーは ddbj-search-converter が管理する Elasticsearch を参�
 # 1. 環境変数を設定
 cp env.dev .env
 
+# UID が 1000 以外の場合は .env を修正
+# id -u  # 自分の UID を確認
+# sed -i "s/CONTAINER_UID=1000/CONTAINER_UID=$(id -u)/" .env
+# sed -i "s/CONTAINER_GID=1000/CONTAINER_GID=$(id -g)/" .env
+
 # 2. Docker network 作成（初回のみ、既に存在していてもエラーにならない）
 docker network create ddbj-search-network-dev || true
 
@@ -101,6 +106,10 @@ curl "http://localhost:8080/search/api/entries/biosample/SAMN02953658.jsonld"
 ```bash
 # === Environment ===
 DDBJ_SEARCH_ENV=production   # dev, staging, production
+
+# === Container User (Docker dev: host UID/GID, Podman: default 0:0) ===
+CONTAINER_UID=1000   # Docker dev のみ設定。Podman 環境では未設定 (デフォルト 0:0)
+CONTAINER_GID=1000
 
 # === Application Settings (config.py) ===
 DDBJ_SEARCH_API_URL_PREFIX=/search/api                         # URL prefix

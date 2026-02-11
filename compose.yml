@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ddbj-search-api-${DDBJ_SEARCH_ENV}
+    user: "${CONTAINER_UID:-0}:${CONTAINER_GID:-0}"
     volumes:
       - .:/app:rw
       - app-venv:/app/.venv
