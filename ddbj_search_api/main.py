@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections.abc
 import http
+import importlib.metadata
 import json
 import logging
 import uuid
@@ -184,7 +185,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="DDBJ Search API",
         description=("RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ."),
-        version="0.1.0",
+        version=importlib.metadata.version("ddbj-search-api"),
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",

@@ -1,3 +1,5 @@
 services:
   app:
     userns_mode: "keep-id"
+    volumes:
+      - app-venv:/app/.venv:U

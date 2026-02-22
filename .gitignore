@@ -166,5 +166,6 @@ cython_debug/
 
 # === our settings ===
 
+ddbj_search_api/_version.py
 tests/htmlcov
 compose.override.yml

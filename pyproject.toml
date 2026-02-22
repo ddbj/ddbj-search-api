@@ -1,12 +1,12 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "ddbj-search-api"
 authors = [{ name = "Bioinformatics and DDBJ Center" }]
 readme = { file = "README.md", content-type = "text/markdown" }
-version = "0.1.0"
+dynamic = ["version"]
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 dependencies = [
@@ -51,6 +51,7 @@ strict = true
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+exclude = ["ddbj_search_api/_version.py"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -98,6 +99,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"ddbj_search_api/_version.py" = ["ALL"]
 "tests/**/*.py" = [
     "ARG001",   # unused arguments (pytest fixtures)
     "PLR2004",  # magic values in assertions
@@ -106,6 +108,13 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["ddbj_search_api"]
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "ddbj_search_api/_version.py"
 
 [tool.hatch.metadata]
 allow-direct-references = true

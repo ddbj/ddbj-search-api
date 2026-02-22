@@ -1,0 +1,36 @@
+name: pytest
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ddbj_search_api/**"
+      - "pyproject.toml"
+      - "tests/**"
+  workflow_dispatch: {}
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python Dependencies
+        run: uv sync --frozen --extra tests
+
+      - name: Run pytest
+        run: |
+          uv run pytest -s

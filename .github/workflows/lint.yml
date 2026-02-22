@@ -1,0 +1,44 @@
+name: lint
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ddbj_search_api/**"
+      - "pyproject.toml"
+      - "tests/**"
+  workflow_dispatch: {}
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python Dependencies
+        run: uv sync --frozen --extra tests
+
+      - name: Run ruff check
+        run: |
+          uv run ruff check ddbj_search_api tests
+
+      - name: Run ruff format
+        run: |
+          uv run ruff format --check ddbj_search_api tests
+
+      - name: Run mypy
+        run: |
+          uv run mypy
