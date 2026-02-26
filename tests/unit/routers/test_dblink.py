@@ -124,6 +124,19 @@ class TestGetLinksInvalidTarget:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "jga-study,bogus"})
         assert resp.status_code == 422
 
+    def test_invalid_target_returns_rfc7807(self, app_with_dblink: TestClient) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "invalid"})
+        data = resp.json()
+        assert data["type"] == "about:blank"
+        assert data["title"] == "Unprocessable Entity"
+        assert data["status"] == 422
+        assert "detail" in data
+
+    def test_invalid_target_detail_contains_value(self, app_with_dblink: TestClient) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "bogus-value"})
+        data = resp.json()
+        assert "bogus-value" in data["detail"]
+
 
 class TestGetLinksDbMissing:
     def test_returns_500_when_db_missing(self, app: TestClient) -> None:
@@ -168,4 +181,30 @@ class TestGetLinksPBT:
         with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]):
             resp = app.get(f"/dblink/{acc_type}/test-id")
 
+        assert resp.status_code == 200
+
+    @given(acc_type=st.sampled_from([e.value for e in AccessionType]))
+    @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_any_valid_accession_type_as_target_returns_200(self, app: TestClient, acc_type: str) -> None:
+        with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]):
+            resp = app.get("/dblink/hum-id/hum0014", params={"target": acc_type})
+
+        assert resp.status_code == 200
+
+
+class TestGetLinksEdgeCases:
+    def test_whitespace_only_target_returns_200(self, app_with_dblink: TestClient) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": " "})
+        assert resp.status_code == 200
+
+    def test_empty_target_returns_200(self, app_with_dblink: TestClient) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": ""})
+        assert resp.status_code == 200
+
+    def test_comma_only_target_returns_200(self, app_with_dblink: TestClient) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": ","})
+        assert resp.status_code == 200
+
+    def test_duplicate_target_accepted(self, app_with_dblink: TestClient) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "jga-study,jga-study"})
         assert resp.status_code == 200

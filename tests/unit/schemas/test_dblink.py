@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from ddbj_search_converter.jsonl.utils import to_xref
+from fastapi import HTTPException
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -127,13 +128,35 @@ class TestDbLinksQuery:
         assert query.target is not None
         assert len(query.target) == 2
 
-    def test_invalid_target_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="Invalid target type"):
+    def test_invalid_target_raises_http_exception(self) -> None:
+        with pytest.raises(HTTPException):
             DbLinksQuery(target="invalid-type")
 
     def test_mixed_valid_invalid_target_raises(self) -> None:
-        with pytest.raises(ValueError, match="Invalid target type"):
+        with pytest.raises(HTTPException):
             DbLinksQuery(target="jga-study,bogus")
+
+    def test_invalid_target_returns_422_status(self) -> None:
+        with pytest.raises(HTTPException) as exc_info:
+            DbLinksQuery(target="invalid-type")
+        assert exc_info.value.status_code == 422
+
+    def test_invalid_target_error_message_contains_invalid_value(self) -> None:
+        with pytest.raises(HTTPException) as exc_info:
+            DbLinksQuery(target="bogus-value")
+        assert "bogus-value" in exc_info.value.detail
+
+    def test_invalid_target_error_message_lists_valid_types(self) -> None:
+        with pytest.raises(HTTPException) as exc_info:
+            DbLinksQuery(target="nope")
+        for acc_type in AccessionType:
+            assert acc_type.value in exc_info.value.detail
+
+    def test_duplicate_targets_accepted(self) -> None:
+        query = DbLinksQuery(target="jga-study,jga-study")
+        assert query.target is not None
+        assert len(query.target) == 2
+        assert all(t == AccessionType("jga-study") for t in query.target)
 
     def test_empty_string_target_no_values(self) -> None:
         query = DbLinksQuery(target="")
@@ -151,3 +174,15 @@ class TestDbLinksQueryPBT:
         assert query.target is not None
         assert len(query.target) == 1
         assert query.target[0].value == acc_type
+
+    @given(
+        random_str=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N", "Pd")),
+            min_size=1,
+            max_size=30,
+        ).filter(lambda s: s not in frozenset(e.value for e in AccessionType)),
+    )
+    def test_invalid_random_string_rejected(self, random_str: str) -> None:
+        with pytest.raises(HTTPException) as exc_info:
+            DbLinksQuery(target=random_str)
+        assert exc_info.value.status_code == 422

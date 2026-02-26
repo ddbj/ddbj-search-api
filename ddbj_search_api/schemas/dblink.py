@@ -7,7 +7,7 @@ from typing import get_args
 
 from ddbj_search_converter.dblink.db import AccessionType as _AccessionTypeLiteral
 from ddbj_search_converter.schema import Xref
-from fastapi import Query
+from fastapi import HTTPException, Query
 from pydantic import BaseModel, Field
 
 AccessionType = Enum(  # type: ignore[misc]
@@ -53,5 +53,5 @@ class DbLinksQuery:
             if invalid:
                 valid_types = ", ".join(sorted(_VALID_ACCESSION_TYPES))
                 msg = f"Invalid target type(s): {', '.join(invalid)}. Valid types: {valid_types}"
-                raise ValueError(msg)
+                raise HTTPException(status_code=422, detail=msg)
             self.target = [AccessionType(v) for v in raw_values]
