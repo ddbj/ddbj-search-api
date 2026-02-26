@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 from enum import Enum
+from pathlib import Path
 
 from pydantic import computed_field
 from pydantic_settings import BaseSettings
+
+DBLINK_DB_PATH = Path("/home/w3ddbjld/const/dblink/dblink.duckdb")
 
 # JSON-LD @context URLs per database type.
 # Context files are maintained in ddbj-search-converter/ontology/.

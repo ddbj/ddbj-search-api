@@ -67,8 +67,11 @@ tests/
 │   │   ├── test_bulk.py
 │   │   ├── test_facets.py
 │   │   ├── test_service_info.py
+│   │   ├── test_dblink.py
 │   │   └── ...
-│   └── es/
+│   ├── es/
+│   │   └── test_client.py
+│   └── dblink/
 │       └── test_client.py
 └── integration/
     ├── conftest.py
@@ -192,6 +195,42 @@ ES client が構築するクエリの構造をテストする。
 - フィルタ条件の組み合わせ (keywords + organism + date range)
 - ページネーションの from/size 計算
 - ファセット集計クエリの構造
+
+### dblink/
+
+DuckDB クライアント (`dblink/client.py`) のテスト。
+
+- **Mock 戦略**: テスト用の DuckDB ファイルを `tmp_path` に作成する。実 DuckDB を使い、SQL 実行結果を検証する
+- **mock しない**: DuckDB のクエリ実行。実際のデータベースファイルに対して検証する
+
+| 対象 | テスト内容 |
+|------|----------|
+| `get_linked_ids` | 正常系 (関連あり)、空結果 (関連なし) |
+| target フィルタ | 単一/複数 target、存在しない target |
+| ソート順 | タイプ昇順 → アクセッション昇順 |
+| DB 不在 | `FileNotFoundError` が raise される |
+| PBT | AccessionType と ID の組み合わせ |
+
+### schemas/dblink.py
+
+- AccessionType enum (21 値すべてが存在すること)
+- DbLinksResponse の構築・JSON シリアライズ
+- DbLinksQuery の target パース・バリデーション (カンマ区切り、無効値)
+- DbLinksTypesResponse の types がソート済み
+
+### routers/dblink.py
+
+TestClient で HTTP レベルの振る舞いをテストする。DuckDB クライアントを mock する。
+
+| テスト | 検証内容 |
+|--------|---------|
+| `GET /dblink/` | 200 + types 一覧 (21 タイプ) |
+| `GET /dblink/{type}/{id}` | 200 + links 構造 (Xref: identifier, type, url) |
+| 無効な type | 422 |
+| 無効な target | 422 |
+| DB 不在 | 500 |
+| Trailing slash | `/dblink` = `/dblink/`、`/dblink/{type}/{id}` = `/dblink/{type}/{id}/` |
+| PBT | 有効な AccessionType で 200 が返る |
 
 ### config.py
 

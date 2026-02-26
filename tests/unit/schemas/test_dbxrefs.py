@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from ddbj_search_converter.schema import Xref
 from pydantic import ValidationError
 
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
@@ -16,7 +17,7 @@ class TestDbXrefsFullResponse:
     def test_basic_construction(self) -> None:
         resp = DbXrefsFullResponse(
             dbXrefs=[
-                {"identifier": "BS1", "type": "biosample", "url": "http://x"},
+                Xref(identifier="BS1", type="biosample", url="http://x"),
             ],
         )
         assert len(resp.db_xrefs) == 1

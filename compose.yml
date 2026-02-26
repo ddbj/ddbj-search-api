@@ -7,6 +7,7 @@ services:
     volumes:
       - .:/app:rw
       - app-venv:/app/.venv
+      - ${DDBJ_SEARCH_CONVERTER_CONST_PATH:-/home/w3ddbjld/const}:/home/w3ddbjld/const:ro
     environment:
       TZ: ${TZ:-Asia/Tokyo}
       DDBJ_SEARCH_ENV: ${DDBJ_SEARCH_ENV}

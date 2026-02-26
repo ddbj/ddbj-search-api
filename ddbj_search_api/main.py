@@ -112,10 +112,12 @@ def setup_error_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        # Path-level {type} enum error → 404 Not Found
+        # Path-level {type} enum error on /entries/ → 404 Not Found
+        # (DbType validation for entries/facets endpoints; dblink uses 422)
+        request_path = str(request.url.path)
         for error in exc.errors():
             loc = error.get("loc", ())
-            if len(loc) >= 2 and loc[0] == "path" and loc[1] == "type":
+            if len(loc) >= 2 and loc[0] == "path" and loc[1] == "type" and "/dblink" not in request_path:
                 return _problem_json(
                     status=404,
                     title="Not Found",

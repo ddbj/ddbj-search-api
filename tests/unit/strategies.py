@@ -5,6 +5,7 @@ from __future__ import annotations
 from hypothesis import strategies as st
 
 from ddbj_search_api.schemas.common import DbType
+from ddbj_search_api.schemas.dblink import AccessionType
 
 # === DbType ===
 
@@ -44,3 +45,13 @@ valid_facet_value = st.text(min_size=1, max_size=100)
 # === Pagination response ===
 
 valid_total = st.integers(min_value=0)
+
+# === AccessionType (dblink) ===
+
+accession_type_values: list[str] = [e.value for e in AccessionType]
+valid_accession_types = st.sampled_from(accession_type_values)
+valid_accession_id = st.text(
+    alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="-_"),
+    min_size=1,
+    max_size=30,
+)

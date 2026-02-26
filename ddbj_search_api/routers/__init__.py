@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from ddbj_search_api.routers import bulk, entries, entry_detail, facets, service_info
+from ddbj_search_api.routers import bulk, dblink, entries, entry_detail, facets, service_info
 from ddbj_search_api.schemas.common import ProblemDetails
 
 # Common error responses (RFC 7807) applied to all endpoints.
@@ -39,4 +39,5 @@ router.include_router(entries.router)
 router.include_router(bulk.router)
 router.include_router(entry_detail.router)
 router.include_router(facets.router)
+router.include_router(dblink.router)
 router.include_router(service_info.router)

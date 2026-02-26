@@ -187,6 +187,7 @@ name = "ddbj-search-api"
 source = { editable = "." }
 dependencies = [
     { name = "ddbj-search-converter" },
+    { name = "duckdb" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -208,6 +209,7 @@ tests = [
 [package.metadata]
 requires-dist = [
     { name = "ddbj-search-converter", git = "https://github.com/ddbj/ddbj-search-converter?rev=main" },
+    { name = "duckdb" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "hypothesis", marker = "extra == 'tests'" },
