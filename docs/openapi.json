@@ -3,7 +3,7 @@
   "info": {
     "title": "DDBJ Search API",
     "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "paths": {
     "/entries/": {
@@ -7096,6 +7096,151 @@
         }
       }
     },
+    "/dblink/": {
+      "get": {
+        "tags": [
+          "dblink"
+        ],
+        "summary": "List available accession types",
+        "description": "Return all available AccessionType values (static, no DB required).",
+        "operationId": "list_types_dblink__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbLinksTypesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found (entry does not exist or invalid type).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dblink/{type}/{id}": {
+      "get": {
+        "tags": [
+          "dblink"
+        ],
+        "summary": "Get linked accessions",
+        "description": "Look up related accessions for the given type/id pair.",
+        "operationId": "get_links_dblink__type___id__get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AccessionType",
+              "description": "Source accession type."
+            },
+            "description": "Source accession type."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Source accession identifier.",
+              "title": "Id"
+            },
+            "description": "Source accession identifier."
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by target accession type(s), comma-separated.",
+              "title": "Target"
+            },
+            "description": "Filter by target accession type(s), comma-separated."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbLinksResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found (entry does not exist or invalid type).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/service-info": {
       "get": {
         "tags": [
@@ -7131,6 +7276,33 @@
   },
   "components": {
     "schemas": {
+      "AccessionType": {
+        "type": "string",
+        "enum": [
+          "bioproject",
+          "biosample",
+          "gea",
+          "geo",
+          "hum-id",
+          "insdc-assembly",
+          "insdc-master",
+          "jga-dac",
+          "jga-dataset",
+          "jga-policy",
+          "jga-study",
+          "metabobank",
+          "pubmed-id",
+          "sra-analysis",
+          "sra-experiment",
+          "sra-run",
+          "sra-sample",
+          "sra-study",
+          "sra-submission",
+          "taxonomy",
+          "umbrella-bioproject"
+        ],
+        "title": "AccessionType"
+      },
       "Agency": {
         "properties": {
           "abbreviation": {
@@ -8497,6 +8669,53 @@
         "title": "BulkResponse",
         "description": "Response for POST /entries/{type}/bulk (format=json).\n\n``entries`` contains the found entries as raw ES documents.\n``notFound`` lists IDs that could not be found."
       },
+      "DbLinksResponse": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Source accession identifier."
+          },
+          "type": {
+            "$ref": "#/components/schemas/AccessionType",
+            "description": "Source accession type."
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Links",
+            "description": "Related entries (sorted by type, then identifier)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type",
+          "links"
+        ],
+        "title": "DbLinksResponse",
+        "description": "Response for GET /dblink/{type}/{id}."
+      },
+      "DbLinksTypesResponse": {
+        "properties": {
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/AccessionType"
+            },
+            "type": "array",
+            "title": "Types",
+            "description": "Available accession types."
+          }
+        },
+        "type": "object",
+        "required": [
+          "types"
+        ],
+        "title": "DbLinksTypesResponse",
+        "description": "Response for GET /dblink/."
+      },
       "DbType": {
         "type": "string",
         "enum": [
@@ -8519,7 +8738,9 @@
       "DbXrefsFullResponse": {
         "properties": {
           "dbXrefs": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
             "type": "array",
             "title": "Dbxrefs",
             "description": "All cross-references for the entry."

@@ -228,7 +228,7 @@ provides-extras = ["tests"]
 [[package]]
 name = "ddbj-search-converter"
 version = "0.1.0"
-source = { git = "https://github.com/ddbj/ddbj-search-converter?rev=main#55022e9255558e91ac0d48df4070825641edf372" }
+source = { git = "https://github.com/ddbj/ddbj-search-converter?rev=main#cd848e2089bd7895c65edbdf517f18486783e28e" }
 dependencies = [
     { name = "duckdb" },
     { name = "elasticsearch" },
