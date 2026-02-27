@@ -59,34 +59,34 @@ class TestAccessionType:
 
 
 class TestDbLinksResponse:
-    def test_construction_with_links(self) -> None:
+    def test_construction_with_dbXrefs(self) -> None:
         xref = to_xref("JGAS000101", type_hint="jga-study")
         resp = DbLinksResponse(
             identifier="hum0014",
             type=AccessionType("hum-id"),
-            links=[xref, to_xref("JGAS000381", type_hint="jga-study")],
+            dbXrefs=[xref, to_xref("JGAS000381", type_hint="jga-study")],
         )
         assert resp.identifier == "hum0014"
         assert resp.type == AccessionType("hum-id")
-        assert len(resp.links) == 2
+        assert len(resp.dbXrefs) == 2
 
-    def test_construction_with_empty_links(self) -> None:
+    def test_construction_with_empty_dbXrefs(self) -> None:
         resp = DbLinksResponse(
             identifier="NONEXISTENT",
             type=AccessionType("bioproject"),
-            links=[],
+            dbXrefs=[],
         )
-        assert resp.links == []
+        assert resp.dbXrefs == []
 
     def test_serialization(self) -> None:
         xref = to_xref("JGAS000101", type_hint="jga-study")
         resp = DbLinksResponse(
             identifier="hum0014",
             type=AccessionType("hum-id"),
-            links=[xref],
+            dbXrefs=[xref],
         )
         data = resp.model_dump(by_alias=True)
-        link = data["links"][0]
+        link = data["dbXrefs"][0]
         assert link["identifier"] == "JGAS000101"
         assert link["type"] == "jga-study"
         assert "url" in link

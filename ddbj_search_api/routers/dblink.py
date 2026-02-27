@@ -62,6 +62,6 @@ def get_links(
             detail=f"dblink database is not available: {DBLINK_DB_PATH}",
         ) from None
 
-    links = [to_xref(acc, type_hint=cast(XrefType, t)) for t, acc in rows]
+    xrefs = [to_xref(acc, type_hint=cast(XrefType, t)) for t, acc in rows]
 
-    return DbLinksResponse(identifier=id, type=type, links=links)
+    return DbLinksResponse(identifier=id, type=type, dbXrefs=xrefs)

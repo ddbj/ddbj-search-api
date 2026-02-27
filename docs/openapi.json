@@ -8680,12 +8680,12 @@
             "$ref": "#/components/schemas/AccessionType",
             "description": "Source accession type."
           },
-          "links": {
+          "dbXrefs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
             },
             "type": "array",
-            "title": "Links",
+            "title": "Dbxrefs",
             "description": "Related entries (sorted by type, then identifier)."
           }
         },
@@ -8693,7 +8693,7 @@
         "required": [
           "identifier",
           "type",
-          "links"
+          "dbXrefs"
         ],
         "title": "DbLinksResponse",
         "description": "Response for GET /dblink/{type}/{id}."

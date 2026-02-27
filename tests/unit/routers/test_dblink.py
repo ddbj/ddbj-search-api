@@ -78,24 +78,24 @@ class TestGetLinks:
         data = resp.json()
         assert data["identifier"] == "hum0014"
         assert data["type"] == "hum-id"
-        assert len(data["links"]) == 1
-        link = data["links"][0]
+        assert len(data["dbXrefs"]) == 1
+        link = data["dbXrefs"][0]
         assert link["identifier"] == "JGAS000101"
         assert link["type"] == "jga-study"
         assert "url" in link
 
-    def test_returns_200_with_empty_links(self, app_with_dblink: TestClient) -> None:
+    def test_returns_200_with_empty_dbXrefs(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["links"] == []
+        assert data["dbXrefs"] == []
 
     def test_response_structure(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/bioproject/PRJDB100")
         data = resp.json()
         assert "identifier" in data
         assert "type" in data
-        assert "links" in data
+        assert "dbXrefs" in data
 
     def test_trailing_slash_works(self, app_with_dblink: TestClient) -> None:
         resp_no_slash = app_with_dblink.get("/dblink/hum-id/hum0014")

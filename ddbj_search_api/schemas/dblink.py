@@ -25,7 +25,7 @@ class DbLinksResponse(BaseModel):
 
     identifier: str = Field(description="Source accession identifier.")
     type: AccessionType = Field(description="Source accession type.")
-    links: list[Xref] = Field(description="Related entries (sorted by type, then identifier).")
+    dbXrefs: list[Xref] = Field(description="Related entries (sorted by type, then identifier).")
 
 
 class DbLinksTypesResponse(BaseModel):
