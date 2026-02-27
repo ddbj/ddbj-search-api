@@ -59,7 +59,7 @@ class TestAccessionType:
 
 
 class TestDbLinksResponse:
-    def test_construction_with_dbXrefs(self) -> None:
+    def test_construction_with_db_xrefs(self) -> None:
         xref = to_xref("JGAS000101", type_hint="jga-study")
         resp = DbLinksResponse(
             identifier="hum0014",
@@ -70,7 +70,7 @@ class TestDbLinksResponse:
         assert resp.type == AccessionType("hum-id")
         assert len(resp.dbXrefs) == 2
 
-    def test_construction_with_empty_dbXrefs(self) -> None:
+    def test_construction_with_empty_db_xrefs(self) -> None:
         resp = DbLinksResponse(
             identifier="NONEXISTENT",
             type=AccessionType("bioproject"),

@@ -84,7 +84,7 @@ class TestGetLinks:
         assert link["type"] == "jga-study"
         assert "url" in link
 
-    def test_returns_200_with_empty_dbXrefs(self, app_with_dblink: TestClient) -> None:
+    def test_returns_200_with_empty_db_xrefs(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014")
         assert resp.status_code == 200
         data = resp.json()
