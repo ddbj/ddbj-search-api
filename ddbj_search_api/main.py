@@ -169,7 +169,10 @@ def _make_lifespan(config: AppConfig) -> Any:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> collections.abc.AsyncIterator[None]:
-        app.state.es_client = httpx.AsyncClient(base_url=config.es_url)
+        app.state.es_client = httpx.AsyncClient(
+            base_url=config.es_url,
+            timeout=httpx.Timeout(config.es_timeout),
+        )
         yield
         await app.state.es_client.aclose()
 

@@ -49,6 +49,7 @@ class AppConfig(BaseSettings):
 
     url_prefix: str = "/search/api"
     es_url: str = "http://localhost:9200"
+    es_timeout: float = 60.0
     base_url: str = "http://localhost:8080/search/api"
     host: str = "0.0.0.0"
     port: int = 8080

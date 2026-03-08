@@ -1,6 +1,6 @@
 FROM python:3.12-bookworm
 
-ARG VERSION=dev
+ARG VERSION=0.0.0.dev0
 
 LABEL org.opencontainers.image.title="ddbj-search-api" \
     org.opencontainers.image.description="The implementation of DDBJ Search API" \
