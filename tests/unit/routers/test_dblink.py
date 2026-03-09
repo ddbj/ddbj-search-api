@@ -53,7 +53,7 @@ class TestListTypes:
         types = set(resp.json()["types"])
         assert "bioproject" in types
         assert "hum-id" in types
-        assert "umbrella-bioproject" in types
+        assert "insdc" in types
 
     def test_trailing_slash_both_work(self, app: TestClient) -> None:
         resp_slash = app.get("/dblink/")

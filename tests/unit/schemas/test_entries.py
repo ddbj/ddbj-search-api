@@ -51,6 +51,8 @@ _BIOPROJECT_BASE: dict[str, Any] = {
     "grant": [],
     "externalLink": [],
     "dbXrefs": [],
+    "parentBioProjects": [],
+    "childBioProjects": [],
     "sameAs": [],
     "status": "live",
     "accessibility": "public-access",

@@ -26,6 +26,7 @@ class TestAccessionType:
             "gea",
             "geo",
             "hum-id",
+            "insdc",
             "insdc-assembly",
             "insdc-master",
             "jga-dac",
@@ -41,7 +42,6 @@ class TestAccessionType:
             "sra-study",
             "sra-submission",
             "taxonomy",
-            "umbrella-bioproject",
         ]
     )
 
