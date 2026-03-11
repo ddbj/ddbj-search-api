@@ -80,7 +80,27 @@ def mock_es_search() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture
-def app_with_es(config: AppConfig, mock_es_search: AsyncMock) -> TestClient:
+def _mock_entries_duckdb() -> collections.abc.Iterator[None]:
+    """Mock DuckDB functions used by entries router."""
+    with (
+        patch(
+            "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
+            return_value={},
+        ),
+        patch(
+            "ddbj_search_api.routers.entries.count_linked_ids_bulk",
+            return_value={},
+        ),
+        patch(
+            "ddbj_search_api.routers.entries.DBLINK_DB_PATH",
+            MagicMock(exists=MagicMock(return_value=True)),
+        ),
+    ):
+        yield
+
+
+@pytest.fixture
+def app_with_es(config: AppConfig, mock_es_search: AsyncMock, _mock_entries_duckdb: None) -> TestClient:
     """TestClient with es_search mocked (no real ES required).
 
     Overrides ``get_es_client`` dependency so that ``app.state.es_client``
@@ -111,15 +131,7 @@ def make_mock_stream_response(body: bytes) -> httpx.Response:
     return response
 
 
-@pytest.fixture
-def mock_es_search_with_script_fields() -> collections.abc.Iterator[AsyncMock]:
-    """Patch es_search_with_script_fields in the entry_detail router."""
-    with patch(
-        "ddbj_search_api.routers.entry_detail.es_search_with_script_fields",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.return_value = None
-        yield mock
+# --- Entry Detail fixtures ---
 
 
 @pytest.fixture
@@ -134,12 +146,44 @@ def mock_es_get_source_stream() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture
+def mock_es_head_exists() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_head_exists in the entry_detail router."""
+    with patch(
+        "ddbj_search_api.routers.entry_detail.es_head_exists",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = False
+        yield mock
+
+
+@pytest.fixture
+def _mock_entry_detail_duckdb() -> collections.abc.Iterator[None]:
+    """Mock DuckDB functions used by entry_detail router."""
+    with (
+        patch(
+            "ddbj_search_api.routers.entry_detail.iter_linked_ids",
+            side_effect=lambda *_args, **_kwargs: iter([]),
+        ),
+        patch(
+            "ddbj_search_api.routers.entry_detail.get_linked_ids_limited",
+            return_value=[],
+        ),
+        patch(
+            "ddbj_search_api.routers.entry_detail.count_linked_ids",
+            return_value={},
+        ),
+    ):
+        yield
+
+
+@pytest.fixture
 def app_with_entry_detail(
     config: AppConfig,
-    mock_es_search_with_script_fields: AsyncMock,
     mock_es_get_source_stream: AsyncMock,
+    mock_es_head_exists: AsyncMock,
+    _mock_entry_detail_duckdb: None,
 ) -> TestClient:
-    """TestClient with entry_detail ES functions mocked."""
+    """TestClient with entry_detail ES and DuckDB functions mocked."""
     fake_client = AsyncMock(spec=httpx.AsyncClient)
     application = create_app(config)
     application.dependency_overrides[get_es_client] = lambda: fake_client

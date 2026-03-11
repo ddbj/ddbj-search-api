@@ -6,15 +6,20 @@ sorting, and optional facet aggregation.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
+from ddbj_search_converter.jsonl.utils import to_xref
+from ddbj_search_converter.schema import XrefType
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
+from ddbj_search_api.config import DBLINK_DB_PATH
+from ddbj_search_api.dblink.client import count_linked_ids_bulk, get_linked_ids_limited_bulk
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import build_db_xrefs_script_fields, es_search, parse_script_fields_hit
+from ddbj_search_api.es.client import es_search
 from ddbj_search_api.es.query import (
     build_facet_aggs,
     build_search_query,
@@ -55,6 +60,22 @@ def _validate_deep_paging(page: int, per_page: int) -> None:
                 f"perPage ({per_page}) = {page * per_page} > "
                 f"{_DEEP_PAGING_LIMIT}. Use Bulk API for large result sets."
             ),
+        )
+
+
+def _parse_hit_source(hit: dict[str, Any]) -> dict[str, Any]:
+    """Extract _source from an ES hit (no script_fields processing)."""
+
+    return dict(hit["_source"])
+
+
+def _check_dblink_db() -> None:
+    """Raise HTTPException 500 if DuckDB file is missing."""
+    if not DBLINK_DB_PATH.exists():
+        logger.error("DuckDB file not found: %s", DBLINK_DB_PATH)
+        raise HTTPException(
+            status_code=500,
+            detail=f"dblink database is not available: {DBLINK_DB_PATH}",
         )
 
 
@@ -115,12 +136,11 @@ async def _do_search(
         response_control.include_properties,
     )
 
-    # 7. Build request body
+    # 7. Build request body (no script_fields, exclude dbXrefs)
     body: dict[str, Any] = {
         "query": query,
         "from": from_,
         "size": size,
-        "script_fields": build_db_xrefs_script_fields(db_xrefs_limit),
     }
     if sort is not None:
         body["sort"] = sort
@@ -145,13 +165,31 @@ async def _do_search(
         )
 
     # 9. Execute
+    _check_dblink_db()
     es_resp = await es_search(client, index, body)
 
-    # 10. Parse response
+    # 10. Parse response and enrich with DuckDB dbXrefs (bulk)
     raw_hits = es_resp["hits"]["hits"]
     total = es_resp["hits"]["total"]["value"]
 
-    items = [EntryListItem(**parse_script_fields_hit(hit)) for hit in raw_hits]
+    raw_sources = [_parse_hit_source(hit) for hit in raw_hits]
+    entries_keys = [(src.get("type", ""), src.get("identifier", "")) for src in raw_sources]
+
+    bulk_xrefs, bulk_counts = await asyncio.gather(
+        asyncio.to_thread(get_linked_ids_limited_bulk, DBLINK_DB_PATH, entries_keys, db_xrefs_limit),
+        asyncio.to_thread(count_linked_ids_bulk, DBLINK_DB_PATH, entries_keys),
+    )
+
+    enriched = []
+    for src in raw_sources:
+        key = (src.get("type", ""), src.get("identifier", ""))
+        xrefs_rows = bulk_xrefs.get(key, [])
+        xrefs = [to_xref(acc, type_hint=cast(XrefType, t)).model_dump(by_alias=True) for t, acc in xrefs_rows]
+        src["dbXrefs"] = xrefs
+        src["dbXrefsCount"] = bulk_counts.get(key, {})
+        enriched.append(src)
+
+    items = [EntryListItem(**src) for src in enriched]
 
     facets = None
     if response_control.include_facets and "aggregations" in es_resp:

@@ -2,16 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
+import collections.abc
+import json
 import logging
-from typing import cast
+import queue
+import threading
 
-from ddbj_search_converter.jsonl.utils import to_xref
-from ddbj_search_converter.schema import XrefType
 from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi.responses import StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
-from ddbj_search_api.dblink.client import get_linked_ids
-from ddbj_search_api.schemas.dblink import AccessionType, DbLinksQuery, DbLinksResponse, DbLinksTypesResponse
+from ddbj_search_api.dblink.client import count_linked_ids_bulk, iter_linked_ids
+from ddbj_search_api.schemas.dblink import (
+    AccessionType,
+    DbLinksCountsRequest,
+    DbLinksCountsResponse,
+    DbLinksCountsResponseItem,
+    DbLinksQuery,
+    DbLinksResponse,
+    DbLinksTypesResponse,
+)
+from ddbj_search_api.utils import format_xref
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +42,7 @@ router = APIRouter(prefix="/dblink", tags=["dblink"])
 )
 def list_types() -> DbLinksTypesResponse:
     """Return all available AccessionType values (static, no DB required)."""
+
     return DbLinksTypesResponse(types=sorted(AccessionType, key=lambda t: t.value))
 
 
@@ -43,25 +56,101 @@ def list_types() -> DbLinksTypesResponse:
     response_model=DbLinksResponse,
     include_in_schema=False,
 )
-def get_links(
+async def get_links(
     type: AccessionType = Path(description="Source accession type."),
     id: str = Path(description="Source accession identifier."),
     query: DbLinksQuery = Depends(),
-) -> DbLinksResponse:
-    """Look up related accessions for the given type/id pair."""
+) -> StreamingResponse:
+    """Look up related accessions for the given type/id pair (streaming)."""
+    # Pre-check DB existence before streaming
+    if not DBLINK_DB_PATH.exists():
+        logger.error("DuckDB file not found: %s", DBLINK_DB_PATH)
+        raise HTTPException(
+            status_code=500,
+            detail=f"dblink database is not available: {DBLINK_DB_PATH}",
+        )
+
     target_values: list[str] | None = None
     if query.target is not None:
         target_values = [t.value for t in query.target]
 
-    try:
-        rows = get_linked_ids(DBLINK_DB_PATH, type.value, id, target=target_values)
-    except FileNotFoundError:
-        logger.exception("DuckDB file not found: %s", DBLINK_DB_PATH)
+    async def _stream() -> collections.abc.AsyncIterator[bytes]:
+        header = '{"identifier":' + json.dumps(id) + ',"type":' + json.dumps(type.value) + ',"dbXrefs":['
+        yield header.encode("utf-8")
+
+        q: queue.Queue[list[tuple[str, str]] | None] = queue.Queue(maxsize=2)
+
+        def _worker() -> None:
+            try:
+                batch: list[tuple[str, str]] = []
+                for row in iter_linked_ids(DBLINK_DB_PATH, type.value, id, target=target_values):
+                    batch.append(row)
+                    if len(batch) >= 10000:
+                        q.put(batch)
+                        batch = []
+                if batch:
+                    q.put(batch)
+            except FileNotFoundError:
+                logger.exception("DuckDB file not found: %s", DBLINK_DB_PATH)
+            finally:
+                q.put(None)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+
+        first = True
+        while True:
+            item = await asyncio.to_thread(q.get)
+            if item is None:
+                break
+            for t, acc in item:
+                if not first:
+                    yield b","
+                first = False
+                yield format_xref(t, acc).encode("utf-8")
+
+        thread.join()
+
+        yield b"]}"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="application/json",
+    )
+
+
+@router.post(
+    "/counts",
+    response_model=DbLinksCountsResponse,
+    summary="Bulk count linked accessions",
+)
+async def bulk_counts(
+    body: DbLinksCountsRequest,
+) -> DbLinksCountsResponse:
+    """Return per-type counts for multiple accessions in one request."""
+    if not DBLINK_DB_PATH.exists():
+        logger.error("DuckDB file not found: %s", DBLINK_DB_PATH)
         raise HTTPException(
             status_code=500,
             detail=f"dblink database is not available: {DBLINK_DB_PATH}",
-        ) from None
+        )
 
-    xrefs = [to_xref(acc, type_hint=cast(XrefType, t)) for t, acc in rows]
+    entries = [(item.type.value, item.id) for item in body.items]
+    counts = await asyncio.to_thread(
+        count_linked_ids_bulk,
+        DBLINK_DB_PATH,
+        entries,
+    )
 
-    return DbLinksResponse(identifier=id, type=type, dbXrefs=xrefs)
+    items = []
+    for item in body.items:
+        key = (item.type.value, item.id)
+        items.append(
+            DbLinksCountsResponseItem(
+                identifier=item.id,
+                type=item.type,
+                counts=counts.get(key, {}),
+            )
+        )
+
+    return DbLinksCountsResponse(items=items)

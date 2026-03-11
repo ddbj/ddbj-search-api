@@ -135,11 +135,13 @@ Mock は**境界**で行う。内部の関数を個別に mock しない。
 
 ```
 Router (テスト対象)
-  └── ES Client (ここを mock)
-        └── Elasticsearch (テストでは接続しない)
+  ├── ES Client (ここを mock)
+  │     └── Elasticsearch (テストでは接続しない)
+  └── DuckDB Client (ここを mock)
+        └── DuckDB (テストでは接続しない)
 ```
 
-- **mock する**: ES client のレスポンス (検索結果、エラー)
+- **mock する**: ES client のレスポンス (検索結果、エラー)、DuckDB client の関数 (`iter_linked_ids`, `get_linked_ids_limited`, `get_linked_ids_limited_bulk`, `count_linked_ids`, `count_linked_ids_bulk`)
 - **mock しない**: Pydantic バリデーション、レスポンス変換ロジック、FastAPI のルーティング
 
 FastAPI の `TestClient` を使い、HTTP リクエスト → レスポンスの全体を検証する。

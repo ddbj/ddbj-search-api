@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from ddbj_search_api.es.client import es_get_source_stream, es_search, es_search_with_script_fields
+from ddbj_search_api.es.client import es_get_source_stream, es_head_exists, es_search
 
 
 def _mock_response(
@@ -143,209 +143,6 @@ class TestEsSearchErrors:
 
 
 # ===================================================================
-# es_search_with_script_fields
-# ===================================================================
-
-
-class TestEsSearchWithScriptFields:
-    """es_search_with_script_fields: single doc with script_fields."""
-
-    @pytest.mark.asyncio
-    async def test_returns_merged_source(
-        self,
-        mock_client: AsyncMock,
-    ) -> None:
-        es_response = {
-            "hits": {
-                "total": {"value": 1, "relation": "eq"},
-                "hits": [
-                    {
-                        "_source": {
-                            "identifier": "PRJDB1",
-                            "type": "bioproject",
-                        },
-                        "fields": {
-                            "dbXrefsTruncated": [
-                                {"identifier": "BS1", "type": "biosample"},
-                            ],
-                            "dbXrefsCountByType": [{"biosample": 5}],
-                        },
-                    }
-                ],
-            },
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        result = await es_search_with_script_fields(
-            mock_client,
-            "bioproject",
-            "PRJDB1",
-            100,
-        )
-        assert result is not None
-        assert result["identifier"] == "PRJDB1"
-        assert result["dbXrefs"] == [
-            {"identifier": "BS1", "type": "biosample"},
-        ]
-        assert result["dbXrefsCount"] == {"biosample": 5}
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_not_found(
-        self,
-        mock_client: AsyncMock,
-    ) -> None:
-        es_response = {
-            "hits": {
-                "total": {"value": 0, "relation": "eq"},
-                "hits": [],
-            },
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        result = await es_search_with_script_fields(
-            mock_client,
-            "bioproject",
-            "NOTEXIST",
-            100,
-        )
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_posts_to_correct_endpoint(
-        self,
-        mock_client: AsyncMock,
-    ) -> None:
-        es_response = {
-            "hits": {"total": {"value": 0, "relation": "eq"}, "hits": []},
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        await es_search_with_script_fields(
-            mock_client,
-            "biosample",
-            "SAMD1",
-            50,
-        )
-
-        call_args = mock_client.post.call_args
-        assert call_args[0][0] == "/biosample/_search"
-
-    @pytest.mark.asyncio
-    async def test_request_body_structure(
-        self,
-        mock_client: AsyncMock,
-    ) -> None:
-        """Verify the request body contains expected keys."""
-        es_response = {
-            "hits": {"total": {"value": 0, "relation": "eq"}, "hits": []},
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        await es_search_with_script_fields(
-            mock_client,
-            "bioproject",
-            "PRJDB1",
-            200,
-        )
-
-        body = mock_client.post.call_args[1]["json"]
-        assert body["query"] == {"term": {"_id": "PRJDB1"}}
-        assert body["size"] == 1
-        assert "dbXrefs" in body["_source"]["excludes"]
-        assert "dbXrefsTruncated" in body["script_fields"]
-        assert "dbXrefsCountByType" in body["script_fields"]
-        limit_param = body["script_fields"]["dbXrefsTruncated"]["script"]["params"]["limit"]
-        assert limit_param == 200
-
-    @pytest.mark.asyncio
-    async def test_normalizes_single_db_xref(
-        self,
-        mock_client: AsyncMock,
-    ) -> None:
-        """Single xref: ES returns [{...}], result is a one-element list."""
-        es_response = {
-            "hits": {
-                "total": {"value": 1, "relation": "eq"},
-                "hits": [
-                    {
-                        "_source": {
-                            "identifier": "PRJDB2",
-                            "type": "bioproject",
-                        },
-                        "fields": {
-                            "dbXrefsTruncated": [
-                                {"identifier": "BS1", "type": "biosample"},
-                            ],
-                            "dbXrefsCountByType": [{"biosample": 1}],
-                        },
-                    }
-                ],
-            },
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        result = await es_search_with_script_fields(
-            mock_client,
-            "bioproject",
-            "PRJDB2",
-            100,
-        )
-        assert result is not None
-        assert result["dbXrefs"] == [
-            {"identifier": "BS1", "type": "biosample"},
-        ]
-        assert result["dbXrefsCount"] == {"biosample": 1}
-
-    @pytest.mark.asyncio
-    async def test_handles_empty_db_xrefs(
-        self,
-        mock_client: AsyncMock,
-    ) -> None:
-        """Zero xrefs: ES omits the key, result is an empty list."""
-        es_response = {
-            "hits": {
-                "total": {"value": 1, "relation": "eq"},
-                "hits": [
-                    {
-                        "_source": {
-                            "identifier": "PRJDB3",
-                            "type": "bioproject",
-                        },
-                        "fields": {},
-                    }
-                ],
-            },
-        }
-        mock_client.post.return_value = _mock_response(es_response)
-
-        result = await es_search_with_script_fields(
-            mock_client,
-            "bioproject",
-            "PRJDB3",
-            100,
-        )
-        assert result is not None
-        assert result["dbXrefs"] == []
-        assert result["dbXrefsCount"] == {}
-
-
-class TestEsSearchWithScriptFieldsErrors:
-    @pytest.mark.asyncio
-    async def test_raises_on_500(self, mock_client: AsyncMock) -> None:
-        mock_client.post.return_value = _mock_response(
-            {"error": "internal"},
-            status_code=500,
-        )
-        with pytest.raises(httpx.HTTPStatusError):
-            await es_search_with_script_fields(
-                mock_client,
-                "bioproject",
-                "PRJDB1",
-                100,
-            )
-
-
-# ===================================================================
 # es_get_source_stream
 # ===================================================================
 
@@ -437,3 +234,127 @@ class TestEsGetSourceStream:
                 "bioproject",
                 "PRJDB1",
             )
+
+    @pytest.mark.asyncio
+    async def test_source_excludes_parameter(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        stream_resp = _mock_stream_response(200)
+        mock_client.send.return_value = stream_resp
+
+        await es_get_source_stream(
+            mock_client,
+            "bioproject",
+            "PRJDB1",
+            source_excludes="dbXrefs",
+        )
+
+        build_args = mock_client.build_request.call_args
+        params = build_args[1].get("params", {})
+        assert params["_source_excludes"] == "dbXrefs"
+
+    @pytest.mark.asyncio
+    async def test_no_params_when_omitted(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        stream_resp = _mock_stream_response(200)
+        mock_client.send.return_value = stream_resp
+
+        await es_get_source_stream(
+            mock_client,
+            "bioproject",
+            "PRJDB1",
+        )
+
+        build_args = mock_client.build_request.call_args
+        params = build_args[1].get("params", {})
+        assert "_source_includes" not in params
+        assert "_source_excludes" not in params
+
+    @pytest.mark.asyncio
+    async def test_both_includes_and_excludes(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        stream_resp = _mock_stream_response(200)
+        mock_client.send.return_value = stream_resp
+
+        await es_get_source_stream(
+            mock_client,
+            "bioproject",
+            "PRJDB1",
+            source_includes="identifier,type",
+            source_excludes="dbXrefs",
+        )
+
+        build_args = mock_client.build_request.call_args
+        params = build_args[1].get("params", {})
+        assert params["_source_includes"] == "identifier,type"
+        assert params["_source_excludes"] == "dbXrefs"
+
+
+# ===================================================================
+# es_head_exists
+# ===================================================================
+
+
+class TestEsHeadExists:
+    """es_head_exists: document existence check via HEAD."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_200(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 200
+        response.raise_for_status = MagicMock()
+        mock_client.head.return_value = response
+
+        result = await es_head_exists(mock_client, "bioproject", "PRJDB1")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_404(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 404
+        mock_client.head.return_value = response
+
+        result = await es_head_exists(mock_client, "bioproject", "NOTEXIST")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_calls_correct_endpoint(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 200
+        response.raise_for_status = MagicMock()
+        mock_client.head.return_value = response
+
+        await es_head_exists(mock_client, "biosample", "SAMD001")
+
+        mock_client.head.assert_awaited_once_with("/biosample/_source/SAMD001")
+
+    @pytest.mark.asyncio
+    async def test_raises_on_500(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 500
+        response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "error",
+            request=httpx.Request("HEAD", "http://localhost:9200/test"),
+            response=httpx.Response(500),
+        )
+        mock_client.head.return_value = response
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await es_head_exists(mock_client, "bioproject", "PRJDB1")

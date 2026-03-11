@@ -55,3 +55,37 @@ class DbLinksQuery:
                 msg = f"Invalid target type(s): {', '.join(invalid)}. Valid types: {valid_types}"
                 raise HTTPException(status_code=422, detail=msg)
             self.target = [AccessionType(v) for v in raw_values]
+
+
+# --- POST /dblink/counts ---
+
+
+class DbLinksCountsRequestItem(BaseModel):
+    """A single item in the bulk counts request."""
+
+    type: AccessionType = Field(description="Accession type.")
+    id: str = Field(description="Accession identifier.")
+
+
+class DbLinksCountsRequest(BaseModel):
+    """Request body for POST /dblink/counts."""
+
+    items: list[DbLinksCountsRequestItem] = Field(
+        description="Accessions to count linked entries for.",
+        min_length=1,
+        max_length=100,
+    )
+
+
+class DbLinksCountsResponseItem(BaseModel):
+    """A single item in the bulk counts response."""
+
+    identifier: str = Field(description="Accession identifier.")
+    type: AccessionType = Field(description="Accession type.")
+    counts: dict[str, int] = Field(description="Per-type linked accession counts.")
+
+
+class DbLinksCountsResponse(BaseModel):
+    """Response for POST /dblink/counts."""
+
+    items: list[DbLinksCountsResponseItem] = Field(description="Counts per requested accession.")

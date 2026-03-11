@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import collections.abc
-from unittest.mock import patch
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,18 +16,36 @@ from ddbj_search_api.schemas.dblink import AccessionType
 
 
 @pytest.fixture
-def mock_get_linked_ids() -> collections.abc.Iterator[object]:
-    """Patch get_linked_ids in the dblink router."""
+def mock_iter_linked_ids() -> collections.abc.Iterator[MagicMock]:
+    """Patch iter_linked_ids in the dblink router."""
     with patch(
-        "ddbj_search_api.routers.dblink.get_linked_ids",
+        "ddbj_search_api.routers.dblink.iter_linked_ids",
+        side_effect=lambda *_args, **_kwargs: iter([]),
     ) as mock:
-        mock.return_value = []
         yield mock
 
 
 @pytest.fixture
-def app_with_dblink(app: TestClient, mock_get_linked_ids: object) -> TestClient:
-    """TestClient with get_linked_ids mocked."""
+def mock_dblink_db_path() -> collections.abc.Iterator[None]:
+    """Ensure DBLINK_DB_PATH.exists() returns True."""
+    with (
+        tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+        patch(
+            "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+            Path(f.name),
+        ),
+    ):
+        yield
+
+
+@pytest.fixture
+def app_with_dblink(
+    app: TestClient,
+    mock_iter_linked_ids: object,
+    mock_dblink_db_path: object,
+) -> TestClient:
+    """TestClient with iter_linked_ids mocked."""
+
     return app
 
 
@@ -68,9 +88,16 @@ class TestListTypes:
 
 class TestGetLinks:
     def test_returns_200_with_links(self, app: TestClient) -> None:
-        with patch(
-            "ddbj_search_api.routers.dblink.get_linked_ids",
-            return_value=[("jga-study", "JGAS000101")],
+        with (
+            tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+            patch(
+                "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+                Path(f.name),
+            ),
+            patch(
+                "ddbj_search_api.routers.dblink.iter_linked_ids",
+                side_effect=lambda *_args, **_kwargs: iter([("jga-study", "JGAS000101")]),
+            ),
         ):
             resp = app.get("/dblink/hum-id/hum0014")
 
@@ -111,6 +138,7 @@ class TestGetLinksInvalidType:
         assert resp.status_code == 422
 
     def test_empty_type_returns_404(self, app: TestClient) -> None:
+        # /dblink//some-id: 空パスセグメントは 404 または 307 (Starlette のスラッシュ正規化)
         resp = app.get("/dblink//some-id")
         assert resp.status_code in {404, 307}
 
@@ -141,8 +169,8 @@ class TestGetLinksInvalidTarget:
 class TestGetLinksDbMissing:
     def test_returns_500_when_db_missing(self, app: TestClient) -> None:
         with patch(
-            "ddbj_search_api.routers.dblink.get_linked_ids",
-            side_effect=FileNotFoundError("not found"),
+            "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+            Path("/nonexistent/path/dblink.duckdb"),
         ):
             resp = app.get("/dblink/hum-id/hum0014")
 
@@ -150,45 +178,69 @@ class TestGetLinksDbMissing:
 
 
 class TestGetLinksTargetFilter:
-    def test_target_param_passed_to_client(self, app: TestClient) -> None:
-        with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]) as mock:
-            app.get("/dblink/hum-id/hum0014", params={"target": "jga-study"})
+    def test_target_filters_results(self, app: TestClient) -> None:
+        """Target parameter is passed to iter_linked_ids for SQL-level filtering."""
 
-        mock.assert_called_once()
-        call_kwargs = mock.call_args
-        assert call_kwargs[1]["target"] == ["jga-study"]
+        def _mock_iter(*_args: object, **kwargs: object) -> collections.abc.Iterator[tuple[str, str]]:
+            # Simulate SQL-level target filtering
+            target: list[str] | None = kwargs.get("target")  # type: ignore[assignment]
+            all_rows = [("jga-study", "JGAS000101"), ("bioproject", "PRJDB100")]
+            if target is not None:
+                return iter([(t, a) for t, a in all_rows if t in target])
 
-    def test_multiple_targets_passed(self, app: TestClient) -> None:
-        with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]) as mock:
-            app.get("/dblink/hum-id/hum0014", params={"target": "jga-study,bioproject"})
+            return iter(all_rows)
 
-        call_kwargs = mock.call_args
-        target = call_kwargs[1]["target"]
-        assert set(target) == {"jga-study", "bioproject"}
+        with (
+            tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+            patch(
+                "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+                Path(f.name),
+            ),
+            patch(
+                "ddbj_search_api.routers.dblink.iter_linked_ids",
+                side_effect=_mock_iter,
+            ),
+        ):
+            resp = app.get("/dblink/hum-id/hum0014", params={"target": "jga-study"})
 
-    def test_no_target_passes_none(self, app: TestClient) -> None:
-        with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]) as mock:
-            app.get("/dblink/hum-id/hum0014")
+        data = resp.json()
+        assert len(data["dbXrefs"]) == 1
+        assert data["dbXrefs"][0]["type"] == "jga-study"
 
-        call_kwargs = mock.call_args
-        assert call_kwargs[1]["target"] is None
+    def test_no_target_returns_all(self, app: TestClient) -> None:
+        with (
+            tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+            patch(
+                "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+                Path(f.name),
+            ),
+            patch(
+                "ddbj_search_api.routers.dblink.iter_linked_ids",
+                side_effect=lambda *_args, **_kwargs: iter(
+                    [
+                        ("bioproject", "PRJDB100"),
+                        ("jga-study", "JGAS000101"),
+                    ]
+                ),
+            ),
+        ):
+            resp = app.get("/dblink/hum-id/hum0014")
+
+        data = resp.json()
+        assert len(data["dbXrefs"]) == 2
 
 
 class TestGetLinksPBT:
     @given(acc_type=st.sampled_from([e.value for e in AccessionType]))
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-    def test_any_valid_type_returns_200(self, app: TestClient, acc_type: str) -> None:
-        with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]):
-            resp = app.get(f"/dblink/{acc_type}/test-id")
-
+    def test_any_valid_type_returns_200(self, app_with_dblink: TestClient, acc_type: str) -> None:
+        resp = app_with_dblink.get(f"/dblink/{acc_type}/test-id")
         assert resp.status_code == 200
 
     @given(acc_type=st.sampled_from([e.value for e in AccessionType]))
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-    def test_any_valid_accession_type_as_target_returns_200(self, app: TestClient, acc_type: str) -> None:
-        with patch("ddbj_search_api.routers.dblink.get_linked_ids", return_value=[]):
-            resp = app.get("/dblink/hum-id/hum0014", params={"target": acc_type})
-
+    def test_any_valid_accession_type_as_target_returns_200(self, app_with_dblink: TestClient, acc_type: str) -> None:
+        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": acc_type})
         assert resp.status_code == 200
 
 
@@ -196,15 +248,130 @@ class TestGetLinksEdgeCases:
     def test_whitespace_only_target_returns_200(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": " "})
         assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" in data
+        assert isinstance(data["dbXrefs"], list)
 
     def test_empty_target_returns_200(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": ""})
         assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" in data
+        assert isinstance(data["dbXrefs"], list)
 
     def test_comma_only_target_returns_200(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": ","})
         assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" in data
+        assert isinstance(data["dbXrefs"], list)
 
     def test_duplicate_target_accepted(self, app_with_dblink: TestClient) -> None:
         resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "jga-study,jga-study"})
         assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" in data
+        assert isinstance(data["dbXrefs"], list)
+
+
+# --- POST /dblink/counts ---
+
+
+class TestBulkCounts:
+    def test_returns_200(self, app: TestClient) -> None:
+        with (
+            tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+            patch(
+                "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+                Path(f.name),
+            ),
+            patch(
+                "ddbj_search_api.routers.dblink.count_linked_ids_bulk",
+                return_value={("bioproject", "PRJDB1"): {"biosample": 5}},
+            ),
+        ):
+            resp = app.post(
+                "/dblink/counts",
+                json={"items": [{"type": "bioproject", "id": "PRJDB1"}]},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["identifier"] == "PRJDB1"
+        assert data["items"][0]["type"] == "bioproject"
+        assert data["items"][0]["counts"] == {"biosample": 5}
+
+    def test_multiple_items(self, app: TestClient) -> None:
+        with (
+            tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+            patch(
+                "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+                Path(f.name),
+            ),
+            patch(
+                "ddbj_search_api.routers.dblink.count_linked_ids_bulk",
+                return_value={
+                    ("bioproject", "PRJDB1"): {"biosample": 5},
+                    ("biosample", "SAMD1"): {"sra-study": 2},
+                },
+            ),
+        ):
+            resp = app.post(
+                "/dblink/counts",
+                json={
+                    "items": [
+                        {"type": "bioproject", "id": "PRJDB1"},
+                        {"type": "biosample", "id": "SAMD1"},
+                    ]
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 2
+
+    def test_empty_items_returns_422(self, app: TestClient) -> None:
+        resp = app.post("/dblink/counts", json={"items": []})
+        assert resp.status_code == 422
+
+    def test_over_100_items_returns_422(self, app: TestClient) -> None:
+        items = [{"type": "bioproject", "id": f"PRJDB{i}"} for i in range(101)]
+        resp = app.post("/dblink/counts", json={"items": items})
+        assert resp.status_code == 422
+
+    def test_100_items_accepted(self, app: TestClient) -> None:
+        with (
+            tempfile.NamedTemporaryFile(suffix=".duckdb") as f,
+            patch(
+                "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+                Path(f.name),
+            ),
+            patch(
+                "ddbj_search_api.routers.dblink.count_linked_ids_bulk",
+                return_value={("bioproject", f"PRJDB{i}"): {} for i in range(100)},
+            ),
+        ):
+            items = [{"type": "bioproject", "id": f"PRJDB{i}"} for i in range(100)]
+            resp = app.post("/dblink/counts", json={"items": items})
+
+        assert resp.status_code == 200
+
+    def test_db_missing_returns_500(self, app: TestClient) -> None:
+        with patch(
+            "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
+            Path("/nonexistent/path/dblink.duckdb"),
+        ):
+            resp = app.post(
+                "/dblink/counts",
+                json={"items": [{"type": "bioproject", "id": "PRJDB1"}]},
+            )
+
+        assert resp.status_code == 500
+
+    def test_invalid_type_returns_422(self, app: TestClient) -> None:
+        resp = app.post(
+            "/dblink/counts",
+            json={"items": [{"type": "invalid-type", "id": "PRJDB1"}]},
+        )
+        assert resp.status_code == 422

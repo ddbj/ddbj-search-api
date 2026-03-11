@@ -22,7 +22,7 @@ async def es_ping(client: httpx.AsyncClient) -> bool:
         response.raise_for_status()
 
         return True
-    except (httpx.HTTPError, Exception):
+    except Exception:
         return False
 
 
@@ -46,107 +46,12 @@ async def es_search(
     return result
 
 
-_TRUNCATE_SCRIPT = (
-    "def xrefs = params._source.containsKey('dbXrefs')"
-    " ? params._source.dbXrefs : [];"
-    " if (xrefs == null) { return []; }"
-    " int limit = params.limit;"
-    " if (limit >= xrefs.size()) { return xrefs; }"
-    " List result = new ArrayList();"
-    " for (int i = 0; i < limit; i++)"
-    " { result.add(xrefs.get(i)); }"
-    " return result;"
-)
-
-_COUNT_SCRIPT = (
-    "def xrefs = params._source.containsKey('dbXrefs')"
-    " ? params._source.dbXrefs : [];"
-    " if (xrefs == null) { return [:]; }"
-    " Map counts = new HashMap();"
-    " for (def x : xrefs) {"
-    "   String t = x.containsKey('type')"
-    "     ? x['type'] : 'unknown';"
-    "   counts.put(t,"
-    "     counts.containsKey(t)"
-    "       ? counts.get(t) + 1 : 1);"
-    " }"
-    " return counts;"
-)
-
-
-def build_db_xrefs_script_fields(limit: int) -> dict[str, Any]:
-    """Build ES script_fields for dbXrefs truncation and counting."""
-
-    return {
-        "dbXrefsTruncated": {
-            "script": {
-                "lang": "painless",
-                "source": _TRUNCATE_SCRIPT,
-                "params": {"limit": limit},
-            },
-        },
-        "dbXrefsCountByType": {
-            "script": {
-                "lang": "painless",
-                "source": _COUNT_SCRIPT,
-            },
-        },
-    }
-
-
-def parse_script_fields_hit(hit: dict[str, Any]) -> dict[str, Any]:
-    """Merge script_fields results into a hit's _source.
-
-    Extracts ``dbXrefsTruncated`` → ``dbXrefs`` and
-    ``dbXrefsCountByType`` → ``dbXrefsCount`` from ES ``fields``.
-    """
-    source: dict[str, Any] = dict(hit["_source"])
-    fields = hit.get("fields", {})
-    # ES flattens script_fields arrays: [[{a},{b}]] becomes [{a},{b}].
-    # Use the full list as dbXrefs (each element is one xref dict).
-    source["dbXrefs"] = fields.get("dbXrefsTruncated", [])
-    source["dbXrefsCount"] = fields.get("dbXrefsCountByType", [{}])[0]
-
-    return source
-
-
-async def es_search_with_script_fields(
-    client: httpx.AsyncClient,
-    index: str,
-    id_: str,
-    db_xrefs_limit: int,
-) -> dict[str, Any] | None:
-    """Search for a single document with script_fields for dbXrefs truncation.
-
-    Uses Painless scripting to truncate ``dbXrefs`` and compute per-type
-    counts on the ES side, avoiding loading the full array into API memory.
-
-    Returns a dict with ``_source`` (without dbXrefs) merged with
-    ``dbXrefsTruncated`` and ``dbXrefsCountByType`` from script_fields,
-    or ``None`` if not found.
-    """
-    body: dict[str, Any] = {
-        "query": {"term": {"_id": id_}},
-        "size": 1,
-        "_source": {"excludes": ["dbXrefs"]},
-        "script_fields": build_db_xrefs_script_fields(db_xrefs_limit),
-    }
-    response = await client.post(f"/{index}/_search", json=body)
-    response.raise_for_status()
-
-    data = response.json()
-    hits = data["hits"]["hits"]
-    if not hits:
-        return None
-
-    return parse_script_fields_hit(hits[0])
-
-
 async def es_get_source_stream(
     client: httpx.AsyncClient,
     index: str,
     id_: str,
     source_includes: str | None = None,
+    source_excludes: str | None = None,
 ) -> httpx.Response | None:
     """Open a streaming connection to ES ``_source`` endpoint.
 
@@ -157,6 +62,8 @@ async def es_get_source_stream(
     params: dict[str, str] = {}
     if source_includes is not None:
         params["_source_includes"] = source_includes
+    if source_excludes is not None:
+        params["_source_excludes"] = source_excludes
 
     url = f"/{index}/_source/{id_}"
     request = client.build_request("GET", url, params=params)
@@ -170,3 +77,21 @@ async def es_get_source_stream(
     response.raise_for_status()
 
     return response
+
+
+async def es_head_exists(
+    client: httpx.AsyncClient,
+    index: str,
+    id_: str,
+) -> bool:
+    """Check if a document exists using HEAD request.
+
+    Returns ``True`` if the document exists (200), ``False`` on 404.
+    Raises on other HTTP errors.
+    """
+    response = await client.head(f"/{index}/_source/{id_}")
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+
+    return True

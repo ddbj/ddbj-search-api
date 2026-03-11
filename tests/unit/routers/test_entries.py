@@ -1,19 +1,16 @@
 """Tests for Entries API routing and parameter validation.
 
-All handlers currently raise NotImplementedError (501), so these tests
-verify routing, trailing slash, and parameter validation at the HTTP level.
-
 Implementation tests (TestEntries*Search, etc.) use mocked ES and
-verify the full request → response flow.
+DuckDB functions, verifying the full request → response flow.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from tests.unit.conftest import make_es_search_response
@@ -69,11 +66,11 @@ class TestPaginationValidation:
 
     def test_per_page_1_accepted(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"perPage": 1})
-        assert resp.status_code != 422
+        assert resp.status_code == 200
 
     def test_per_page_100_accepted(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"perPage": 100})
-        assert resp.status_code != 422
+        assert resp.status_code == 200
 
     def test_per_page_101_returns_422(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"perPage": 101})
@@ -89,7 +86,7 @@ class TestPaginationValidation:
 
     def test_page_1_accepted(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"page": 1})
-        assert resp.status_code != 422
+        assert resp.status_code == 200
 
     def test_page_negative_returns_422(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"page": -1})
@@ -254,6 +251,9 @@ class TestEntriesSearch:
         assert body["pagination"]["total"] == 2
         assert body["items"][0]["identifier"] == "PRJDB1"
         assert body["items"][1]["identifier"] == "SAMD1"
+        # dbXrefs come from DuckDB (mocked empty)
+        assert body["items"][0]["dbXrefs"] == []
+        assert body["items"][0]["dbXrefsCount"] == {}
 
     def test_pagination_params_passed_to_es(
         self,
@@ -364,7 +364,6 @@ class TestEntriesIncludeProperties:
                         "type": "bioproject",
                         "properties": {"key": "val"},
                     },
-                    "fields": {},
                 }
             ],
             total=1,
@@ -385,7 +384,6 @@ class TestEntriesIncludeProperties:
                         "identifier": "PRJDB1",
                         "type": "bioproject",
                     },
-                    "fields": {},
                 }
             ],
             total=1,
@@ -769,16 +767,15 @@ class TestEntriesTypeSearch:
 class TestEntriesDbXrefs:
     """dbXrefs truncation and dbXrefsCount in list results.
 
-    Search results now use script_fields: ES returns ``_source`` without
-    dbXrefs and ``fields`` with ``dbXrefsTruncated`` / ``dbXrefsCountByType``.
+    Search results use DuckDB for dbXrefs: ES returns ``_source`` without
+    dbXrefs, and DuckDB provides truncated xrefs + per-type counts.
     """
 
-    def test_db_xrefs_truncated(
+    def test_db_xrefs_from_duckdb(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        truncated = [{"type": "biosample", "identifier": f"SAMD{i}"} for i in range(10)]
         mock_es_search.return_value = make_es_search_response(
             hits=[
                 {
@@ -786,15 +783,22 @@ class TestEntriesDbXrefs:
                         "identifier": "PRJDB1",
                         "type": "bioproject",
                     },
-                    "fields": {
-                        "dbXrefsTruncated": truncated,
-                        "dbXrefsCountByType": [{"biosample": 200}],
-                    },
                 }
             ],
             total=1,
         )
-        resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 10})
+        with (
+            patch(
+                "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
+                return_value={("bioproject", "PRJDB1"): [("biosample", f"SAMD{i}") for i in range(10)]},
+            ),
+            patch(
+                "ddbj_search_api.routers.entries.count_linked_ids_bulk",
+                return_value={("bioproject", "PRJDB1"): {"biosample": 200}},
+            ),
+        ):
+            resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 10})
+
         assert resp.status_code == 200
         body = resp.json()
         item = body["items"][0]
@@ -813,14 +817,22 @@ class TestEntriesDbXrefs:
                         "identifier": "PRJDB1",
                         "type": "bioproject",
                     },
-                    "fields": {
-                        "dbXrefsCountByType": [{"biosample": 50}],
-                    },
                 }
             ],
             total=1,
         )
-        resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 0})
+        with (
+            patch(
+                "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
+                return_value={("bioproject", "PRJDB1"): []},
+            ),
+            patch(
+                "ddbj_search_api.routers.entries.count_linked_ids_bulk",
+                return_value={("bioproject", "PRJDB1"): {"biosample": 50}},
+            ),
+        ):
+            resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 0})
+
         assert resp.status_code == 200
         body = resp.json()
         item = body["items"][0]
@@ -832,9 +844,6 @@ class TestEntriesDbXrefs:
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        truncated = [{"type": "biosample", "identifier": f"SAMD{i}"} for i in range(5)] + [
-            {"type": "sra-study", "identifier": f"SRP{i}"} for i in range(3)
-        ]
         mock_es_search.return_value = make_es_search_response(
             hits=[
                 {
@@ -842,27 +851,37 @@ class TestEntriesDbXrefs:
                         "identifier": "PRJDB1",
                         "type": "bioproject",
                     },
-                    "fields": {
-                        "dbXrefsTruncated": truncated,
-                        "dbXrefsCountByType": [{"biosample": 5, "sra-study": 3}],
-                    },
                 }
             ],
             total=1,
         )
-        resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 100})
+        with (
+            patch(
+                "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
+                return_value={
+                    ("bioproject", "PRJDB1"): [("biosample", f"SAMD{i}") for i in range(5)]
+                    + [("sra-study", f"SRP{i}") for i in range(3)]
+                },
+            ),
+            patch(
+                "ddbj_search_api.routers.entries.count_linked_ids_bulk",
+                return_value={("bioproject", "PRJDB1"): {"biosample": 5, "sra-study": 3}},
+            ),
+        ):
+            resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 100})
+
         assert resp.status_code == 200
         body = resp.json()
         item = body["items"][0]
         assert item["dbXrefsCount"]["biosample"] == 5
         assert item["dbXrefsCount"]["sra-study"] == 3
 
-    def test_no_db_xrefs_in_source(
+    def test_no_db_xrefs(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        """Entry without dbXrefs: script_fields return empty defaults."""
+        """Entry without dbXrefs: DuckDB returns empty defaults."""
         mock_es_search.return_value = make_es_search_response(
             hits=[
                 {
@@ -871,7 +890,6 @@ class TestEntriesDbXrefs:
                         "type": "bioproject",
                         "title": "No xrefs",
                     },
-                    "fields": {},
                 }
             ],
             total=1,
@@ -1103,8 +1121,7 @@ class TestEntriesSearchPBT:
         ),
     )
     def test_invalid_sort_field_always_422(self, app_with_es: TestClient, field: str) -> None:
-        if field in ("datePublished", "dateModified"):
-            return  # skip valid fields
+        assume(field not in ("datePublished", "dateModified"))
         resp = app_with_es.get("/entries/", params={"sort": f"{field}:asc"})
         assert resp.status_code == 422
 

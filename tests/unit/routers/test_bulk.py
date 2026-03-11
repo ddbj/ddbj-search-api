@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.config import AppConfig
@@ -21,6 +21,23 @@ from ddbj_search_api.es import get_es_client
 from ddbj_search_api.main import create_app
 from tests.unit.conftest import make_mock_stream_response
 from tests.unit.strategies import db_type_values, short_id
+
+
+@pytest.fixture(autouse=True)
+def _mock_bulk_duckdb() -> Any:
+    """Mock DuckDB iter_linked_ids and DBLINK_DB_PATH in bulk router."""
+    with (
+        patch(
+            "ddbj_search_api.routers.bulk.iter_linked_ids",
+            side_effect=lambda *_args, **_kwargs: iter([]),
+        ),
+        patch(
+            "ddbj_search_api.routers.bulk.DBLINK_DB_PATH",
+            MagicMock(exists=MagicMock(return_value=True)),
+        ),
+    ):
+        yield
+
 
 # === Helpers ===
 
@@ -61,7 +78,7 @@ def _setup_found_and_not_found(
     """Configure mock to return found entries for found_ids, None for not_found_ids."""
     found_set = set(found_ids)
 
-    async def _side_effect(_client: Any, _index: str, id_: str) -> Any:
+    async def _side_effect(_client: Any, _index: str, id_: str, **kwargs: Any) -> Any:
         if id_ in found_set:
             source = _make_source(id_)
 
@@ -231,26 +248,57 @@ class TestBulkJsonResponse:
         resp = _bulk_post(app_with_bulk, [])
         assert "application/json" in resp.headers["content-type"]
 
-    def test_dbxrefs_not_truncated(
+    def test_dbxrefs_from_duckdb(
         self,
         app_with_bulk: TestClient,
         mock_es_get_source_stream_bulk: AsyncMock,
     ) -> None:
-        """Bulk returns full dbXrefs (no truncation, no dbXrefsCount)."""
+        """Bulk returns dbXrefs from DuckDB (no truncation, no dbXrefsCount)."""
         source = {
             "identifier": "PRJDB001",
             "type": "bioproject",
-            "dbXrefs": [{"type": "biosample", "identifier": f"SAMD{i}"} for i in range(200)],
         }
 
-        async def _side_effect(_c: Any, _i: str, _id: str) -> Any:
+        async def _side_effect(_c: Any, _i: str, _id: str, **kwargs: Any) -> Any:
             return make_mock_stream_response(json.dumps(source).encode())
 
         mock_es_get_source_stream_bulk.side_effect = _side_effect
         resp = _bulk_post(app_with_bulk, ["PRJDB001"])
         data = resp.json()
-        assert len(data["entries"][0]["dbXrefs"]) == 200
+        # With empty DuckDB mock, dbXrefs is empty
+        assert data["entries"][0]["dbXrefs"] == []
         assert "dbXrefsCount" not in data["entries"][0]
+
+    def test_dbxrefs_from_duckdb_with_data(
+        self,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """Bulk returns actual dbXrefs when DuckDB returns results."""
+        source = {
+            "identifier": "PRJDB001",
+            "type": "bioproject",
+        }
+
+        async def _side_effect(_c: Any, _i: str, _id: str, **kwargs: Any) -> Any:
+            return make_mock_stream_response(json.dumps(source).encode())
+
+        mock_es_get_source_stream_bulk.side_effect = _side_effect
+
+        config = AppConfig()
+        with patch(
+            "ddbj_search_api.routers.bulk.iter_linked_ids",
+            side_effect=lambda *_args, **_kwargs: iter([("biosample", "SAMD001")]),
+        ):
+            fake_client = AsyncMock(spec=httpx.AsyncClient)
+            application = create_app(config)
+            application.dependency_overrides[get_es_client] = lambda: fake_client
+            client = TestClient(application, raise_server_exceptions=False)
+            resp = _bulk_post(client, ["PRJDB001"])
+
+        data = resp.json()
+        assert len(data["entries"][0]["dbXrefs"]) == 1
+        assert data["entries"][0]["dbXrefs"][0]["identifier"] == "SAMD001"
+        assert data["entries"][0]["dbXrefs"][0]["type"] == "biosample"
 
 
 # === NDJSON format responses ===
@@ -325,7 +373,8 @@ class TestBulkNdjsonResponse:
         )
         resp = _bulk_post(app_with_bulk, ids, format_="ndjson")
         for line in resp.text.strip().split("\n"):
-            json.loads(line)  # should not raise
+            parsed = json.loads(line)
+            assert "identifier" in parsed
 
     def test_empty_ids_returns_empty_body(
         self,
@@ -406,16 +455,56 @@ class TestBulkEsError:
 # === PBT ===
 
 
+class TestBulkDuplicateIds:
+    """Duplicate IDs in request."""
+
+    def test_duplicate_ids_both_returned(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """Duplicate IDs produce duplicate entries in the response."""
+        _setup_found_and_not_found(
+            mock_es_get_source_stream_bulk,
+            ["PRJDB001"],
+            [],
+        )
+        resp = _bulk_post(app_with_bulk, ["PRJDB001", "PRJDB001"])
+        data = resp.json()
+        assert len(data["entries"]) == 2
+        assert data["entries"][0]["identifier"] == "PRJDB001"
+        assert data["entries"][1]["identifier"] == "PRJDB001"
+
+
+@pytest.fixture
+def pbt_bulk_client() -> TestClient:
+    """TestClient for PBT tests, created once and reused.
+
+    Note: _mock_bulk_duckdb autouse fixture handles DuckDB mocking.
+    """
+    config = AppConfig()
+    fake_client = AsyncMock(spec=httpx.AsyncClient)
+    application = create_app(config)
+    application.dependency_overrides[get_es_client] = lambda: fake_client
+
+    return TestClient(application, raise_server_exceptions=False)
+
+
 class TestBulkPBT:
     """Property-based tests for Bulk API invariants."""
 
-    @settings(max_examples=20, deadline=None)
+    @settings(
+        max_examples=20,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     @given(
         found=st.lists(short_id, min_size=0, max_size=10),
         not_found=st.lists(short_id, min_size=0, max_size=10),
     )
     def test_entries_plus_not_found_equals_ids(
         self,
+        pbt_bulk_client: TestClient,
         found: list[str],
         not_found: list[str],
     ) -> None:
@@ -426,16 +515,11 @@ class TestBulkPBT:
         actual_found = [x for x in all_ids if x in found_set]
         actual_not_found = [x for x in all_ids if x not in found_set]
 
-        config = AppConfig()
         with patch(
             "ddbj_search_api.routers.bulk.es_get_source_stream",
             new_callable=AsyncMock,
         ) as mock:
             _setup_found_and_not_found(mock, actual_found, actual_not_found)
-            fake_client = AsyncMock(spec=httpx.AsyncClient)
-            application = create_app(config)
-            application.dependency_overrides[get_es_client] = lambda: fake_client
-            client = TestClient(application, raise_server_exceptions=False)
-            resp = _bulk_post(client, all_ids)
+            resp = _bulk_post(pbt_bulk_client, all_ids)
             data = resp.json()
             assert len(data["entries"]) + len(data["notFound"]) == len(all_ids)

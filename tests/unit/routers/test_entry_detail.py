@@ -1,14 +1,15 @@
 """Tests for Entry Detail API routing, responses, and parameter validation.
 
-Tests mock ES client functions to verify routing, response construction,
-streaming, JSON-LD injection, and parameter validation.
+Tests mock ES client functions and DuckDB functions to verify routing,
+response construction, streaming, JSON-LD injection, dbXrefs tail injection,
+and parameter validation.
 """
 
 from __future__ import annotations
 
 import collections.abc
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,15 +30,16 @@ class TestEntryDetailRouting:
     def test_route_exists(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
         db_type: str,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "TEST001",
-            "type": db_type,
-            "dbXrefs": [],
-            "dbXrefsCount": {},
-        }
+        body = json.dumps(
+            {
+                "identifier": "TEST001",
+                "type": db_type,
+            }
+        ).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get(f"/entries/{db_type}/TEST001")
         assert resp.status_code == 200
 
@@ -98,11 +100,10 @@ class TestDbxrefsFullRouting:
     def test_route_exists(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_get_source_stream: AsyncMock,
+        mock_es_head_exists: AsyncMock,
         db_type: str,
     ) -> None:
-        body = json.dumps({"dbXrefs": []}).encode()
-        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        mock_es_head_exists.return_value = True
         resp = app_with_entry_detail.get(
             f"/entries/{db_type}/TEST001/dbxrefs.json",
         )
@@ -118,60 +119,57 @@ class TestEntryDetailResponse:
     def test_200_with_truncated_dbxrefs(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "dbXrefs": [{"identifier": "BS1", "type": "biosample"}],
-            "dbXrefsCount": {"biosample": 5},
-        }
-        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+        body = json.dumps(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+            }
+        ).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+
+        with (
+            patch(
+                "ddbj_search_api.routers.entry_detail.get_linked_ids_limited",
+                return_value=[("biosample", "BS1")],
+            ),
+            patch(
+                "ddbj_search_api.routers.entry_detail.count_linked_ids",
+                return_value={"biosample": 5},
+            ),
+        ):
+            resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+
         assert resp.status_code == 200
         data = resp.json()
         assert data["identifier"] == "PRJDB1"
-        assert data["dbXrefs"] == [{"identifier": "BS1", "type": "biosample"}]
+        assert len(data["dbXrefs"]) == 1
+        assert data["dbXrefs"][0]["identifier"] == "BS1"
+        assert data["dbXrefs"][0]["type"] == "biosample"
         assert data["dbXrefsCount"] == {"biosample": 5}
 
     def test_404_when_not_found(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = None
+        mock_es_get_source_stream.return_value = None
         resp = app_with_entry_detail.get("/entries/bioproject/NOTEXIST")
         assert resp.status_code == 404
-
-    def test_db_xrefs_limit_passed_to_es(
-        self,
-        app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
-    ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "dbXrefs": [],
-            "dbXrefsCount": {},
-        }
-        app_with_entry_detail.get(
-            "/entries/bioproject/PRJDB1",
-            params={"dbXrefsLimit": 50},
-        )
-        call_args = mock_es_search_with_script_fields.call_args
-        assert call_args[0][2] == "PRJDB1"
-        assert call_args[0][3] == 50
 
     def test_empty_dbxrefs(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "dbXrefs": [],
-            "dbXrefsCount": {},
-        }
+        body = json.dumps(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+            }
+        ).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
         assert resp.status_code == 200
         data = resp.json()
@@ -183,7 +181,7 @@ class TestEntryDetailResponse:
 
 
 class TestEntryJsonResponse:
-    """GET /entries/{type}/{id}.json: streaming raw ES document."""
+    """GET /entries/{type}/{id}.json: streaming raw ES document + DuckDB dbXrefs."""
 
     def test_200_with_content_type(
         self,
@@ -195,7 +193,10 @@ class TestEntryJsonResponse:
         resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.json")
         assert resp.status_code == 200
         assert "application/json" in resp.headers["content-type"]
-        assert resp.json()["identifier"] == "PRJDB1"
+        data = resp.json()
+        assert data["identifier"] == "PRJDB1"
+        # dbXrefs is injected from DuckDB (empty mock)
+        assert data["dbXrefs"] == []
 
     def test_404_when_not_found(
         self,
@@ -205,6 +206,18 @@ class TestEntryJsonResponse:
         mock_es_get_source_stream.return_value = None
         resp = app_with_entry_detail.get("/entries/bioproject/NOTEXIST.json")
         assert resp.status_code == 404
+
+    def test_source_excludes_dbxrefs(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+    ) -> None:
+        """ES is called with source_excludes=dbXrefs."""
+        body = json.dumps({"identifier": "PRJDB1"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        app_with_entry_detail.get("/entries/bioproject/PRJDB1.json")
+        call_kwargs = mock_es_get_source_stream.call_args
+        assert call_kwargs.kwargs.get("source_excludes") == "dbXrefs"
 
 
 # === Entry JSON-LD response ===
@@ -255,6 +268,18 @@ class TestEntryJsonLdResponse:
         assert data["identifier"] == "PRJDB1"
         assert data["title"] == "Test Project"
 
+    def test_dbxrefs_injected(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+    ) -> None:
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.jsonld")
+        data = resp.json()
+        # DuckDB mock returns empty, so dbXrefs should be empty list
+        assert data["dbXrefs"] == []
+
     def test_404_when_not_found(
         self,
         app_with_entry_detail: TestClient,
@@ -269,19 +294,14 @@ class TestEntryJsonLdResponse:
 
 
 class TestDbxrefsFullResponse:
-    """GET /entries/{type}/{id}/dbxrefs.json: streaming full dbXrefs."""
+    """GET /entries/{type}/{id}/dbxrefs.json: DuckDB streaming dbXrefs."""
 
     def test_200_with_dbxrefs(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_get_source_stream: AsyncMock,
+        mock_es_head_exists: AsyncMock,
     ) -> None:
-        body = json.dumps(
-            {
-                "dbXrefs": [{"identifier": "BS1", "type": "biosample"}],
-            }
-        ).encode()
-        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        mock_es_head_exists.return_value = True
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1/dbxrefs.json",
         )
@@ -289,25 +309,22 @@ class TestDbxrefsFullResponse:
         data = resp.json()
         assert "dbXrefs" in data
 
-    def test_source_includes_passed(
+    def test_uses_es_head_for_existence(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_get_source_stream: AsyncMock,
+        mock_es_head_exists: AsyncMock,
     ) -> None:
-        body = json.dumps({"dbXrefs": []}).encode()
-        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        """ES HEAD is used to check document existence."""
+        mock_es_head_exists.return_value = True
         app_with_entry_detail.get("/entries/bioproject/PRJDB1/dbxrefs.json")
-        call_args = mock_es_get_source_stream.call_args
-        assert call_args[1].get("source_includes") == "dbXrefs" or (
-            len(call_args[0]) >= 4 and call_args[0][3] == "dbXrefs"
-        )
+        mock_es_head_exists.assert_awaited_once()
 
     def test_404_when_not_found(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_get_source_stream: AsyncMock,
+        mock_es_head_exists: AsyncMock,
     ) -> None:
-        mock_es_get_source_stream.return_value = None
+        mock_es_head_exists.return_value = False
         resp = app_with_entry_detail.get(
             "/entries/bioproject/NOTEXIST/dbxrefs.json",
         )
@@ -398,36 +415,28 @@ class TestDbXrefsLimitValidation:
     def test_0_accepted(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "dbXrefs": [],
-            "dbXrefsCount": {},
-        }
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
             params={"dbXrefsLimit": 0},
         )
-        assert resp.status_code != 422
+        assert resp.status_code == 200
 
     def test_1000_accepted(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "dbXrefs": [],
-            "dbXrefsCount": {},
-        }
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
             params={"dbXrefsLimit": 1000},
         )
-        assert resp.status_code != 422
+        assert resp.status_code == 200
 
     def test_1001_returns_422(
         self,
@@ -449,7 +458,7 @@ class TestDbXrefsLimitValidationPBT:
         self,
         app_with_entry_detail: TestClient,
         limit: int,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
@@ -463,7 +472,7 @@ class TestDbXrefsLimitValidationPBT:
         self,
         app_with_entry_detail: TestClient,
         limit: int,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
@@ -477,14 +486,10 @@ class TestDbXrefsLimitValidationPBT:
         self,
         app_with_entry_detail: TestClient,
         limit: int,
-        mock_es_search_with_script_fields: AsyncMock,
+        mock_es_get_source_stream: AsyncMock,
     ) -> None:
-        mock_es_search_with_script_fields.return_value = {
-            "identifier": "PRJDB1",
-            "type": "bioproject",
-            "dbXrefs": [],
-            "dbXrefsCount": {},
-        }
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1",
             params={"dbXrefsLimit": limit},
