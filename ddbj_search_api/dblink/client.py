@@ -105,21 +105,7 @@ def get_linked_ids_limited(
 
     with duckdb.connect(str(db_path), read_only=True) as conn:
         rows: list[tuple[str, str]] = conn.execute(
-            """
-            SELECT linked_type, linked_accession FROM (
-                SELECT linked_type, linked_accession,
-                       ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
-                FROM (
-                    SELECT dst_type AS linked_type, dst_accession AS linked_accession
-                    FROM relation WHERE src_type = ? AND src_accession = ?
-                    UNION ALL
-                    SELECT src_type AS linked_type, src_accession AS linked_accession
-                    FROM relation WHERE dst_type = ? AND dst_accession = ?
-                )
-            )
-            WHERE rn <= ?
-            ORDER BY linked_type, linked_accession
-            """,
+            _QUERY_LIMITED,
             (type_, id_, type_, id_, limit),
         ).fetchall()
 
@@ -148,21 +134,40 @@ def count_linked_ids(
 
     with duckdb.connect(str(db_path), read_only=True) as conn:
         rows: list[tuple[str, int]] = conn.execute(
-            """
-            SELECT linked_type, COUNT(*) AS cnt FROM (
-                SELECT dst_type AS linked_type FROM relation
-                WHERE src_type = ? AND src_accession = ?
-                UNION ALL
-                SELECT src_type AS linked_type FROM relation
-                WHERE dst_type = ? AND dst_accession = ?
-            )
-            GROUP BY linked_type
-            ORDER BY linked_type
-            """,
+            _QUERY_COUNT,
             (type_, id_, type_, id_),
         ).fetchall()
 
     return dict(rows)
+
+
+_QUERY_LIMITED = """
+    SELECT linked_type, linked_accession FROM (
+        SELECT linked_type, linked_accession,
+               ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
+        FROM (
+            SELECT dst_type AS linked_type, dst_accession AS linked_accession
+            FROM relation WHERE src_type = ? AND src_accession = ?
+            UNION ALL
+            SELECT src_type AS linked_type, src_accession AS linked_accession
+            FROM relation WHERE dst_type = ? AND dst_accession = ?
+        )
+    )
+    WHERE rn <= ?
+    ORDER BY linked_type, linked_accession
+"""
+
+_QUERY_COUNT = """
+    SELECT linked_type, COUNT(*) AS cnt FROM (
+        SELECT dst_type AS linked_type FROM relation
+        WHERE src_type = ? AND src_accession = ?
+        UNION ALL
+        SELECT src_type AS linked_type FROM relation
+        WHERE dst_type = ? AND dst_accession = ?
+    )
+    GROUP BY linked_type
+    ORDER BY linked_type
+"""
 
 
 def get_linked_ids_limited_bulk(
@@ -171,6 +176,9 @@ def get_linked_ids_limited_bulk(
     limit: int,
 ) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Return up to *limit* per linked type related (type, accession) pairs per entry.
+
+    Uses a single connection and loops over entries to avoid expensive
+    LATERAL joins on large tables.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -188,45 +196,14 @@ def get_linked_ids_limited_bulk(
     if not entries:
         return {}
 
-    with duckdb.connect(str(db_path), read_only=True) as conn:
-        conn.execute(
-            """
-            CREATE TEMPORARY TABLE _input_entries (type TEXT, id TEXT)
-            """
-        )
-        conn.executemany(
-            "INSERT INTO _input_entries VALUES (?, ?)",
-            entries,
-        )
-
-        rows: list[tuple[str, str, str, str]] = conn.execute(
-            """
-            SELECT e.type, e.id, sub.linked_type, sub.linked_accession
-            FROM _input_entries e
-            CROSS JOIN LATERAL (
-                SELECT linked_type, linked_accession FROM (
-                    SELECT linked_type, linked_accession,
-                           ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
-                    FROM (
-                        SELECT r.dst_type AS linked_type, r.dst_accession AS linked_accession
-                        FROM relation r
-                        WHERE r.src_type = e.type AND r.src_accession = e.id
-                        UNION ALL
-                        SELECT r.src_type AS linked_type, r.src_accession AS linked_accession
-                        FROM relation r
-                        WHERE r.dst_type = e.type AND r.dst_accession = e.id
-                    )
-                )
-                WHERE rn <= ?
-            ) sub
-            ORDER BY e.type, e.id, sub.linked_type, sub.linked_accession
-            """,
-            (limit,),
-        ).fetchall()
-
     result: dict[tuple[str, str], list[tuple[str, str]]] = {(t, i): [] for t, i in entries}
-    for entry_type, entry_id, linked_type, linked_accession in rows:
-        result[(entry_type, entry_id)].append((linked_type, linked_accession))
+    with duckdb.connect(str(db_path), read_only=True) as conn:
+        for type_, id_ in entries:
+            rows: list[tuple[str, str]] = conn.execute(
+                _QUERY_LIMITED,
+                (type_, id_, type_, id_, limit),
+            ).fetchall()
+            result[(type_, id_)] = rows
 
     return result
 
@@ -236,6 +213,9 @@ def count_linked_ids_bulk(
     entries: list[tuple[str, str]],
 ) -> dict[tuple[str, str], dict[str, int]]:
     """Return per-type counts for multiple accessions in one query.
+
+    Uses a single connection and loops over entries to avoid expensive
+    joins on large tables.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -252,39 +232,13 @@ def count_linked_ids_bulk(
     if not entries:
         return {}
 
-    with duckdb.connect(str(db_path), read_only=True) as conn:
-        # Build a CTE with the input entries
-        conn.execute(
-            """
-            CREATE TEMPORARY TABLE _input_entries (type TEXT, id TEXT)
-            """
-        )
-        conn.executemany(
-            "INSERT INTO _input_entries VALUES (?, ?)",
-            entries,
-        )
-
-        rows: list[tuple[str, str, str, int]] = conn.execute(
-            """
-            SELECT e.type, e.id, linked_type, COUNT(*) AS cnt FROM (
-                SELECT r.src_type AS entry_type, r.src_accession AS entry_id,
-                       r.dst_type AS linked_type
-                FROM relation r
-                INNER JOIN _input_entries e ON r.src_type = e.type AND r.src_accession = e.id
-                UNION ALL
-                SELECT r.dst_type AS entry_type, r.dst_accession AS entry_id,
-                       r.src_type AS linked_type
-                FROM relation r
-                INNER JOIN _input_entries e ON r.dst_type = e.type AND r.dst_accession = e.id
-            ) sub
-            INNER JOIN _input_entries e ON sub.entry_type = e.type AND sub.entry_id = e.id
-            GROUP BY e.type, e.id, linked_type
-            ORDER BY e.type, e.id, linked_type
-            """,
-        ).fetchall()
-
     result: dict[tuple[str, str], dict[str, int]] = {(t, i): {} for t, i in entries}
-    for entry_type, entry_id, linked_type, cnt in rows:
-        result[(entry_type, entry_id)][linked_type] = cnt
+    with duckdb.connect(str(db_path), read_only=True) as conn:
+        for type_, id_ in entries:
+            rows: list[tuple[str, int]] = conn.execute(
+                _QUERY_COUNT,
+                (type_, id_, type_, id_),
+            ).fetchall()
+            result[(type_, id_)] = dict(rows)
 
     return result
