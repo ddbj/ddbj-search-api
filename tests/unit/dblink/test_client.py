@@ -7,7 +7,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.dblink.client import (
@@ -375,9 +375,10 @@ class TestGetLinkedIdsLimitedNormal:
 
 
 class TestGetLinkedIdsLimitedEquivalence:
-    """Limited results are a prefix of full results."""
+    """Limited results are a per-type prefix of full results."""
 
-    def test_prefix_of_full_results(self, tmp_path: Path) -> None:
+    def test_prefix_of_full_results_single_type(self, tmp_path: Path) -> None:
+        """With a single type, limited is still a prefix of full."""
         db = tmp_path.joinpath("test.duckdb")
         rows = [("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(10)]
         _create_test_db(db, rows)
@@ -386,6 +387,75 @@ class TestGetLinkedIdsLimitedEquivalence:
         limited = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=5)
 
         assert limited == full[:5]
+
+
+class TestGetLinkedIdsLimitedPerType:
+    """Verify limit is applied per linked type, not globally."""
+
+    def test_limit_per_type_returns_each_type(self, tmp_path: Path) -> None:
+        """With limit=2, biosample gets first 2 and sra-study gets first 2."""
+        db = tmp_path.joinpath("test.duckdb")
+        rows = [
+            *[("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(5)],
+            *[("bioproject", "PRJDB100", "sra-study", f"DRP{i:03d}") for i in range(3)],
+        ]
+        _create_test_db(db, rows)
+
+        result = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=2)
+
+        by_type: dict[str, list[str]] = {}
+        for t, acc in result:
+            by_type.setdefault(t, []).append(acc)
+
+        # Count per type
+        assert len(by_type["biosample"]) == 2
+        assert len(by_type["sra-study"]) == 2
+        # First 2 by accession order within each type
+        assert by_type["biosample"] == ["SAMD000", "SAMD001"]
+        assert by_type["sra-study"] == ["DRP000", "DRP001"]
+
+    def test_limit_larger_than_type_count(self, tmp_path: Path) -> None:
+        """When limit > count for a type, all entries of that type are returned."""
+        db = tmp_path.joinpath("test.duckdb")
+        rows = [
+            *[("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(3)],
+            *[("bioproject", "PRJDB100", "sra-study", f"DRP{i:03d}") for i in range(2)],
+        ]
+        _create_test_db(db, rows)
+
+        result = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
+
+        by_type: dict[str, list[str]] = {}
+        for t, acc in result:
+            by_type.setdefault(t, []).append(acc)
+
+        assert len(by_type["biosample"]) == 3
+        assert len(by_type["sra-study"]) == 2
+
+    def test_limit_zero_returns_empty(self, tmp_path: Path) -> None:
+        db = tmp_path.joinpath("test.duckdb")
+        rows = [
+            ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+            ("bioproject", "PRJDB100", "sra-study", "DRP001"),
+        ]
+        _create_test_db(db, rows)
+
+        result = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=0)
+
+        assert result == []
+
+    def test_results_sorted(self, tmp_path: Path) -> None:
+        """Results are sorted by (type, accession) across all types."""
+        db = tmp_path.joinpath("test.duckdb")
+        rows = [
+            *[("bioproject", "PRJDB100", "sra-study", f"DRP{i:03d}") for i in range(5)],
+            *[("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(5)],
+        ]
+        _create_test_db(db, rows)
+
+        result = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=3)
+
+        assert result == sorted(result)
 
 
 class TestGetLinkedIdsLimitedDbMissing:
@@ -460,6 +530,29 @@ class TestGetLinkedIdsLimitedBulkNormal:
         result = get_linked_ids_limited_bulk(db, [], limit=10)
 
         assert result == {}
+
+
+class TestGetLinkedIdsLimitedBulkPerType:
+    """Verify bulk limit is applied per linked type."""
+
+    def test_limit_per_type_in_bulk(self, tmp_path: Path) -> None:
+        """Each entry gets limit per linked type, not globally."""
+        db = tmp_path.joinpath("test.duckdb")
+        rows = [
+            *[("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(5)],
+            *[("bioproject", "PRJDB100", "sra-study", f"DRP{i:03d}") for i in range(3)],
+        ]
+        _create_test_db(db, rows)
+
+        result = get_linked_ids_limited_bulk(db, [("bioproject", "PRJDB100")], limit=2)
+        linked = result[("bioproject", "PRJDB100")]
+
+        by_type: dict[str, list[str]] = {}
+        for t, acc in linked:
+            by_type.setdefault(t, []).append(acc)
+
+        assert len(by_type["biosample"]) == 2
+        assert len(by_type["sra-study"]) == 2
 
 
 class TestGetLinkedIdsLimitedBulkConsistency:
@@ -665,19 +758,31 @@ class TestCountLinkedIdsBulkDbMissing:
 class TestNewFunctionsPBT:
     """Property-based tests for iter_linked_ids, get_linked_ids_limited, count_linked_ids."""
 
-    @settings(max_examples=20)
+    @settings(
+        max_examples=20,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     @given(
         limit=st.integers(min_value=0, max_value=100),
     )
-    def test_limited_len_le_limit(self, limit: int) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = Path(tmpdir).joinpath("pbt_limited.duckdb")
-            rows = [("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(20)]
+    def test_limited_per_type_len_le_limit(self, limit: int, tmp_path: Path) -> None:
+        """Each linked type has at most *limit* entries."""
+        db = tmp_path / "pbt_limited.duckdb"
+        if not db.exists():
+            rows = [
+                *[("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(20)],
+                *[("bioproject", "PRJDB100", "sra-study", f"DRP{i:03d}") for i in range(15)],
+            ]
             _create_test_db(db, rows)
 
-            result = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=limit)
+        result = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=limit)
 
-            assert len(result) <= limit
+        by_type: dict[str, int] = {}
+        for t, _ in result:
+            by_type[t] = by_type.get(t, 0) + 1
+        for count in by_type.values():
+            assert count <= limit
 
     @given(
         acc_type=st.sampled_from([e.value for e in AccessionType]),

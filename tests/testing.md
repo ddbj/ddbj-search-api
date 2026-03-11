@@ -167,7 +167,7 @@ PBT を最も積極的に適用する。
 | 対象 | Property |
 |------|----------|
 | ページネーション | `page >= 1`, `1 <= perPage <= 100`, `page * perPage > 10000` は 400 |
-| dbXrefs 切り詰め | `len(result) <= limit`、`count` は常に正確 |
+| dbXrefs 切り詰め | 各 type の件数 <= limit、`count` は常に正確 |
 | fields フィルタ | レスポンスに指定フィールドのみ含まれる |
 | sort パース | `{field}:{direction}` のみ有効、それ以外は 422 |
 | Bulk API | `len(entries) + len(notFound) == len(set(request.ids))` |

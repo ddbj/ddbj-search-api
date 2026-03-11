@@ -776,6 +776,7 @@ class TestEntriesDbXrefs:
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
+        """DuckDB provides per-type limited xrefs and full counts."""
         mock_es_search.return_value = make_es_search_response(
             hits=[
                 {
@@ -787,23 +788,33 @@ class TestEntriesDbXrefs:
             ],
             total=1,
         )
+        # Mock reflects per-type limit: 3 biosample + 2 sra-study (limit=3 per type)
         with (
             patch(
                 "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
-                return_value={("bioproject", "PRJDB1"): [("biosample", f"SAMD{i}") for i in range(10)]},
+                return_value={
+                    ("bioproject", "PRJDB1"): [
+                        ("biosample", "SAMD0"),
+                        ("biosample", "SAMD1"),
+                        ("biosample", "SAMD2"),
+                        ("sra-study", "DRP0"),
+                        ("sra-study", "DRP1"),
+                    ]
+                },
             ),
             patch(
                 "ddbj_search_api.routers.entries.count_linked_ids_bulk",
-                return_value={("bioproject", "PRJDB1"): {"biosample": 200}},
+                return_value={("bioproject", "PRJDB1"): {"biosample": 200, "sra-study": 50}},
             ),
         ):
-            resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 10})
+            resp = app_with_es.get("/entries/", params={"dbXrefsLimit": 3})
 
         assert resp.status_code == 200
         body = resp.json()
         item = body["items"][0]
-        assert len(item["dbXrefs"]) == 10
+        assert len(item["dbXrefs"]) == 5
         assert item["dbXrefsCount"]["biosample"] == 200
+        assert item["dbXrefsCount"]["sra-study"] == 50
 
     def test_db_xrefs_limit_0(
         self,

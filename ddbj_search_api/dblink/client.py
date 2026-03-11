@@ -84,19 +84,19 @@ def get_linked_ids_limited(
     id_: str,
     limit: int,
 ) -> list[tuple[str, str]]:
-    """Return up to *limit* related (type, accession) pairs.
+    """Return up to *limit* per linked type related (type, accession) pairs.
 
-    Uses ``LIMIT`` in SQL for efficient truncated retrieval.
-    Suitable for search/detail endpoints that need a subset of dbXrefs.
+    Uses ``ROW_NUMBER() OVER (PARTITION BY linked_type)`` so that each
+    linked type independently gets at most *limit* rows.
 
     Args:
         db_path: Path to the DuckDB database file.
         type_: Source accession type.
         id_: Source accession identifier.
-        limit: Maximum number of rows to return.
+        limit: Maximum number of rows to return per linked type.
 
     Returns:
-        Sorted list of ``(type, accession)`` tuples (at most *limit*).
+        Sorted list of ``(type, accession)`` tuples (at most *limit* per linked type).
 
     Raises:
         FileNotFoundError: If *db_path* does not exist.
@@ -106,14 +106,19 @@ def get_linked_ids_limited(
     with duckdb.connect(str(db_path), read_only=True) as conn:
         rows: list[tuple[str, str]] = conn.execute(
             """
-            SELECT * FROM (
-                SELECT dst_type, dst_accession FROM relation
-                WHERE src_type = ? AND src_accession = ?
-                UNION ALL
-                SELECT src_type, src_accession FROM relation
-                WHERE dst_type = ? AND dst_accession = ?
-                ORDER BY 1, 2
-            ) LIMIT ?
+            SELECT linked_type, linked_accession FROM (
+                SELECT linked_type, linked_accession,
+                       ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
+                FROM (
+                    SELECT dst_type AS linked_type, dst_accession AS linked_accession
+                    FROM relation WHERE src_type = ? AND src_accession = ?
+                    UNION ALL
+                    SELECT src_type AS linked_type, src_accession AS linked_accession
+                    FROM relation WHERE dst_type = ? AND dst_accession = ?
+                )
+            )
+            WHERE rn <= ?
+            ORDER BY linked_type, linked_accession
             """,
             (type_, id_, type_, id_, limit),
         ).fetchall()
@@ -165,12 +170,12 @@ def get_linked_ids_limited_bulk(
     entries: list[tuple[str, str]],
     limit: int,
 ) -> dict[tuple[str, str], list[tuple[str, str]]]:
-    """Return up to *limit* related (type, accession) pairs per entry.
+    """Return up to *limit* per linked type related (type, accession) pairs per entry.
 
     Args:
         db_path: Path to the DuckDB database file.
         entries: List of ``(type, id)`` pairs to look up.
-        limit: Maximum number of rows to return per entry.
+        limit: Maximum number of rows to return per entry per linked type.
 
     Returns:
         Dict mapping ``(type, id)`` to sorted list of ``(linked_type, accession)`` tuples.
@@ -200,15 +205,19 @@ def get_linked_ids_limited_bulk(
             FROM _input_entries e
             CROSS JOIN LATERAL (
                 SELECT linked_type, linked_accession FROM (
-                    SELECT r.dst_type AS linked_type, r.dst_accession AS linked_accession
-                    FROM relation r
-                    WHERE r.src_type = e.type AND r.src_accession = e.id
-                    UNION ALL
-                    SELECT r.src_type AS linked_type, r.src_accession AS linked_accession
-                    FROM relation r
-                    WHERE r.dst_type = e.type AND r.dst_accession = e.id
-                    ORDER BY 1, 2
-                ) LIMIT ?
+                    SELECT linked_type, linked_accession,
+                           ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
+                    FROM (
+                        SELECT r.dst_type AS linked_type, r.dst_accession AS linked_accession
+                        FROM relation r
+                        WHERE r.src_type = e.type AND r.src_accession = e.id
+                        UNION ALL
+                        SELECT r.src_type AS linked_type, r.src_accession AS linked_accession
+                        FROM relation r
+                        WHERE r.dst_type = e.type AND r.dst_accession = e.id
+                    )
+                )
+                WHERE rn <= ?
             ) sub
             ORDER BY e.type, e.id, sub.linked_type, sub.linked_accession
             """,

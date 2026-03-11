@@ -235,7 +235,8 @@ class DbXrefsLimitQuery:
             le=1000,
             alias="dbXrefsLimit",
             description=(
-                "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+                "Maximum number of dbXrefs to return per type (0-1000). "
+                "Use 0 to omit dbXrefs but still get dbXrefsCount."
             ),
         ),
     ):
@@ -297,7 +298,8 @@ class EntryDetailQuery:
             le=1000,
             alias="dbXrefsLimit",
             description=(
-                "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+                "Maximum number of dbXrefs to return per type (0-1000). "
+                "Use 0 to omit dbXrefs but still get dbXrefsCount."
             ),
         ),
     ):

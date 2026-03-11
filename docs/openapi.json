@@ -269,11 +269,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -637,11 +637,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -943,11 +943,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1249,11 +1249,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1555,11 +1555,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -1861,11 +1861,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -2167,11 +2167,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -2473,11 +2473,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -2779,11 +2779,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -3085,11 +3085,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -3391,11 +3391,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -3697,11 +3697,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -4003,11 +4003,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -4416,11 +4416,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
           }
         ],
         "responses": {
@@ -7154,7 +7154,7 @@
           "dblink"
         ],
         "summary": "Get linked accessions",
-        "description": "Look up related accessions for the given type/id pair.",
+        "description": "Look up related accessions for the given type/id pair (streaming).",
         "operationId": "get_links_dblink__type___id__get",
         "parameters": [
           {
@@ -7241,6 +7241,68 @@
         }
       }
     },
+    "/dblink/counts": {
+      "post": {
+        "tags": [
+          "dblink"
+        ],
+        "summary": "Bulk count linked accessions",
+        "description": "Return per-type counts for multiple accessions in one request.",
+        "operationId": "bulk_counts_dblink_counts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DbLinksCountsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbLinksCountsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found (entry does not exist or invalid type).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/service-info": {
       "get": {
         "tags": [
@@ -7284,6 +7346,7 @@
           "gea",
           "geo",
           "hum-id",
+          "insdc",
           "insdc-assembly",
           "insdc-master",
           "jga-dac",
@@ -7298,8 +7361,7 @@
           "sra-sample",
           "sra-study",
           "sra-submission",
-          "taxonomy",
-          "umbrella-bioproject"
+          "taxonomy"
         ],
         "title": "AccessionType"
       },
@@ -7507,6 +7569,20 @@
             "type": "array",
             "title": "Dbxrefs"
           },
+          "parentBioProjects": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Parentbioprojects"
+          },
+          "childBioProjects": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Childbioprojects"
+          },
           "sameAs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -7584,6 +7660,8 @@
           "grant",
           "externalLink",
           "dbXrefs",
+          "parentBioProjects",
+          "childBioProjects",
           "sameAs",
           "status",
           "accessibility",
@@ -7709,6 +7787,20 @@
             "type": "array",
             "title": "Dbxrefs"
           },
+          "parentBioProjects": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Parentbioprojects"
+          },
+          "childBioProjects": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Childbioprojects"
+          },
           "sameAs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -7793,6 +7885,8 @@
           "grant",
           "externalLink",
           "dbXrefs",
+          "parentBioProjects",
+          "childBioProjects",
           "sameAs",
           "status",
           "accessibility",
@@ -7920,6 +8014,20 @@
             "type": "array",
             "title": "Dbxrefs"
           },
+          "parentBioProjects": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Parentbioprojects"
+          },
+          "childBioProjects": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Childbioprojects"
+          },
           "sameAs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -8005,6 +8113,8 @@
           "grant",
           "externalLink",
           "dbXrefs",
+          "parentBioProjects",
+          "childBioProjects",
           "sameAs",
           "status",
           "accessibility",
@@ -8669,6 +8779,93 @@
         "title": "BulkResponse",
         "description": "Response for POST /entries/{type}/bulk (format=json).\n\n``entries`` contains the found entries as raw ES documents.\n``notFound`` lists IDs that could not be found."
       },
+      "DbLinksCountsRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DbLinksCountsRequestItem"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "description": "Accessions to count linked entries for."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DbLinksCountsRequest",
+        "description": "Request body for POST /dblink/counts."
+      },
+      "DbLinksCountsRequestItem": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/AccessionType",
+            "description": "Accession type."
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Accession identifier."
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "DbLinksCountsRequestItem",
+        "description": "A single item in the bulk counts request."
+      },
+      "DbLinksCountsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DbLinksCountsResponseItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Counts per requested accession."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "DbLinksCountsResponse",
+        "description": "Response for POST /dblink/counts."
+      },
+      "DbLinksCountsResponseItem": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Accession identifier."
+          },
+          "type": {
+            "$ref": "#/components/schemas/AccessionType",
+            "description": "Accession type."
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts",
+            "description": "Per-type linked accession counts."
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type",
+          "counts"
+        ],
+        "title": "DbLinksCountsResponseItem",
+        "description": "A single item in the bulk counts response."
+      },
       "DbLinksResponse": {
         "properties": {
           "identifier": {
@@ -8761,6 +8958,13 @@
           },
           "encodingFormat": {
             "type": "string",
+            "enum": [
+              "JSON",
+              "JSON-LD",
+              "XML",
+              "FASTQ",
+              "SRA"
+            ],
             "title": "Encodingformat"
           },
           "contentUrl": {
@@ -10540,12 +10744,12 @@
               "gea",
               "geo",
               "hum-id",
+              "insdc",
               "insdc-assembly",
               "insdc-master",
               "metabobank",
               "pubmed-id",
-              "taxonomy",
-              "umbrella-bioproject"
+              "taxonomy"
             ],
             "title": "Type"
           },
