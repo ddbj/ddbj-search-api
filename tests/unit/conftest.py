@@ -157,6 +157,17 @@ def mock_es_head_exists() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture
+def mock_es_resolve_same_as() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_resolve_same_as in the entry_detail router."""
+    with patch(
+        "ddbj_search_api.routers.entry_detail.es_resolve_same_as",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = None
+        yield mock
+
+
+@pytest.fixture
 def _mock_entry_detail_duckdb() -> collections.abc.Iterator[None]:
     """Mock DuckDB functions used by entry_detail router."""
     with (
@@ -181,6 +192,7 @@ def app_with_entry_detail(
     config: AppConfig,
     mock_es_get_source_stream: AsyncMock,
     mock_es_head_exists: AsyncMock,
+    mock_es_resolve_same_as: AsyncMock,
     _mock_entry_detail_duckdb: None,
 ) -> TestClient:
     """TestClient with entry_detail ES and DuckDB functions mocked."""

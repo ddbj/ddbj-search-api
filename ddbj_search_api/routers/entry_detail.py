@@ -29,7 +29,7 @@ from starlette.background import BackgroundTask
 from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_get_source_stream, es_head_exists
+from ddbj_search_api.es.client import es_get_source_stream, es_head_exists, es_resolve_same_as
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
 from ddbj_search_api.schemas.entries import DetailResponse, EntryJsonLdResponse, EntryResponse
@@ -37,6 +37,67 @@ from ddbj_search_api.schemas.queries import EntryDetailQuery
 from ddbj_search_api.utils import format_xref
 
 router = APIRouter(tags=["Entry Detail"])
+
+
+# --- Helper: sameAs ID resolution ---
+
+
+async def _get_source_with_fallback(
+    client: httpx.AsyncClient,
+    db_type: str,
+    id_: str,
+    source_excludes: str | None = None,
+) -> tuple[httpx.Response, str]:
+    """Get ES source stream, falling back to sameAs resolution.
+
+    Returns ``(response, entry_id)`` where *entry_id* is the resolved
+    primary identifier (same as *id_* when the direct lookup succeeds).
+
+    Raises :class:`HTTPException` 404 if neither lookup finds a match.
+    """
+    response = await es_get_source_stream(client, db_type, id_, source_excludes=source_excludes)
+    if response is not None:
+        return response, id_
+
+    resolved_id = await es_resolve_same_as(client, db_type, id_)
+    if resolved_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {db_type} '{id_}' was not found.",
+        )
+
+    response = await es_get_source_stream(client, db_type, resolved_id, source_excludes=source_excludes)
+    if response is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {db_type} '{id_}' was not found.",
+        )
+
+    return response, resolved_id
+
+
+async def _check_exists_with_fallback(
+    client: httpx.AsyncClient,
+    db_type: str,
+    id_: str,
+) -> str:
+    """Check entry existence, falling back to sameAs resolution.
+
+    Returns the resolved primary identifier.
+
+    Raises :class:`HTTPException` 404 if neither lookup finds a match.
+    """
+    if await es_head_exists(client, db_type, id_):
+        return id_
+
+    resolved_id = await es_resolve_same_as(client, db_type, id_)
+    if resolved_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"The requested {db_type} '{id_}' was not found.",
+        )
+
+    return resolved_id
 
 
 class JsonLdResponse(JSONResponse):
@@ -166,22 +227,17 @@ async def get_entry_json(
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> StreamingResponse:
     """Get raw ES document + DuckDB dbXrefs (streaming)."""
-    response = await es_get_source_stream(
+    response, entry_id = await _get_source_with_fallback(
         client,
         type.value,
         id,
         source_excludes="dbXrefs",
     )
-    if response is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"The requested {type.value} '{id}' was not found.",
-        )
 
     body = _inject_dbxrefs_tail_streaming(
         response.aiter_bytes(),
         type.value,
-        id,
+        entry_id,
     )
 
     return StreamingResponse(
@@ -211,27 +267,22 @@ async def get_entry_jsonld(
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> StreamingResponse:
     """Get entry as JSON-LD (streaming with @context/@id + dbXrefs injection)."""
-    response = await es_get_source_stream(
+    response, entry_id = await _get_source_with_fallback(
         client,
         type.value,
         id,
         source_excludes="dbXrefs",
     )
-    if response is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"The requested {type.value} '{id}' was not found.",
-        )
 
     config = get_config()
     context_url = JSONLD_CONTEXT_URLS[type.value]
-    at_id = f"{config.base_url}/entries/{type.value}/{id}"
+    at_id = f"{config.base_url}/entries/{type.value}/{entry_id}"
 
     # Chain: ES stream → dbXrefs tail injection → JSON-LD prefix injection
     with_dbxrefs = _inject_dbxrefs_tail_streaming(
         response.aiter_bytes(),
         type.value,
-        id,
+        entry_id,
     )
     body = _inject_jsonld_prefix(with_dbxrefs, context_url, at_id)
 
@@ -257,12 +308,7 @@ async def get_dbxrefs_full(
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> StreamingResponse:
     """Get all dbXrefs (DuckDB streaming, ES HEAD for existence check)."""
-    exists = await es_head_exists(client, type.value, id)
-    if not exists:
-        raise HTTPException(
-            status_code=404,
-            detail=f"The requested {type.value} '{id}' was not found.",
-        )
+    entry_id = await _check_exists_with_fallback(client, type.value, id)
 
     async def _stream_dbxrefs() -> collections.abc.AsyncIterator[bytes]:
         yield b'{"dbXrefs":['
@@ -272,7 +318,7 @@ async def get_dbxrefs_full(
         def _worker() -> None:
             try:
                 batch: list[tuple[str, str]] = []
-                for row in iter_linked_ids(DBLINK_DB_PATH, type.value, id):
+                for row in iter_linked_ids(DBLINK_DB_PATH, type.value, entry_id):
                     batch.append(row)
                     if len(batch) >= 10000:
                         q.put(batch)
@@ -331,17 +377,12 @@ async def get_entry_detail(
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> JSONResponse:
     """Get entry detail (truncated dbXrefs from DuckDB + dbXrefsCount)."""
-    response = await es_get_source_stream(
+    response, entry_id = await _get_source_with_fallback(
         client,
         type.value,
         id,
         source_excludes="dbXrefs",
     )
-    if response is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"The requested {type.value} '{id}' was not found.",
-        )
 
     # Read ES response body (without dbXrefs)
     chunks: list[bytes] = []
@@ -354,8 +395,8 @@ async def get_entry_detail(
     limit = query.db_xrefs_limit
 
     xrefs_rows, counts = await asyncio.gather(
-        asyncio.to_thread(get_linked_ids_limited, DBLINK_DB_PATH, type.value, id, limit),
-        asyncio.to_thread(count_linked_ids, DBLINK_DB_PATH, type.value, id),
+        asyncio.to_thread(get_linked_ids_limited, DBLINK_DB_PATH, type.value, entry_id, limit),
+        asyncio.to_thread(count_linked_ids, DBLINK_DB_PATH, type.value, entry_id),
     )
 
     xrefs = [to_xref(acc, type_hint=cast(XrefType, t)).model_dump(by_alias=True) for t, acc in xrefs_rows]

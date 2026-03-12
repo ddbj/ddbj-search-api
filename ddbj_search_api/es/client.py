@@ -79,6 +79,45 @@ async def es_get_source_stream(
     return response
 
 
+async def es_resolve_same_as(
+    client: httpx.AsyncClient,
+    index: str,
+    id_: str,
+) -> str | None:
+    """Resolve an ID via sameAs nested query.
+
+    Searches for an entry whose ``sameAs`` contains a matching
+    ``identifier`` with the same ``type`` as the index.
+
+    Returns the primary ``_id`` if found, ``None`` otherwise.
+    """
+    body: dict[str, Any] = {
+        "query": {
+            "nested": {
+                "path": "sameAs",
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"sameAs.identifier": id_}},
+                            {"term": {"sameAs.type": index}},
+                        ],
+                    },
+                },
+            },
+        },
+        "_source": False,
+        "size": 1,
+    }
+    response = await client.post(f"/{index}/_search", json=body)
+    response.raise_for_status()
+    result: dict[str, Any] = response.json()
+    hits = result.get("hits", {}).get("hits", [])
+    if not hits:
+        return None
+    primary_id: str = hits[0]["_id"]
+    return primary_id
+
+
 async def es_head_exists(
     client: httpx.AsyncClient,
     index: str,
