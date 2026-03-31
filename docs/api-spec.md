@@ -72,6 +72,8 @@ sameAs フォールバックでヒットした場合、レスポンスは identi
 
 **Elasticsearch 要件**: `sameAs` フィールドは nested タイプとしてインデックスされている必要がある (ddbj-search-converter 側のマッピング定義)。
 
+**alias ドキュメント (converter 連携)**: ddbj-search-converter は、エントリーの `sameAs` に含まれる Secondary ID を `_id` とする alias ドキュメントを ES に投入する (alias ドキュメントの `_source` は Primary ドキュメントと同一で、`identifier` フィールドは Primary ID のまま)。これにより、Secondary ID による直接取得 (ステップ 1) が alias ドキュメントにヒットし、sameAs nested query (ステップ 2) へのフォールバックが不要になる。API 側では、直接取得成功時に `_source.identifier` を確認し、リクエストの `{id}` と異なる場合は `identifier` を Primary ID として DuckDB 検索・JSON-LD `@id` に使用する。
+
 ### Bulk API (一括取得系: 1 エンドポイント)
 
 | Method | Path | 説明 |
@@ -276,7 +278,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 | フィールド | 説明 |
 |-----------|------|
 | `organism` | 生物種別カウント |
-| `status` | ステータス別カウント |
+| `status` | ステータス別カウント。値: `public`, `private`, `suppressed`, `withdrawn` |
 | `accessibility` | アクセシビリティ別カウント |
 
 **横断検索時の追加フィールド** (`GET /entries/`, `GET /facets`):

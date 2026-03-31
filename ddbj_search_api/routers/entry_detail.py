@@ -29,7 +29,7 @@ from starlette.background import BackgroundTask
 from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_get_source_stream, es_head_exists, es_resolve_same_as
+from ddbj_search_api.es.client import es_get_identifier, es_get_source_stream, es_head_exists, es_resolve_same_as
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
 from ddbj_search_api.schemas.entries import DetailResponse, EntryJsonLdResponse, EntryResponse
@@ -57,7 +57,8 @@ async def _get_source_with_fallback(
     """
     response = await es_get_source_stream(client, db_type, id_, source_excludes=source_excludes)
     if response is not None:
-        return response, id_
+        entry_id = await es_get_identifier(client, db_type, id_)
+        return response, entry_id
 
     resolved_id = await es_resolve_same_as(client, db_type, id_)
     if resolved_id is None:
@@ -88,7 +89,7 @@ async def _check_exists_with_fallback(
     Raises :class:`HTTPException` 404 if neither lookup finds a match.
     """
     if await es_head_exists(client, db_type, id_):
-        return id_
+        return await es_get_identifier(client, db_type, id_)
 
     resolved_id = await es_resolve_same_as(client, db_type, id_)
     if resolved_id is None:

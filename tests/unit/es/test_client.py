@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from ddbj_search_api.es.client import es_get_source_stream, es_head_exists, es_search
+from ddbj_search_api.es.client import es_get_identifier, es_get_source_stream, es_head_exists, es_search
 
 
 def _mock_response(
@@ -298,6 +298,67 @@ class TestEsGetSourceStream:
 # ===================================================================
 # es_head_exists
 # ===================================================================
+
+
+class TestEsGetIdentifier:
+    """es_get_identifier: lightweight identifier resolution."""
+
+    @pytest.mark.asyncio
+    async def test_returns_identifier_on_found(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.get.return_value = _mock_response(
+            {"identifier": "JGAS000001"},
+        )
+        result = await es_get_identifier(mock_client, "jga-study", "JGAS000556")
+        assert result == "JGAS000001"
+
+    @pytest.mark.asyncio
+    async def test_returns_id_on_404(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.get.return_value = _mock_response(
+            {},
+            status_code=404,
+        )
+        result = await es_get_identifier(mock_client, "jga-study", "NOTEXIST")
+        assert result == "NOTEXIST"
+
+    @pytest.mark.asyncio
+    async def test_returns_id_when_field_missing(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.get.return_value = _mock_response({})
+        result = await es_get_identifier(mock_client, "jga-study", "JGAS000556")
+        assert result == "JGAS000556"
+
+    @pytest.mark.asyncio
+    async def test_calls_correct_endpoint(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.get.return_value = _mock_response(
+            {"identifier": "PRJDB1"},
+        )
+        await es_get_identifier(mock_client, "bioproject", "PRJDB1")
+        call_args = mock_client.get.call_args
+        assert call_args[0][0] == "/bioproject/_source/PRJDB1"
+        assert call_args[1]["params"]["_source_includes"] == "identifier"
+
+    @pytest.mark.asyncio
+    async def test_raises_on_500(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.get.return_value = _mock_response(
+            {"error": "internal"},
+            status_code=500,
+        )
+        with pytest.raises(httpx.HTTPStatusError):
+            await es_get_identifier(mock_client, "bioproject", "PRJDB1")
 
 
 class TestEsHeadExists:

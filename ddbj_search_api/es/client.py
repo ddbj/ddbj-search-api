@@ -118,6 +118,29 @@ async def es_resolve_same_as(
     return primary_id
 
 
+async def es_get_identifier(
+    client: httpx.AsyncClient,
+    index: str,
+    id_: str,
+) -> str:
+    """Get the ``identifier`` field from an ES document's ``_source``.
+
+    For alias documents (where ``_id`` != ``identifier``), returns the
+    primary identifier.  For normal documents, returns *id_* unchanged.
+    Falls back to *id_* if the document is not found.
+    """
+    response = await client.get(
+        f"/{index}/_source/{id_}",
+        params={"_source_includes": "identifier"},
+    )
+    if response.status_code == 404:
+        return id_
+    response.raise_for_status()
+    result: dict[str, Any] = response.json()
+    identifier: str = result.get("identifier", id_)
+    return identifier
+
+
 async def es_head_exists(
     client: httpx.AsyncClient,
     index: str,

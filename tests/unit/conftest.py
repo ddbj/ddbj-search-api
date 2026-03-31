@@ -168,6 +168,20 @@ def mock_es_resolve_same_as() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture
+def mock_es_get_identifier() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_get_identifier in the entry_detail router.
+
+    Default: pass through the requested id_ (non-alias document).
+    """
+    with patch(
+        "ddbj_search_api.routers.entry_detail.es_get_identifier",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.side_effect = lambda _client, _index, id_: id_
+        yield mock
+
+
+@pytest.fixture
 def _mock_entry_detail_duckdb() -> collections.abc.Iterator[None]:
     """Mock DuckDB functions used by entry_detail router."""
     with (
@@ -193,6 +207,7 @@ def app_with_entry_detail(
     mock_es_get_source_stream: AsyncMock,
     mock_es_head_exists: AsyncMock,
     mock_es_resolve_same_as: AsyncMock,
+    mock_es_get_identifier: AsyncMock,
     _mock_entry_detail_duckdb: None,
 ) -> TestClient:
     """TestClient with entry_detail ES and DuckDB functions mocked."""
