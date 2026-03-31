@@ -1,11 +1,20 @@
-"""Read-only DuckDB client for dblink relation lookups."""
+"""Read-only DuckDB client for dblink relation lookups.
+
+Uses ``:memory:`` + ``ATTACH`` to bypass DuckDB's process-global
+``DBInstanceCache``.  Without this, ``duckdb.connect(path)`` reuses a
+cached database instance keyed by path string, so atomic file
+replacement (``Path.replace()``) by the converter goes unnoticed.
+"""
 
 from __future__ import annotations
 
 import collections.abc
+import contextlib
 from pathlib import Path
 
 import duckdb
+
+_CATALOG = "dblink"
 
 
 def _check_db(db_path: Path) -> None:
@@ -13,6 +22,23 @@ def _check_db(db_path: Path) -> None:
     if not db_path.exists():
         msg = f"DuckDB file not found: {db_path}"
         raise FileNotFoundError(msg)
+
+
+@contextlib.contextmanager
+def _open_dblink(
+    db_path: Path,
+) -> collections.abc.Generator[duckdb.DuckDBPyConnection, None, None]:
+    """Open an in-memory connection with *db_path* attached read-only.
+
+    Bypasses ``DBInstanceCache`` because ``:memory:`` is never cached.
+    """
+    _check_db(db_path)
+    conn = duckdb.connect(":memory:")
+    try:
+        conn.execute(f"ATTACH '{db_path}' AS {_CATALOG} (READ_ONLY)")
+        yield conn
+    finally:
+        conn.close()
 
 
 def iter_linked_ids(
@@ -43,15 +69,16 @@ def iter_linked_ids(
     """
     _check_db(db_path)
 
-    conn = duckdb.connect(str(db_path), read_only=True)
+    conn = duckdb.connect(":memory:")
     try:
+        conn.execute(f"ATTACH '{db_path}' AS {_CATALOG} (READ_ONLY)")
         if target:
             cursor = conn.execute(
-                """
-                SELECT dst_type, dst_accession FROM relation
+                f"""
+                SELECT dst_type, dst_accession FROM {_CATALOG}.relation
                 WHERE src_type = ? AND src_accession = ? AND dst_type IN (SELECT UNNEST(?))
                 UNION ALL
-                SELECT src_type, src_accession FROM relation
+                SELECT src_type, src_accession FROM {_CATALOG}.relation
                 WHERE dst_type = ? AND dst_accession = ? AND src_type IN (SELECT UNNEST(?))
                 ORDER BY 1, 2
                 """,
@@ -59,11 +86,11 @@ def iter_linked_ids(
             )
         else:
             cursor = conn.execute(
-                """
-                SELECT dst_type, dst_accession FROM relation
+                f"""
+                SELECT dst_type, dst_accession FROM {_CATALOG}.relation
                 WHERE src_type = ? AND src_accession = ?
                 UNION ALL
-                SELECT src_type, src_accession FROM relation
+                SELECT src_type, src_accession FROM {_CATALOG}.relation
                 WHERE dst_type = ? AND dst_accession = ?
                 ORDER BY 1, 2
                 """,
@@ -101,9 +128,7 @@ def get_linked_ids_limited(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    _check_db(db_path)
-
-    with duckdb.connect(str(db_path), read_only=True) as conn:
+    with _open_dblink(db_path) as conn:
         rows: list[tuple[str, str]] = conn.execute(
             _QUERY_LIMITED,
             (type_, id_, type_, id_, limit),
@@ -130,9 +155,7 @@ def count_linked_ids(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    _check_db(db_path)
-
-    with duckdb.connect(str(db_path), read_only=True) as conn:
+    with _open_dblink(db_path) as conn:
         rows: list[tuple[str, int]] = conn.execute(
             _QUERY_COUNT,
             (type_, id_, type_, id_),
@@ -141,28 +164,28 @@ def count_linked_ids(
     return dict(rows)
 
 
-_QUERY_LIMITED = """
+_QUERY_LIMITED = f"""
     SELECT linked_type, linked_accession FROM (
         SELECT linked_type, linked_accession,
                ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
         FROM (
             SELECT dst_type AS linked_type, dst_accession AS linked_accession
-            FROM relation WHERE src_type = ? AND src_accession = ?
+            FROM {_CATALOG}.relation WHERE src_type = ? AND src_accession = ?
             UNION ALL
             SELECT src_type AS linked_type, src_accession AS linked_accession
-            FROM relation WHERE dst_type = ? AND dst_accession = ?
+            FROM {_CATALOG}.relation WHERE dst_type = ? AND dst_accession = ?
         )
     )
     WHERE rn <= ?
     ORDER BY linked_type, linked_accession
 """
 
-_QUERY_COUNT = """
+_QUERY_COUNT = f"""
     SELECT linked_type, COUNT(*) AS cnt FROM (
-        SELECT dst_type AS linked_type FROM relation
+        SELECT dst_type AS linked_type FROM {_CATALOG}.relation
         WHERE src_type = ? AND src_accession = ?
         UNION ALL
-        SELECT src_type AS linked_type FROM relation
+        SELECT src_type AS linked_type FROM {_CATALOG}.relation
         WHERE dst_type = ? AND dst_accession = ?
     )
     GROUP BY linked_type
@@ -191,13 +214,11 @@ def get_linked_ids_limited_bulk(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    _check_db(db_path)
-
     if not entries:
         return {}
 
     result: dict[tuple[str, str], list[tuple[str, str]]] = {(t, i): [] for t, i in entries}
-    with duckdb.connect(str(db_path), read_only=True) as conn:
+    with _open_dblink(db_path) as conn:
         for type_, id_ in entries:
             rows: list[tuple[str, str]] = conn.execute(
                 _QUERY_LIMITED,
@@ -227,13 +248,11 @@ def count_linked_ids_bulk(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    _check_db(db_path)
-
     if not entries:
         return {}
 
     result: dict[tuple[str, str], dict[str, int]] = {(t, i): {} for t, i in entries}
-    with duckdb.connect(str(db_path), read_only=True) as conn:
+    with _open_dblink(db_path) as conn:
         for type_, id_ in entries:
             rows: list[tuple[str, int]] = conn.execute(
                 _QUERY_COUNT,

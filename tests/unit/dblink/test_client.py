@@ -800,3 +800,75 @@ class TestNewFunctionsPBT:
             result = count_linked_ids(db, acc_type, acc_id)
 
             assert result == {}
+
+
+# --- Cache bypass (DBInstanceCache) ---
+
+
+class TestCacheBypass:
+    """Verify that atomic file replacement is visible to subsequent calls.
+
+    DuckDB's process-global ``DBInstanceCache`` caches database instances
+    by file path.  The ``:memory:`` + ATTACH approach bypasses this cache
+    so that ``Path.replace()`` is immediately visible.
+    """
+
+    def test_iter_sees_new_data_after_file_replacement(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result1 = list(iter_linked_ids(db, "bioproject", "PRJDB100"))
+        assert len(result1) == 1
+
+        new_db = tmp_path / "dblink.tmp.duckdb"
+        _create_test_db(
+            new_db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD002"),
+            ],
+        )
+        new_db.replace(db)
+
+        result2 = list(iter_linked_ids(db, "bioproject", "PRJDB100"))
+        assert len(result2) == 2
+
+    def test_count_sees_new_data_after_file_replacement(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        counts1 = count_linked_ids(db, "bioproject", "PRJDB100")
+        assert counts1 == {"biosample": 1}
+
+        new_db = tmp_path / "dblink.tmp.duckdb"
+        _create_test_db(
+            new_db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD002"),
+            ],
+        )
+        new_db.replace(db)
+
+        counts2 = count_linked_ids(db, "bioproject", "PRJDB100")
+        assert counts2 == {"biosample": 2}
+
+    def test_limited_sees_new_data_after_file_replacement(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result1 = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
+        assert len(result1) == 1
+
+        new_db = tmp_path / "dblink.tmp.duckdb"
+        _create_test_db(
+            new_db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD002"),
+            ],
+        )
+        new_db.replace(db)
+
+        result2 = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
+        assert len(result2) == 2
