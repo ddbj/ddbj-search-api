@@ -7593,8 +7593,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -7811,8 +7811,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -8038,8 +8038,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -8241,8 +8241,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -8429,8 +8429,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -8626,8 +8626,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -9432,7 +9432,7 @@
           },
           "status": {
             "type": "string",
-            "const": "live",
+            "const": "public",
             "title": "Status"
           },
           "accessibility": {
@@ -9590,7 +9590,7 @@
           },
           "status": {
             "type": "string",
-            "const": "live",
+            "const": "public",
             "title": "Status"
           },
           "accessibility": {
@@ -9757,7 +9757,7 @@
           },
           "status": {
             "type": "string",
-            "const": "live",
+            "const": "public",
             "title": "Status"
           },
           "accessibility": {
@@ -10256,8 +10256,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -10461,8 +10461,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],
@@ -10638,8 +10638,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "live",
-              "unpublished",
+              "public",
+              "private",
               "suppressed",
               "withdrawn"
             ],

@@ -80,7 +80,7 @@ def _make_bioproject(identifier: str) -> BioProject:
         type_="bioproject",
         isPartOf="BioProject",
         objectType="BioProject",
-        status="live",
+        status="public",
         accessibility="public-access",
         url=f"https://example.com/{identifier}",
         properties={},

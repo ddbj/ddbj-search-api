@@ -54,7 +54,7 @@ _BIOPROJECT_BASE: dict[str, Any] = {
     "parentBioProjects": [],
     "childBioProjects": [],
     "sameAs": [],
-    "status": "live",
+    "status": "public",
     "accessibility": "public-access",
     **_COMMON_OPTIONAL,
 }
@@ -71,7 +71,7 @@ _BIOSAMPLE_BASE: dict[str, Any] = {
     "package": None,
     "dbXrefs": [],
     "sameAs": [],
-    "status": "live",
+    "status": "public",
     "accessibility": "public-access",
     **_COMMON_OPTIONAL,
 }
@@ -85,7 +85,7 @@ _SRA_BASE: dict[str, Any] = {
     "url": "https://example.com/DRR000001",
     "dbXrefs": [],
     "sameAs": [],
-    "status": "live",
+    "status": "public",
     "accessibility": "public-access",
     **_COMMON_OPTIONAL,
 }
@@ -99,7 +99,7 @@ _JGA_BASE: dict[str, Any] = {
     "url": "https://example.com/JGAS000001",
     "dbXrefs": [],
     "sameAs": [],
-    "status": "live",
+    "status": "public",
     "accessibility": "controlled-access",
     **_COMMON_OPTIONAL,
 }
@@ -129,7 +129,7 @@ class TestEntryListResponse:
     def test_with_facets(self) -> None:
         facets = Facets(
             organism=[FacetBucket(value="human", count=10)],
-            status=[FacetBucket(value="live", count=5)],
+            status=[FacetBucket(value="public", count=5)],
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
         resp = EntryListResponse(
