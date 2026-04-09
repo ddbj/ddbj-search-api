@@ -23,7 +23,7 @@ def _make_payload(
     return CursorPayload(
         pit_id=pit_id,
         search_after=search_after or ["2026-01-15", "SAMN12345678"],
-        sort=sort or [{"datePublished": {"order": "desc"}}, {"_id": {"order": "asc"}}],
+        sort=sort or [{"datePublished": {"order": "desc"}}, {"identifier": {"order": "asc"}}],
         query=query or {"match_all": {}},
     )
 
@@ -32,7 +32,7 @@ def _make_payload(
 
 @st.composite
 def es_sort_entry(draw: st.DrawFn) -> dict[str, dict[str, str]]:
-    field = draw(st.sampled_from(["_score", "_id", "datePublished", "dateModified"]))
+    field = draw(st.sampled_from(["_score", "identifier", "datePublished", "dateModified"]))
     order = draw(st.sampled_from(["asc", "desc"]))
 
     return {field: {"order": order}}
@@ -131,7 +131,7 @@ class TestDecodeCursorErrors:
         data: dict[str, object] = {
             "pit_id": None,
             "search_after": "not a list",
-            "sort": [{"_id": {"order": "asc"}}],
+            "sort": [{"identifier": {"order": "asc"}}],
             "query": {"match_all": {}},
         }
         token = base64.urlsafe_b64encode(json.dumps(data).encode()).decode("ascii")

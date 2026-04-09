@@ -570,7 +570,7 @@ class TestEntriesSortValidation:
         assert "sort" in body
         assert body["sort"] == [
             {"datePublished": {"order": "asc"}},
-            {"_id": {"order": "asc"}},
+            {"identifier": {"order": "asc"}},
         ]
 
 
@@ -1168,7 +1168,7 @@ def _make_cursor_token(
     payload = CursorPayload(
         pit_id=pit_id,
         search_after=search_after or ["2026-01-15", "SAMD00001"],
-        sort=[{"datePublished": {"order": "desc"}}, {"_id": {"order": "asc"}}],
+        sort=[{"datePublished": {"order": "desc"}}, {"identifier": {"order": "asc"}}],
         query={"match_all": {}},
     )
 

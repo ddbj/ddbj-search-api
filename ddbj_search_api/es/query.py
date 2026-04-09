@@ -65,13 +65,17 @@ def build_sort(
     return [{es_field: {"order": direction}}]
 
 
-_TIEBREAKER: dict[str, Any] = {"_id": {"order": "asc"}}
+_TIEBREAKER: dict[str, Any] = {"identifier": {"order": "asc"}}
 
 
 def build_sort_with_tiebreaker(
     sort_param: str | None,
 ) -> list[dict[str, Any]]:
-    """Build ES sort list with mandatory _id tiebreaker for search_after.
+    """Build ES sort list with identifier tiebreaker for search_after.
+
+    Uses ``identifier`` instead of ``_id`` because ES 8.x disables
+    fielddata on ``_id`` by default. ``identifier`` is present on all
+    documents and effectively unique.
 
     Always returns a non-empty list. If no user sort is specified,
     uses relevance scoring with a tiebreaker.
