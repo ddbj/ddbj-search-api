@@ -206,9 +206,11 @@ async def _do_search(
     publication: str | None = None,
     grant: str | None = None,
     umbrella: str | None = None,
+    include_db_xrefs: bool = True,
 ) -> Any:
     """Execute search against ES and build the response."""
-    _check_dblink_db()
+    if include_db_xrefs:
+        _check_dblink_db()
 
     if pagination.cursor is not None:
         return await _do_search_cursor(
@@ -217,6 +219,7 @@ async def _do_search(
             cursor_token=pagination.cursor,
             per_page=pagination.per_page,
             db_xrefs_limit=db_xrefs_limit,
+            include_db_xrefs=include_db_xrefs,
         )
 
     return await _do_search_offset(
@@ -233,6 +236,7 @@ async def _do_search(
         publication=publication,
         grant=grant,
         umbrella=umbrella,
+        include_db_xrefs=include_db_xrefs,
     )
 
 
@@ -250,6 +254,7 @@ async def _do_search_offset(
     publication: str | None = None,
     grant: str | None = None,
     umbrella: str | None = None,
+    include_db_xrefs: bool = True,
 ) -> Any:
     """Offset-based search (existing behaviour + nextCursor generation)."""
     # 1. Deep paging check
@@ -316,7 +321,7 @@ async def _do_search_offset(
     raw_hits = es_resp["hits"]["hits"]
     total = es_resp["hits"]["total"]["value"]
 
-    items = await _enrich_hits(raw_hits, db_xrefs_limit)
+    items = await _enrich_hits(raw_hits, db_xrefs_limit, include_db_xrefs=include_db_xrefs)
 
     facets = None
     if response_control.include_facets and "aggregations" in es_resp:
@@ -375,6 +380,7 @@ async def _do_search_cursor(
     cursor_token: str,
     per_page: int,
     db_xrefs_limit: int,
+    include_db_xrefs: bool = True,
 ) -> Any:
     """Cursor-based search using search_after + PIT."""
     # 1. Decode cursor
@@ -420,7 +426,7 @@ async def _do_search_cursor(
     # Use updated PIT ID from ES response if available
     updated_pit_id: str = es_resp.get("pit_id", pit_id)
 
-    items = await _enrich_hits(raw_hits, db_xrefs_limit)
+    items = await _enrich_hits(raw_hits, db_xrefs_limit, include_db_xrefs=include_db_xrefs)
 
     # 6. Compute nextCursor
     next_cursor, has_next = _compute_next_cursor(
@@ -449,9 +455,14 @@ async def _do_search_cursor(
 async def _enrich_hits(
     raw_hits: list[dict[str, Any]],
     db_xrefs_limit: int,
+    include_db_xrefs: bool = True,
 ) -> list[EntryListItem]:
     """Parse ES hits and enrich with DuckDB dbXrefs."""
     raw_sources = [_parse_hit_source(hit) for hit in raw_hits]
+
+    if not include_db_xrefs:
+        return [EntryListItem(**src) for src in raw_sources]
+
     entries_keys = [(src.get("type", ""), src.get("identifier", "")) for src in raw_sources]
 
     bulk_xrefs, bulk_counts = await asyncio.gather(
@@ -505,6 +516,7 @@ async def _list_all_entries(
         db_xrefs_limit=db_xrefs.db_xrefs_limit,
         is_cross_type=True,
         types=types_filter.types,
+        include_db_xrefs=db_xrefs.include_db_xrefs,
     )
 
 
@@ -569,6 +581,7 @@ def _make_type_search_handler(db_type: DbType) -> Any:
                 publication=bioproject_extra.publication,
                 grant=bioproject_extra.grant,
                 umbrella=bioproject_extra.umbrella,
+                include_db_xrefs=db_xrefs.include_db_xrefs,
             )
 
         _handler.__doc__ = (
@@ -601,6 +614,7 @@ def _make_type_search_handler(db_type: DbType) -> Any:
                 db_xrefs_limit=db_xrefs.db_xrefs_limit,
                 is_cross_type=False,
                 db_type=db_type.value,
+                include_db_xrefs=db_xrefs.include_db_xrefs,
             )
 
         _handler.__doc__ = f"Search {db_type.value} entries."

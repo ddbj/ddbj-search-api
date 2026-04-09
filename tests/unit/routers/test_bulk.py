@@ -523,3 +523,75 @@ class TestBulkPBT:
             resp = _bulk_post(pbt_bulk_client, all_ids)
             data = resp.json()
             assert len(data["entries"]) + len(data["notFound"]) == len(all_ids)
+
+
+# === includeDbXrefs parameter ===
+
+
+class TestBulkIncludeDbXrefs:
+    """includeDbXrefs parameter controls DuckDB access."""
+
+    def test_include_db_xrefs_false_skips_duckdb(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false omits dbXrefs and skips DuckDB."""
+        source = _make_source("PRJDB1")
+        mock_es_get_source_stream_bulk.return_value = make_mock_stream_response(
+            json.dumps(source).encode(),
+        )
+
+        with patch(
+            "ddbj_search_api.routers.bulk.iter_linked_ids",
+        ) as mock_duckdb:
+            resp = app_with_bulk.post(
+                "/entries/bioproject/bulk?includeDbXrefs=false",
+                json={"ids": ["PRJDB1"]},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["entries"]) == 1
+        assert "dbXrefs" not in data["entries"][0]
+        mock_duckdb.assert_not_called()
+
+    def test_include_db_xrefs_false_ndjson(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false works with NDJSON format."""
+        source = _make_source("PRJDB1")
+        mock_es_get_source_stream_bulk.return_value = make_mock_stream_response(
+            json.dumps(source).encode(),
+        )
+
+        with patch(
+            "ddbj_search_api.routers.bulk.iter_linked_ids",
+        ) as mock_duckdb:
+            resp = app_with_bulk.post(
+                "/entries/bioproject/bulk?includeDbXrefs=false&format=ndjson",
+                json={"ids": ["PRJDB1"]},
+            )
+
+        assert resp.status_code == 200
+        line = resp.text.strip()
+        entry = json.loads(line)
+        assert "dbXrefs" not in entry
+        mock_duckdb.assert_not_called()
+
+    def test_include_db_xrefs_default_true(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """Default includeDbXrefs=true includes dbXrefs."""
+        source = _make_source("PRJDB1")
+        mock_es_get_source_stream_bulk.return_value = make_mock_stream_response(
+            json.dumps(source).encode(),
+        )
+        resp = _bulk_post(app_with_bulk, ["PRJDB1"])
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" in data["entries"][0]

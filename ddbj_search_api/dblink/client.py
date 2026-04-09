@@ -17,6 +17,11 @@ import duckdb
 _CATALOG = "dblink"
 
 
+def _escape_path(path: Path) -> str:
+    """Escape single quotes in a path for DuckDB SQL strings."""
+    return str(path).replace("'", "''")
+
+
 def _check_db(db_path: Path) -> None:
     """Raise FileNotFoundError if *db_path* does not exist."""
     if not db_path.exists():
@@ -35,7 +40,7 @@ def _open_dblink(
     _check_db(db_path)
     conn = duckdb.connect(":memory:")
     try:
-        conn.execute(f"ATTACH '{db_path}' AS {_CATALOG} (READ_ONLY)")
+        conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
         yield conn
     finally:
         conn.close()
@@ -71,7 +76,7 @@ def iter_linked_ids(
 
     conn = duckdb.connect(":memory:")
     try:
-        conn.execute(f"ATTACH '{db_path}' AS {_CATALOG} (READ_ONLY)")
+        conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
         if target:
             cursor = conn.execute(
                 f"""

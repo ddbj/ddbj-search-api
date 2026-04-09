@@ -637,3 +637,81 @@ class TestAliasDocResolution:
         mock_es_resolve_same_as.assert_awaited_once()
         # es_get_identifier should NOT be called (fallback path returns resolved_id directly)
         mock_es_get_identifier.assert_not_awaited()
+
+    def test_same_as_query_es_error_returns_404(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        mock_es_resolve_same_as: AsyncMock,
+    ) -> None:
+        """When direct lookup fails and sameAs returns None (ES error), API returns 404."""
+        mock_es_get_source_stream.return_value = None
+        mock_es_resolve_same_as.return_value = None
+
+        resp = app_with_entry_detail.get("/entries/biosample/SAMN99999999")
+
+        assert resp.status_code == 404
+        mock_es_resolve_same_as.assert_awaited_once()
+
+
+# === includeDbXrefs parameter ===
+
+
+class TestEntryDetailIncludeDbXrefs:
+    """includeDbXrefs parameter controls DuckDB access in detail endpoint."""
+
+    def test_include_db_xrefs_false_skips_duckdb(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false omits dbXrefs and dbXrefsCount."""
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+
+        with (
+            patch(
+                "ddbj_search_api.routers.entry_detail.get_linked_ids_limited",
+            ) as mock_limited,
+            patch(
+                "ddbj_search_api.routers.entry_detail.count_linked_ids",
+            ) as mock_count,
+        ):
+            resp = app_with_entry_detail.get(
+                "/entries/bioproject/PRJDB1?includeDbXrefs=false",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" not in data
+        assert "dbXrefsCount" not in data
+        mock_limited.assert_not_called()
+        mock_count.assert_not_called()
+
+    def test_include_db_xrefs_false_with_db_xrefs_limit_zero(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false takes precedence over dbXrefsLimit=0."""
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+
+        with (
+            patch(
+                "ddbj_search_api.routers.entry_detail.get_linked_ids_limited",
+            ) as mock_limited,
+            patch(
+                "ddbj_search_api.routers.entry_detail.count_linked_ids",
+            ) as mock_count,
+        ):
+            resp = app_with_entry_detail.get(
+                "/entries/bioproject/PRJDB1?includeDbXrefs=false&dbXrefsLimit=0",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dbXrefs" not in data
+        assert "dbXrefsCount" not in data
+        mock_limited.assert_not_called()
+        mock_count.assert_not_called()

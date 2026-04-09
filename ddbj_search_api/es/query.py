@@ -133,12 +133,43 @@ def build_source_filter(
     return None
 
 
-def _parse_keywords(keywords: str | None) -> list[str]:
-    """Split comma-separated keywords, stripping whitespace."""
+def _parse_keywords(keywords: str | None) -> list[tuple[str, bool]]:
+    """Split comma-separated keywords, stripping whitespace.
+
+    Returns a list of ``(text, is_phrase)`` tuples.  Keywords enclosed in
+    double quotes use phrase matching; others use default best-fields matching.
+    """
     if not keywords:
         return []
-    parts = [k.strip() for k in keywords.split(",")]
-    return [k for k in parts if k]
+
+    tokens: list[str] = []
+    current: list[str] = []
+    in_quotes = False
+    for ch in keywords:
+        if ch == '"':
+            in_quotes = not in_quotes
+            current.append(ch)
+        elif ch == "," and not in_quotes:
+            tokens.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    tokens.append("".join(current).strip())
+
+    result: list[tuple[str, bool]] = []
+    for token in tokens:
+        if not token:
+            continue
+        if token.startswith('"') and token.endswith('"') and len(token) > 1:
+            inner = token[1:-1]
+            if inner:
+                result.append((inner, True))
+        else:
+            # Strip any stray quotes (e.g. unclosed quote)
+            cleaned = token.replace('"', "")
+            if cleaned:
+                result.append((cleaned, False))
+    return result
 
 
 def build_search_query(
@@ -185,7 +216,12 @@ def build_search_query(
     bool_query: dict[str, Any] = {}
 
     if keyword_list:
-        multi_matches = [{"multi_match": {"query": kw, "fields": fields}} for kw in keyword_list]
+        multi_matches = []
+        for text, is_phrase in keyword_list:
+            mm: dict[str, Any] = {"query": text, "fields": fields}
+            if is_phrase:
+                mm["type"] = "phrase"
+            multi_matches.append({"multi_match": mm})
         if keyword_operator == "OR":
             bool_query["should"] = multi_matches
             bool_query["minimum_should_match"] = 1

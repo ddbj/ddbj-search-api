@@ -1438,3 +1438,108 @@ class TestCursorBackwardCompatibility:
         assert "total" in data["pagination"]
         assert "nextCursor" in data["pagination"]
         assert "hasNext" in data["pagination"]
+
+
+# === includeDbXrefs parameter ===
+
+
+class TestEntriesIncludeDbXrefs:
+    """includeDbXrefs parameter controls DuckDB access in search endpoints."""
+
+    def test_search_include_db_xrefs_false(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false omits dbXrefs and dbXrefsCount from items."""
+        mock_es_search.return_value = make_es_search_response(
+            hits=[
+                {
+                    "_source": {
+                        "identifier": "PRJDB1",
+                        "type": "bioproject",
+                    },
+                    "sort": [1.0, "PRJDB1"],
+                },
+            ],
+            total=1,
+        )
+        resp = app_with_es.get("/entries/?includeDbXrefs=false")
+        assert resp.status_code == 200
+        data = resp.json()
+        item = data["items"][0]
+        assert item.get("dbXrefs") is None
+        assert item.get("dbXrefsCount") is None
+
+    def test_search_include_db_xrefs_false_skips_duckdb(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false does not call DuckDB functions."""
+        mock_es_search.return_value = make_es_search_response(
+            hits=[
+                {
+                    "_source": {
+                        "identifier": "PRJDB1",
+                        "type": "bioproject",
+                    },
+                    "sort": [1.0, "PRJDB1"],
+                },
+            ],
+            total=1,
+        )
+        with (
+            patch(
+                "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
+            ) as mock_bulk_xrefs,
+            patch(
+                "ddbj_search_api.routers.entries.count_linked_ids_bulk",
+            ) as mock_bulk_counts,
+        ):
+            resp = app_with_es.get("/entries/?includeDbXrefs=false")
+
+        assert resp.status_code == 200
+        mock_bulk_xrefs.assert_not_called()
+        mock_bulk_counts.assert_not_called()
+
+    def test_cursor_with_include_db_xrefs_false(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        """includeDbXrefs=false works with cursor-based pagination."""
+        mock_es_search_with_pit.return_value = make_es_search_response(
+            hits=[
+                {
+                    "_source": {
+                        "identifier": "PRJDB1",
+                        "type": "bioproject",
+                    },
+                    "sort": [1.0, "PRJDB1"],
+                },
+            ],
+            total=1,
+        )
+        token = _make_cursor_token()
+        with (
+            patch(
+                "ddbj_search_api.routers.entries.get_linked_ids_limited_bulk",
+            ) as mock_bulk_xrefs,
+            patch(
+                "ddbj_search_api.routers.entries.count_linked_ids_bulk",
+            ) as mock_bulk_counts,
+        ):
+            resp = app_with_es.get(
+                "/entries/",
+                params={"cursor": token, "includeDbXrefs": "false"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        item = data["items"][0]
+        assert item.get("dbXrefs") is None
+        assert item.get("dbXrefsCount") is None
+        mock_bulk_xrefs.assert_not_called()
+        mock_bulk_counts.assert_not_called()

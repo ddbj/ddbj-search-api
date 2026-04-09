@@ -393,15 +393,16 @@ async def get_entry_detail(
     source: dict[str, Any] = json.loads(b"".join(chunks))
 
     # Get dbXrefs from DuckDB (parallel)
-    limit = query.db_xrefs_limit
+    if query.include_db_xrefs:
+        limit = query.db_xrefs_limit
 
-    xrefs_rows, counts = await asyncio.gather(
-        asyncio.to_thread(get_linked_ids_limited, DBLINK_DB_PATH, type.value, entry_id, limit),
-        asyncio.to_thread(count_linked_ids, DBLINK_DB_PATH, type.value, entry_id),
-    )
+        xrefs_rows, counts = await asyncio.gather(
+            asyncio.to_thread(get_linked_ids_limited, DBLINK_DB_PATH, type.value, entry_id, limit),
+            asyncio.to_thread(count_linked_ids, DBLINK_DB_PATH, type.value, entry_id),
+        )
 
-    xrefs = [to_xref(acc, type_hint=cast(XrefType, t)).model_dump(by_alias=True) for t, acc in xrefs_rows]
-    source["dbXrefs"] = xrefs
-    source["dbXrefsCount"] = counts
+        xrefs = [to_xref(acc, type_hint=cast(XrefType, t)).model_dump(by_alias=True) for t, acc in xrefs_rows]
+        source["dbXrefs"] = xrefs
+        source["dbXrefsCount"] = counts
 
     return JSONResponse(content=source)

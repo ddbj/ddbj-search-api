@@ -13,6 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from ddbj_search_api.es.query import (
+    _parse_keywords,
     build_facet_aggs,
     build_search_query,
     build_sort,
@@ -136,7 +137,7 @@ class TestBuildSortEdgeCases:
 
 
 class TestBuildSortWithTiebreaker:
-    """build_sort_with_tiebreaker always returns a list with _id tiebreaker."""
+    """build_sort_with_tiebreaker always returns a list with identifier tiebreaker."""
 
     def test_none_returns_score_and_id(self) -> None:
         result = build_sort_with_tiebreaker(None)
@@ -604,3 +605,101 @@ def _find_nested_filter(filters: list[dict[str, Any]], path: str) -> dict[str, A
     raise AssertionError(
         f"No nested filter with path '{path}' found in {filters}",
     )
+
+
+# ===================================================================
+# _parse_keywords (phrase match)
+# ===================================================================
+
+
+class TestParseKeywordsPhrase:
+    """_parse_keywords: phrase matching with double quotes."""
+
+    def test_quoted_keyword_is_phrase(self) -> None:
+        result = _parse_keywords('"RNA-Seq"')
+        assert result == [("RNA-Seq", True)]
+
+    def test_unquoted_keyword_is_not_phrase(self) -> None:
+        result = _parse_keywords("cancer")
+        assert result == [("cancer", False)]
+
+    def test_mixed_quoted_and_unquoted(self) -> None:
+        result = _parse_keywords('"RNA-Seq",cancer')
+        assert result == [("RNA-Seq", True), ("cancer", False)]
+
+    def test_comma_inside_quotes_preserved(self) -> None:
+        result = _parse_keywords('"RNA-Seq, cancer"')
+        assert result == [("RNA-Seq, cancer", True)]
+
+    def test_empty_quotes_ignored(self) -> None:
+        result = _parse_keywords('""')
+        assert result == []
+
+    def test_unclosed_quote_treated_as_literal(self) -> None:
+        result = _parse_keywords('"RNA-Seq')
+        assert result == [("RNA-Seq", False)]
+
+    def test_multiple_quoted_keywords(self) -> None:
+        result = _parse_keywords('"RNA-Seq","whole genome"')
+        assert result == [("RNA-Seq", True), ("whole genome", True)]
+
+    def test_none_returns_empty(self) -> None:
+        assert _parse_keywords(None) == []
+
+    def test_empty_string_returns_empty(self) -> None:
+        assert _parse_keywords("") == []
+
+    @given(st.text(max_size=200))
+    def test_never_crashes(self, keywords: str) -> None:
+        """PBT: _parse_keywords never raises on arbitrary input."""
+        result = _parse_keywords(keywords)
+        assert isinstance(result, list)
+        for text, is_phrase in result:
+            assert isinstance(text, str)
+            assert len(text) > 0
+            assert isinstance(is_phrase, bool)
+
+
+# ===================================================================
+# build_search_query (phrase match integration)
+# ===================================================================
+
+
+class TestBuildSearchQueryPhraseMatch:
+    """Phrase match: quoted keywords use multi_match type=phrase."""
+
+    def test_phrase_keyword_has_type_phrase(self) -> None:
+        result = build_search_query(keywords='"RNA-Seq"')
+        must = result["bool"]["must"]
+        assert len(must) == 1
+        mm = must[0]["multi_match"]
+        assert mm["query"] == "RNA-Seq"
+        assert mm["type"] == "phrase"
+
+    def test_normal_keyword_no_type(self) -> None:
+        result = build_search_query(keywords="cancer")
+        must = result["bool"]["must"]
+        mm = must[0]["multi_match"]
+        assert mm["query"] == "cancer"
+        assert "type" not in mm
+
+    def test_mixed_phrase_and_normal(self) -> None:
+        result = build_search_query(keywords='"RNA-Seq",cancer')
+        must = result["bool"]["must"]
+        assert len(must) == 2
+        # First is phrase
+        assert must[0]["multi_match"]["type"] == "phrase"
+        assert must[0]["multi_match"]["query"] == "RNA-Seq"
+        # Second is normal
+        assert "type" not in must[1]["multi_match"]
+        assert must[1]["multi_match"]["query"] == "cancer"
+
+    def test_phrase_with_or_operator(self) -> None:
+        result = build_search_query(
+            keywords='"RNA-Seq",cancer',
+            keyword_operator="OR",
+        )
+        should = result["bool"]["should"]
+        assert len(should) == 2
+        assert should[0]["multi_match"]["type"] == "phrase"
+        assert "type" not in should[1]["multi_match"]

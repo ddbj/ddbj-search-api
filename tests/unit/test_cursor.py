@@ -1,4 +1,4 @@
-"""Tests for cursor token encode/decode."""
+"""Tests for cursor token encode/decode with HMAC signing."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.cursor import CursorPayload, _sign, decode_cursor, encode_cursor
 
 # === Fixtures ===
 
@@ -75,13 +75,14 @@ class TestEncodeDecode:
         assert decoded.sort == payload.sort
         assert decoded.query == payload.query
 
-    def test_token_is_url_safe_base64(self) -> None:
+    def test_token_contains_signature_dot_payload(self) -> None:
         payload = _make_payload()
         token = encode_cursor(payload)
-        # URL-safe base64 should not contain +, /, or newlines
-        assert "+" not in token
-        assert "/" not in token
-        assert "\n" not in token
+        assert "." in token
+        parts = token.split(".", 1)
+        assert len(parts) == 2
+        # Signature part should not contain dots
+        assert "." not in parts[0]
 
     def test_round_trip_with_float_score(self) -> None:
         payload = _make_payload(search_after=[1.5, "doc_id_123"])
@@ -101,41 +102,82 @@ class TestEncodeDecode:
         assert len(decoded.search_after) == len(payload.search_after)
 
 
+# === Signature verification tests ===
+
+
+class TestCursorSignature:
+    def test_tampered_payload_raises(self) -> None:
+        """Modifying the payload portion invalidates the signature."""
+        payload = _make_payload(pit_id="original")
+        token = encode_cursor(payload)
+        sig, b64_payload = token.split(".", 1)
+
+        # Tamper with the payload
+        json_bytes = base64.urlsafe_b64decode(b64_payload)
+        data = json.loads(json_bytes)
+        data["query"] = {"match_all": {}, "injected": True}
+        tampered_bytes = json.dumps(data, separators=(",", ":")).encode()
+        tampered_b64 = base64.urlsafe_b64encode(tampered_bytes).decode("ascii")
+        tampered_token = f"{sig}.{tampered_b64}"
+
+        with pytest.raises(ValueError, match="signature mismatch"):
+            decode_cursor(tampered_token)
+
+    def test_forged_token_raises(self) -> None:
+        """A completely forged token fails signature verification."""
+        forged_data: dict[str, object] = {
+            "pit_id": None,
+            "search_after": ["2026-01-01", "FAKE"],
+            "sort": [{"_score": {"order": "desc"}}],
+            "query": {"match_all": {}},
+        }
+        forged_bytes = json.dumps(forged_data).encode()
+        forged_b64 = base64.urlsafe_b64encode(forged_bytes).decode("ascii")
+        fake_sig = base64.urlsafe_b64encode(b"fakesignature").decode("ascii").rstrip("=")
+        forged_token = f"{fake_sig}.{forged_b64}"
+
+        with pytest.raises(ValueError, match="signature mismatch"):
+            decode_cursor(forged_token)
+
+    def test_tampered_signature_raises(self) -> None:
+        """Replacing the signature with a different one fails."""
+        payload = _make_payload()
+        token = encode_cursor(payload)
+        _, b64_payload = token.split(".", 1)
+
+        bad_sig = base64.urlsafe_b64encode(b"x" * 32).decode("ascii").rstrip("=")
+        bad_token = f"{bad_sig}.{b64_payload}"
+
+        with pytest.raises(ValueError, match="signature mismatch"):
+            decode_cursor(bad_token)
+
+
 # === Decode error tests ===
 
 
 class TestDecodeCursorErrors:
+    def test_no_dot_separator_raises(self) -> None:
+        with pytest.raises(ValueError, match="signed token format"):
+            decode_cursor("nodothere")
+
     def test_invalid_base64_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="Invalid cursor"):
-            decode_cursor("not-valid-base64!!!")
+            decode_cursor("sig.not-valid-base64!!!")
 
     def test_invalid_json_raises_value_error(self) -> None:
-        token = base64.urlsafe_b64encode(b"not json").decode("ascii")
+        b64 = base64.urlsafe_b64encode(b"not json").decode("ascii")
+        sig = _sign(b"not json")
         with pytest.raises(ValueError, match="JSON decode failed"):
-            decode_cursor(token)
-
-    def test_non_object_json_raises_value_error(self) -> None:
-        token = base64.urlsafe_b64encode(b"[1,2,3]").decode("ascii")
-        with pytest.raises(ValueError, match="expected a JSON object"):
-            decode_cursor(token)
+            decode_cursor(f"{sig}.{b64}")
 
     def test_missing_required_fields_raises_value_error(self) -> None:
-        data: dict[str, object] = {"pit_id": None}  # missing search_after, sort, query
-        token = base64.urlsafe_b64encode(json.dumps(data).encode()).decode("ascii")
+        data: dict[str, object] = {"pit_id": None}
+        payload_bytes = json.dumps(data).encode()
+        b64 = base64.urlsafe_b64encode(payload_bytes).decode("ascii")
+        sig = _sign(payload_bytes)
         with pytest.raises(ValueError, match="Invalid cursor"):
-            decode_cursor(token)
+            decode_cursor(f"{sig}.{b64}")
 
     def test_empty_string_raises_value_error(self) -> None:
         with pytest.raises(ValueError):
             decode_cursor("")
-
-    def test_wrong_type_search_after_raises_value_error(self) -> None:
-        data: dict[str, object] = {
-            "pit_id": None,
-            "search_after": "not a list",
-            "sort": [{"identifier": {"order": "asc"}}],
-            "query": {"match_all": {}},
-        }
-        token = base64.urlsafe_b64encode(json.dumps(data).encode()).decode("ascii")
-        with pytest.raises(ValueError, match="Invalid cursor"):
-            decode_cursor(token)

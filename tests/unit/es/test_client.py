@@ -13,11 +13,11 @@ import httpx
 import pytest
 
 from ddbj_search_api.es.client import (
-    es_close_pit,
     es_get_identifier,
     es_get_source_stream,
     es_head_exists,
     es_open_pit,
+    es_resolve_same_as,
     es_search,
     es_search_with_pit,
 )
@@ -304,6 +304,73 @@ class TestEsGetSourceStream:
 
 
 # ===================================================================
+# es_resolve_same_as
+# ===================================================================
+
+
+class TestEsResolveSameAs:
+    """es_resolve_same_as: sameAs nested query for ID resolution."""
+
+    @pytest.mark.asyncio
+    async def test_returns_primary_id_on_hit(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.post.return_value = _mock_response(
+            {
+                "hits": {
+                    "total": {"value": 1, "relation": "eq"},
+                    "hits": [{"_id": "JGAS000001"}],
+                },
+            },
+        )
+        result = await es_resolve_same_as(mock_client, "jga-study", "JGAS000556")
+        assert result == "JGAS000001"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_empty_hits(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.post.return_value = _mock_response(
+            {
+                "hits": {
+                    "total": {"value": 0, "relation": "eq"},
+                    "hits": [],
+                },
+            },
+        )
+        result = await es_resolve_same_as(mock_client, "jga-study", "NOTEXIST")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_400(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        """ES 400 (e.g. missing sameAs mapping) is treated as not-found."""
+        mock_client.post.return_value = _mock_response(
+            {"error": "bad request"},
+            status_code=400,
+        )
+        result = await es_resolve_same_as(mock_client, "biosample", "SAMN123")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_raises_on_500(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        """ES 5xx errors are re-raised (not swallowed)."""
+        mock_client.post.return_value = _mock_response(
+            {"error": "internal"},
+            status_code=500,
+        )
+        with pytest.raises(httpx.HTTPStatusError):
+            await es_resolve_same_as(mock_client, "biosample", "SAMN123")
+
+
+# ===================================================================
 # es_head_exists
 # ===================================================================
 
@@ -465,43 +532,6 @@ class TestEsOpenPit:
 
         with pytest.raises(httpx.HTTPStatusError):
             await es_open_pit(mock_client, "biosample")
-
-
-# ===================================================================
-# es_close_pit
-# ===================================================================
-
-
-class TestEsClosePit:
-    """es_close_pit is best-effort: ignores 404."""
-
-    @pytest.mark.asyncio
-    async def test_close_success(self, mock_client: AsyncMock) -> None:
-        mock_client.request.return_value = _mock_response(
-            {"succeeded": True},
-            status_code=200,
-        )
-
-        await es_close_pit(mock_client, "pit_abc123")
-        mock_client.request.assert_called_once_with(
-            "DELETE",
-            "/_pit",
-            json={"id": "pit_abc123"},
-        )
-
-    @pytest.mark.asyncio
-    async def test_ignores_404(self, mock_client: AsyncMock) -> None:
-        response = MagicMock(spec=httpx.Response)
-        response.status_code = 404
-        mock_client.request.return_value = response
-
-        await es_close_pit(mock_client, "pit_expired")
-
-    @pytest.mark.asyncio
-    async def test_ignores_exceptions(self, mock_client: AsyncMock) -> None:
-        mock_client.request.side_effect = Exception("connection error")
-
-        await es_close_pit(mock_client, "pit_broken")
 
 
 # ===================================================================

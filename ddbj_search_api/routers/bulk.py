@@ -81,6 +81,7 @@ async def _generate_bulk_json(
     index: str,
     ids: list[str],
     acc_type: str,
+    include_db_xrefs: bool = True,
 ) -> collections.abc.AsyncIterator[bytes]:
     """Stream ``{"entries":[...],"notFound":[...]}`` without loading all docs."""
     yield b'{"entries":['
@@ -101,7 +102,10 @@ async def _generate_bulk_json(
             yield b","
         first = False
         source_bytes = await _read_source_bytes(response)
-        yield await _inject_dbxrefs_into_bytes(source_bytes, acc_type, id_)
+        if include_db_xrefs:
+            yield await _inject_dbxrefs_into_bytes(source_bytes, acc_type, id_)
+        else:
+            yield source_bytes
 
     yield b'],"notFound":'
     yield json.dumps(not_found).encode()
@@ -113,6 +117,7 @@ async def _generate_bulk_ndjson(
     index: str,
     ids: list[str],
     acc_type: str,
+    include_db_xrefs: bool = True,
 ) -> collections.abc.AsyncIterator[bytes]:
     """Stream one entry per line. notFound IDs are silently skipped."""
     for id_ in ids:
@@ -125,7 +130,10 @@ async def _generate_bulk_ndjson(
         if response is None:
             continue
         source_bytes = await _read_source_bytes(response)
-        yield await _inject_dbxrefs_into_bytes(source_bytes, acc_type, id_)
+        if include_db_xrefs:
+            yield await _inject_dbxrefs_into_bytes(source_bytes, acc_type, id_)
+        else:
+            yield source_bytes
         yield b"\n"
 
 
@@ -165,7 +173,7 @@ async def bulk_entries(
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> Any:
     """Bulk retrieve entries by IDs."""
-    if not DBLINK_DB_PATH.exists():
+    if query.include_db_xrefs and not DBLINK_DB_PATH.exists():
         logger.error("DuckDB file not found: %s", DBLINK_DB_PATH)
         raise HTTPException(
             status_code=500,
@@ -177,11 +185,11 @@ async def bulk_entries(
 
     if query.format == BulkFormat.ndjson:
         return StreamingResponse(
-            _generate_bulk_ndjson(client, index, body.ids, acc_type),
+            _generate_bulk_ndjson(client, index, body.ids, acc_type, query.include_db_xrefs),
             media_type="application/x-ndjson",
         )
 
     return StreamingResponse(
-        _generate_bulk_json(client, index, body.ids, acc_type),
+        _generate_bulk_json(client, index, body.ids, acc_type, query.include_db_xrefs),
         media_type="application/json",
     )

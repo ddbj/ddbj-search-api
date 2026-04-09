@@ -7,9 +7,12 @@ allowing dependency injection and easy mocking in tests.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 async def es_ping(client: httpx.AsyncClient) -> bool:
@@ -64,19 +67,6 @@ async def es_open_pit(
     pit_id: str = result["id"]
 
     return pit_id
-
-
-async def es_close_pit(
-    client: httpx.AsyncClient,
-    pit_id: str,
-) -> None:
-    """Close a Point in Time. Best-effort: ignores 404 (already expired)."""
-    try:
-        response = await client.request("DELETE", "/_pit", json={"id": pit_id})
-        if response.status_code != 404:
-            response.raise_for_status()
-    except Exception:
-        pass
 
 
 async def es_search_with_pit(
@@ -162,6 +152,14 @@ async def es_resolve_same_as(
         "size": 1,
     }
     response = await client.post(f"/{index}/_search", json=body)
+    if 400 <= response.status_code < 500:
+        logger.warning(
+            "sameAs resolution query returned HTTP %d for %s/%s",
+            response.status_code,
+            index,
+            id_,
+        )
+        return None
     response.raise_for_status()
     result: dict[str, Any] = response.json()
     hits = result.get("hits", {}).get("hits", [])

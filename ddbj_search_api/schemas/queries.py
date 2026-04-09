@@ -244,8 +244,16 @@ class DbXrefsLimitQuery:
                 "Use 0 to omit dbXrefs but still get dbXrefsCount."
             ),
         ),
+        include_db_xrefs: bool = Query(
+            default=True,
+            alias="includeDbXrefs",
+            description=(
+                "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            ),
+        ),
     ):
         self.db_xrefs_limit = db_xrefs_limit
+        self.include_db_xrefs = include_db_xrefs
 
 
 # === Endpoint-specific query classes ===
@@ -307,8 +315,16 @@ class EntryDetailQuery:
                 "Use 0 to omit dbXrefs but still get dbXrefsCount."
             ),
         ),
+        include_db_xrefs: bool = Query(
+            default=True,
+            alias="includeDbXrefs",
+            description=(
+                "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            ),
+        ),
     ):
         self.db_xrefs_limit = db_xrefs_limit
+        self.include_db_xrefs = include_db_xrefs
 
 
 class BulkQuery:
@@ -320,5 +336,11 @@ class BulkQuery:
             default=BulkFormat.json,
             description=("Response format: 'json' (JSON Array) or 'ndjson' (Newline Delimited JSON)."),
         ),
+        include_db_xrefs: bool = Query(
+            default=True,
+            alias="includeDbXrefs",
+            description=("Include dbXrefs from DuckDB. When false, DuckDB is not queried and dbXrefs are omitted."),
+        ),
     ):
         self.format = format
+        self.include_db_xrefs = include_db_xrefs
