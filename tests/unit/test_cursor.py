@@ -30,12 +30,14 @@ def _make_payload(
 
 # === Hypothesis strategies ===
 
+
 @st.composite
 def es_sort_entry(draw: st.DrawFn) -> dict[str, dict[str, str]]:
     field = draw(st.sampled_from(["_score", "identifier", "datePublished", "dateModified"]))
     order = draw(st.sampled_from(["asc", "desc"]))
 
     return {field: {"order": order}}
+
 
 # search_after values can be strings, ints, floats, or None
 search_after_value = st.one_of(

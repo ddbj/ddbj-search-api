@@ -1312,7 +1312,8 @@ class TestCursorMode:
     ) -> None:
         token = _make_cursor_token(pit_id=None)
         mock_es_search_with_pit.return_value = make_es_search_response(
-            hits=[], total=0,
+            hits=[],
+            total=0,
         )
         resp = app_with_es.get("/entries/", params={"cursor": token})
         assert resp.status_code == 200
@@ -1326,7 +1327,8 @@ class TestCursorMode:
     ) -> None:
         token = _make_cursor_token(pit_id="existing_pit_123")
         mock_es_search_with_pit.return_value = make_es_search_response(
-            hits=[], total=0,
+            hits=[],
+            total=0,
         )
         resp = app_with_es.get("/entries/", params={"cursor": token})
         assert resp.status_code == 200
@@ -1340,7 +1342,8 @@ class TestCursorMode:
     ) -> None:
         token = _make_cursor_token()
         mock_es_search_with_pit.return_value = make_es_search_response(
-            hits=[], total=0,
+            hits=[],
+            total=0,
         )
         resp = app_with_es.get("/entries/", params={"cursor": token})
         data = resp.json()
@@ -1401,7 +1404,8 @@ class TestCursorMode:
     ) -> None:
         token = _make_cursor_token()
         mock_es_search_with_pit.return_value = make_es_search_response(
-            hits=[], total=0,
+            hits=[],
+            total=0,
         )
         resp = app_with_es.get("/entries/biosample/", params={"cursor": token})
         assert resp.status_code == 200

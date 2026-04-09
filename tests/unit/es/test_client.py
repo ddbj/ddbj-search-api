@@ -546,9 +546,7 @@ class TestEsSearchWithPit:
         self,
         mock_client: AsyncMock,
     ) -> None:
-        mock_client.post.return_value = _mock_response(
-            {"hits": {"total": {"value": 0}, "hits": []}}
-        )
+        mock_client.post.return_value = _mock_response({"hits": {"total": {"value": 0}, "hits": []}})
 
         await es_search_with_pit(mock_client, {"query": {"match_all": {}}})
         call_args = mock_client.post.call_args
@@ -556,9 +554,7 @@ class TestEsSearchWithPit:
 
     @pytest.mark.asyncio
     async def test_sets_track_total_hits(self, mock_client: AsyncMock) -> None:
-        mock_client.post.return_value = _mock_response(
-            {"hits": {"total": {"value": 0}, "hits": []}}
-        )
+        mock_client.post.return_value = _mock_response({"hits": {"total": {"value": 0}, "hits": []}})
 
         await es_search_with_pit(mock_client, {"query": {"match_all": {}}})
         call_args = mock_client.post.call_args
