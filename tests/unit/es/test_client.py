@@ -12,7 +12,15 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from ddbj_search_api.es.client import es_get_identifier, es_get_source_stream, es_head_exists, es_search
+from ddbj_search_api.es.client import (
+    es_close_pit,
+    es_get_identifier,
+    es_get_source_stream,
+    es_head_exists,
+    es_open_pit,
+    es_search,
+    es_search_with_pit,
+)
 
 
 def _mock_response(
@@ -419,3 +427,148 @@ class TestEsHeadExists:
 
         with pytest.raises(httpx.HTTPStatusError):
             await es_head_exists(mock_client, "bioproject", "PRJDB1")
+
+
+# ===================================================================
+# es_open_pit
+# ===================================================================
+
+
+class TestEsOpenPit:
+    """es_open_pit opens a PIT and returns the ID."""
+
+    @pytest.mark.asyncio
+    async def test_returns_pit_id(self, mock_client: AsyncMock) -> None:
+        mock_client.post.return_value = _mock_response({"id": "pit_abc123"})
+
+        pit_id = await es_open_pit(mock_client, "biosample")
+        assert pit_id == "pit_abc123"
+        mock_client.post.assert_called_once_with(
+            "/biosample/_pit",
+            params={"keep_alive": "5m"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_custom_keep_alive(self, mock_client: AsyncMock) -> None:
+        mock_client.post.return_value = _mock_response({"id": "pit_xyz"})
+
+        await es_open_pit(mock_client, "bioproject", keep_alive="10m")
+        mock_client.post.assert_called_once_with(
+            "/bioproject/_pit",
+            params={"keep_alive": "10m"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_raises_on_error(self, mock_client: AsyncMock) -> None:
+        response = _mock_response({}, status_code=500)
+        mock_client.post.return_value = response
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await es_open_pit(mock_client, "biosample")
+
+
+# ===================================================================
+# es_close_pit
+# ===================================================================
+
+
+class TestEsClosePit:
+    """es_close_pit is best-effort: ignores 404."""
+
+    @pytest.mark.asyncio
+    async def test_close_success(self, mock_client: AsyncMock) -> None:
+        mock_client.request.return_value = _mock_response(
+            {"succeeded": True},
+            status_code=200,
+        )
+
+        await es_close_pit(mock_client, "pit_abc123")
+        mock_client.request.assert_called_once_with(
+            "DELETE",
+            "/_pit",
+            json={"id": "pit_abc123"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_ignores_404(self, mock_client: AsyncMock) -> None:
+        response = MagicMock(spec=httpx.Response)
+        response.status_code = 404
+        mock_client.request.return_value = response
+
+        await es_close_pit(mock_client, "pit_expired")
+
+    @pytest.mark.asyncio
+    async def test_ignores_exceptions(self, mock_client: AsyncMock) -> None:
+        mock_client.request.side_effect = Exception("connection error")
+
+        await es_close_pit(mock_client, "pit_broken")
+
+
+# ===================================================================
+# es_search_with_pit
+# ===================================================================
+
+
+class TestEsSearchWithPit:
+    """es_search_with_pit sends POST /_search with PIT body."""
+
+    @pytest.mark.asyncio
+    async def test_returns_response_json(self, mock_client: AsyncMock) -> None:
+        es_response = {
+            "pit_id": "pit_updated",
+            "hits": {
+                "total": {"value": 100, "relation": "eq"},
+                "hits": [
+                    {
+                        "_source": {"identifier": "SAMD00001"},
+                        "sort": ["2026-01-15", "SAMD00001"],
+                    },
+                ],
+            },
+        }
+        mock_client.post.return_value = _mock_response(es_response)
+
+        body = {
+            "query": {"match_all": {}},
+            "sort": [
+                {"datePublished": {"order": "desc"}},
+                {"_id": {"order": "asc"}},
+            ],
+            "size": 10,
+            "pit": {"id": "pit_abc123", "keep_alive": "5m"},
+            "search_after": ["2026-01-10", "SAMD00000"],
+        }
+        result = await es_search_with_pit(mock_client, body)
+        assert result == es_response
+
+    @pytest.mark.asyncio
+    async def test_sends_post_to_search_without_index(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        mock_client.post.return_value = _mock_response(
+            {"hits": {"total": {"value": 0}, "hits": []}}
+        )
+
+        await es_search_with_pit(mock_client, {"query": {"match_all": {}}})
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "/_search"
+
+    @pytest.mark.asyncio
+    async def test_sets_track_total_hits(self, mock_client: AsyncMock) -> None:
+        mock_client.post.return_value = _mock_response(
+            {"hits": {"total": {"value": 0}, "hits": []}}
+        )
+
+        await es_search_with_pit(mock_client, {"query": {"match_all": {}}})
+        call_args = mock_client.post.call_args
+        sent_body = call_args[1]["json"]
+        assert sent_body["track_total_hits"] is True
+
+    @pytest.mark.asyncio
+    async def test_raises_on_error(self, mock_client: AsyncMock) -> None:
+        response = _mock_response({}, status_code=404)
+        mock_client.post.return_value = response
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await es_search_with_pit(mock_client, {"query": {"match_all": {}}})

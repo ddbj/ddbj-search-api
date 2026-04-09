@@ -113,6 +113,28 @@ def app_with_es(config: AppConfig, mock_es_search: AsyncMock, _mock_entries_duck
     return TestClient(application, raise_server_exceptions=False)
 
 
+@pytest.fixture
+def mock_es_open_pit() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_open_pit in the entries router."""
+    with patch(
+        "ddbj_search_api.routers.entries.es_open_pit",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = "mock_pit_id_123"
+        yield mock
+
+
+@pytest.fixture
+def mock_es_search_with_pit() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_search_with_pit in the entries router."""
+    with patch(
+        "ddbj_search_api.routers.entries.es_search_with_pit",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = make_es_search_response()
+        yield mock
+
+
 def make_mock_stream_response(body: bytes) -> httpx.Response:
     """Create a mock httpx.Response that supports async streaming.
 

@@ -46,6 +46,59 @@ async def es_search(
     return result
 
 
+async def es_open_pit(
+    client: httpx.AsyncClient,
+    index: str,
+    keep_alive: str = "5m",
+) -> str:
+    """Open a Point in Time for cursor-based pagination.
+
+    Returns the PIT ID string.
+    """
+    response = await client.post(
+        f"/{index}/_pit",
+        params={"keep_alive": keep_alive},
+    )
+    response.raise_for_status()
+    result: dict[str, Any] = response.json()
+    pit_id: str = result["id"]
+
+    return pit_id
+
+
+async def es_close_pit(
+    client: httpx.AsyncClient,
+    pit_id: str,
+) -> None:
+    """Close a Point in Time. Best-effort: ignores 404 (already expired)."""
+    try:
+        response = await client.request("DELETE", "/_pit", json={"id": pit_id})
+        if response.status_code != 404:
+            response.raise_for_status()
+    except Exception:
+        pass
+
+
+async def es_search_with_pit(
+    client: httpx.AsyncClient,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute a search_after query with PIT (no index in path).
+
+    The caller must include ``pit``, ``search_after``, and ``sort``
+    in the body. ``track_total_hits`` is always set to ``True``.
+
+    Returns the raw ES search response dict.
+    """
+    request_body = {**body, "track_total_hits": True}
+    response = await client.post("/_search", json=request_body)
+    response.raise_for_status()
+
+    result: dict[str, Any] = response.json()
+
+    return result
+
+
 async def es_get_source_stream(
     client: httpx.AsyncClient,
     index: str,

@@ -17,13 +17,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
+from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
 from ddbj_search_api.dblink.client import count_linked_ids_bulk, get_linked_ids_limited_bulk
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_search
+from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
     build_facet_aggs,
     build_search_query,
-    build_sort,
+    build_sort_with_tiebreaker,
     build_source_filter,
     pagination_to_from_size,
     validate_keyword_fields,
@@ -63,6 +64,69 @@ def _validate_deep_paging(page: int, per_page: int) -> None:
         )
 
 
+def _validate_cursor_exclusivity(
+    pagination: PaginationQuery,
+    search_filter: SearchFilterQuery,
+    response_control: ResponseControlQuery,
+    types: str | None = None,
+    organization: str | None = None,
+    publication: str | None = None,
+    grant: str | None = None,
+    umbrella: str | None = None,
+) -> None:
+    """Raise 400 if cursor is used alongside page or search params."""
+    conflicting: list[str] = []
+
+    if pagination.page != 1:
+        conflicting.append("page")
+
+    if search_filter.keywords is not None:
+        conflicting.append("keywords")
+    if search_filter.keyword_fields is not None:
+        conflicting.append("keywordFields")
+    if search_filter.keyword_operator.value != "AND":
+        conflicting.append("keywordOperator")
+    if search_filter.organism is not None:
+        conflicting.append("organism")
+    if search_filter.date_published_from is not None:
+        conflicting.append("datePublishedFrom")
+    if search_filter.date_published_to is not None:
+        conflicting.append("datePublishedTo")
+    if search_filter.date_modified_from is not None:
+        conflicting.append("dateModifiedFrom")
+    if search_filter.date_modified_to is not None:
+        conflicting.append("dateModifiedTo")
+
+    if response_control.sort is not None:
+        conflicting.append("sort")
+    if response_control.include_facets:
+        conflicting.append("includeFacets")
+    if not response_control.include_properties:
+        conflicting.append("includeProperties")
+    if response_control.fields is not None:
+        conflicting.append("fields")
+
+    if types is not None:
+        conflicting.append("types")
+    if organization is not None:
+        conflicting.append("organization")
+    if publication is not None:
+        conflicting.append("publication")
+    if grant is not None:
+        conflicting.append("grant")
+    if umbrella is not None:
+        conflicting.append("umbrella")
+
+    if conflicting:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot use 'cursor' with: {', '.join(conflicting)}. "
+                "When using cursor-based pagination, only 'perPage' is allowed."
+            ),
+        )
+
+
 def _parse_hit_source(hit: dict[str, Any]) -> dict[str, Any]:
     """Extract _source from an ES hit (no script_fields processing)."""
 
@@ -77,6 +141,55 @@ def _check_dblink_db() -> None:
             status_code=500,
             detail=f"dblink database is not available: {DBLINK_DB_PATH}",
         )
+
+
+def _build_source_body(source: list[str] | dict[str, Any] | None) -> dict[str, Any]:
+    """Build _source portion of ES body, always excluding dbXrefs."""
+    if isinstance(source, list):
+        filtered = [f for f in source if f != "dbXrefs"]
+
+        return {"_source": filtered}
+    if isinstance(source, dict):
+        excludes = list(source.get("excludes", []))
+        if "dbXrefs" not in excludes:
+            excludes.append("dbXrefs")
+
+        return {"_source": {"excludes": excludes}}
+
+    return {"_source": {"excludes": ["dbXrefs"]}}
+
+
+def _compute_next_cursor(
+    raw_hits: list[dict[str, Any]],
+    size: int,
+    total: int,
+    offset: int,
+    sort_with_tiebreaker: list[dict[str, Any]],
+    query: dict[str, Any],
+    pit_id: str | None,
+) -> tuple[str | None, bool]:
+    """Compute nextCursor and hasNext from search results.
+
+    Returns (next_cursor_token, has_next).
+    """
+    if not raw_hits or len(raw_hits) < size:
+        return (None, False)
+
+    if pit_id is None and offset + size >= total:
+        return (None, False)
+
+    last_sort = raw_hits[-1].get("sort")
+    if last_sort is None:
+        return (None, False)
+
+    payload = CursorPayload(
+        pit_id=pit_id,
+        search_after=last_sort,
+        sort=sort_with_tiebreaker,
+        query=query,
+    )
+
+    return (encode_cursor(payload), True)
 
 
 async def _do_search(
@@ -95,12 +208,56 @@ async def _do_search(
     umbrella: str | None = None,
 ) -> Any:
     """Execute search against ES and build the response."""
+    _check_dblink_db()
+
+    if pagination.cursor is not None:
+        return await _do_search_cursor(
+            client=client,
+            index=index,
+            cursor_token=pagination.cursor,
+            per_page=pagination.per_page,
+            db_xrefs_limit=db_xrefs_limit,
+        )
+
+    return await _do_search_offset(
+        client=client,
+        index=index,
+        pagination=pagination,
+        search_filter=search_filter,
+        response_control=response_control,
+        db_xrefs_limit=db_xrefs_limit,
+        is_cross_type=is_cross_type,
+        db_type=db_type,
+        types=types,
+        organization=organization,
+        publication=publication,
+        grant=grant,
+        umbrella=umbrella,
+    )
+
+
+async def _do_search_offset(
+    client: httpx.AsyncClient,
+    index: str,
+    pagination: PaginationQuery,
+    search_filter: SearchFilterQuery,
+    response_control: ResponseControlQuery,
+    db_xrefs_limit: int,
+    is_cross_type: bool = False,
+    db_type: str | None = None,
+    types: str | None = None,
+    organization: str | None = None,
+    publication: str | None = None,
+    grant: str | None = None,
+    umbrella: str | None = None,
+) -> Any:
+    """Offset-based search (existing behaviour + nextCursor generation)."""
     # 1. Deep paging check
     _validate_deep_paging(pagination.page, pagination.per_page)
 
     # 2. Validate and build sort
     try:
-        sort = build_sort(response_control.sort)
+        sort_with_tiebreaker = build_sort_with_tiebreaker(response_control.sort)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -127,7 +284,7 @@ async def _do_search(
         umbrella=umbrella,
     )
 
-    # 5. Pagination → from/size
+    # 5. Pagination -> from/size
     from_, size = pagination_to_from_size(pagination.page, pagination.per_page)
 
     # 6. Source filter
@@ -136,26 +293,14 @@ async def _do_search(
         response_control.include_properties,
     )
 
-    # 7. Build request body (no script_fields, exclude dbXrefs)
+    # 7. Build request body (always include sort with tiebreaker for nextCursor)
     body: dict[str, Any] = {
         "query": query,
         "from": from_,
         "size": size,
+        "sort": sort_with_tiebreaker,
+        **_build_source_body(source),
     }
-    if sort is not None:
-        body["sort"] = sort
-
-    # _source: merge user filter with dbXrefs exclusion
-    if isinstance(source, list):
-        filtered = [f for f in source if f != "dbXrefs"]
-        body["_source"] = filtered
-    elif isinstance(source, dict):
-        excludes = list(source.get("excludes", []))
-        if "dbXrefs" not in excludes:
-            excludes.append("dbXrefs")
-        body["_source"] = {"excludes": excludes}
-    else:
-        body["_source"] = {"excludes": ["dbXrefs"]}
 
     # 8. Facet aggregations
     if response_control.include_facets:
@@ -165,31 +310,13 @@ async def _do_search(
         )
 
     # 9. Execute
-    _check_dblink_db()
     es_resp = await es_search(client, index, body)
 
-    # 10. Parse response and enrich with DuckDB dbXrefs (bulk)
+    # 10. Parse response and enrich with DuckDB dbXrefs
     raw_hits = es_resp["hits"]["hits"]
     total = es_resp["hits"]["total"]["value"]
 
-    raw_sources = [_parse_hit_source(hit) for hit in raw_hits]
-    entries_keys = [(src.get("type", ""), src.get("identifier", "")) for src in raw_sources]
-
-    bulk_xrefs, bulk_counts = await asyncio.gather(
-        asyncio.to_thread(get_linked_ids_limited_bulk, DBLINK_DB_PATH, entries_keys, db_xrefs_limit),
-        asyncio.to_thread(count_linked_ids_bulk, DBLINK_DB_PATH, entries_keys),
-    )
-
-    enriched = []
-    for src in raw_sources:
-        key = (src.get("type", ""), src.get("identifier", ""))
-        xrefs_rows = bulk_xrefs.get(key, [])
-        xrefs = [to_xref(acc, type_hint=cast(XrefType, t)).model_dump(by_alias=True) for t, acc in xrefs_rows]
-        src["dbXrefs"] = xrefs
-        src["dbXrefsCount"] = bulk_counts.get(key, {})
-        enriched.append(src)
-
-    items = [EntryListItem(**src) for src in enriched]
+    items = await _enrich_hits(raw_hits, db_xrefs_limit)
 
     facets = None
     if response_control.include_facets and "aggregations" in es_resp:
@@ -199,11 +326,24 @@ async def _do_search(
             db_type=db_type,
         )
 
+    # 11. Compute nextCursor
+    next_cursor, has_next = _compute_next_cursor(
+        raw_hits=raw_hits,
+        size=size,
+        total=total,
+        offset=from_,
+        sort_with_tiebreaker=sort_with_tiebreaker,
+        query=query,
+        pit_id=None,
+    )
+
     response = EntryListResponse(
         pagination=Pagination(
             page=pagination.page,
             per_page=pagination.per_page,  # type: ignore[call-arg]
             total=total,
+            next_cursor=next_cursor,
+            has_next=has_next,
         ),
         items=items,
         facets=facets,
@@ -229,6 +369,108 @@ async def _do_search(
     return response
 
 
+async def _do_search_cursor(
+    client: httpx.AsyncClient,
+    index: str,
+    cursor_token: str,
+    per_page: int,
+    db_xrefs_limit: int,
+) -> Any:
+    """Cursor-based search using search_after + PIT."""
+    # 1. Decode cursor
+    try:
+        cursor = decode_cursor(cursor_token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid cursor token: {exc}",
+        ) from exc
+
+    # 2. Open PIT if needed (first cursor from offset mode has no PIT)
+    pit_id = cursor.pit_id
+    if pit_id is None:
+        pit_id = await es_open_pit(client, index)
+
+    # 3. Build ES body
+    body: dict[str, Any] = {
+        "query": cursor.query,
+        "sort": cursor.sort,
+        "size": per_page,
+        "pit": {"id": pit_id, "keep_alive": "5m"},
+        "search_after": cursor.search_after,
+        "_source": {"excludes": ["dbXrefs"]},
+    }
+
+    # 4. Execute search_after with PIT
+    try:
+        es_resp = await es_search_with_pit(client, body)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(
+                status_code=400,
+                detail="Cursor expired (PIT no longer available). Please restart your search.",
+            ) from exc
+
+        raise
+
+    # 5. Parse response
+    raw_hits = es_resp["hits"]["hits"]
+    total = es_resp["hits"]["total"]["value"]
+
+    # Use updated PIT ID from ES response if available
+    updated_pit_id: str = es_resp.get("pit_id", pit_id)
+
+    items = await _enrich_hits(raw_hits, db_xrefs_limit)
+
+    # 6. Compute nextCursor
+    next_cursor, has_next = _compute_next_cursor(
+        raw_hits=raw_hits,
+        size=per_page,
+        total=total,
+        offset=0,
+        sort_with_tiebreaker=cursor.sort,
+        query=cursor.query,
+        pit_id=updated_pit_id,
+    )
+
+    return EntryListResponse(
+        pagination=Pagination(
+            page=None,
+            per_page=per_page,  # type: ignore[call-arg]
+            total=total,
+            next_cursor=next_cursor,
+            has_next=has_next,
+        ),
+        items=items,
+        facets=None,
+    )
+
+
+async def _enrich_hits(
+    raw_hits: list[dict[str, Any]],
+    db_xrefs_limit: int,
+) -> list[EntryListItem]:
+    """Parse ES hits and enrich with DuckDB dbXrefs."""
+    raw_sources = [_parse_hit_source(hit) for hit in raw_hits]
+    entries_keys = [(src.get("type", ""), src.get("identifier", "")) for src in raw_sources]
+
+    bulk_xrefs, bulk_counts = await asyncio.gather(
+        asyncio.to_thread(get_linked_ids_limited_bulk, DBLINK_DB_PATH, entries_keys, db_xrefs_limit),
+        asyncio.to_thread(count_linked_ids_bulk, DBLINK_DB_PATH, entries_keys),
+    )
+
+    enriched = []
+    for src in raw_sources:
+        key = (src.get("type", ""), src.get("identifier", ""))
+        xrefs_rows = bulk_xrefs.get(key, [])
+        xrefs = [to_xref(acc, type_hint=cast(XrefType, t)).model_dump(by_alias=True) for t, acc in xrefs_rows]
+        src["dbXrefs"] = xrefs
+        src["dbXrefsCount"] = bulk_counts.get(key, {})
+        enriched.append(src)
+
+    return [EntryListItem(**src) for src in enriched]
+
+
 # === GET /entries/ (cross-type search) ===
 
 
@@ -246,6 +488,13 @@ async def _list_all_entries(
     sorting, field selection, and facet aggregation.  Use the ``types``
     parameter to narrow the search to specific database types.
     """
+    if pagination.cursor is not None:
+        _validate_cursor_exclusivity(
+            pagination,
+            search_filter,
+            response_control,
+            types=types_filter.types,
+        )
 
     return await _do_search(
         client=client,
@@ -296,6 +545,16 @@ def _make_type_search_handler(db_type: DbType) -> Any:
             db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
         ) -> Any:
+            if pagination.cursor is not None:
+                _validate_cursor_exclusivity(
+                    pagination,
+                    search_filter,
+                    response_control,
+                    organization=bioproject_extra.organization,
+                    publication=bioproject_extra.publication,
+                    grant=bioproject_extra.grant,
+                    umbrella=bioproject_extra.umbrella,
+                )
 
             return await _do_search(
                 client=client,
@@ -326,6 +585,12 @@ def _make_type_search_handler(db_type: DbType) -> Any:
             db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
         ) -> Any:
+            if pagination.cursor is not None:
+                _validate_cursor_exclusivity(
+                    pagination,
+                    search_filter,
+                    response_control,
+                )
 
             return await _do_search(
                 client=client,

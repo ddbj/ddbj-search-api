@@ -65,6 +65,26 @@ def build_sort(
     return [{es_field: {"order": direction}}]
 
 
+_TIEBREAKER: dict[str, Any] = {"_id": {"order": "asc"}}
+
+
+def build_sort_with_tiebreaker(
+    sort_param: str | None,
+) -> list[dict[str, Any]]:
+    """Build ES sort list with mandatory _id tiebreaker for search_after.
+
+    Always returns a non-empty list. If no user sort is specified,
+    uses relevance scoring with a tiebreaker.
+
+    Raises ValueError for invalid sort strings (delegated to build_sort).
+    """
+    base = build_sort(sort_param)
+    if base is None:
+        return [{"_score": {"order": "desc"}}, _TIEBREAKER]
+
+    return [*base, _TIEBREAKER]
+
+
 def validate_keyword_fields(
     keyword_fields: str | None,
 ) -> list[str]:

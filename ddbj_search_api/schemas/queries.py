@@ -56,7 +56,7 @@ def _validate_date(value: str | None, param_name: str) -> None:
 
 
 class PaginationQuery:
-    """Pagination parameters (page, perPage).
+    """Pagination parameters (page, perPage, cursor).
 
     Used by: EntriesQuery, EntriesTypeQuery, DbXrefsQuery.
     """
@@ -75,9 +75,14 @@ class PaginationQuery:
             alias="perPage",
             description="Items per page (1-100).",
         ),
+        cursor: str | None = Query(
+            default=None,
+            description="Cursor token for cursor-based pagination.",
+        ),
     ):
         self.page = page
         self.per_page = per_page
+        self.cursor = cursor
 
 
 class SearchFilterQuery:

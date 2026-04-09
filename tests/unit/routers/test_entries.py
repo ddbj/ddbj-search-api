@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api.cursor import CursorPayload, encode_cursor
 from tests.unit.conftest import make_es_search_response
 from tests.unit.strategies import db_type_values
 
@@ -566,7 +568,10 @@ class TestEntriesSortValidation:
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
         assert "sort" in body
-        assert body["sort"] == [{"datePublished": {"order": "asc"}}]
+        assert body["sort"] == [
+            {"datePublished": {"order": "asc"}},
+            {"_id": {"order": "asc"}},
+        ]
 
 
 # === keywordFields validation ===
@@ -1149,3 +1154,283 @@ class TestEntriesSearchPBT:
             params={"keywords": "test", "keywordOperator": operator},
         )
         assert resp.status_code == 200
+
+
+# ===================================================================
+# Cursor-based pagination
+# ===================================================================
+
+
+def _make_cursor_token(
+    pit_id: str | None = None,
+    search_after: list[object] | None = None,
+) -> str:
+    payload = CursorPayload(
+        pit_id=pit_id,
+        search_after=search_after or ["2026-01-15", "SAMD00001"],
+        sort=[{"datePublished": {"order": "desc"}}, {"_id": {"order": "asc"}}],
+        query={"match_all": {}},
+    )
+
+    return encode_cursor(payload)
+
+
+class TestCursorExclusivity:
+    """cursor + search/page params -> 400."""
+
+    def test_cursor_with_page_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "page": "2"},
+        )
+        assert resp.status_code == 400
+        assert "page" in resp.json()["detail"]
+
+    def test_cursor_with_keywords_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "keywords": "test"},
+        )
+        assert resp.status_code == 400
+        assert "keywords" in resp.json()["detail"]
+
+    def test_cursor_with_sort_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "sort": "datePublished:asc"},
+        )
+        assert resp.status_code == 400
+        assert "sort" in resp.json()["detail"]
+
+    def test_cursor_with_organism_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "organism": "9606"},
+        )
+        assert resp.status_code == 400
+        assert "organism" in resp.json()["detail"]
+
+    def test_cursor_with_types_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "types": "bioproject"},
+        )
+        assert resp.status_code == 400
+        assert "types" in resp.json()["detail"]
+
+    def test_cursor_with_include_facets_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "includeFacets": "true"},
+        )
+        assert resp.status_code == 400
+        assert "includeFacets" in resp.json()["detail"]
+
+    def test_cursor_with_per_page_allowed(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        mock_es_search_with_pit.return_value = make_es_search_response()
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "perPage": "50"},
+        )
+        assert resp.status_code == 200
+
+
+class TestCursorOffsetMode:
+    """Offset responses include nextCursor and hasNext."""
+
+    def test_offset_response_has_next_cursor(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        hits = [
+            {
+                "_source": {"identifier": f"PRJDB{i}", "type": "bioproject"},
+                "sort": [f"2026-01-{i:02d}", f"PRJDB{i}"],
+            }
+            for i in range(1, 11)
+        ]
+        mock_es_search.return_value = make_es_search_response(hits=hits, total=100)
+        resp = app_with_es.get("/entries/", params={"perPage": "10"})
+        data = resp.json()
+        assert resp.status_code == 200
+        assert data["pagination"]["nextCursor"] is not None
+        assert data["pagination"]["hasNext"] is True
+
+    def test_last_page_has_no_next_cursor(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        hits = [
+            {
+                "_source": {"identifier": "PRJDB1", "type": "bioproject"},
+                "sort": ["2026-01-01", "PRJDB1"],
+            },
+        ]
+        mock_es_search.return_value = make_es_search_response(hits=hits, total=1)
+        resp = app_with_es.get("/entries/", params={"perPage": "10"})
+        data = resp.json()
+        assert data["pagination"]["nextCursor"] is None
+        assert data["pagination"]["hasNext"] is False
+
+    def test_empty_results_has_no_next_cursor(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(hits=[], total=0)
+        resp = app_with_es.get("/entries/")
+        data = resp.json()
+        assert data["pagination"]["nextCursor"] is None
+        assert data["pagination"]["hasNext"] is False
+
+    def test_offset_response_has_page_field(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(hits=[], total=0)
+        resp = app_with_es.get("/entries/", params={"page": "3"})
+        data = resp.json()
+        assert data["pagination"]["page"] == 3
+
+
+class TestCursorMode:
+    """Cursor-based pagination with search_after + PIT."""
+
+    def test_cursor_without_pit_opens_pit(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        token = _make_cursor_token(pit_id=None)
+        mock_es_search_with_pit.return_value = make_es_search_response(
+            hits=[], total=0,
+        )
+        resp = app_with_es.get("/entries/", params={"cursor": token})
+        assert resp.status_code == 200
+        mock_es_open_pit.assert_called_once()
+
+    def test_cursor_with_pit_reuses_pit(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        token = _make_cursor_token(pit_id="existing_pit_123")
+        mock_es_search_with_pit.return_value = make_es_search_response(
+            hits=[], total=0,
+        )
+        resp = app_with_es.get("/entries/", params={"cursor": token})
+        assert resp.status_code == 200
+        mock_es_open_pit.assert_not_called()
+
+    def test_cursor_response_has_null_page(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        token = _make_cursor_token()
+        mock_es_search_with_pit.return_value = make_es_search_response(
+            hits=[], total=0,
+        )
+        resp = app_with_es.get("/entries/", params={"cursor": token})
+        data = resp.json()
+        assert data["pagination"]["page"] is None
+
+    def test_cursor_response_has_next_cursor(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        token = _make_cursor_token(pit_id="pit_abc")
+        hits = [
+            {
+                "_source": {"identifier": f"SAMD{i:05d}", "type": "biosample"},
+                "sort": [f"2026-01-{i:02d}", f"SAMD{i:05d}"],
+            }
+            for i in range(1, 11)
+        ]
+        mock_es_search_with_pit.return_value = {
+            "pit_id": "pit_abc_updated",
+            "hits": {
+                "total": {"value": 100, "relation": "eq"},
+                "hits": hits,
+            },
+        }
+        resp = app_with_es.get("/entries/", params={"cursor": token, "perPage": "10"})
+        data = resp.json()
+        assert data["pagination"]["nextCursor"] is not None
+        assert data["pagination"]["hasNext"] is True
+
+    def test_invalid_cursor_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get("/entries/", params={"cursor": "garbage_token"})
+        assert resp.status_code == 400
+        assert "cursor" in resp.json()["detail"].lower()
+
+    def test_expired_pit_returns_400(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        token = _make_cursor_token(pit_id="expired_pit")
+        mock_es_search_with_pit.side_effect = httpx.HTTPStatusError(
+            "Not Found",
+            request=httpx.Request("POST", "http://localhost:9200/_search"),
+            response=httpx.Response(404),
+        )
+        resp = app_with_es.get("/entries/", params={"cursor": token})
+        assert resp.status_code == 400
+        assert "expired" in resp.json()["detail"].lower()
+
+    def test_cursor_on_type_endpoint(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        token = _make_cursor_token()
+        mock_es_search_with_pit.return_value = make_es_search_response(
+            hits=[], total=0,
+        )
+        resp = app_with_es.get("/entries/biosample/", params={"cursor": token})
+        assert resp.status_code == 200
+
+    def test_cursor_with_page_on_type_endpoint_returns_400(
+        self,
+        app_with_es: TestClient,
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/biosample/",
+            params={"cursor": _make_cursor_token(), "page": "2"},
+        )
+        assert resp.status_code == 400
+
+
+class TestCursorBackwardCompatibility:
+    """Existing offset pagination still works with new fields."""
+
+    def test_offset_still_works(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(hits=[], total=0)
+        resp = app_with_es.get("/entries/", params={"page": "1", "perPage": "10"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "page" in data["pagination"]
+        assert "perPage" in data["pagination"]
+        assert "total" in data["pagination"]
+        assert "nextCursor" in data["pagination"]
+        assert "hasNext" in data["pagination"]

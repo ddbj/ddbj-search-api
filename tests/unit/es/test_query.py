@@ -16,6 +16,7 @@ from ddbj_search_api.es.query import (
     build_facet_aggs,
     build_search_query,
     build_sort,
+    build_sort_with_tiebreaker,
     build_source_filter,
     pagination_to_from_size,
     validate_keyword_fields,
@@ -129,6 +130,48 @@ class TestBuildSortEdgeCases:
     def test_colon_only_raises(self) -> None:
         with pytest.raises(ValueError):
             build_sort(":")
+
+
+# === build_sort_with_tiebreaker ===
+
+
+class TestBuildSortWithTiebreaker:
+    """build_sort_with_tiebreaker always returns a list with _id tiebreaker."""
+
+    def test_none_returns_score_and_id(self) -> None:
+        result = build_sort_with_tiebreaker(None)
+        assert result == [
+            {"_score": {"order": "desc"}},
+            {"_id": {"order": "asc"}},
+        ]
+
+    def test_date_published_asc_appends_id(self) -> None:
+        result = build_sort_with_tiebreaker("datePublished:asc")
+        assert result == [
+            {"datePublished": {"order": "asc"}},
+            {"_id": {"order": "asc"}},
+        ]
+
+    def test_date_modified_desc_appends_id(self) -> None:
+        result = build_sort_with_tiebreaker("dateModified:desc")
+        assert result == [
+            {"dateModified": {"order": "desc"}},
+            {"_id": {"order": "asc"}},
+        ]
+
+    def test_always_returns_list(self) -> None:
+        result = build_sort_with_tiebreaker(None)
+        assert isinstance(result, list)
+        assert len(result) >= 2
+
+    def test_last_element_is_id_tiebreaker(self) -> None:
+        for sort_param in [None, "datePublished:asc", "dateModified:desc"]:
+            result = build_sort_with_tiebreaker(sort_param)
+            assert result[-1] == {"_id": {"order": "asc"}}
+
+    def test_invalid_sort_raises(self) -> None:
+        with pytest.raises(ValueError):
+            build_sort_with_tiebreaker("invalidField:asc")
 
 
 # ===================================================================

@@ -26,13 +26,26 @@ class DbType(str, Enum):
 
 
 class Pagination(BaseModel):
-    """Offset-based pagination metadata."""
+    """Pagination metadata (supports both offset and cursor modes)."""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    page: int = Field(description="Current page number (1-based).")
+    page: int | None = Field(
+        default=None,
+        description="Current page number (1-based). Null in cursor mode.",
+    )
     per_page: int = Field(alias="perPage", description="Items per page.")
     total: int = Field(description="Total number of matching items.")
+    next_cursor: str | None = Field(
+        default=None,
+        alias="nextCursor",
+        description="Cursor token for the next page. Null on the last page.",
+    )
+    has_next: bool = Field(
+        default=False,
+        alias="hasNext",
+        description="Whether more pages are available.",
+    )
 
 
 class FacetBucket(BaseModel):
