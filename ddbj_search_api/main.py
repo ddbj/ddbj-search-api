@@ -172,6 +172,7 @@ def _make_lifespan(config: AppConfig) -> Any:
         app.state.es_client = httpx.AsyncClient(
             base_url=config.es_url,
             timeout=httpx.Timeout(config.es_timeout),
+            limits=httpx.Limits(max_connections=1000),
         )
         yield
         await app.state.es_client.aclose()

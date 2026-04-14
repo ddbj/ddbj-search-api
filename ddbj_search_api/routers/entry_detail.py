@@ -24,7 +24,6 @@ from ddbj_search_converter.jsonl.utils import to_xref
 from ddbj_search_converter.schema import XrefType
 from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.background import BackgroundTask
 
 from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
@@ -105,6 +104,25 @@ class JsonLdResponse(JSONResponse):
     """JSONResponse subclass with application/ld+json media type."""
 
     media_type = "application/ld+json"
+
+
+# --- Helper: streaming cleanup ---
+
+
+async def _stream_with_cleanup(
+    body: collections.abc.AsyncIterator[bytes],
+    response: httpx.Response,
+) -> collections.abc.AsyncIterator[bytes]:
+    """Wrap async iterator to guarantee ``response.aclose()`` on completion.
+
+    Unlike ``BackgroundTask``, ``try/finally`` in an async generator
+    runs even when the consumer is cancelled (e.g. client disconnect).
+    """
+    try:
+        async for chunk in body:
+            yield chunk
+    finally:
+        await response.aclose()
 
 
 # --- Helper: JSON-LD prefix injection ---
@@ -242,9 +260,8 @@ async def get_entry_json(
     )
 
     return StreamingResponse(
-        body,
+        _stream_with_cleanup(body, response),
         media_type="application/json",
-        background=BackgroundTask(response.aclose),
     )
 
 
@@ -288,9 +305,8 @@ async def get_entry_jsonld(
     body = _inject_jsonld_prefix(with_dbxrefs, context_url, at_id)
 
     return StreamingResponse(
-        body,
+        _stream_with_cleanup(body, response),
         media_type="application/ld+json",
-        background=BackgroundTask(response.aclose),
     )
 
 
@@ -387,9 +403,11 @@ async def get_entry_detail(
 
     # Read ES response body (without dbXrefs)
     chunks: list[bytes] = []
-    async for chunk in response.aiter_bytes():
-        chunks.append(chunk)
-    await response.aclose()
+    try:
+        async for chunk in response.aiter_bytes():
+            chunks.append(chunk)
+    finally:
+        await response.aclose()
     source: dict[str, Any] = json.loads(b"".join(chunks))
 
     # Get dbXrefs from DuckDB (parallel)

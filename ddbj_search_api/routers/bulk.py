@@ -43,12 +43,13 @@ async def _read_source_bytes(response: httpx.Response) -> bytes:
     ES ``_source`` responses end with ``\\n``; stripping it prevents
     malformed JSON in array mode and empty lines in NDJSON mode.
     """
-    chunks: list[bytes] = []
-    async for chunk in response.aiter_bytes():
-        chunks.append(chunk)
-    await response.aclose()
-
-    return b"".join(chunks).rstrip()
+    try:
+        chunks: list[bytes] = []
+        async for chunk in response.aiter_bytes():
+            chunks.append(chunk)
+        return b"".join(chunks).rstrip()
+    finally:
+        await response.aclose()
 
 
 async def _inject_dbxrefs_into_bytes(
