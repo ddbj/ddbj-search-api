@@ -25,7 +25,7 @@ class TestAccessionType:
             "biosample",
             "gea",
             "geo",
-            "hum-id",
+            "humandbs",
             "insdc",
             "insdc-assembly",
             "insdc-master",
@@ -34,7 +34,7 @@ class TestAccessionType:
             "jga-policy",
             "jga-study",
             "metabobank",
-            "pubmed-id",
+            "pubmed",
             "sra-analysis",
             "sra-experiment",
             "sra-run",
@@ -63,11 +63,11 @@ class TestDbLinksResponse:
         xref = to_xref("JGAS000101", type_hint="jga-study")
         resp = DbLinksResponse(
             identifier="hum0014",
-            type=AccessionType("hum-id"),
+            type=AccessionType("humandbs"),
             dbXrefs=[xref, to_xref("JGAS000381", type_hint="jga-study")],
         )
         assert resp.identifier == "hum0014"
-        assert resp.type == AccessionType("hum-id")
+        assert resp.type == AccessionType("humandbs")
         assert len(resp.dbXrefs) == 2
 
     def test_construction_with_empty_db_xrefs(self) -> None:
@@ -82,7 +82,7 @@ class TestDbLinksResponse:
         xref = to_xref("JGAS000101", type_hint="jga-study")
         resp = DbLinksResponse(
             identifier="hum0014",
-            type=AccessionType("hum-id"),
+            type=AccessionType("humandbs"),
             dbXrefs=[xref],
         )
         data = resp.model_dump(by_alias=True)

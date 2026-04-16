@@ -55,3 +55,7 @@ valid_accession_id = st.text(
     min_size=1,
     max_size=30,
 )
+
+# === BioProject accession (umbrella tree) ===
+
+bioproject_accession = st.from_regex(r"PRJ(DB|NA|EB)[0-9]{1,7}", fullmatch=True)

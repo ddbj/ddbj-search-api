@@ -72,7 +72,7 @@ class TestListTypes:
         resp = app.get("/dblink/")
         types = set(resp.json()["types"])
         assert "bioproject" in types
-        assert "hum-id" in types
+        assert "humandbs" in types
         assert "insdc" in types
 
     def test_trailing_slash_both_work(self, app: TestClient) -> None:
@@ -99,12 +99,12 @@ class TestGetLinks:
                 side_effect=lambda *_args, **_kwargs: iter([("jga-study", "JGAS000101")]),
             ),
         ):
-            resp = app.get("/dblink/hum-id/hum0014")
+            resp = app.get("/dblink/humandbs/hum0014")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["identifier"] == "hum0014"
-        assert data["type"] == "hum-id"
+        assert data["type"] == "humandbs"
         assert len(data["dbXrefs"]) == 1
         link = data["dbXrefs"][0]
         assert link["identifier"] == "JGAS000101"
@@ -112,7 +112,7 @@ class TestGetLinks:
         assert "url" in link
 
     def test_returns_200_with_empty_db_xrefs(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014")
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014")
         assert resp.status_code == 200
         data = resp.json()
         assert data["dbXrefs"] == []
@@ -125,8 +125,8 @@ class TestGetLinks:
         assert "dbXrefs" in data
 
     def test_trailing_slash_works(self, app_with_dblink: TestClient) -> None:
-        resp_no_slash = app_with_dblink.get("/dblink/hum-id/hum0014")
-        resp_slash = app_with_dblink.get("/dblink/hum-id/hum0014/")
+        resp_no_slash = app_with_dblink.get("/dblink/humandbs/hum0014")
+        resp_slash = app_with_dblink.get("/dblink/humandbs/hum0014/")
         assert resp_no_slash.status_code == 200
         assert resp_slash.status_code == 200
         assert resp_no_slash.json() == resp_slash.json()
@@ -145,15 +145,15 @@ class TestGetLinksInvalidType:
 
 class TestGetLinksInvalidTarget:
     def test_invalid_target_returns_422(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "invalid"})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": "invalid"})
         assert resp.status_code == 422
 
     def test_mixed_valid_invalid_target_returns_422(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "jga-study,bogus"})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": "jga-study,bogus"})
         assert resp.status_code == 422
 
     def test_invalid_target_returns_rfc7807(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "invalid"})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": "invalid"})
         data = resp.json()
         assert data["type"] == "about:blank"
         assert data["title"] == "Unprocessable Entity"
@@ -161,7 +161,7 @@ class TestGetLinksInvalidTarget:
         assert "detail" in data
 
     def test_invalid_target_detail_contains_value(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "bogus-value"})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": "bogus-value"})
         data = resp.json()
         assert "bogus-value" in data["detail"]
 
@@ -172,7 +172,7 @@ class TestGetLinksDbMissing:
             "ddbj_search_api.routers.dblink.DBLINK_DB_PATH",
             Path("/nonexistent/path/dblink.duckdb"),
         ):
-            resp = app.get("/dblink/hum-id/hum0014")
+            resp = app.get("/dblink/humandbs/hum0014")
 
         assert resp.status_code == 500
 
@@ -201,7 +201,7 @@ class TestGetLinksTargetFilter:
                 side_effect=_mock_iter,
             ),
         ):
-            resp = app.get("/dblink/hum-id/hum0014", params={"target": "jga-study"})
+            resp = app.get("/dblink/humandbs/hum0014", params={"target": "jga-study"})
 
         data = resp.json()
         assert len(data["dbXrefs"]) == 1
@@ -224,7 +224,7 @@ class TestGetLinksTargetFilter:
                 ),
             ),
         ):
-            resp = app.get("/dblink/hum-id/hum0014")
+            resp = app.get("/dblink/humandbs/hum0014")
 
         data = resp.json()
         assert len(data["dbXrefs"]) == 2
@@ -240,34 +240,34 @@ class TestGetLinksPBT:
     @given(acc_type=st.sampled_from([e.value for e in AccessionType]))
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_any_valid_accession_type_as_target_returns_200(self, app_with_dblink: TestClient, acc_type: str) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": acc_type})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": acc_type})
         assert resp.status_code == 200
 
 
 class TestGetLinksEdgeCases:
     def test_whitespace_only_target_returns_200(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": " "})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": " "})
         assert resp.status_code == 200
         data = resp.json()
         assert "dbXrefs" in data
         assert isinstance(data["dbXrefs"], list)
 
     def test_empty_target_returns_200(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": ""})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": ""})
         assert resp.status_code == 200
         data = resp.json()
         assert "dbXrefs" in data
         assert isinstance(data["dbXrefs"], list)
 
     def test_comma_only_target_returns_200(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": ","})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": ","})
         assert resp.status_code == 200
         data = resp.json()
         assert "dbXrefs" in data
         assert isinstance(data["dbXrefs"], list)
 
     def test_duplicate_target_accepted(self, app_with_dblink: TestClient) -> None:
-        resp = app_with_dblink.get("/dblink/hum-id/hum0014", params={"target": "jga-study,jga-study"})
+        resp = app_with_dblink.get("/dblink/humandbs/hum0014", params={"target": "jga-study,jga-study"})
         assert resp.status_code == 200
         data = resp.json()
         assert "dbXrefs" in data

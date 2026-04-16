@@ -208,3 +208,67 @@ async def es_head_exists(
     response.raise_for_status()
 
     return True
+
+
+async def es_get_source(
+    client: httpx.AsyncClient,
+    index: str,
+    id_: str,
+    source_includes: str | None = None,
+    source_excludes: str | None = None,
+) -> dict[str, Any] | None:
+    """Fetch an ES document's ``_source`` as a dict (non-streaming).
+
+    Returns the ``_source`` dict, or ``None`` if the document is not
+    found (404).
+    """
+    params: dict[str, str] = {}
+    if source_includes is not None:
+        params["_source_includes"] = source_includes
+    if source_excludes is not None:
+        params["_source_excludes"] = source_excludes
+
+    response = await client.get(f"/{index}/_source/{id_}", params=params)
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+
+    result: dict[str, Any] = response.json()
+    return result
+
+
+async def es_mget_source(
+    client: httpx.AsyncClient,
+    index: str,
+    ids: list[str],
+    source_includes: list[str] | None = None,
+) -> dict[str, dict[str, Any] | None]:
+    """Batch fetch ``_source`` for multiple document IDs via ``_mget``.
+
+    Returns a dict mapping each requested id to its ``_source`` dict,
+    or ``None`` when the document was not found.  Empty ``ids``
+    short-circuits to an empty dict without hitting ES.
+    """
+    if not ids:
+        return {}
+
+    docs: list[dict[str, Any]] = []
+    for id_ in ids:
+        doc: dict[str, Any] = {"_id": id_}
+        if source_includes is not None:
+            doc["_source"] = {"includes": source_includes}
+        docs.append(doc)
+
+    response = await client.post(f"/{index}/_mget", json={"docs": docs})
+    response.raise_for_status()
+
+    result: dict[str, Any] = response.json()
+    out: dict[str, dict[str, Any] | None] = {}
+    for entry in result.get("docs", []):
+        entry_id: str = entry["_id"]
+        if entry.get("found"):
+            out[entry_id] = entry.get("_source") or {}
+        else:
+            out[entry_id] = None
+
+    return out

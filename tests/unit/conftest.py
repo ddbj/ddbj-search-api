@@ -324,3 +324,62 @@ def app_with_facets(
     application.dependency_overrides[get_es_client] = lambda: fake_client
 
     return TestClient(application, raise_server_exceptions=False)
+
+
+# --- Umbrella Tree API fixtures ---
+
+
+@pytest.fixture
+def mock_es_get_source() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_get_source in the umbrella_tree router.
+
+    Default return value is None (not found). Override via
+    ``return_value`` or ``side_effect`` to control seed fetch results.
+    """
+    with patch(
+        "ddbj_search_api.routers.umbrella_tree.es_get_source",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = None
+        yield mock
+
+
+@pytest.fixture
+def mock_es_mget_source() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_mget_source in the umbrella_tree router.
+
+    Default return value is an empty dict. Override via
+    ``return_value`` or ``side_effect`` to provide hop-by-hop responses.
+    """
+    with patch(
+        "ddbj_search_api.routers.umbrella_tree.es_mget_source",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = {}
+        yield mock
+
+
+@pytest.fixture
+def mock_es_resolve_same_as_umbrella() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_resolve_same_as in the umbrella_tree router."""
+    with patch(
+        "ddbj_search_api.routers.umbrella_tree.es_resolve_same_as",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = None
+        yield mock
+
+
+@pytest.fixture
+def app_with_umbrella_tree(
+    config: AppConfig,
+    mock_es_get_source: AsyncMock,
+    mock_es_mget_source: AsyncMock,
+    mock_es_resolve_same_as_umbrella: AsyncMock,
+) -> TestClient:
+    """TestClient with umbrella_tree ES functions mocked."""
+    fake_client = AsyncMock(spec=httpx.AsyncClient)
+    application = create_app(config)
+    application.dependency_overrides[get_es_client] = lambda: fake_client
+
+    return TestClient(application, raise_server_exceptions=False)

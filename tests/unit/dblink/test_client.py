@@ -79,37 +79,37 @@ class TestIterLinkedIdsNormal:
 
     def test_empty_result_for_nonexistent_id(self, tmp_path: Path) -> None:
         db = tmp_path.joinpath("test.duckdb")
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        result = list(iter_linked_ids(db, "hum-id", "NONEXISTENT"))
+        result = list(iter_linked_ids(db, "humandbs", "NONEXISTENT"))
 
         assert result == []
 
     def test_bidirectional(self, tmp_path: Path) -> None:
         db = tmp_path.joinpath("test.duckdb")
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        result_fwd = list(iter_linked_ids(db, "hum-id", "hum0014"))
+        result_fwd = list(iter_linked_ids(db, "humandbs", "hum0014"))
         result_rev = list(iter_linked_ids(db, "jga-study", "JGAS000101"))
 
         assert result_fwd == [("jga-study", "JGAS000101")]
-        assert result_rev == [("hum-id", "hum0014")]
+        assert result_rev == [("humandbs", "hum0014")]
 
     def test_returns_dst_when_queried_as_src(self, tmp_path: Path) -> None:
         db = tmp_path / "test.duckdb"
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        result = list(iter_linked_ids(db, "hum-id", "hum0014"))
+        result = list(iter_linked_ids(db, "humandbs", "hum0014"))
 
         assert result == [("jga-study", "JGAS000101")]
 
     def test_returns_src_when_queried_as_dst(self, tmp_path: Path) -> None:
         db = tmp_path / "test.duckdb"
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
         result = list(iter_linked_ids(db, "jga-study", "JGAS000101"))
 
-        assert result == [("hum-id", "hum0014")]
+        assert result == [("humandbs", "hum0014")]
 
     def test_bidirectional_multiple_results(self, tmp_path: Path) -> None:
         db = tmp_path / "test.duckdb"
@@ -161,12 +161,12 @@ class TestIterLinkedIdsTargetFilter:
         _create_test_db(
             db,
             [
-                ("hum-id", "hum0014", "jga-study", "JGAS000101"),
-                ("hum-id", "hum0014", "bioproject", "PRJDB100"),
+                ("humandbs", "hum0014", "jga-study", "JGAS000101"),
+                ("humandbs", "hum0014", "bioproject", "PRJDB100"),
             ],
         )
 
-        result = list(iter_linked_ids(db, "hum-id", "hum0014", target=["jga-study"]))
+        result = list(iter_linked_ids(db, "humandbs", "hum0014", target=["jga-study"]))
 
         assert result == [("jga-study", "JGAS000101")]
 
@@ -175,13 +175,13 @@ class TestIterLinkedIdsTargetFilter:
         _create_test_db(
             db,
             [
-                ("hum-id", "hum0014", "jga-study", "JGAS000101"),
-                ("hum-id", "hum0014", "bioproject", "PRJDB100"),
-                ("hum-id", "hum0014", "biosample", "SAMD001"),
+                ("humandbs", "hum0014", "jga-study", "JGAS000101"),
+                ("humandbs", "hum0014", "bioproject", "PRJDB100"),
+                ("humandbs", "hum0014", "biosample", "SAMD001"),
             ],
         )
 
-        result = list(iter_linked_ids(db, "hum-id", "hum0014", target=["jga-study", "bioproject"]))
+        result = list(iter_linked_ids(db, "humandbs", "hum0014", target=["jga-study", "bioproject"]))
 
         assert len(result) == 2
         types = {r[0] for r in result}
@@ -189,9 +189,9 @@ class TestIterLinkedIdsTargetFilter:
 
     def test_target_not_matching_returns_empty(self, tmp_path: Path) -> None:
         db = tmp_path / "test.duckdb"
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        result = list(iter_linked_ids(db, "hum-id", "hum0014", target=["bioproject"]))
+        result = list(iter_linked_ids(db, "humandbs", "hum0014", target=["bioproject"]))
 
         assert result == []
 
@@ -200,26 +200,26 @@ class TestIterLinkedIdsTargetFilter:
         _create_test_db(
             db,
             [
-                ("hum-id", "hum0014", "jga-study", "JGAS000101"),
+                ("humandbs", "hum0014", "jga-study", "JGAS000101"),
                 ("bioproject", "PRJDB100", "jga-study", "JGAS000101"),
             ],
         )
 
-        result = list(iter_linked_ids(db, "jga-study", "JGAS000101", target=["hum-id"]))
+        result = list(iter_linked_ids(db, "jga-study", "JGAS000101", target=["humandbs"]))
 
-        assert result == [("hum-id", "hum0014")]
+        assert result == [("humandbs", "hum0014")]
 
     def test_target_none_returns_all(self, tmp_path: Path) -> None:
         db = tmp_path / "test.duckdb"
         _create_test_db(
             db,
             [
-                ("hum-id", "hum0014", "jga-study", "JGAS000101"),
-                ("hum-id", "hum0014", "bioproject", "PRJDB100"),
+                ("humandbs", "hum0014", "jga-study", "JGAS000101"),
+                ("humandbs", "hum0014", "bioproject", "PRJDB100"),
             ],
         )
 
-        result = list(iter_linked_ids(db, "hum-id", "hum0014", target=None))
+        result = list(iter_linked_ids(db, "humandbs", "hum0014", target=None))
 
         assert len(result) == 2
 
@@ -254,7 +254,7 @@ class TestIterLinkedIdsDbMissing:
         missing = tmp_path.joinpath("does_not_exist.duckdb")
 
         with pytest.raises(FileNotFoundError, match="DuckDB file not found"):
-            list(iter_linked_ids(missing, "hum-id", "hum0014"))
+            list(iter_linked_ids(missing, "humandbs", "hum0014"))
 
 
 class TestIterLinkedIdsPBT:
@@ -367,9 +367,9 @@ class TestGetLinkedIdsLimitedNormal:
 
     def test_empty_result_for_nonexistent_id(self, tmp_path: Path) -> None:
         db = tmp_path.joinpath("test.duckdb")
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        result = get_linked_ids_limited(db, "hum-id", "NONEXISTENT", limit=10)
+        result = get_linked_ids_limited(db, "humandbs", "NONEXISTENT", limit=10)
 
         assert result == []
 
@@ -463,7 +463,7 @@ class TestGetLinkedIdsLimitedDbMissing:
         missing = tmp_path.joinpath("does_not_exist.duckdb")
 
         with pytest.raises(FileNotFoundError, match="DuckDB file not found"):
-            get_linked_ids_limited(missing, "hum-id", "hum0014", limit=10)
+            get_linked_ids_limited(missing, "humandbs", "hum0014", limit=10)
 
 
 # --- get_linked_ids_limited_bulk ---
@@ -623,21 +623,21 @@ class TestCountLinkedIdsNormal:
 
     def test_nonexistent_id(self, tmp_path: Path) -> None:
         db = tmp_path.joinpath("test.duckdb")
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        result = count_linked_ids(db, "hum-id", "NONEXISTENT")
+        result = count_linked_ids(db, "humandbs", "NONEXISTENT")
 
         assert result == {}
 
     def test_bidirectional(self, tmp_path: Path) -> None:
         db = tmp_path.joinpath("test.duckdb")
-        _create_test_db(db, [("hum-id", "hum0014", "jga-study", "JGAS000101")])
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
 
-        fwd = count_linked_ids(db, "hum-id", "hum0014")
+        fwd = count_linked_ids(db, "humandbs", "hum0014")
         rev = count_linked_ids(db, "jga-study", "JGAS000101")
 
         assert fwd == {"jga-study": 1}
-        assert rev == {"hum-id": 1}
+        assert rev == {"humandbs": 1}
 
 
 class TestCountLinkedIdsConsistency:
@@ -663,7 +663,7 @@ class TestCountLinkedIdsDbMissing:
         missing = tmp_path.joinpath("does_not_exist.duckdb")
 
         with pytest.raises(FileNotFoundError, match="DuckDB file not found"):
-            count_linked_ids(missing, "hum-id", "hum0014")
+            count_linked_ids(missing, "humandbs", "hum0014")
 
 
 # --- count_linked_ids_bulk ---

@@ -3,7 +3,7 @@
   "info": {
     "title": "DDBJ Search API",
     "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.",
-    "version": "0.1.1"
+    "version": "0.1.2.dev10+g1b4a0f500.d20260409"
   },
   "paths": {
     "/entries/": {
@@ -41,6 +41,24 @@
               "title": "Perpage"
             },
             "description": "Items per page (1-100)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
           },
           {
             "name": "keywords",
@@ -274,6 +292,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -355,6 +385,24 @@
               "title": "Perpage"
             },
             "description": "Items per page (1-100)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
           },
           {
             "name": "keywords",
@@ -642,6 +690,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -735,6 +795,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -948,6 +1026,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -1041,6 +1131,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -1254,6 +1362,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -1347,6 +1467,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -1560,6 +1698,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -1653,6 +1803,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -1866,6 +2034,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -1959,6 +2139,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -2172,6 +2370,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -2265,6 +2475,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -2478,6 +2706,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -2571,6 +2811,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -2784,6 +3042,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -2877,6 +3147,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -3090,6 +3378,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -3183,6 +3483,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -3396,6 +3714,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -3489,6 +3819,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -3702,6 +4050,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -3795,6 +4155,24 @@
             "description": "Items per page (1-100)."
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
             "name": "keywords",
             "in": "query",
             "required": false,
@@ -4008,6 +4386,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -4093,6 +4483,18 @@
               "default": "json"
             },
             "description": "Response format: 'json' (JSON Array) or 'ndjson' (Newline Delimited JSON)."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs from DuckDB. When false, DuckDB is not queried and dbXrefs are omitted.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs from DuckDB. When false, DuckDB is not queried and dbXrefs are omitted."
           }
         ],
         "requestBody": {
@@ -4118,6 +4520,72 @@
                 "schema": {
                   "type": "string",
                   "description": "One JSON object per line (NDJSON). Each line is an entry document."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found (entry does not exist or invalid type).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/bioproject/{accession}/umbrella-tree": {
+      "get": {
+        "tags": [
+          "Entry Detail"
+        ],
+        "summary": "Get BioProject umbrella tree (flat graph).",
+        "description": "Return the umbrella tree containing the BioProject as a flat graph (query / roots / edges). DAG-safe.",
+        "operationId": "get_umbrella_tree_entries_bioproject__accession__umbrella_tree_get",
+        "parameters": [
+          {
+            "name": "accession",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "BioProject accession (primary identifier or sameAs secondary ID).",
+              "title": "Accession"
+            },
+            "description": "BioProject accession (primary identifier or sameAs secondary ID)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UmbrellaTreeResponse"
                 }
               }
             }
@@ -4421,6 +4889,18 @@
               "title": "Dbxrefslimit"
             },
             "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
           }
         ],
         "responses": {
@@ -7345,7 +7825,7 @@
           "biosample",
           "gea",
           "geo",
-          "hum-id",
+          "humandbs",
           "insdc",
           "insdc-assembly",
           "insdc-master",
@@ -7354,7 +7834,7 @@
           "jga-policy",
           "jga-study",
           "metabobank",
-          "pubmed-id",
+          "pubmed",
           "sra-analysis",
           "sra-experiment",
           "sra-run",
@@ -9975,9 +10455,16 @@
       "Pagination": {
         "properties": {
           "page": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Page",
-            "description": "Current page number (1-based)."
+            "description": "Current page number (1-based). Null in cursor mode."
           },
           "perPage": {
             "type": "integer",
@@ -9988,16 +10475,33 @@
             "type": "integer",
             "title": "Total",
             "description": "Total number of matching items."
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor",
+            "description": "Cursor token for the next page. Null on the last page."
+          },
+          "hasNext": {
+            "type": "boolean",
+            "title": "Hasnext",
+            "description": "Whether more pages are available.",
+            "default": false
           }
         },
         "type": "object",
         "required": [
-          "page",
           "perPage",
           "total"
         ],
         "title": "Pagination",
-        "description": "Offset-based pagination metadata."
+        "description": "Pagination metadata (supports both offset and cursor modes)."
       },
       "ProblemDetails": {
         "properties": {
@@ -10720,6 +11224,74 @@
         "title": "SraEntryJsonLdResponse",
         "description": "SRA entry in JSON-LD format."
       },
+      "UmbrellaTreeEdge": {
+        "properties": {
+          "parent": {
+            "type": "string",
+            "title": "Parent",
+            "description": "Parent BioProject accession (umbrella side).",
+            "examples": [
+              "PRJDB0001"
+            ]
+          },
+          "child": {
+            "type": "string",
+            "title": "Child",
+            "description": "Child BioProject accession (leaf or sub-umbrella).",
+            "examples": [
+              "PRJDB1234"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "parent",
+          "child"
+        ],
+        "title": "UmbrellaTreeEdge",
+        "description": "Directed edge in the umbrella tree (BioProject accessions)."
+      },
+      "UmbrellaTreeResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "description": "Resolved primary identifier of the requested BioProject.",
+            "examples": [
+              "PRJDB1234"
+            ]
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Roots",
+            "description": "Root BioProject accessions (parentBioProjects is empty).",
+            "examples": [
+              [
+                "PRJDB0001"
+              ]
+            ]
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/UmbrellaTreeEdge"
+            },
+            "type": "array",
+            "title": "Edges",
+            "description": "Unique (parent, child) pairs covering the reachable subgraph."
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "roots",
+          "edges"
+        ],
+        "title": "UmbrellaTreeResponse",
+        "description": "Flat graph representation of a BioProject umbrella tree.\n\nOrphan entries return ``roots == [query]`` and ``edges == []``."
+      },
       "Xref": {
         "properties": {
           "identifier": {
@@ -10743,12 +11315,12 @@
               "jga-policy",
               "gea",
               "geo",
-              "hum-id",
+              "humandbs",
               "insdc",
               "insdc-assembly",
               "insdc-master",
               "metabobank",
-              "pubmed-id",
+              "pubmed",
               "taxonomy"
             ],
             "title": "Type"

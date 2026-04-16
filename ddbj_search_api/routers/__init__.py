@@ -1,8 +1,9 @@
 """Aggregate all API routers.
 
-Route registration order matters: bulk must come before entry_detail
-to avoid path conflicts (``/entries/{type}/bulk`` vs
-``/entries/{type}/{id}``).
+Route registration order matters: both ``bulk`` and ``umbrella_tree``
+must come before ``entry_detail`` to avoid path conflicts
+(``/entries/{type}/bulk`` and ``/entries/bioproject/{accession}/umbrella-tree``
+vs. the generic ``/entries/{type}/{id}``).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from ddbj_search_api.routers import bulk, dblink, entries, entry_detail, facets, service_info
+from ddbj_search_api.routers import bulk, dblink, entries, entry_detail, facets, service_info, umbrella_tree
 from ddbj_search_api.schemas.common import ProblemDetails
 
 # Common error responses (RFC 7807) applied to all endpoints.
@@ -37,6 +38,7 @@ PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
 router = APIRouter(responses=PROBLEM_RESPONSES)
 router.include_router(entries.router)
 router.include_router(bulk.router)
+router.include_router(umbrella_tree.router)
 router.include_router(entry_detail.router)
 router.include_router(facets.router)
 router.include_router(dblink.router)

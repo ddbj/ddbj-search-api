@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from ddbj_search_api.config import AppConfig, Env, logging_config
@@ -11,6 +13,19 @@ from ddbj_search_api.config import AppConfig, Env, logging_config
 
 class TestAppConfigDefaults:
     """AppConfig: default values loaded without any env vars."""
+
+    @pytest.fixture
+    def config(self, monkeypatch: pytest.MonkeyPatch) -> AppConfig:
+        """Fresh AppConfig with all DDBJ_SEARCH_API_* env vars cleared.
+
+        Overrides the shared ``config`` fixture so that default-value
+        assertions are not polluted by runtime env vars (e.g. Docker
+        compose sets ``DDBJ_SEARCH_API_ES_URL`` on the app container).
+        """
+        for var in list(os.environ):
+            if var.startswith("DDBJ_SEARCH_API_"):
+                monkeypatch.delenv(var, raising=False)
+        return AppConfig()
 
     def test_url_prefix(self, config: AppConfig) -> None:
         assert config.url_prefix == "/search/api"
