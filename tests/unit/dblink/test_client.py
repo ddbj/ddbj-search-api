@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 from pathlib import Path
 
 import duckdb
@@ -10,7 +11,10 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api.dblink import client as dblink_client
 from ddbj_search_api.dblink.client import (
+    _get_conn,
+    _reset_cache,
     count_linked_ids,
     count_linked_ids_bulk,
     get_linked_ids_limited,
@@ -802,15 +806,17 @@ class TestNewFunctionsPBT:
             assert result == {}
 
 
-# --- Cache bypass (DBInstanceCache) ---
+# --- Connection cache & file replacement ---
 
 
-class TestCacheBypass:
-    """Verify that atomic file replacement is visible to subsequent calls.
+class TestCacheBypassAfterInvalidation:
+    """Verify that atomic file replacement becomes visible after cache invalidation.
 
     DuckDB's process-global ``DBInstanceCache`` caches database instances
-    by file path.  The ``:memory:`` + ATTACH approach bypasses this cache
-    so that ``Path.replace()`` is immediately visible.
+    by file path.  The client bypasses this via ``:memory:`` + ATTACH and
+    maintains its own TTL-based connection cache.  Atomic file
+    replacement becomes visible after :func:`_reset_cache` clears the
+    cached connection.
     """
 
     def test_iter_sees_new_data_after_file_replacement(self, tmp_path: Path) -> None:
@@ -829,6 +835,7 @@ class TestCacheBypass:
             ],
         )
         new_db.replace(db)
+        _reset_cache()
 
         result2 = list(iter_linked_ids(db, "bioproject", "PRJDB100"))
         assert len(result2) == 2
@@ -849,6 +856,7 @@ class TestCacheBypass:
             ],
         )
         new_db.replace(db)
+        _reset_cache()
 
         counts2 = count_linked_ids(db, "bioproject", "PRJDB100")
         assert counts2 == {"biosample": 2}
@@ -869,6 +877,165 @@ class TestCacheBypass:
             ],
         )
         new_db.replace(db)
+        _reset_cache()
 
         result2 = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
         assert len(result2) == 2
+
+
+class TestCacheBypassBeforeInvalidation:
+    """Without cache invalidation, cached connection keeps returning old data."""
+
+    def test_stale_data_returned_when_cache_not_cleared(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result1 = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
+        assert len(result1) == 1
+
+        new_db = tmp_path / "dblink.tmp.duckdb"
+        _create_test_db(
+            new_db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD002"),
+            ],
+        )
+        new_db.replace(db)
+
+        # Within TTL, the cached connection still reports the old state.
+        result2 = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
+        assert len(result2) == 1
+
+
+# --- Connection cache TTL ---
+
+
+class TestConnCacheTtl:
+    """Verify TTL-based connection cache behaviour of :func:`_get_conn`."""
+
+    def test_reuses_connection_within_ttl(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        t = [0.0]
+        monkeypatch.setattr("ddbj_search_api.dblink.client.time.monotonic", lambda: t[0])
+
+        conn1 = _get_conn(db)
+        t[0] = dblink_client._CACHE_TTL_SECONDS - 1
+        conn2 = _get_conn(db)
+
+        assert conn1 is conn2
+
+    def test_creates_new_connection_after_ttl(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        t = [0.0]
+        monkeypatch.setattr("ddbj_search_api.dblink.client.time.monotonic", lambda: t[0])
+
+        conn1 = _get_conn(db)
+        t[0] = dblink_client._CACHE_TTL_SECONDS + 1
+        conn2 = _get_conn(db)
+
+        assert conn1 is not conn2
+
+    def test_reset_cache_invalidates_immediately(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        conn1 = _get_conn(db)
+        _reset_cache()
+        conn2 = _get_conn(db)
+
+        assert conn1 is not conn2
+
+    def test_separate_paths_get_separate_connections(self, tmp_path: Path) -> None:
+        db_a = tmp_path / "a.duckdb"
+        db_b = tmp_path / "b.duckdb"
+        _create_test_db(db_a, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+        _create_test_db(db_b, [("bioproject", "PRJDB200", "biosample", "SAMD002")])
+
+        conn_a = _get_conn(db_a)
+        conn_b = _get_conn(db_b)
+
+        assert conn_a is not conn_b
+
+    def test_threads_pragma_is_applied(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [])
+
+        conn = _get_conn(db)
+        value = conn.execute("SELECT current_setting('threads')").fetchone()
+        assert value is not None
+        assert int(value[0]) == dblink_client._PRAGMA_THREADS
+
+
+# --- Cursor independence ---
+
+
+class TestCursorIndependence:
+    """Multiple cursors on the same cached connection must not interfere."""
+
+    def test_parallel_cursors_in_separate_threads(self, tmp_path: Path) -> None:
+        """Two threads querying distinct IDs concurrently see only their own results."""
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(
+            db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD002"),
+                ("bioproject", "PRJDB200", "sra-study", "DRP001"),
+            ],
+        )
+
+        results: dict[str, list[tuple[str, str]]] = {}
+        barrier = threading.Barrier(2)
+
+        def worker(acc_id: str) -> None:
+            barrier.wait()
+            results[acc_id] = get_linked_ids_limited(db, "bioproject", acc_id, limit=10)
+
+        threads = [
+            threading.Thread(target=worker, args=("PRJDB100",)),
+            threading.Thread(target=worker, args=("PRJDB200",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert sorted(results["PRJDB100"]) == [
+            ("biosample", "SAMD001"),
+            ("biosample", "SAMD002"),
+        ]
+        assert results["PRJDB200"] == [("sra-study", "DRP001")]
+
+    def test_iter_and_limited_can_run_sequentially_on_shared_connection(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A partially-consumed iter_linked_ids and a later get_linked_ids_limited
+        on the same cached connection both produce correct results.
+        """
+        db = tmp_path / "dblink.duckdb"
+        rows = [("bioproject", "PRJDB100", "biosample", f"SAMD{i:03d}") for i in range(6)]
+        _create_test_db(db, rows)
+
+        iterator = iter_linked_ids(db, "bioproject", "PRJDB100", chunk_size=2)
+        first_two = [next(iterator), next(iterator)]
+
+        limited = get_linked_ids_limited(db, "bioproject", "PRJDB100", limit=10)
+        rest = list(iterator)
+
+        assert len(first_two) == 2
+        assert len(limited) == 6
+        assert len(first_two) + len(rest) == 6

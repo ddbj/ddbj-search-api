@@ -1,20 +1,35 @@
 """Read-only DuckDB client for dblink relation lookups.
 
-Uses ``:memory:`` + ``ATTACH`` to bypass DuckDB's process-global
-``DBInstanceCache``.  Without this, ``duckdb.connect(path)`` reuses a
-cached database instance keyed by path string, so atomic file
-replacement (``Path.replace()``) by the converter goes unnoticed.
+Uses an in-memory connection with ``ATTACH ... (READ_ONLY)`` to bypass
+DuckDB's process-global ``DBInstanceCache`` (``duckdb.connect(path)``
+caches by path string and would hide the converter's atomic
+``Path.replace()`` updates).
+
+The in-memory connection is shared across requests via a TTL-based
+module-level cache, and each caller gets its own cursor via
+``conn.cursor()`` to avoid contention on a single default cursor.
+``PRAGMA threads`` is lowered per-connection to keep one query from
+saturating every CPU core when requests arrive concurrently.
+
+When the converter atomically replaces the DuckDB file, the new inode
+becomes visible either (a) after :data:`_CACHE_TTL_SECONDS` elapses,
+or (b) after :func:`_reset_cache` is called explicitly.
 """
 
 from __future__ import annotations
 
 import collections.abc
-import contextlib
+import threading
+import time
 from pathlib import Path
 
 import duckdb
 
 _CATALOG = "dblink"
+_CACHE_TTL_SECONDS = 900
+_PRAGMA_THREADS = 2
+_CONN_CACHE: dict[Path, tuple[duckdb.DuckDBPyConnection, float]] = {}
+_LOCK = threading.Lock()
 
 
 def _escape_path(path: Path) -> str:
@@ -29,21 +44,39 @@ def _check_db(db_path: Path) -> None:
         raise FileNotFoundError(msg)
 
 
-@contextlib.contextmanager
-def _open_dblink(
-    db_path: Path,
-) -> collections.abc.Generator[duckdb.DuckDBPyConnection, None, None]:
-    """Open an in-memory connection with *db_path* attached read-only.
+def _get_conn(db_path: Path) -> duckdb.DuckDBPyConnection:
+    """Return a cached in-memory DuckDB connection with *db_path* attached read-only.
 
-    Bypasses ``DBInstanceCache`` because ``:memory:`` is never cached.
+    On cache miss creates a new ``:memory:`` connection, attaches the
+    database at *db_path*, and lowers ``PRAGMA threads`` to
+    :data:`_PRAGMA_THREADS` to prevent per-query thread explosion.
+    Subsequent calls within :data:`_CACHE_TTL_SECONDS` return the same
+    connection object.
     """
     _check_db(db_path)
-    conn = duckdb.connect(":memory:")
-    try:
+    now = time.monotonic()
+    with _LOCK:
+        cached = _CONN_CACHE.get(db_path)
+        if cached is not None and now - cached[1] < _CACHE_TTL_SECONDS:
+            return cached[0]
+        conn = duckdb.connect(":memory:")
         conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
-        yield conn
-    finally:
-        conn.close()
+        conn.execute(f"PRAGMA threads={_PRAGMA_THREADS}")
+        _CONN_CACHE[db_path] = (conn, now)
+        return conn
+
+
+def _reset_cache() -> None:
+    """Drop all cached connections.
+
+    The next :func:`_get_conn` call reopens the database so that an
+    atomic file replacement by the converter becomes immediately
+    visible.  Previously-cached connections are not explicitly closed;
+    in-flight cursors keep them alive until the consumer finishes, at
+    which point the OS releases the underlying file handle.
+    """
+    with _LOCK:
+        _CONN_CACHE.clear()
 
 
 def iter_linked_ids(
@@ -55,9 +88,9 @@ def iter_linked_ids(
 ) -> collections.abc.Generator[tuple[str, str], None, None]:
     """Yield related (type, accession) pairs in chunks.
 
-    Streams results via ``fetchmany`` to avoid loading all rows into
-    memory at once.  The connection is held open until the generator
-    is closed.
+    Streams results via ``fetchmany`` on an independent cursor so that
+    concurrent generators on the same cached connection do not share
+    state.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -72,13 +105,11 @@ def iter_linked_ids(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    _check_db(db_path)
-
-    conn = duckdb.connect(":memory:")
+    conn = _get_conn(db_path)
+    cursor = conn.cursor()
     try:
-        conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
         if target:
-            cursor = conn.execute(
+            cursor.execute(
                 f"""
                 SELECT dst_type, dst_accession FROM {_CATALOG}.relation
                 WHERE src_type = ? AND src_accession = ? AND dst_type IN (SELECT UNNEST(?))
@@ -90,7 +121,7 @@ def iter_linked_ids(
                 (type_, id_, list(target), type_, id_, list(target)),
             )
         else:
-            cursor = conn.execute(
+            cursor.execute(
                 f"""
                 SELECT dst_type, dst_accession FROM {_CATALOG}.relation
                 WHERE src_type = ? AND src_accession = ?
@@ -107,7 +138,7 @@ def iter_linked_ids(
                 break
             yield from batch
     finally:
-        conn.close()
+        cursor.close()
 
 
 def get_linked_ids_limited(
@@ -133,11 +164,15 @@ def get_linked_ids_limited(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    with _open_dblink(db_path) as conn:
-        rows: list[tuple[str, str]] = conn.execute(
+    conn = _get_conn(db_path)
+    cursor = conn.cursor()
+    try:
+        rows: list[tuple[str, str]] = cursor.execute(
             _QUERY_LIMITED,
             (type_, id_, type_, id_, limit),
         ).fetchall()
+    finally:
+        cursor.close()
 
     return rows
 
@@ -160,11 +195,15 @@ def count_linked_ids(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    with _open_dblink(db_path) as conn:
-        rows: list[tuple[str, int]] = conn.execute(
+    conn = _get_conn(db_path)
+    cursor = conn.cursor()
+    try:
+        rows: list[tuple[str, int]] = cursor.execute(
             _QUERY_COUNT,
             (type_, id_, type_, id_),
         ).fetchall()
+    finally:
+        cursor.close()
 
     return dict(rows)
 
@@ -205,8 +244,8 @@ def get_linked_ids_limited_bulk(
 ) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Return up to *limit* per linked type related (type, accession) pairs per entry.
 
-    Uses a single connection and loops over entries to avoid expensive
-    LATERAL joins on large tables.
+    Uses a single cached connection and loops over entries via fresh
+    cursors to avoid expensive LATERAL joins on large tables.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -223,13 +262,17 @@ def get_linked_ids_limited_bulk(
         return {}
 
     result: dict[tuple[str, str], list[tuple[str, str]]] = {(t, i): [] for t, i in entries}
-    with _open_dblink(db_path) as conn:
-        for type_, id_ in entries:
-            rows: list[tuple[str, str]] = conn.execute(
+    conn = _get_conn(db_path)
+    for type_, id_ in entries:
+        cursor = conn.cursor()
+        try:
+            rows: list[tuple[str, str]] = cursor.execute(
                 _QUERY_LIMITED,
                 (type_, id_, type_, id_, limit),
             ).fetchall()
-            result[(type_, id_)] = rows
+        finally:
+            cursor.close()
+        result[(type_, id_)] = rows
 
     return result
 
@@ -238,10 +281,10 @@ def count_linked_ids_bulk(
     db_path: Path,
     entries: list[tuple[str, str]],
 ) -> dict[tuple[str, str], dict[str, int]]:
-    """Return per-type counts for multiple accessions in one query.
+    """Return per-type counts for multiple accessions in one pass.
 
-    Uses a single connection and loops over entries to avoid expensive
-    joins on large tables.
+    Uses a single cached connection and loops over entries via fresh
+    cursors to avoid expensive joins on large tables.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -257,12 +300,16 @@ def count_linked_ids_bulk(
         return {}
 
     result: dict[tuple[str, str], dict[str, int]] = {(t, i): {} for t, i in entries}
-    with _open_dblink(db_path) as conn:
-        for type_, id_ in entries:
-            rows: list[tuple[str, int]] = conn.execute(
+    conn = _get_conn(db_path)
+    for type_, id_ in entries:
+        cursor = conn.cursor()
+        try:
+            rows: list[tuple[str, int]] = cursor.execute(
                 _QUERY_COUNT,
                 (type_, id_, type_, id_),
             ).fetchall()
-            result[(type_, id_)] = dict(rows)
+        finally:
+            cursor.close()
+        result[(type_, id_)] = dict(rows)
 
     return result
