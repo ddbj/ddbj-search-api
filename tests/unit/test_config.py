@@ -57,9 +57,6 @@ class TestAppConfigDefaults:
     def test_solr_txsearch_url_default(self, config: AppConfig) -> None:
         assert config.solr_txsearch_url is None
 
-    def test_solr_timeout_default(self, config: AppConfig) -> None:
-        assert config.solr_timeout == 15.0
-
 
 # === Computed field: debug ===
 
@@ -133,10 +130,58 @@ class TestAppConfigEnvOverrides:
         config = AppConfig()
         assert config.solr_txsearch_url == "http://localhost:32005/solr-rgm/ncbi_taxonomy/select"
 
-    def test_solr_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_TIMEOUT", "20.5")
+
+# === Per-backend timeouts (AP5) ===
+
+
+class TestAppConfigPerBackendTimeouts:
+    """AP5: cross-search per-backend timeouts replace the single ``solr_timeout``.
+
+    Initial values (SSOT portal-impl/source.md §AP5):
+    ES 10s / ARSA 15s / TXSearch 5s / total 20s.
+    """
+
+    @pytest.fixture
+    def config(self, monkeypatch: pytest.MonkeyPatch) -> AppConfig:
+        for var in list(os.environ):
+            if var.startswith("DDBJ_SEARCH_API_"):
+                monkeypatch.delenv(var, raising=False)
+        return AppConfig()
+
+    def test_es_search_timeout_default(self, config: AppConfig) -> None:
+        assert config.es_search_timeout == 10.0
+
+    def test_arsa_timeout_default(self, config: AppConfig) -> None:
+        assert config.arsa_timeout == 15.0
+
+    def test_txsearch_timeout_default(self, config: AppConfig) -> None:
+        assert config.txsearch_timeout == 5.0
+
+    def test_cross_search_total_timeout_default(self, config: AppConfig) -> None:
+        assert config.cross_search_total_timeout == 20.0
+
+    def test_solr_timeout_field_removed(self) -> None:
+        assert "solr_timeout" not in AppConfig.model_fields
+
+    def test_es_search_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_ES_SEARCH_TIMEOUT", "7.5")
         config = AppConfig()
-        assert config.solr_timeout == 20.5
+        assert config.es_search_timeout == 7.5
+
+    def test_arsa_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_ARSA_TIMEOUT", "25.0")
+        config = AppConfig()
+        assert config.arsa_timeout == 25.0
+
+    def test_txsearch_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_TXSEARCH_TIMEOUT", "3.0")
+        config = AppConfig()
+        assert config.txsearch_timeout == 3.0
+
+    def test_cross_search_total_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_CROSS_SEARCH_TOTAL_TIMEOUT", "30.0")
+        config = AppConfig()
+        assert config.cross_search_total_timeout == 30.0
 
 
 # === Env enum ===

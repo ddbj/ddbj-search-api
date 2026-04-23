@@ -638,8 +638,8 @@ db-portal フロントエンド専用の統合検索エンドポイント。`/en
 
 - AP1 (完了): 4 パターン分岐の骨組み、ES 対応 6 DB のシンプル検索、cursor/hits envelope
 - AP4 (完了): Solr proxy で `trad` (ARSA 8-shard fan-out) / `taxonomy` (TXSearch) を有効化。cursor は未対応 (Solr 4.4.0 に PIT 相当なし) のため `db=trad`/`db=taxonomy` + `cursor` は 400 `cursor-not-supported`
+- AP5 (完了): 横断 count-only を `asyncio.create_task` + `asyncio.wait(ALL_COMPLETED)` で並列 fan-out、per-backend timeout (ES 10s / ARSA 15s / TXSearch 5s) + 全体 20s を適用
 - AP3 (予定): Advanced Search DSL パーサ (Lark LALR(1)) で `adv` を有効化
-- AP5 (予定): 横断 count-only の並列 fan-out + 個別/全体 timeout
 
 #### `GET /db-portal/search`
 
@@ -647,7 +647,7 @@ db-portal フロントエンド専用の統合検索エンドポイント。`/en
 
 | # | クエリ | 処理 |
 |---|-------|-----|
-| 1 | `q` のみ | 横断シンプル検索 (count-only、8 DB に順次発行。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES) |
+| 1 | `q` のみ | 横断シンプル検索 (count-only、8 DB に並列発行。個別 timeout ES 10s / ARSA 15s / TXSearch 5s、全体 20s で早期打切り。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES) |
 | 2 | `q` + `db` (ES 対応 6 DB) | DB 指定シンプル検索 (`hits` envelope + cursor/offset pagination) |
 | 3 | `q` + `db=trad` / `db=taxonomy` | DB 指定シンプル検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却) |
 | 4 | `adv` (`db` 指定有無問わず) | 501 (`advanced-search-not-implemented`) |
@@ -694,6 +694,14 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 - `error` 値: `timeout`, `upstream_5xx`, `connection_refused`, `unknown`
 - 1 つ以上の DB で成功: HTTP 200 (部分失敗許容)
 - 全 DB 失敗: HTTP 502 (`about:blank`)
+
+**タイムアウト挙動 (AP5)**:
+
+- 8 DB は `asyncio.create_task` で並列 fan-out、`asyncio.wait(return_when=ALL_COMPLETED, timeout=20s)` で集約。順序は task 完了順に依存せず常に上記固定順
+- 個別 timeout (ES 10s / ARSA 15s / TXSearch 5s) は各 DB 関数内の `asyncio.wait_for` で適用。超過した DB は `error=timeout` でレスポンスに含まれる
+- 全体 timeout (20s) 超過時、未完了の task は cancel され、対象 DB は `error=timeout` で補完される (部分完了分は維持、C2 パターン)
+- 呼び出し側は個別/全体どちらで切れたかを区別しない (内訳は X-Request-ID + サーバログで追える)
+- 初期値は `AppConfig` の `es_search_timeout` / `arsa_timeout` / `txsearch_timeout` / `cross_search_total_timeout` で env 経由に上書き可能
 
 **DB 指定レスポンス** (`DbPortalHitsResponse`、`db` が ES 対応 6 DB のいずれか):
 

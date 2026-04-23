@@ -9,12 +9,14 @@ Four request patterns dispatched by a single handler:
 4. ``cursor`` + ``db=trad/taxonomy`` → 400 ``cursor-not-supported``
                            (Solr is offset-only; no PIT equivalent in 4.4.0)
 
-Mutually exclusive ``q`` + ``adv`` returns 400.  Sequential cross-search
-fan-out will be parallelised with per-DB timeouts in AP5.
+Mutually exclusive ``q`` + ``adv`` returns 400.  Cross-search count-only
+fans out in parallel (AP5) with per-backend ``asyncio.wait_for`` bounds
+and an overall ``asyncio.wait`` deadline.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -202,15 +204,26 @@ def _map_httpx_error(exc: Exception) -> DbPortalCountError:
 
 async def _count_one_db_es(
     client: httpx.AsyncClient,
+    config: AppConfig,
     db: DbPortalDb,
     query_body: dict[str, Any],
 ) -> DbPortalCount:
     try:
-        resp = await es_search(
-            client,
-            _db_to_index(db),
-            {"query": query_body, "size": 0},
+        resp = await asyncio.wait_for(
+            es_search(
+                client,
+                _db_to_index(db),
+                {"query": query_body, "size": 0},
+            ),
+            timeout=config.es_search_timeout,
         )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal cross-search timed out for db=%s (es_search_timeout=%.2fs)",
+            db.value,
+            config.es_search_timeout,
+        )
+        return DbPortalCount(db=db, count=None, error=DbPortalCountError.timeout)
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -250,12 +263,21 @@ async def _count_arsa(
         shards=config.solr_arsa_shards,
     )
     try:
-        resp = await arsa_search(
-            client,
-            base_url=config.solr_arsa_base_url,
-            core=config.solr_arsa_core,
-            params=params,
+        resp = await asyncio.wait_for(
+            arsa_search(
+                client,
+                base_url=config.solr_arsa_base_url,
+                core=config.solr_arsa_core,
+                params=params,
+            ),
+            timeout=config.arsa_timeout,
         )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
+            config.arsa_timeout,
+        )
+        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.timeout)
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -290,11 +312,20 @@ async def _count_txsearch(
         sort=None,
     )
     try:
-        resp = await txsearch_search(
-            client,
-            url=config.solr_txsearch_url,
-            params=params,
+        resp = await asyncio.wait_for(
+            txsearch_search(
+                client,
+                url=config.solr_txsearch_url,
+                params=params,
+            ),
+            timeout=config.txsearch_timeout,
         )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal cross-search timed out for db=taxonomy (TXSearch, txsearch_timeout=%.2fs)",
+            config.txsearch_timeout,
+        )
+        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.timeout)
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -324,7 +355,7 @@ async def _count_one_db(
         return await _count_arsa(solr_client, config, q)
     if db == DbPortalDb.taxonomy:
         return await _count_txsearch(solr_client, config, q)
-    return await _count_one_db_es(es_client, db, es_query_body)
+    return await _count_one_db_es(es_client, config, db, es_query_body)
 
 
 async def _cross_search_count_only(
@@ -333,17 +364,45 @@ async def _cross_search_count_only(
     config: AppConfig,
     q: str | None,
 ) -> DbPortalCrossSearchResponse:
-    """Sequential cross-database count-only search.
+    """Parallel cross-database count-only search (AP5).
 
-    AP5 will replace the loop with ``asyncio.gather`` + per-DB
-    timeouts.  Response shape remains the same.
+    All 8 DBs fan out via ``asyncio.create_task``; ``asyncio.wait`` with
+    ``ALL_COMPLETED`` + ``cross_search_total_timeout`` collects them.
+    Per-backend timeouts are applied inside each ``_count_one_db_*``
+    via ``asyncio.wait_for``.  Tasks still pending at the total deadline
+    are cancelled and surfaced as ``error=timeout`` in the response,
+    preserving the AP1 partial-success policy (200 as long as any DB
+    returned a count; 502 only when every DB failed).
     """
     query_body = build_search_query(keywords=q, keyword_operator="AND")
-    databases: list[DbPortalCount] = []
+    task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
-        databases.append(
-            await _count_one_db(es_client, solr_client, config, db, query_body, q),
+        task = asyncio.create_task(
+            _count_one_db(es_client, solr_client, config, db, query_body, q),
         )
+        task_map[task] = db
+    done, pending = await asyncio.wait(
+        task_map.keys(),
+        timeout=config.cross_search_total_timeout,
+        return_when=asyncio.ALL_COMPLETED,
+    )
+    results: dict[DbPortalDb, DbPortalCount] = {}
+    for task in done:
+        results[task_map[task]] = task.result()
+    for task in pending:
+        task.cancel()
+        db = task_map[task]
+        logger.warning(
+            "db-portal cross-search hit total timeout for db=%s (cancelled, total_timeout=%.2fs)",
+            db.value,
+            config.cross_search_total_timeout,
+        )
+        results[db] = DbPortalCount(
+            db=db,
+            count=None,
+            error=DbPortalCountError.timeout,
+        )
+    databases = [results[db] for db in _DB_ORDER]
     if all(item.error is not None for item in databases):
         raise HTTPException(
             status_code=502,

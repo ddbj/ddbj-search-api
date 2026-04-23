@@ -225,12 +225,16 @@ class TestLifespanSolrClient:
             client = application.state.solr_client
         assert client.is_closed is True
 
-    def test_solr_timeout_applied_from_config(self) -> None:
+    def test_solr_client_timeout_uses_max_of_backend_timeouts(self) -> None:
+        """Solr client's client-level timeout is the hard cap shared by ARSA
+        and TXSearch; per-call ``asyncio.wait_for`` (AP5) tightens it further.
+        """
         config = AppConfig()
-        object.__setattr__(config, "solr_timeout", 25.0)
+        object.__setattr__(config, "arsa_timeout", 30.0)
+        object.__setattr__(config, "txsearch_timeout", 5.0)
         application = create_app(config)
         with TestClient(application):
-            assert application.state.solr_client.timeout.read == 25.0
+            assert application.state.solr_client.timeout.read == 30.0
 
     def test_es_and_solr_clients_are_distinct(self) -> None:
         application = create_app(AppConfig())

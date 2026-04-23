@@ -62,7 +62,15 @@ class AppConfig(BaseSettings):
     solr_arsa_shards: str | None = None
     solr_arsa_core: str = "collection1"
     solr_txsearch_url: str | None = None
-    solr_timeout: float = 15.0
+
+    # AP5 cross-search (``/db-portal/search`` count-only) per-backend and
+    # overall timeouts. ``es_timeout`` above stays as the client-level default
+    # for /entries/* and other routers; these four apply only inside
+    # ``routers.db_portal._cross_search_count_only`` via ``asyncio.wait_for``.
+    es_search_timeout: float = 10.0
+    arsa_timeout: float = 15.0
+    txsearch_timeout: float = 5.0
+    cross_search_total_timeout: float = 20.0
 
     @computed_field  # type: ignore[prop-decorator]
     @property

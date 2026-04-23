@@ -199,8 +199,12 @@ def _make_lifespan(config: AppConfig) -> Any:
         # call passes a full URL (ARSA ``{base}/{core}/select``, TXSearch
         # preformed ``/solr-rgm/.../select``). Smaller pool than ES: Solr
         # traffic comes only from ``/db-portal/search``.
+        #
+        # Client-level timeout is the hard cap for Solr requests; cross-search
+        # per-call bounds (``arsa_timeout`` / ``txsearch_timeout``) are further
+        # tightened by ``asyncio.wait_for`` inside ``routers.db_portal``.
         app.state.solr_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(config.solr_timeout),
+            timeout=httpx.Timeout(max(config.arsa_timeout, config.txsearch_timeout)),
             limits=httpx.Limits(max_connections=100),
         )
         yield

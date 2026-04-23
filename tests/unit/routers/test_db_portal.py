@@ -12,6 +12,8 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -21,6 +23,7 @@ from fastapi.testclient import TestClient
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api.config import AppConfig
 from ddbj_search_api.cursor import CursorPayload, encode_cursor
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCountError,
@@ -963,3 +966,388 @@ class TestDbPortalSolrErrorPropagation:
         mock_txsearch_search_db_portal.side_effect = httpx.TimeoutException("timeout")
         resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "taxonomy"})
         assert resp.status_code == 502
+
+
+# === AP5: parallel fan-out + per-backend timeouts ===
+
+
+def _delayed_es_response(delay: float, total: int = 0) -> Any:
+    """Return an async side_effect that sleeps then yields an ES response."""
+
+    async def _run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(delay)
+        return make_es_search_response(total=total)
+
+    return _run
+
+
+def _delayed_arsa_response(delay: float, num_found: int = 0) -> Any:
+    async def _run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(delay)
+        return make_solr_arsa_response(num_found=num_found)
+
+    return _run
+
+
+def _delayed_txsearch_response(delay: float, num_found: int = 0) -> Any:
+    async def _run(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(delay)
+        return make_solr_txsearch_response(num_found=num_found)
+
+    return _run
+
+
+class TestDbPortalCrossSearchAP5Parallelization:
+    """AP5: parallel fan-out + per-backend timeouts + total timeout.
+
+    Mock boundary stays at ``es_search`` / ``arsa_search`` / ``txsearch_search``
+    (AsyncMock). ``asyncio.wait_for`` and ``asyncio.wait`` are internal
+    implementation details and are NOT mocked — they exercise real
+    wall-clock cancellation via ``asyncio.sleep`` injected into the
+    upstream mocks.
+    """
+
+    def test_es_per_db_timeout_does_not_block_solr(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Short ``es_search_timeout`` cancels only ES tasks; Solr succeeds."""
+        object.__setattr__(config, "es_search_timeout", 0.05)
+        object.__setattr__(config, "arsa_timeout", 5.0)
+        object.__setattr__(config, "txsearch_timeout", 5.0)
+        object.__setattr__(config, "cross_search_total_timeout", 10.0)
+        mock_es_search_db_portal.side_effect = _delayed_es_response(delay=2.0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=42)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=7)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        for es_db in _ES_DBS:
+            assert by_db[es_db]["count"] is None
+            assert by_db[es_db]["error"] == DbPortalCountError.timeout.value
+        assert by_db["trad"]["count"] == 42
+        assert by_db["trad"]["error"] is None
+        assert by_db["taxonomy"]["count"] == 7
+        assert by_db["taxonomy"]["error"] is None
+
+    def test_arsa_timeout_independent_of_txsearch(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Per-backend timeout for ARSA fires without touching TXSearch."""
+        object.__setattr__(config, "es_search_timeout", 5.0)
+        object.__setattr__(config, "arsa_timeout", 0.05)
+        object.__setattr__(config, "txsearch_timeout", 5.0)
+        object.__setattr__(config, "cross_search_total_timeout", 10.0)
+        mock_es_search_db_portal.return_value = make_es_search_response(total=3)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=2.0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=11)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["error"] == DbPortalCountError.timeout.value
+        assert by_db["taxonomy"]["count"] == 11
+        assert by_db["taxonomy"]["error"] is None
+
+    def test_txsearch_timeout_shorter_than_arsa_fires_first(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Same upstream delay, different per-backend budgets → only TXSearch dies."""
+        object.__setattr__(config, "es_search_timeout", 5.0)
+        object.__setattr__(config, "arsa_timeout", 2.0)
+        object.__setattr__(config, "txsearch_timeout", 0.05)
+        object.__setattr__(config, "cross_search_total_timeout", 10.0)
+        mock_es_search_db_portal.return_value = make_es_search_response(total=3)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(
+            delay=0.2,
+            num_found=77,
+        )
+        mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=0.2)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["count"] == 77
+        assert by_db["trad"]["error"] is None
+        assert by_db["taxonomy"]["error"] == DbPortalCountError.timeout.value
+
+    def test_total_timeout_all_backends_slow_returns_502(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Everyone misses the total deadline → all error=timeout → 502."""
+        object.__setattr__(config, "es_search_timeout", 10.0)
+        object.__setattr__(config, "arsa_timeout", 10.0)
+        object.__setattr__(config, "txsearch_timeout", 10.0)
+        object.__setattr__(config, "cross_search_total_timeout", 0.1)
+        mock_es_search_db_portal.side_effect = _delayed_es_response(delay=5.0)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=5.0)
+        mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=5.0)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 502
+
+    def test_partial_completion_before_total_timeout_preserved(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Fast ES DBs finish; slow Solr DBs get cancelled at total deadline.
+
+        This is the core of decision C2 (asyncio.wait + ALL_COMPLETED):
+        a ``wait_for(gather(...))`` wrapping would lose the ES success
+        results when the total deadline fires.
+        """
+        object.__setattr__(config, "es_search_timeout", 10.0)
+        object.__setattr__(config, "arsa_timeout", 10.0)
+        object.__setattr__(config, "txsearch_timeout", 10.0)
+        object.__setattr__(config, "cross_search_total_timeout", 0.3)
+        mock_es_search_db_portal.return_value = make_es_search_response(total=4)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=5.0)
+        mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=5.0)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["databases"]) == 8
+        by_db = {e["db"]: e for e in body["databases"]}
+        for es_db in _ES_DBS:
+            assert by_db[es_db]["count"] == 4
+            assert by_db[es_db]["error"] is None
+        assert by_db["trad"]["count"] is None
+        assert by_db["trad"]["error"] == DbPortalCountError.timeout.value
+        assert by_db["taxonomy"]["count"] is None
+        assert by_db["taxonomy"]["error"] == DbPortalCountError.timeout.value
+
+    def test_total_timeout_longer_than_individual_all_succeed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """All backends finish well before total; no cancellations."""
+        object.__setattr__(config, "es_search_timeout", 5.0)
+        object.__setattr__(config, "arsa_timeout", 5.0)
+        object.__setattr__(config, "txsearch_timeout", 5.0)
+        object.__setattr__(config, "cross_search_total_timeout", 10.0)
+        mock_es_search_db_portal.side_effect = _delayed_es_response(delay=0.05, total=9)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=0.05, num_found=13)
+        mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=0.05, num_found=2)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        for es_db in _ES_DBS:
+            assert by_db[es_db]["count"] == 9
+        assert by_db["trad"]["count"] == 13
+        assert by_db["taxonomy"]["count"] == 2
+        for entry in resp.json()["databases"]:
+            assert entry["error"] is None
+
+    def test_parallel_execution_wall_clock(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Parallel fan-out: wall-clock ≈ slowest backend, not sum.
+
+        With 8 backends at 0.3 s each, sequential dispatch would take
+        ≥ 2.4 s.  Parallel dispatch should complete well under 1 s.
+        """
+        object.__setattr__(config, "es_search_timeout", 5.0)
+        object.__setattr__(config, "arsa_timeout", 5.0)
+        object.__setattr__(config, "txsearch_timeout", 5.0)
+        object.__setattr__(config, "cross_search_total_timeout", 10.0)
+        mock_es_search_db_portal.side_effect = _delayed_es_response(delay=0.3, total=1)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=0.3, num_found=1)
+        mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=0.3, num_found=1)
+
+        start = time.perf_counter()
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        elapsed = time.perf_counter() - start
+
+        assert resp.status_code == 200
+        # Loose bound: parallel wall-clock should be << 8 * 0.3s = 2.4s.
+        assert elapsed < 1.5, f"cross-search took {elapsed:.2f}s; expected parallel fan-out"
+
+    def test_single_es_success_rest_timeout_returns_200(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+    ) -> None:
+        """Any single success across 8 DBs is enough for HTTP 200."""
+        object.__setattr__(config, "es_search_timeout", 5.0)
+        object.__setattr__(config, "arsa_timeout", 0.05)
+        object.__setattr__(config, "txsearch_timeout", 0.05)
+        object.__setattr__(config, "cross_search_total_timeout", 10.0)
+        mock_es_search_db_portal.return_value = make_es_search_response(total=1)
+        mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=2.0)
+        mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=2.0)
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+
+
+class TestDbPortalCrossSearchAP5PBT:
+    """Property-based tests: response shape + DB order invariants."""
+
+    _OUTCOME_STRATEGY = st.sampled_from(("success", "timeout", "connect_error", "http_5xx"))
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        deadline=None,
+        max_examples=10,
+    )
+    @given(outcomes=st.lists(_OUTCOME_STRATEGY, min_size=8, max_size=8))
+    def test_databases_length_and_db_order_invariant(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+        outcomes: list[str],
+    ) -> None:
+        """For any outcome assignment across 8 DBs, response has 8 items in fixed order.
+
+        When at least one DB succeeds → 200; when all fail → 502.
+        """
+        object.__setattr__(config, "es_search_timeout", 2.0)
+        object.__setattr__(config, "arsa_timeout", 2.0)
+        object.__setattr__(config, "txsearch_timeout", 2.0)
+        object.__setattr__(config, "cross_search_total_timeout", 5.0)
+
+        def _mk_error(outcome: str) -> Exception:
+            if outcome == "timeout":
+                return httpx.TimeoutException("timeout")
+            if outcome == "connect_error":
+                return httpx.ConnectError("refused")
+            mock_response = httpx.Response(
+                status_code=503,
+                request=httpx.Request("POST", "http://upstream/"),
+            )
+            return httpx.HTTPStatusError(
+                "503",
+                request=mock_response.request,
+                response=mock_response,
+            )
+
+        # Outcomes indexed by _DB_ORDER.
+        outcomes_by_db = dict(zip(_DB_ORDER, outcomes, strict=True))
+
+        def _es_side_effect(_client: Any, index: str, _body: dict[str, Any]) -> dict[str, Any]:
+            outcome = outcomes_by_db[index]
+            if outcome == "success":
+                return make_es_search_response(total=0)
+            raise _mk_error(outcome)
+
+        async def _arsa_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            outcome = outcomes_by_db["trad"]
+            if outcome == "success":
+                return make_solr_arsa_response(num_found=0)
+            raise _mk_error(outcome)
+
+        async def _txsearch_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            outcome = outcomes_by_db["taxonomy"]
+            if outcome == "success":
+                return make_solr_txsearch_response(num_found=0)
+            raise _mk_error(outcome)
+
+        mock_es_search_db_portal.side_effect = _es_side_effect
+        mock_arsa_search_db_portal.side_effect = _arsa_side_effect
+        mock_txsearch_search_db_portal.side_effect = _txsearch_side_effect
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        all_failed = all(o != "success" for o in outcomes)
+        if all_failed:
+            assert resp.status_code == 502
+            return
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["databases"]) == 8
+        assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        deadline=None,
+        max_examples=5,
+    )
+    @given(delays=st.lists(st.floats(min_value=0.01, max_value=0.15), min_size=8, max_size=8))
+    def test_order_invariant_under_random_completion_order(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+        config: AppConfig,
+        delays: list[float],
+    ) -> None:
+        """Even when task completion order is randomised by delays, response
+        keeps the canonical ``_DB_ORDER`` ordering.
+        """
+        object.__setattr__(config, "es_search_timeout", 2.0)
+        object.__setattr__(config, "arsa_timeout", 2.0)
+        object.__setattr__(config, "txsearch_timeout", 2.0)
+        object.__setattr__(config, "cross_search_total_timeout", 5.0)
+
+        delays_by_db = dict(zip(_DB_ORDER, delays, strict=True))
+
+        async def _es_side_effect(_client: Any, index: str, _body: dict[str, Any]) -> dict[str, Any]:
+            await asyncio.sleep(delays_by_db[index])
+            return make_es_search_response(total=0)
+
+        async def _arsa_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            await asyncio.sleep(delays_by_db["trad"])
+            return make_solr_arsa_response(num_found=0)
+
+        async def _txsearch_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            await asyncio.sleep(delays_by_db["taxonomy"])
+            return make_solr_txsearch_response(num_found=0)
+
+        mock_es_search_db_portal.side_effect = _es_side_effect
+        mock_arsa_search_db_portal.side_effect = _arsa_side_effect
+        mock_txsearch_search_db_portal.side_effect = _txsearch_side_effect
+
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
