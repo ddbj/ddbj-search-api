@@ -636,8 +636,9 @@ class TestParseKeywordsPhrase:
         assert result == []
 
     def test_unclosed_quote_treated_as_literal(self) -> None:
-        result = _parse_keywords('"RNA-Seq')
-        assert result == [("RNA-Seq", False)]
+        """Unclosed quote is stripped; inner content is treated as a literal."""
+        result = _parse_keywords('"cancer')
+        assert result == [("cancer", False)]
 
     def test_multiple_quoted_keywords(self) -> None:
         result = _parse_keywords('"RNA-Seq","whole genome"')
@@ -658,6 +659,128 @@ class TestParseKeywordsPhrase:
             assert isinstance(text, str)
             assert len(text) > 0
             assert isinstance(is_phrase, bool)
+
+
+# ===================================================================
+# _parse_keywords (auto-phrase for symbol-containing tokens)
+# ===================================================================
+
+
+class TestParseKeywordsAutoPhrase:
+    """Tokens containing trigger symbols (-, /, ., +, :) are auto-phrased."""
+
+    def test_hyphen_triggers_phrase(self) -> None:
+        assert _parse_keywords("HIF-1") == [("HIF-1", True)]
+
+    def test_slash_triggers_phrase(self) -> None:
+        assert _parse_keywords("GSE12345/analysis") == [
+            ("GSE12345/analysis", True),
+        ]
+
+    def test_dot_triggers_phrase(self) -> None:
+        assert _parse_keywords("pH7.4") == [("pH7.4", True)]
+
+    def test_plus_triggers_phrase(self) -> None:
+        assert _parse_keywords("C++") == [("C++", True)]
+
+    def test_colon_triggers_phrase(self) -> None:
+        assert _parse_keywords("CAS:12345-67-8") == [("CAS:12345-67-8", True)]
+
+    def test_covid_19_triggers_phrase(self) -> None:
+        assert _parse_keywords("COVID-19") == [("COVID-19", True)]
+
+    def test_sars_cov_2_triggers_phrase(self) -> None:
+        assert _parse_keywords("SARS-CoV-2") == [("SARS-CoV-2", True)]
+
+    def test_alphanumeric_no_phrase(self) -> None:
+        assert _parse_keywords("cancer") == [("cancer", False)]
+
+    def test_digits_only_no_phrase(self) -> None:
+        assert _parse_keywords("12345") == [("12345", False)]
+
+    def test_japanese_no_phrase(self) -> None:
+        assert _parse_keywords("がん") == [("がん", False)]
+
+
+class TestParseKeywordsAutoPhraseEdgeCases:
+    """Boundary and interaction cases for auto-phrase detection."""
+
+    def test_trailing_symbol_triggers(self) -> None:
+        assert _parse_keywords("gene-") == [("gene-", True)]
+
+    def test_leading_symbol_triggers(self) -> None:
+        assert _parse_keywords("-gene") == [("-gene", True)]
+
+    def test_bare_symbol_triggers(self) -> None:
+        assert _parse_keywords("-") == [("-", True)]
+
+    def test_multiple_bare_symbols_trigger(self) -> None:
+        assert _parse_keywords("--") == [("--", True)]
+
+    def test_mixed_auto_explicit_and_normal(self) -> None:
+        result = _parse_keywords('HIF-1,"whole genome",cancer')
+        assert result == [
+            ("HIF-1", True),
+            ("whole genome", True),
+            ("cancer", False),
+        ]
+
+    def test_explicit_phrase_without_symbol_stays_phrase(self) -> None:
+        assert _parse_keywords('"whole genome"') == [("whole genome", True)]
+
+    def test_explicit_phrase_with_symbol_stays_phrase(self) -> None:
+        assert _parse_keywords('"RNA-Seq"') == [("RNA-Seq", True)]
+
+    def test_multiple_auto_phrase_tokens(self) -> None:
+        result = _parse_keywords("HIF-1,COVID-19")
+        assert result == [("HIF-1", True), ("COVID-19", True)]
+
+    def test_whitespace_around_auto_phrase_trimmed(self) -> None:
+        result = _parse_keywords(" HIF-1 ,  cancer ")
+        assert result == [("HIF-1", True), ("cancer", False)]
+
+    def test_unclosed_quote_with_trigger_becomes_auto_phrase(self) -> None:
+        assert _parse_keywords('"RNA-Seq') == [("RNA-Seq", True)]
+
+
+_AUTO_PHRASE_TRIGGERS = "-/.+:"
+_alphanumeric_no_trigger = st.text(
+    alphabet=st.characters(
+        whitelist_categories=("L", "N"),
+        blacklist_characters='",' + _AUTO_PHRASE_TRIGGERS + " \t\r\n",
+    ),
+    min_size=1,
+    max_size=30,
+)
+_text_with_trigger = st.builds(
+    lambda prefix, trigger, suffix: prefix + trigger + suffix,
+    _alphanumeric_no_trigger,
+    st.sampled_from(list(_AUTO_PHRASE_TRIGGERS)),
+    _alphanumeric_no_trigger,
+)
+
+
+class TestParseKeywordsAutoPhrasePBT:
+    """Property-based tests for auto-phrase detection."""
+
+    @given(text=_alphanumeric_no_trigger)
+    def test_alphanumeric_without_trigger_is_not_phrase(self, text: str) -> None:
+        """Any alphanumeric text without trigger chars → is_phrase=False."""
+        assert _parse_keywords(text) == [(text, False)]
+
+    @given(text=_text_with_trigger)
+    def test_text_containing_trigger_is_phrase(self, text: str) -> None:
+        """Any text containing a trigger char → is_phrase=True."""
+        result = _parse_keywords(text)
+        assert len(result) == 1
+        returned_text, is_phrase = result[0]
+        assert returned_text == text
+        assert is_phrase is True
+
+    @given(text=_alphanumeric_no_trigger)
+    def test_quoted_alphanumeric_is_always_phrase(self, text: str) -> None:
+        """Explicit quote always produces phrase, even without trigger chars."""
+        assert _parse_keywords(f'"{text}"') == [(text, True)]
 
 
 # ===================================================================
@@ -703,3 +826,54 @@ class TestBuildSearchQueryPhraseMatch:
         assert len(should) == 2
         assert should[0]["multi_match"]["type"] == "phrase"
         assert "type" not in should[1]["multi_match"]
+
+
+class TestBuildSearchQueryAutoPhrase:
+    """Integration: auto-phrased tokens produce multi_match(type=phrase)."""
+
+    def test_hyphen_keyword_uses_phrase(self) -> None:
+        result = build_search_query(keywords="HIF-1")
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["query"] == "HIF-1"
+        assert mm["type"] == "phrase"
+
+    def test_plain_keyword_omits_type(self) -> None:
+        result = build_search_query(keywords="cancer")
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["query"] == "cancer"
+        assert "type" not in mm
+
+    def test_mixed_auto_and_normal_tokens(self) -> None:
+        result = build_search_query(keywords="HIF-1,cancer")
+        must = result["bool"]["must"]
+        assert len(must) == 2
+        assert must[0]["multi_match"]["type"] == "phrase"
+        assert must[0]["multi_match"]["query"] == "HIF-1"
+        assert "type" not in must[1]["multi_match"]
+        assert must[1]["multi_match"]["query"] == "cancer"
+
+    def test_auto_and_explicit_phrase_both_phrase(self) -> None:
+        result = build_search_query(keywords='HIF-1,"whole genome"')
+        must = result["bool"]["must"]
+        assert len(must) == 2
+        for clause in must:
+            assert clause["multi_match"]["type"] == "phrase"
+
+    def test_auto_phrase_with_or_operator(self) -> None:
+        result = build_search_query(
+            keywords="HIF-1,cancer",
+            keyword_operator="OR",
+        )
+        should = result["bool"]["should"]
+        assert len(should) == 2
+        assert should[0]["multi_match"]["type"] == "phrase"
+        assert "type" not in should[1]["multi_match"]
+
+    def test_auto_phrase_honors_keyword_fields(self) -> None:
+        result = build_search_query(
+            keywords="HIF-1",
+            keyword_fields="title,description",
+        )
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["type"] == "phrase"
+        assert set(mm["fields"]) == {"title", "description"}

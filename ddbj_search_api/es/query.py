@@ -24,6 +24,15 @@ _UMBRELLA_MAP: dict[str, str] = {
     "FALSE": "BioProject",
 }
 
+# Tokens containing any of these chars are promoted to multi_match(type=phrase)
+# so the ES standard analyzer does not split them and inflate hit counts.
+_ES_AUTO_PHRASE_CHARS: frozenset[str] = frozenset("-/.+:")
+
+
+def _has_auto_phrase_trigger(text: str) -> bool:
+    """Return True if `text` contains any ES auto-phrase trigger character."""
+    return any(c in _ES_AUTO_PHRASE_CHARS for c in text)
+
 
 def pagination_to_from_size(
     page: int,
@@ -136,8 +145,9 @@ def build_source_filter(
 def _parse_keywords(keywords: str | None) -> list[tuple[str, bool]]:
     """Split comma-separated keywords, stripping whitespace.
 
-    Returns a list of ``(text, is_phrase)`` tuples.  Keywords enclosed in
-    double quotes use phrase matching; others use default best-fields matching.
+    Returns a list of ``(text, is_phrase)`` tuples. A token is marked as a
+    phrase either when it is enclosed in double quotes or when it contains
+    an auto-phrase trigger character. Other tokens use best-fields matching.
     """
     if not keywords:
         return []
@@ -168,7 +178,7 @@ def _parse_keywords(keywords: str | None) -> list[tuple[str, bool]]:
             # Strip any stray quotes (e.g. unclosed quote)
             cleaned = token.replace('"', "")
             if cleaned:
-                result.append((cleaned, False))
+                result.append((cleaned, _has_auto_phrase_trigger(cleaned)))
     return result
 
 
