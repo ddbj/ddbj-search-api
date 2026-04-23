@@ -23,6 +23,7 @@ from starlette.responses import Response
 
 from ddbj_search_api.config import AppConfig, get_config, logging_config, parse_args
 from ddbj_search_api.routers import router
+from ddbj_search_api.routers.db_portal import DbPortalHTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +73,18 @@ def _problem_json(
     title: str,
     detail: str,
     request: Request,
+    problem_type: str = "about:blank",
 ) -> JSONResponse:
-    """Build an RFC 7807 Problem Details JSON response."""
+    """Build an RFC 7807 Problem Details JSON response.
+
+    ``problem_type`` maps to the ``type`` URI in the body.  Default
+    ``about:blank`` matches the standard "no specific problem type"
+    marker; endpoint-specific errors pass a dedicated URI such as
+    ``https://ddbj.nig.ac.jp/problems/<slug>`` (RFC 7807 §3.1).
+    """
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     body = {
-        "type": "about:blank",
+        "type": problem_type,
         "title": title,
         "status": status,
         "detail": detail,
@@ -94,6 +102,19 @@ def _problem_json(
 
 def setup_error_handlers(app: FastAPI) -> None:
     """Register exception handlers that return RFC 7807 responses."""
+
+    @app.exception_handler(DbPortalHTTPException)
+    async def db_portal_http_exception_handler(
+        request: Request,
+        exc: DbPortalHTTPException,
+    ) -> JSONResponse:
+        return _problem_json(
+            status=exc.status_code,
+            title=_http_status_title(exc.status_code),
+            detail=str(exc.detail),
+            request=request,
+            problem_type=exc.type_uri,
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
@@ -230,7 +251,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # Add servers (root_path is not reflected in static openapi())
         schema["servers"] = [{"url": config.url_prefix}]
 
-        _error_codes = {"400", "404", "422", "500"}
+        _error_codes = {"400", "404", "422", "500", "501", "502"}
         for path, path_item in schema.get("paths", {}).items():
             for operation in path_item.values():
                 if not isinstance(operation, dict):
@@ -238,15 +259,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 responses = operation.get("responses", {})
 
                 # Remove inapplicable error codes per endpoint.
-                # 400: only paginated list endpoints (deep paging).
+                # 400: only paginated list endpoints (deep paging) and
+                # /db-portal/search (q/adv exclusivity + deep paging).
                 _is_list = path == "/entries/" or (
                     path.startswith("/entries/") and path.endswith("/") and "{" not in path
                 )
-                if not _is_list:
+                if not (_is_list or path == "/db-portal/search"):
                     responses.pop("400", None)
 
                 # 404: only endpoints with {type}/{id} or per-type path.
-                if path in ("/entries/", "/facets", "/service-info"):
+                if path in ("/entries/", "/facets", "/service-info", "/db-portal/search"):
                     responses.pop("404", None)
 
                 # 422: not needed for /service-info or extension

@@ -326,6 +326,60 @@ def app_with_facets(
     return TestClient(application, raise_server_exceptions=False)
 
 
+# --- DB Portal API fixtures ---
+
+
+@pytest.fixture
+def mock_es_search_db_portal() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_search in the db_portal router.
+
+    Default return value is an empty search response.
+    Override via ``mock_es_search_db_portal.return_value = ...`` or
+    ``.side_effect = [...]`` to set per-call results.
+    """
+    with patch(
+        "ddbj_search_api.routers.db_portal.es_search",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = make_es_search_response()
+        yield mock
+
+
+@pytest.fixture
+def mock_es_open_pit_db_portal() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_open_pit in the db_portal router."""
+    with patch(
+        "ddbj_search_api.routers.db_portal.es_open_pit",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = "mock_pit_id_db_portal"
+        yield mock
+
+
+@pytest.fixture
+def mock_es_search_with_pit_db_portal() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_search_with_pit in the db_portal router."""
+    with patch(
+        "ddbj_search_api.routers.db_portal.es_search_with_pit",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = make_es_search_response()
+        yield mock
+
+
+@pytest.fixture
+def app_with_db_portal(
+    config: AppConfig,
+    mock_es_search_db_portal: AsyncMock,
+) -> TestClient:
+    """TestClient with db_portal's es_search mocked."""
+    fake_client = AsyncMock(spec=httpx.AsyncClient)
+    application = create_app(config)
+    application.dependency_overrides[get_es_client] = lambda: fake_client
+
+    return TestClient(application, raise_server_exceptions=False)
+
+
 # --- Umbrella Tree API fixtures ---
 
 

@@ -1,0 +1,414 @@
+"""Search endpoint for db-portal frontend: GET /db-portal/search.
+
+Four request patterns dispatched by a single handler:
+
+1. ``q`` only           → cross-database count-only (8 entries)
+2. ``q`` + ``db``       → db-specific hits envelope (ES only in AP1)
+3. ``adv`` (any ``db``) → 501 (AP3 will implement Advanced Search DSL)
+4. ``db=trad/taxonomy`` → 501 (AP4 will implement Solr proxy)
+
+Mutually exclusive ``q`` + ``adv`` returns 400.  Sequential cross-search
+fan-out will be parallelised with per-DB timeouts in AP5.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.es import get_es_client
+from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
+from ddbj_search_api.es.query import (
+    build_search_query,
+    build_sort_with_tiebreaker,
+    pagination_to_from_size,
+)
+from ddbj_search_api.schemas.common import ProblemDetails
+from ddbj_search_api.schemas.db_portal import (
+    DbPortalCount,
+    DbPortalCountError,
+    DbPortalCrossSearchResponse,
+    DbPortalDb,
+    DbPortalErrorType,
+    DbPortalHit,
+    DbPortalHitsResponse,
+    DbPortalQuery,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# Deep paging limit aligned with /entries/* (see routers.entries._DEEP_PAGING_LIMIT).
+_DEEP_PAGING_LIMIT = 10000
+
+# Cross-search `databases[]` order (SSOT source.md § AP1).
+_DB_ORDER: tuple[DbPortalDb, ...] = (
+    DbPortalDb.trad,
+    DbPortalDb.sra,
+    DbPortalDb.bioproject,
+    DbPortalDb.biosample,
+    DbPortalDb.jga,
+    DbPortalDb.gea,
+    DbPortalDb.metabobank,
+    DbPortalDb.taxonomy,
+)
+
+# Solr-backed DBs not implemented in AP1 (to be added in AP4).
+_SOLR_PENDING_DBS: frozenset[DbPortalDb] = frozenset({DbPortalDb.trad, DbPortalDb.taxonomy})
+
+# DbPortalDb → ES index/alias name.  converter ALIASES: "sra" (6 indices),
+# "jga" (4 indices); other DBs map 1:1 to their index name.
+_DB_TO_INDEX: dict[DbPortalDb, str] = {
+    DbPortalDb.sra: "sra",
+    DbPortalDb.jga: "jga",
+    DbPortalDb.bioproject: "bioproject",
+    DbPortalDb.biosample: "biosample",
+    DbPortalDb.gea: "gea",
+    DbPortalDb.metabobank: "metabobank",
+}
+
+
+# === Exception ===
+
+
+class DbPortalHTTPException(StarletteHTTPException):
+    """HTTPException carrying an RFC 7807 ``type`` URI.
+
+    Caught by the dedicated handler registered in
+    ``ddbj_search_api.main.setup_error_handlers``; the handler forwards
+    ``type_uri`` to ``_problem_json(problem_type=...)`` so the response
+    body carries the correct ``type`` URI.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        type_uri: DbPortalErrorType,
+        detail: str,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail)
+        self.type_uri: str = type_uri.value
+
+
+# === Helpers ===
+
+
+def _db_to_index(db: DbPortalDb) -> str:
+    return _DB_TO_INDEX[db]
+
+
+def _validate_deep_paging(page: int, per_page: int) -> None:
+    if page * per_page > _DEEP_PAGING_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Deep paging limit exceeded: page ({page}) * "
+                f"perPage ({per_page}) = {page * per_page} > {_DEEP_PAGING_LIMIT}. "
+                "Use cursor-based pagination for deep results."
+            ),
+        )
+
+
+def _validate_cursor_exclusivity(query: DbPortalQuery) -> None:
+    """Raise 400 when cursor is used with incompatible params.
+
+    Cursor mode encodes search state (query, sort, PIT) in the token;
+    only ``db`` (required to pick the target index) and ``perPage``
+    may accompany it.
+    """
+    conflicting: list[str] = []
+    if query.page != 1:
+        conflicting.append("page")
+    if query.q is not None:
+        conflicting.append("q")
+    if query.adv is not None:
+        conflicting.append("adv")
+    if query.sort is not None:
+        conflicting.append("sort")
+    if conflicting:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot use 'cursor' with: {', '.join(conflicting)}. "
+                "When using cursor-based pagination, only 'db' and 'perPage' are allowed."
+            ),
+        )
+
+
+def _compute_next_cursor(
+    raw_hits: list[dict[str, Any]],
+    size: int,
+    total: int,
+    offset: int,
+    sort_with_tiebreaker: list[dict[str, Any]],
+    query: dict[str, Any],
+    pit_id: str | None,
+) -> tuple[str | None, bool]:
+    """Build nextCursor/hasNext from ES hits.
+
+    Duplicates ``routers.entries._compute_next_cursor``; AP5 will
+    consolidate the two into a shared helper.
+    """
+    if not raw_hits or len(raw_hits) < size:
+        return (None, False)
+    if pit_id is None and offset + size >= total:
+        return (None, False)
+    last_sort = raw_hits[-1].get("sort")
+    if last_sort is None:
+        return (None, False)
+    payload = CursorPayload(
+        pit_id=pit_id,
+        search_after=last_sort,
+        sort=sort_with_tiebreaker,
+        query=query,
+    )
+    return (encode_cursor(payload), True)
+
+
+def _hit_from_source(hit: dict[str, Any]) -> DbPortalHit:
+    return DbPortalHit.model_validate(dict(hit.get("_source", {})))
+
+
+def _map_httpx_error(exc: Exception) -> DbPortalCountError:
+    if isinstance(exc, httpx.TimeoutException):
+        return DbPortalCountError.timeout
+    if isinstance(exc, httpx.ConnectError):
+        return DbPortalCountError.connection_refused
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if 500 <= status < 600:
+            return DbPortalCountError.upstream_5xx
+    return DbPortalCountError.unknown
+
+
+# === Cross-database count-only ===
+
+
+async def _count_one_db(
+    client: httpx.AsyncClient,
+    db: DbPortalDb,
+    query_body: dict[str, Any],
+) -> DbPortalCount:
+    """Run one count-only search and map errors to a DbPortalCount."""
+    if db in _SOLR_PENDING_DBS:
+        return DbPortalCount(
+            db=db,
+            count=None,
+            error=DbPortalCountError.not_implemented,
+        )
+    try:
+        resp = await es_search(
+            client,
+            _db_to_index(db),
+            {"query": query_body, "size": 0},
+        )
+    except Exception as exc:
+        error = _map_httpx_error(exc)
+        logger.warning(
+            "db-portal cross-search failed for db=%s: %s (error=%s)",
+            db.value,
+            type(exc).__name__,
+            error.value,
+        )
+        return DbPortalCount(db=db, count=None, error=error)
+    try:
+        count = int(resp["hits"]["total"]["value"])
+    except (KeyError, TypeError, ValueError):
+        logger.warning(
+            "db-portal cross-search: unexpected ES response shape for db=%s",
+            db.value,
+        )
+        return DbPortalCount(db=db, count=None, error=DbPortalCountError.unknown)
+    return DbPortalCount(db=db, count=count, error=None)
+
+
+async def _cross_search_count_only(
+    client: httpx.AsyncClient,
+    q: str | None,
+) -> DbPortalCrossSearchResponse:
+    """Sequential cross-database count-only search.
+
+    AP5 will replace the loop with ``asyncio.gather`` + per-DB
+    timeouts.  Response shape remains the same.
+    """
+    query_body = build_search_query(keywords=q, keyword_operator="AND")
+    databases: list[DbPortalCount] = []
+    for db in _DB_ORDER:
+        databases.append(await _count_one_db(client, db, query_body))
+    if all(item.error is not None for item in databases):
+        raise HTTPException(
+            status_code=502,
+            detail=("All databases failed to respond (including Solr-backed DBs pending implementation)."),
+        )
+    return DbPortalCrossSearchResponse(databases=databases)
+
+
+# === DB-specific hits search ===
+
+
+async def _db_specific_search(
+    client: httpx.AsyncClient,
+    query: DbPortalQuery,
+) -> DbPortalHitsResponse:
+    if query.cursor is not None:
+        return await _db_specific_search_cursor(client, query)
+    return await _db_specific_search_offset(client, query)
+
+
+async def _db_specific_search_offset(
+    client: httpx.AsyncClient,
+    query: DbPortalQuery,
+) -> DbPortalHitsResponse:
+    assert query.db is not None
+    _validate_deep_paging(query.page, query.per_page)
+    es_query = build_search_query(keywords=query.q, keyword_operator="AND")
+    sort_body = build_sort_with_tiebreaker(query.sort)
+    from_, size = pagination_to_from_size(query.page, query.per_page)
+    body: dict[str, Any] = {
+        "query": es_query,
+        "from": from_,
+        "size": size,
+        "sort": sort_body,
+    }
+    es_resp = await es_search(client, _db_to_index(query.db), body)
+    raw_hits = es_resp["hits"]["hits"]
+    total = int(es_resp["hits"]["total"]["value"])
+    hits = [_hit_from_source(h) for h in raw_hits]
+    next_cursor, has_next = _compute_next_cursor(
+        raw_hits=raw_hits,
+        size=size,
+        total=total,
+        offset=from_,
+        sort_with_tiebreaker=sort_body,
+        query=es_query,
+        pit_id=None,
+    )
+    return DbPortalHitsResponse(  # type: ignore[call-arg]
+        total=total,
+        hits=hits,
+        hard_limit_reached=(total >= _DEEP_PAGING_LIMIT),
+        page=query.page,
+        per_page=query.per_page,
+        next_cursor=next_cursor,
+        has_next=has_next,
+    )
+
+
+async def _db_specific_search_cursor(
+    client: httpx.AsyncClient,
+    query: DbPortalQuery,
+) -> DbPortalHitsResponse:
+    assert query.db is not None
+    assert query.cursor is not None
+    _validate_cursor_exclusivity(query)
+    try:
+        cursor = decode_cursor(query.cursor)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid cursor token: {exc}",
+        ) from exc
+    pit_id = cursor.pit_id
+    if pit_id is None:
+        pit_id = await es_open_pit(client, _db_to_index(query.db))
+    body: dict[str, Any] = {
+        "query": cursor.query,
+        "sort": cursor.sort,
+        "size": query.per_page,
+        "pit": {"id": pit_id, "keep_alive": "5m"},
+        "search_after": cursor.search_after,
+    }
+    try:
+        es_resp = await es_search_with_pit(client, body)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(
+                status_code=400,
+                detail=("Cursor expired (PIT no longer available). Please restart your search."),
+            ) from exc
+        raise
+    raw_hits = es_resp["hits"]["hits"]
+    total = int(es_resp["hits"]["total"]["value"])
+    updated_pit_id: str = es_resp.get("pit_id", pit_id)
+    hits = [_hit_from_source(h) for h in raw_hits]
+    next_cursor, has_next = _compute_next_cursor(
+        raw_hits=raw_hits,
+        size=query.per_page,
+        total=total,
+        offset=0,
+        sort_with_tiebreaker=cursor.sort,
+        query=cursor.query,
+        pit_id=updated_pit_id,
+    )
+    return DbPortalHitsResponse(  # type: ignore[call-arg]
+        total=total,
+        hits=hits,
+        hard_limit_reached=(total >= _DEEP_PAGING_LIMIT),
+        page=None,
+        per_page=query.per_page,
+        next_cursor=next_cursor,
+        has_next=has_next,
+    )
+
+
+# === Dispatcher ===
+
+
+async def _search_db_portal(
+    query: DbPortalQuery = Depends(),
+    client: httpx.AsyncClient = Depends(get_es_client),
+) -> DbPortalCrossSearchResponse | DbPortalHitsResponse:
+    """Unified db-portal search: dispatch by (q/adv) x (db)."""
+    if query.q is not None and query.adv is not None:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType.invalid_query_combination,
+            detail="'q' and 'adv' are mutually exclusive; specify exactly one.",
+        )
+    if query.adv is not None:
+        raise DbPortalHTTPException(
+            status_code=501,
+            type_uri=DbPortalErrorType.advanced_search_not_implemented,
+            detail="Advanced Search DSL will be available in a future release.",
+        )
+    if query.db in _SOLR_PENDING_DBS:
+        assert query.db is not None
+        raise DbPortalHTTPException(
+            status_code=501,
+            type_uri=DbPortalErrorType.db_not_implemented,
+            detail=f"Database '{query.db.value}' is not yet implemented.",
+        )
+    if query.cursor is not None and query.db is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cursor-based pagination requires a 'db' parameter.",
+        )
+    if query.db is None:
+        return await _cross_search_count_only(client, query.q)
+    return await _db_specific_search(client, query)
+
+
+router.add_api_route(
+    "/db-portal/search",
+    _search_db_portal,
+    methods=["GET"],
+    response_model=DbPortalCrossSearchResponse | DbPortalHitsResponse,
+    responses={
+        501: {
+            "description": "Not Implemented (Advanced Search or Solr-backed DB)",
+            "model": ProblemDetails,
+        },
+        502: {
+            "description": "Bad Gateway (all databases failed)",
+            "model": ProblemDetails,
+        },
+    },
+    summary="DB Portal unified search (cross-db count / db-specific hits)",
+    tags=["db-portal"],
+)
