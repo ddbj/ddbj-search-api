@@ -1,4 +1,4 @@
-"""Read-only DuckDB client for dblink relation lookups.
+"""Read-only DuckDB client for dblink dbxref lookups.
 
 Uses an in-memory connection with ``ATTACH ... (READ_ONLY)`` to bypass
 DuckDB's process-global ``DBInstanceCache`` (``duckdb.connect(path)``
@@ -111,26 +111,21 @@ def iter_linked_ids(
         if target:
             cursor.execute(
                 f"""
-                SELECT dst_type, dst_accession FROM {_CATALOG}.relation
-                WHERE src_type = ? AND src_accession = ? AND dst_type IN (SELECT UNNEST(?))
-                UNION ALL
-                SELECT src_type, src_accession FROM {_CATALOG}.relation
-                WHERE dst_type = ? AND dst_accession = ? AND src_type IN (SELECT UNNEST(?))
+                SELECT linked_type, linked_accession FROM {_CATALOG}.dbxref
+                WHERE accession_type = ? AND accession = ?
+                  AND linked_type IN (SELECT UNNEST(?))
                 ORDER BY 1, 2
                 """,
-                (type_, id_, list(target), type_, id_, list(target)),
+                (type_, id_, list(target)),
             )
         else:
             cursor.execute(
                 f"""
-                SELECT dst_type, dst_accession FROM {_CATALOG}.relation
-                WHERE src_type = ? AND src_accession = ?
-                UNION ALL
-                SELECT src_type, src_accession FROM {_CATALOG}.relation
-                WHERE dst_type = ? AND dst_accession = ?
+                SELECT linked_type, linked_accession FROM {_CATALOG}.dbxref
+                WHERE accession_type = ? AND accession = ?
                 ORDER BY 1, 2
                 """,
-                (type_, id_, type_, id_),
+                (type_, id_),
             )
         while True:
             batch = cursor.fetchmany(chunk_size)
@@ -169,7 +164,7 @@ def get_linked_ids_limited(
     try:
         rows: list[tuple[str, str]] = cursor.execute(
             _QUERY_LIMITED,
-            (type_, id_, type_, id_, limit),
+            (type_, id_, limit),
         ).fetchall()
     finally:
         cursor.close()
@@ -200,7 +195,7 @@ def count_linked_ids(
     try:
         rows: list[tuple[str, int]] = cursor.execute(
             _QUERY_COUNT,
-            (type_, id_, type_, id_),
+            (type_, id_),
         ).fetchall()
     finally:
         cursor.close()
@@ -212,28 +207,57 @@ _QUERY_LIMITED = f"""
     SELECT linked_type, linked_accession FROM (
         SELECT linked_type, linked_accession,
                ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
-        FROM (
-            SELECT dst_type AS linked_type, dst_accession AS linked_accession
-            FROM {_CATALOG}.relation WHERE src_type = ? AND src_accession = ?
-            UNION ALL
-            SELECT src_type AS linked_type, src_accession AS linked_accession
-            FROM {_CATALOG}.relation WHERE dst_type = ? AND dst_accession = ?
-        )
+        FROM {_CATALOG}.dbxref
+        WHERE accession_type = ? AND accession = ?
     )
     WHERE rn <= ?
     ORDER BY linked_type, linked_accession
 """
 
 _QUERY_COUNT = f"""
-    SELECT linked_type, COUNT(*) AS cnt FROM (
-        SELECT dst_type AS linked_type FROM {_CATALOG}.relation
-        WHERE src_type = ? AND src_accession = ?
-        UNION ALL
-        SELECT src_type AS linked_type FROM {_CATALOG}.relation
-        WHERE dst_type = ? AND dst_accession = ?
-    )
+    SELECT linked_type, COUNT(*) AS cnt
+    FROM {_CATALOG}.dbxref
+    WHERE accession_type = ? AND accession = ?
     GROUP BY linked_type
     ORDER BY linked_type
+"""
+
+_QUERY_LIMITED_BULK = f"""
+    WITH input AS (
+        SELECT UNNEST(?::VARCHAR[]) AS accession_type,
+               UNNEST(?::VARCHAR[]) AS accession
+    )
+    SELECT input_type, input_accession, linked_type, linked_accession FROM (
+        SELECT
+            i.accession_type AS input_type,
+            i.accession      AS input_accession,
+            d.linked_type,
+            d.linked_accession,
+            ROW_NUMBER() OVER (
+                PARTITION BY i.accession_type, i.accession, d.linked_type
+                ORDER BY d.linked_accession
+            ) AS rn
+        FROM input i
+        JOIN {_CATALOG}.dbxref d USING (accession_type, accession)
+    )
+    WHERE rn <= ?
+    ORDER BY input_type, input_accession, linked_type, linked_accession
+"""
+
+_QUERY_COUNT_BULK = f"""
+    WITH input AS (
+        SELECT UNNEST(?::VARCHAR[]) AS accession_type,
+               UNNEST(?::VARCHAR[]) AS accession
+    )
+    SELECT
+        i.accession_type AS input_type,
+        i.accession      AS input_accession,
+        d.linked_type,
+        COUNT(*)         AS cnt
+    FROM input i
+    JOIN {_CATALOG}.dbxref d USING (accession_type, accession)
+    GROUP BY i.accession_type, i.accession, d.linked_type
+    ORDER BY i.accession_type, i.accession, d.linked_type
 """
 
 
@@ -244,8 +268,11 @@ def get_linked_ids_limited_bulk(
 ) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Return up to *limit* per linked type related (type, accession) pairs per entry.
 
-    Uses a single cached connection and loops over entries via fresh
-    cursors to avoid expensive LATERAL joins on large tables.
+    Implements the lookup as a single SQL query that ``UNNEST``s the
+    input tuples and joins them against ``dbxref``, eliminating the
+    per-entry cursor loop.  Duplicate entries are deduplicated before
+    the SQL call (the result dict has one entry per unique
+    ``(type, id)`` pair).
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -254,6 +281,7 @@ def get_linked_ids_limited_bulk(
 
     Returns:
         Dict mapping ``(type, id)`` to sorted list of ``(linked_type, accession)`` tuples.
+        Entries with no matches map to an empty list.
 
     Raises:
         FileNotFoundError: If *db_path* does not exist.
@@ -261,19 +289,23 @@ def get_linked_ids_limited_bulk(
     if not entries:
         return {}
 
-    result: dict[tuple[str, str], list[tuple[str, str]]] = {(t, i): [] for t, i in entries}
-    conn = _get_conn(db_path)
-    for type_, id_ in entries:
-        cursor = conn.cursor()
-        try:
-            rows: list[tuple[str, str]] = cursor.execute(
-                _QUERY_LIMITED,
-                (type_, id_, type_, id_, limit),
-            ).fetchall()
-        finally:
-            cursor.close()
-        result[(type_, id_)] = rows
+    unique_entries = list(dict.fromkeys(entries))
+    types = [t for t, _ in unique_entries]
+    accessions = [a for _, a in unique_entries]
 
+    conn = _get_conn(db_path)
+    cursor = conn.cursor()
+    try:
+        rows = cursor.execute(
+            _QUERY_LIMITED_BULK,
+            (types, accessions, limit),
+        ).fetchall()
+    finally:
+        cursor.close()
+
+    result: dict[tuple[str, str], list[tuple[str, str]]] = {e: [] for e in unique_entries}
+    for input_type, input_accession, linked_type, linked_accession in rows:
+        result[(input_type, input_accession)].append((linked_type, linked_accession))
     return result
 
 
@@ -281,10 +313,12 @@ def count_linked_ids_bulk(
     db_path: Path,
     entries: list[tuple[str, str]],
 ) -> dict[tuple[str, str], dict[str, int]]:
-    """Return per-type counts for multiple accessions in one pass.
+    """Return per-type counts for multiple accessions in one SQL query.
 
-    Uses a single cached connection and loops over entries via fresh
-    cursors to avoid expensive joins on large tables.
+    Implements the count as a single SQL query that ``UNNEST``s the
+    input tuples and joins them against ``dbxref``, eliminating the
+    per-entry cursor loop.  Duplicate entries are deduplicated before
+    the SQL call.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -292,6 +326,7 @@ def count_linked_ids_bulk(
 
     Returns:
         Dict mapping ``(type, id)`` to ``{linked_type: count}``.
+        Entries with no matches map to an empty dict.
 
     Raises:
         FileNotFoundError: If *db_path* does not exist.
@@ -299,17 +334,21 @@ def count_linked_ids_bulk(
     if not entries:
         return {}
 
-    result: dict[tuple[str, str], dict[str, int]] = {(t, i): {} for t, i in entries}
-    conn = _get_conn(db_path)
-    for type_, id_ in entries:
-        cursor = conn.cursor()
-        try:
-            rows: list[tuple[str, int]] = cursor.execute(
-                _QUERY_COUNT,
-                (type_, id_, type_, id_),
-            ).fetchall()
-        finally:
-            cursor.close()
-        result[(type_, id_)] = dict(rows)
+    unique_entries = list(dict.fromkeys(entries))
+    types = [t for t, _ in unique_entries]
+    accessions = [a for _, a in unique_entries]
 
+    conn = _get_conn(db_path)
+    cursor = conn.cursor()
+    try:
+        rows = cursor.execute(
+            _QUERY_COUNT_BULK,
+            (types, accessions),
+        ).fetchall()
+    finally:
+        cursor.close()
+
+    result: dict[tuple[str, str], dict[str, int]] = {e: {} for e in unique_entries}
+    for input_type, input_accession, linked_type, cnt in rows:
+        result[(input_type, input_accession)][linked_type] = cnt
     return result

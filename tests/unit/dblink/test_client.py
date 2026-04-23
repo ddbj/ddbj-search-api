@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 
 import duckdb
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.dblink import client as dblink_client
@@ -27,20 +28,63 @@ from ddbj_search_api.schemas.dblink import AccessionType
 
 
 def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> None:
-    """Create a DuckDB file with a ``relation`` table populated with rows."""
+    """Create a DuckDB file with a ``dbxref`` table populated with half-edges.
+
+    Each input row ``(src_type, src_accession, dst_type, dst_accession)``
+    is interpreted as one undirected edge and stored as two half-edge
+    rows in ``dbxref``: ``(src_type, src_accession, dst_type, dst_accession)``
+    and the symmetric ``(dst_type, dst_accession, src_type, src_accession)``.
+
+    Self-loops (where both endpoints are identical) are stored as a
+    single row to mirror converter's ``raw_edges`` deduplication.
+    """
+    half_edges: list[tuple[str, str, str, str]] = []
+    for st_, sa, dt, da in rows:
+        half_edges.append((st_, sa, dt, da))
+        if (st_, sa) != (dt, da):
+            half_edges.append((dt, da, st_, sa))
+
     with duckdb.connect(str(db_path)) as conn:
         conn.execute("""
-            CREATE TABLE relation (
-                src_type TEXT,
-                src_accession TEXT,
-                dst_type TEXT,
-                dst_accession TEXT
+            CREATE TABLE dbxref (
+                accession_type TEXT,
+                accession TEXT,
+                linked_type TEXT,
+                linked_accession TEXT
             )
         """)
-        if rows:
+        if half_edges:
             conn.executemany(
-                "INSERT INTO relation VALUES (?, ?, ?, ?)",
-                rows,
+                "INSERT INTO dbxref VALUES (?, ?, ?, ?)",
+                half_edges,
+            )
+
+
+def _create_test_db_raw(
+    db_path: Path,
+    dbxref_rows: list[tuple[str, str, str, str]],
+) -> None:
+    """Create a DuckDB file with a ``dbxref`` table populated with raw half-edge rows.
+
+    Use this when a test needs to insert exactly the rows it specifies
+    (for example, to verify behaviour when only one half-edge exists
+    without its symmetric counterpart).  Most tests should prefer
+    :func:`_create_test_db`, which handles half-edge duplication
+    automatically.
+    """
+    with duckdb.connect(str(db_path)) as conn:
+        conn.execute("""
+            CREATE TABLE dbxref (
+                accession_type TEXT,
+                accession TEXT,
+                linked_type TEXT,
+                linked_accession TEXT
+            )
+        """)
+        if dbxref_rows:
+            conn.executemany(
+                "INSERT INTO dbxref VALUES (?, ?, ?, ?)",
+                dbxref_rows,
             )
 
 
@@ -1039,3 +1083,221 @@ class TestCursorIndependence:
         assert len(first_two) == 2
         assert len(limited) == 6
         assert len(first_two) + len(rest) == 6
+
+
+# --- dbxref half-edge schema characterisation ---
+
+
+class TestCreateTestDbHalfEdge:
+    """Verify _create_test_db inserts symmetric half-edges into dbxref."""
+
+    def test_one_edge_inserts_two_rows(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [("humandbs", "hum0014", "jga-study", "JGAS000101")])
+        with duckdb.connect(str(db)) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM dbxref").fetchone()
+        assert row is not None
+        assert row[0] == 2
+
+    def test_self_loop_inserts_one_row(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "bioproject", "PRJDB100")])
+        with duckdb.connect(str(db)) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM dbxref").fetchone()
+        assert row is not None
+        assert row[0] == 1
+
+
+class TestIterLinkedIdsSymmetryPBT:
+    """For each undirected edge {A, B}, lookup from A includes B and vice versa."""
+
+    @given(
+        type_a=st.sampled_from([e.value for e in AccessionType]),
+        type_b=st.sampled_from([e.value for e in AccessionType]),
+        id_a=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="-_"),
+            min_size=1,
+            max_size=10,
+        ),
+        id_b=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="-_"),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    @settings(
+        max_examples=30,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_undirected_edge_visible_from_both_endpoints(
+        self,
+        type_a: str,
+        type_b: str,
+        id_a: str,
+        id_b: str,
+        tmp_path: Path,
+    ) -> None:
+        assume((type_a, id_a) != (type_b, id_b))
+        # Use a unique sub-path per example to avoid DuckDB file-handle
+        # conflicts with the cached READ_ONLY ATTACH from earlier examples.
+        sub = tmp_path / uuid.uuid4().hex
+        sub.mkdir()
+        db = sub / "pbt_sym.duckdb"
+        _create_test_db(db, [(type_a, id_a, type_b, id_b)])
+
+        from_a = list(iter_linked_ids(db, type_a, id_a))
+        from_b = list(iter_linked_ids(db, type_b, id_b))
+
+        assert (type_b, id_b) in from_a
+        assert (type_a, id_a) in from_b
+
+
+class TestBulkConsistencyPBT:
+    """Bulk APIs must equal the dict comprehension of single-entry APIs."""
+
+    @given(
+        n_entries=st.integers(min_value=0, max_value=10),
+        limit=st.integers(min_value=0, max_value=20),
+    )
+    @settings(
+        max_examples=20,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_get_limited_bulk_matches_individual(
+        self,
+        n_entries: int,
+        limit: int,
+        tmp_path: Path,
+    ) -> None:
+        # Reuse the same DB across PBT examples so that the cached
+        # READ_ONLY ATTACH does not conflict with a fresh open.
+        db = tmp_path / "pbt_bulk_lim.duckdb"
+        if not db.exists():
+            rows = [("bioproject", f"PRJDB{i:03d}", "biosample", f"SAMD{j:03d}") for i in range(5) for j in range(3)]
+            _create_test_db(db, rows)
+
+        entries = [("bioproject", f"PRJDB{i:03d}") for i in range(n_entries)]
+        bulk = get_linked_ids_limited_bulk(db, entries, limit=limit)
+        for entry in entries:
+            individual = get_linked_ids_limited(db, entry[0], entry[1], limit=limit)
+            assert bulk[entry] == individual
+
+    @given(n_entries=st.integers(min_value=0, max_value=10))
+    @settings(
+        max_examples=20,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_count_bulk_matches_individual(
+        self,
+        n_entries: int,
+        tmp_path: Path,
+    ) -> None:
+        # Reuse the same DB across PBT examples so that the cached
+        # READ_ONLY ATTACH does not conflict with a fresh open.
+        db = tmp_path / "pbt_bulk_cnt.duckdb"
+        if not db.exists():
+            rows = [("bioproject", f"PRJDB{i:03d}", "biosample", f"SAMD{j:03d}") for i in range(5) for j in range(3)]
+            _create_test_db(db, rows)
+
+        entries = [("bioproject", f"PRJDB{i:03d}") for i in range(n_entries)]
+        bulk = count_linked_ids_bulk(db, entries)
+        for entry in entries:
+            individual = count_linked_ids(db, entry[0], entry[1])
+            assert bulk[entry] == individual
+
+
+class TestBulkScale:
+    """Verify bulk APIs work at sizes used in production (perPage=100)."""
+
+    def test_bulk_size_one(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result = get_linked_ids_limited_bulk(db, [("bioproject", "PRJDB100")], limit=10)
+
+        assert result == {("bioproject", "PRJDB100"): [("biosample", "SAMD001")]}
+
+    def test_bulk_size_100(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        rows = [("bioproject", f"PRJDB{i:03d}", "biosample", f"SAMD{i:03d}") for i in range(100)]
+        _create_test_db(db, rows)
+
+        entries = [("bioproject", f"PRJDB{i:03d}") for i in range(100)]
+        result = get_linked_ids_limited_bulk(db, entries, limit=10)
+
+        assert len(result) == 100
+        for i in range(100):
+            assert result[("bioproject", f"PRJDB{i:03d}")] == [("biosample", f"SAMD{i:03d}")]
+
+    def test_bulk_empty_entries_returns_empty_dict(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [])
+
+        assert get_linked_ids_limited_bulk(db, [], limit=10) == {}
+        assert count_linked_ids_bulk(db, []) == {}
+
+    def test_bulk_with_non_matching_entries_keeps_keys(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result = get_linked_ids_limited_bulk(
+            db,
+            [("bioproject", "PRJDB100"), ("bioproject", "PRJ_NONE")],
+            limit=10,
+        )
+
+        assert result[("bioproject", "PRJDB100")] == [("biosample", "SAMD001")]
+        assert result[("bioproject", "PRJ_NONE")] == []
+
+
+class TestRawHalfEdgeBehaviour:
+    """Tests that insert raw half-edges directly to validate the schema contract."""
+
+    def test_single_half_edge_only_visible_one_direction(self, tmp_path: Path) -> None:
+        """If only one half-edge is stored, only one direction sees it.
+
+        Catches regressions where API code accidentally re-introduces the
+        symmetric direction (for example by re-adding ``UNION ALL``).
+        """
+        db = tmp_path / "test.duckdb"
+        _create_test_db_raw(
+            db,
+            [("humandbs", "hum0014", "jga-study", "JGAS000101")],
+        )
+
+        forward = list(iter_linked_ids(db, "humandbs", "hum0014"))
+        backward = list(iter_linked_ids(db, "jga-study", "JGAS000101"))
+
+        assert forward == [("jga-study", "JGAS000101")]
+        assert backward == []
+
+
+class TestBulkDuplicateEntries:
+    """Document the chosen semantics for duplicate keys in entries."""
+
+    def test_duplicate_entry_collapses_to_single_key(self, tmp_path: Path) -> None:
+        """Same key passed twice -- result has it once with one lookup result."""
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result = get_linked_ids_limited_bulk(
+            db,
+            [("bioproject", "PRJDB100"), ("bioproject", "PRJDB100")],
+            limit=10,
+        )
+
+        assert result == {("bioproject", "PRJDB100"): [("biosample", "SAMD001")]}
+
+    def test_duplicate_entry_count_collapses(self, tmp_path: Path) -> None:
+        db = tmp_path / "test.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB100", "biosample", "SAMD001")])
+
+        result = count_linked_ids_bulk(
+            db,
+            [("bioproject", "PRJDB100"), ("bioproject", "PRJDB100")],
+        )
+
+        assert result == {("bioproject", "PRJDB100"): {"biosample": 1}}
