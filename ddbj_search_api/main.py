@@ -195,7 +195,16 @@ def _make_lifespan(config: AppConfig) -> Any:
             timeout=httpx.Timeout(config.es_timeout),
             limits=httpx.Limits(max_connections=1000),
         )
+        # Shared Solr client for ARSA and TXSearch. No ``base_url``: each
+        # call passes a full URL (ARSA ``{base}/{core}/select``, TXSearch
+        # preformed ``/solr-rgm/.../select``). Smaller pool than ES: Solr
+        # traffic comes only from ``/db-portal/search``.
+        app.state.solr_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(config.solr_timeout),
+            limits=httpx.Limits(max_connections=100),
+        )
         yield
+        await app.state.solr_client.aclose()
         await app.state.es_client.aclose()
 
     return lifespan

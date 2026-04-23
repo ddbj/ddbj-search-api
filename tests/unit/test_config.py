@@ -45,6 +45,21 @@ class TestAppConfigDefaults:
     def test_env(self, config: AppConfig) -> None:
         assert config.env == Env.dev
 
+    def test_solr_arsa_base_url_default(self, config: AppConfig) -> None:
+        assert config.solr_arsa_base_url is None
+
+    def test_solr_arsa_shards_default(self, config: AppConfig) -> None:
+        assert config.solr_arsa_shards is None
+
+    def test_solr_arsa_core_default(self, config: AppConfig) -> None:
+        assert config.solr_arsa_core == "collection1"
+
+    def test_solr_txsearch_url_default(self, config: AppConfig) -> None:
+        assert config.solr_txsearch_url is None
+
+    def test_solr_timeout_default(self, config: AppConfig) -> None:
+        assert config.solr_timeout == 15.0
+
 
 # === Computed field: debug ===
 
@@ -91,6 +106,37 @@ class TestAppConfigEnvOverrides:
         monkeypatch.setenv("DDBJ_SEARCH_API_URL_PREFIX", "/custom/prefix")
         config = AppConfig()
         assert config.url_prefix == "/custom/prefix"
+
+    def test_solr_arsa_base_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_BASE_URL", "http://a011:51981/solr")
+        config = AppConfig()
+        assert config.solr_arsa_base_url == "http://a011:51981/solr"
+
+    def test_solr_arsa_shards_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_ARSA_SHARDS",
+            "a011:51981/solr,a011:51982/solr,a011:51983/solr",
+        )
+        config = AppConfig()
+        assert config.solr_arsa_shards == "a011:51981/solr,a011:51982/solr,a011:51983/solr"
+
+    def test_solr_arsa_core_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_CORE", "trad")
+        config = AppConfig()
+        assert config.solr_arsa_core == "trad"
+
+    def test_solr_txsearch_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_TXSEARCH_URL",
+            "http://localhost:32005/solr-rgm/ncbi_taxonomy/select",
+        )
+        config = AppConfig()
+        assert config.solr_txsearch_url == "http://localhost:32005/solr-rgm/ncbi_taxonomy/select"
+
+    def test_solr_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_TIMEOUT", "20.5")
+        config = AppConfig()
+        assert config.solr_timeout == 20.5
 
 
 # === Env enum ===

@@ -62,24 +62,23 @@ class TestDbPortalDb:
 
 
 class TestDbPortalCountError:
-    """DbPortalCountError: 5 error kinds including AP1 not_implemented."""
+    """DbPortalCountError: 4 error kinds."""
 
-    def test_has_exactly_5_members(self) -> None:
-        assert len(DbPortalCountError) == 5
+    def test_has_exactly_4_members(self) -> None:
+        assert len(DbPortalCountError) == 4
 
     def test_contains_all_expected_values(self) -> None:
         expected = {
             "timeout",
             "upstream_5xx",
             "connection_refused",
-            "not_implemented",
             "unknown",
         }
         assert {e.value for e in DbPortalCountError} == expected
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: 3 AP1 problem type URIs."""
+    """DbPortalErrorType: 3 problem type URIs."""
 
     def test_has_exactly_3_members(self) -> None:
         assert len(DbPortalErrorType) == 3
@@ -101,8 +100,8 @@ class TestDbPortalErrorType:
             == "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
         )
 
-    def test_db_not_implemented_uri(self) -> None:
-        assert DbPortalErrorType.db_not_implemented.value == "https://ddbj.nig.ac.jp/problems/db-not-implemented"
+    def test_cursor_not_supported_uri(self) -> None:
+        assert DbPortalErrorType.cursor_not_supported.value == "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
 
 
 # === DbPortalQuery ===
@@ -224,15 +223,6 @@ class TestDbPortalCount:
         assert c.count == 1234
         assert c.error is None
 
-    def test_failure_not_implemented(self) -> None:
-        c = DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.not_implemented,
-        )
-        assert c.count is None
-        assert c.error == DbPortalCountError.not_implemented
-
     def test_failure_timeout(self) -> None:
         c = DbPortalCount(
             db=DbPortalDb.sra,
@@ -249,16 +239,7 @@ class TestDbPortalCrossSearchResponse:
     """DbPortalCrossSearchResponse: list of DB counts."""
 
     def test_eight_databases(self) -> None:
-        resp = DbPortalCrossSearchResponse(
-            databases=[
-                DbPortalCount(
-                    db=db,
-                    count=None,
-                    error=DbPortalCountError.not_implemented,
-                )
-                for db in DbPortalDb
-            ]
-        )
+        resp = DbPortalCrossSearchResponse(databases=[DbPortalCount(db=db, count=100, error=None) for db in DbPortalDb])
         assert len(resp.databases) == 8
 
     def test_serialization_shape(self) -> None:
@@ -268,7 +249,7 @@ class TestDbPortalCrossSearchResponse:
                 DbPortalCount(
                     db=DbPortalDb.trad,
                     count=None,
-                    error=DbPortalCountError.not_implemented,
+                    error=DbPortalCountError.timeout,
                 ),
             ]
         )
@@ -276,7 +257,7 @@ class TestDbPortalCrossSearchResponse:
         assert dumped["databases"][0]["db"] == "sra"
         assert dumped["databases"][0]["count"] == 10
         assert dumped["databases"][0]["error"] is None
-        assert dumped["databases"][1]["error"] == "not_implemented"
+        assert dumped["databases"][1]["error"] == "timeout"
 
 
 # === DbPortalHit ===

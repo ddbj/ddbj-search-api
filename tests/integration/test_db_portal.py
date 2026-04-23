@@ -1,8 +1,10 @@
-"""Integration tests for GET /db-portal/search (real ES).
+"""Integration tests for GET /db-portal/search (real ES; Solr is unset).
 
-AP1 scope: verifies the dispatcher shape against a real ES cluster.
-Advanced Search (AP3) and Solr proxy (AP4) paths return 501 and are
-asserted here for regression safety.
+Verifies the dispatcher shape against a real ES cluster.  Solr-backed
+DBs (``trad`` / ``taxonomy``) surface ``error=unknown`` on the count
+path and 502 on the db-specific path when ``solr_arsa_base_url`` and
+``solr_txsearch_url`` are unset, which is the default for integration
+runs.  AP3 (Advanced Search DSL) is still stubbed at 501.
 """
 
 from __future__ import annotations
@@ -11,8 +13,8 @@ from fastapi.testclient import TestClient
 
 from ddbj_search_api.schemas.db_portal import DbPortalCountError, DbPortalErrorType
 
-_SOLR_PENDING = ("trad", "taxonomy")
-_ES_BACKED = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
+_SOLR_DBS = ("trad", "taxonomy")
+_ES_DBS = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
 _DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
 
 
@@ -28,14 +30,14 @@ def test_cross_search_returns_eight_databases(app: TestClient) -> None:
     assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
 
 
-def test_cross_search_solr_pending_dbs_are_not_implemented(app: TestClient) -> None:
-    """`trad` and `taxonomy` are stubbed until AP4."""
+def test_cross_search_solr_dbs_error_when_solr_unset(app: TestClient) -> None:
+    """`trad` / `taxonomy` report `error=unknown` when Solr URLs are unset."""
     resp = app.get("/db-portal/search", params={"q": "human"})
     body = resp.json()
     by_db = {e["db"]: e for e in body["databases"]}
-    for db in _SOLR_PENDING:
+    for db in _SOLR_DBS:
         assert by_db[db]["count"] is None
-        assert by_db[db]["error"] == DbPortalCountError.not_implemented.value
+        assert by_db[db]["error"] == DbPortalCountError.unknown.value
 
 
 def test_cross_search_es_backed_dbs_return_numeric_count(app: TestClient) -> None:
@@ -43,7 +45,7 @@ def test_cross_search_es_backed_dbs_return_numeric_count(app: TestClient) -> Non
     resp = app.get("/db-portal/search", params={"q": "human"})
     body = resp.json()
     by_db = {e["db"]: e for e in body["databases"]}
-    for db in _ES_BACKED:
+    for db in _ES_DBS:
         entry = by_db[db]
         # count may be 0 in a fresh dev index but must never be null.
         assert entry["error"] is None or isinstance(entry["count"], int)
@@ -82,7 +84,7 @@ def test_db_specific_per_page_50(app: TestClient) -> None:
     assert resp.json()["perPage"] == 50
 
 
-# === Dispatch: 501 / 400 / 422 ===
+# === Dispatch: Solr unconfigured / 400 / 422 ===
 
 
 def test_adv_returns_501(app: TestClient) -> None:
@@ -92,18 +94,23 @@ def test_adv_returns_501(app: TestClient) -> None:
     assert resp.json()["type"] == DbPortalErrorType.advanced_search_not_implemented.value
 
 
-def test_db_trad_returns_501(app: TestClient) -> None:
-    """`db=trad` dispatches to the Solr-pending stub."""
+def test_db_trad_returns_502_when_arsa_unset(app: TestClient) -> None:
+    """`db=trad` surfaces 502 when ARSA URL is not configured."""
     resp = app.get("/db-portal/search", params={"q": "x", "db": "trad"})
-    assert resp.status_code == 501
-    assert resp.json()["type"] == DbPortalErrorType.db_not_implemented.value
+    assert resp.status_code == 502
 
 
-def test_db_taxonomy_returns_501(app: TestClient) -> None:
-    """`db=taxonomy` dispatches to the Solr-pending stub."""
+def test_db_taxonomy_returns_502_when_txsearch_unset(app: TestClient) -> None:
+    """`db=taxonomy` surfaces 502 when TXSearch URL is not configured."""
     resp = app.get("/db-portal/search", params={"q": "x", "db": "taxonomy"})
-    assert resp.status_code == 501
-    assert resp.json()["type"] == DbPortalErrorType.db_not_implemented.value
+    assert resp.status_code == 502
+
+
+def test_cursor_with_trad_returns_400_cursor_not_supported(app: TestClient) -> None:
+    """`db=trad` + `cursor` returns 400 cursor-not-supported (Solr is offset-only)."""
+    resp = app.get("/db-portal/search", params={"db": "trad", "cursor": "abc.def"})
+    assert resp.status_code == 400
+    assert resp.json()["type"] == DbPortalErrorType.cursor_not_supported.value
 
 
 def test_q_and_adv_returns_400(app: TestClient) -> None:

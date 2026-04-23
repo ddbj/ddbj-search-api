@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -205,3 +206,33 @@ class TestOpenAPICustomisation:
         schema = app.openapi()
         schemas = schema.get("components", {}).get("schemas", {})
         assert "ValidationError" not in schemas
+
+
+# === Lifespan: Solr client ===
+
+
+class TestLifespanSolrClient:
+    """Solr client provisioned alongside ES client in the lifespan."""
+
+    def test_solr_client_initialized(self) -> None:
+        application = create_app(AppConfig())
+        with TestClient(application):
+            assert isinstance(application.state.solr_client, httpx.AsyncClient)
+
+    def test_solr_client_closed_after_exit(self) -> None:
+        application = create_app(AppConfig())
+        with TestClient(application):
+            client = application.state.solr_client
+        assert client.is_closed is True
+
+    def test_solr_timeout_applied_from_config(self) -> None:
+        config = AppConfig()
+        object.__setattr__(config, "solr_timeout", 25.0)
+        application = create_app(config)
+        with TestClient(application):
+            assert application.state.solr_client.timeout.read == 25.0
+
+    def test_es_and_solr_clients_are_distinct(self) -> None:
+        application = create_app(AppConfig())
+        with TestClient(application):
+            assert application.state.solr_client is not application.state.es_client

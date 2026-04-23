@@ -26,10 +26,14 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalCountError,
     DbPortalErrorType,
 )
-from tests.unit.conftest import make_es_search_response
+from tests.unit.conftest import (
+    make_es_search_response,
+    make_solr_arsa_response,
+    make_solr_txsearch_response,
+)
 
-_SOLR_PENDING = ("trad", "taxonomy")
-_ES_BACKED = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
+_SOLR_DBS = ("trad", "taxonomy")
+_ES_DBS = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
 _DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
 
 
@@ -102,28 +106,6 @@ class TestDbPortalQueryCombination:
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_query_combination.value
-
-
-# === Solr-pending DB (trad / taxonomy) ===
-
-
-class TestDbPortalDbNotImplemented:
-    """db=trad / db=taxonomy returns 501 with db-not-implemented URI."""
-
-    @pytest.mark.parametrize("db", _SOLR_PENDING)
-    def test_solr_db_returns_501(
-        self,
-        app_with_db_portal: TestClient,
-        db: str,
-    ) -> None:
-        resp = app_with_db_portal.get(
-            "/db-portal/search",
-            params={"q": "foo", "db": db},
-        )
-        assert resp.status_code == 501
-        body = resp.json()
-        assert body["type"] == DbPortalErrorType.db_not_implemented.value
-        assert db in body["detail"]
 
 
 # === Enum / Literal validation ===
@@ -218,18 +200,23 @@ class TestDbPortalCrossSearch:
         assert len(body["databases"]) == 8
         assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
 
-    def test_solr_pending_dbs_are_not_implemented(
+    def test_solr_dbs_return_count_from_solr_mock(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
         mock_es_search_db_portal.return_value = make_es_search_response(total=1234)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=77)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=9)
         resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
         body = resp.json()
         by_db = {e["db"]: e for e in body["databases"]}
-        for db in _SOLR_PENDING:
-            assert by_db[db]["count"] is None
-            assert by_db[db]["error"] == DbPortalCountError.not_implemented.value
+        assert by_db["trad"]["count"] == 77
+        assert by_db["trad"]["error"] is None
+        assert by_db["taxonomy"]["count"] == 9
+        assert by_db["taxonomy"]["error"] is None
 
     def test_es_backed_dbs_return_count(
         self,
@@ -240,27 +227,30 @@ class TestDbPortalCrossSearch:
         resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
         body = resp.json()
         by_db = {e["db"]: e for e in body["databases"]}
-        for db in _ES_BACKED:
+        for db in _ES_DBS:
             assert by_db[db]["count"] == 1234
             assert by_db[db]["error"] is None
 
-    def test_timeout_mapped(
+    def test_all_backends_timeout_returns_502(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
         mock_es_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        mock_arsa_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        mock_txsearch_search_db_portal.side_effect = httpx.TimeoutException("timeout")
         resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
         assert resp.status_code == 502
-        # All ES DBs timed out and both Solr DBs are not_implemented →
-        # all errors → 502.  Detail confirms the failure path was hit.
 
     def test_partial_success_returns_200(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        # First call succeeds, rest timeout.
+        # First ES call succeeds, rest timeout; Solr mocks keep their
+        # default empty-success responses so the overall response is 200.
         mock_es_search_db_portal.side_effect = [
             make_es_search_response(total=10),
             *[httpx.TimeoutException("timeout") for _ in range(5)],
@@ -274,12 +264,13 @@ class TestDbPortalCrossSearch:
         assert by_db["sra"]["count"] == 10
         assert by_db["sra"]["error"] is None
 
-    def test_upstream_5xx_mapped(
+    def test_upstream_5xx_all_backends_returns_502(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
-        # All ES DBs return 503 → upstream_5xx.
         mock_response = httpx.Response(
             status_code=503,
             request=httpx.Request("POST", "http://es/_search"),
@@ -290,8 +281,9 @@ class TestDbPortalCrossSearch:
             response=mock_response,
         )
         mock_es_search_db_portal.side_effect = error
+        mock_arsa_search_db_portal.side_effect = error
+        mock_txsearch_search_db_portal.side_effect = error
         resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
-        # All 8 DBs have error → 502.
         assert resp.status_code == 502
 
     def test_connect_error_mapped(
@@ -299,9 +291,9 @@ class TestDbPortalCrossSearch:
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        # First call succeeds so overall response is 200; the first
+        # First ES call succeeds so overall response is 200; the first
         # ES DB (sra) exercises the success path, the rest are
-        # connection_refused.
+        # connection_refused.  Solr mocks stay on default success.
         mock_es_search_db_portal.side_effect = [
             make_es_search_response(total=1),
             *[httpx.ConnectError("refused") for _ in range(5)],
@@ -333,7 +325,7 @@ class TestDbPortalCrossSearch:
 class TestDbPortalDbSpecificSearch:
     """GET /db-portal/search?q=...&db=<es-backed>."""
 
-    @pytest.mark.parametrize("db", _ES_BACKED)
+    @pytest.mark.parametrize("db", _ES_DBS)
     def test_all_es_backed_dbs_accepted(
         self,
         app_with_db_portal: TestClient,
@@ -552,7 +544,7 @@ class TestDbPortalCursorPBT:
         max_examples=20,
     )
     @given(
-        db=st.sampled_from(_ES_BACKED),
+        db=st.sampled_from(_ES_DBS),
         per_page=st.sampled_from([20, 50, 100]),
     )
     def test_next_cursor_roundtrip(
@@ -621,17 +613,20 @@ class TestDbPortalErrorFormat:
         assert body["type"] == DbPortalErrorType.advanced_search_not_implemented.value
         assert body["title"] == "Not Implemented"
 
-    def test_501_db_not_implemented_shape(
+    def test_400_cursor_not_supported_shape(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "x", "db": "trad"},
+            params={"db": "trad", "cursor": "abc.def"},
         )
-        assert resp.status_code == 501
+        assert resp.status_code == 400
         body = resp.json()
-        assert body["type"] == DbPortalErrorType.db_not_implemented.value
+        assert body["type"] == DbPortalErrorType.cursor_not_supported.value
+        assert body["title"] == "Bad Request"
+        assert body["status"] == 400
+        assert "trad" in body["detail"]
 
     def test_422_uses_about_blank(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
@@ -650,3 +645,321 @@ class TestDbPortalErrorFormat:
         )
         assert resp.headers.get("X-Request-ID") == "test-req-123"
         assert resp.json()["requestId"] == "test-req-123"
+
+
+# === Solr cross-search error mapping ===
+
+
+class TestDbPortalSolrCrossSearchErrors:
+    """Solr cross-search count error classification per backend."""
+
+    def test_arsa_timeout_mapped(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["count"] is None
+        assert by_db["trad"]["error"] == DbPortalCountError.timeout.value
+
+    def test_arsa_connection_refused_mapped(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.side_effect = httpx.ConnectError("refused")
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["error"] == DbPortalCountError.connection_refused.value
+
+    def test_arsa_5xx_mapped_to_upstream_5xx(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_response = httpx.Response(
+            status_code=502,
+            request=httpx.Request("GET", "http://arsa/select"),
+        )
+        mock_arsa_search_db_portal.side_effect = httpx.HTTPStatusError(
+            "502",
+            request=mock_response.request,
+            response=mock_response,
+        )
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["error"] == DbPortalCountError.upstream_5xx.value
+
+    def test_txsearch_timeout_mapped(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["taxonomy"]["error"] == DbPortalCountError.timeout.value
+
+    def test_arsa_unexpected_response_shape_unknown(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = {"no_response_key": True}
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["error"] == DbPortalCountError.unknown.value
+
+
+# === ARSA (Trad) DB-specific hits ===
+
+
+class TestDbPortalTradSpecificSearch:
+    """GET /db-portal/search?q=...&db=trad — ARSA proxy."""
+
+    def test_returns_trad_hits(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(
+            num_found=2,
+            docs=[
+                {
+                    "PrimaryAccessionNumber": "AY967397",
+                    "Definition": "Synthetic construct FTT0951",
+                    "Organism": "synthetic construct",
+                    "Division": "SYN",
+                    "Date": "20050411",
+                },
+                {
+                    "PrimaryAccessionNumber": "AY967398",
+                    "Definition": "Another def",
+                    "Organism": "Homo sapiens",
+                    "Division": "PRI",
+                    "Date": "20060101",
+                },
+            ],
+        )
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 2
+        assert body["hardLimitReached"] is False
+        assert body["hits"][0]["identifier"] == "AY967397"
+        assert body["hits"][0]["type"] == "trad"
+        assert body["hits"][0]["title"] == "Synthetic construct FTT0951"
+        assert body["hits"][0]["organism"]["name"] == "synthetic construct"
+        assert body["hits"][0]["datePublished"] == "2005-04-11"
+        assert body["hits"][0]["division"] == "SYN"
+        assert body["hits"][0]["url"] == "https://getentry.ddbj.nig.ac.jp/getentry/na/AY967397/"
+
+    def test_hard_limit_boundary_10000(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=10_000)
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        assert resp.json()["hardLimitReached"] is True
+
+    def test_page_and_per_page_echoed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "x", "db": "trad", "page": 3, "perPage": 50},
+        )
+        body = resp.json()
+        assert body["page"] == 3
+        assert body["perPage"] == 50
+
+    def test_next_cursor_always_null(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=1000)
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        assert resp.json()["nextCursor"] is None
+
+    def test_arsa_called_with_core_and_shards(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        call = mock_arsa_search_db_portal.call_args
+        assert call.kwargs["core"] == "collection1"
+        assert call.kwargs["base_url"] == "http://mock-arsa:51981/solr"
+        assert call.kwargs["params"]["shards"] == "mock-arsa:51981/solr/collection1"
+        assert call.kwargs["params"]["defType"] == "edismax"
+
+    def test_deep_paging_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "x", "db": "trad", "page": 500, "perPage": 100},
+        )
+        assert resp.status_code == 400
+
+    def test_sort_date_published_translated_to_solr(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "x", "db": "trad", "sort": "datePublished:desc"},
+        )
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert params["sort"] == "Date desc"
+
+
+# === TXSearch (Taxonomy) DB-specific hits ===
+
+
+class TestDbPortalTaxonomySpecificSearch:
+    """GET /db-portal/search?q=...&db=taxonomy — TXSearch proxy."""
+
+    def test_returns_taxonomy_hits(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            num_found=1,
+            docs=[
+                {
+                    "tax_id": "9606",
+                    "scientific_name": "Homo sapiens",
+                    "common_name": ["human"],
+                    "japanese_name": ["ヒト"],
+                    "rank": "species",
+                    "lineage": ["Homo sapiens", "Homo", "Hominidae"],
+                },
+            ],
+        )
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "Homo", "db": "taxonomy"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        hit = body["hits"][0]
+        assert hit["identifier"] == "9606"
+        assert hit["type"] == "taxonomy"
+        assert hit["title"] == "Homo sapiens"
+        assert hit["organism"] == {"name": "Homo sapiens", "identifier": "9606"}
+        assert hit["datePublished"] is None
+        assert hit["url"] == "https://ddbj.nig.ac.jp/resource/taxonomy/9606"
+        assert hit["rank"] == "species"
+        assert hit["commonName"] == "human"
+        assert hit["japaneseName"] == "ヒト"
+
+    def test_hard_limit_boundary(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=10_001)
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "taxonomy"})
+        assert resp.json()["hardLimitReached"] is True
+
+    def test_txsearch_called_with_full_url(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "taxonomy"})
+        call = mock_txsearch_search_db_portal.call_args
+        assert call.kwargs["url"] == "http://mock-txsearch/solr-rgm/ncbi_taxonomy/select"
+        assert "shards" not in call.kwargs["params"]
+
+
+# === Cursor not supported for Solr DBs ===
+
+
+class TestDbPortalCursorNotSupportedForSolr:
+    """db=trad / db=taxonomy + cursor → 400 cursor-not-supported."""
+
+    @pytest.mark.parametrize("db", _SOLR_DBS)
+    def test_cursor_with_solr_db_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+        db: str,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": db, "cursor": "abc.def"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.cursor_not_supported.value
+        assert db in body["detail"]
+
+    def test_cursor_with_es_db_unaffected(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        # ES-backed DB with invalid cursor still hits the existing path
+        # (generic 400, not cursor_not_supported).
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "cursor": "not.a.valid.cursor"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == "about:blank"
+
+
+# === Solr error propagation for DB-specific search ===
+
+
+class TestDbPortalSolrErrorPropagation:
+    """Solr upstream errors surface as 502 on db-specific search."""
+
+    def test_arsa_timeout_returns_502(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        assert resp.status_code == 502
+
+    def test_arsa_5xx_returns_502(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_response = httpx.Response(
+            status_code=503,
+            request=httpx.Request("GET", "http://arsa/select"),
+        )
+        mock_arsa_search_db_portal.side_effect = httpx.HTTPStatusError(
+            "503",
+            request=mock_response.request,
+            response=mock_response,
+        )
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        assert resp.status_code == 502
+
+    def test_txsearch_timeout_returns_502(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "taxonomy"})
+        assert resp.status_code == 502

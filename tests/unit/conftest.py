@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.main import create_app
+from ddbj_search_api.routers.db_portal import _get_config_dep
+from ddbj_search_api.solr import get_solr_client
 
 
 def _make_app(config: AppConfig) -> TestClient:
@@ -329,6 +331,36 @@ def app_with_facets(
 # --- DB Portal API fixtures ---
 
 
+def make_solr_arsa_response(
+    docs: list[dict[str, Any]] | None = None,
+    num_found: int = 0,
+) -> dict[str, Any]:
+    """Build a minimal ARSA ``/select`` JSON response for tests."""
+    return {
+        "responseHeader": {"status": 0, "QTime": 5},
+        "response": {
+            "numFound": num_found,
+            "start": 0,
+            "docs": docs or [],
+        },
+    }
+
+
+def make_solr_txsearch_response(
+    docs: list[dict[str, Any]] | None = None,
+    num_found: int = 0,
+) -> dict[str, Any]:
+    """Build a minimal TXSearch ``/select`` JSON response for tests."""
+    return {
+        "responseHeader": {"status": 0, "QTime": 5},
+        "response": {
+            "numFound": num_found,
+            "start": 0,
+            "docs": docs or [],
+        },
+    }
+
+
 @pytest.fixture
 def mock_es_search_db_portal() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_search in the db_portal router.
@@ -342,6 +374,31 @@ def mock_es_search_db_portal() -> collections.abc.Iterator[AsyncMock]:
         new_callable=AsyncMock,
     ) as mock:
         mock.return_value = make_es_search_response()
+        yield mock
+
+
+@pytest.fixture
+def mock_arsa_search_db_portal() -> collections.abc.Iterator[AsyncMock]:
+    """Patch arsa_search in the db_portal router.
+
+    Default: empty response. Override via ``return_value`` / ``side_effect``.
+    """
+    with patch(
+        "ddbj_search_api.routers.db_portal.arsa_search",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = make_solr_arsa_response()
+        yield mock
+
+
+@pytest.fixture
+def mock_txsearch_search_db_portal() -> collections.abc.Iterator[AsyncMock]:
+    """Patch txsearch_search in the db_portal router."""
+    with patch(
+        "ddbj_search_api.routers.db_portal.txsearch_search",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = make_solr_txsearch_response()
         yield mock
 
 
@@ -371,11 +428,28 @@ def mock_es_search_with_pit_db_portal() -> collections.abc.Iterator[AsyncMock]:
 def app_with_db_portal(
     config: AppConfig,
     mock_es_search_db_portal: AsyncMock,
+    mock_arsa_search_db_portal: AsyncMock,
+    mock_txsearch_search_db_portal: AsyncMock,
 ) -> TestClient:
-    """TestClient with db_portal's es_search mocked."""
-    fake_client = AsyncMock(spec=httpx.AsyncClient)
+    """TestClient with db_portal ES + Solr client calls mocked.
+
+    ARSA / TXSearch config default URLs are set so the router emits
+    ``error=unknown`` only when the caller explicitly clears them.
+    The ``_get_config_dep`` dependency is overridden so the router
+    sees this fixture's ``AppConfig`` instead of the module-level
+    singleton from ``get_config``.
+    """
+    object.__setattr__(config, "solr_arsa_base_url", "http://mock-arsa:51981/solr")
+    object.__setattr__(config, "solr_arsa_shards", "mock-arsa:51981/solr/collection1")
+    object.__setattr__(config, "solr_arsa_core", "collection1")
+    object.__setattr__(config, "solr_txsearch_url", "http://mock-txsearch/solr-rgm/ncbi_taxonomy/select")
+
+    fake_es_client = AsyncMock(spec=httpx.AsyncClient)
+    fake_solr_client = AsyncMock(spec=httpx.AsyncClient)
     application = create_app(config)
-    application.dependency_overrides[get_es_client] = lambda: fake_client
+    application.dependency_overrides[get_es_client] = lambda: fake_es_client
+    application.dependency_overrides[get_solr_client] = lambda: fake_solr_client
+    application.dependency_overrides[_get_config_dep] = lambda: config
 
     return TestClient(application, raise_server_exceptions=False)
 

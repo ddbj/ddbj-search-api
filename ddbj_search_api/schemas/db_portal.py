@@ -30,16 +30,11 @@ class DbPortalDb(str, Enum):
 
 
 class DbPortalCountError(str, Enum):
-    """Error reason for a DB entry in the cross-search count response.
-
-    ``not_implemented`` is used for AP1 Solr-backed databases
-    (``trad``, ``taxonomy``) and will be removed when AP4 lands.
-    """
+    """Error reason for a DB entry in the cross-search count response."""
 
     timeout = "timeout"
     upstream_5xx = "upstream_5xx"
     connection_refused = "connection_refused"
-    not_implemented = "not_implemented"
     unknown = "unknown"
 
 
@@ -51,7 +46,7 @@ class DbPortalErrorType(str, Enum):
 
     invalid_query_combination = "https://ddbj.nig.ac.jp/problems/invalid-query-combination"
     advanced_search_not_implemented = "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
-    db_not_implemented = "https://ddbj.nig.ac.jp/problems/db-not-implemented"
+    cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
 
 
 ALLOWED_DB_PORTAL_SORTS: frozenset[str] = frozenset({"datePublished:desc", "datePublished:asc"})
@@ -80,7 +75,7 @@ class DbPortalQuery:
         adv: str | None = Query(
             default=None,
             description=(
-                "Advanced Search DSL.  Not implemented in AP1 (returns 501 "
+                "Advanced Search DSL.  Not implemented (returns 501 "
                 "``advanced-search-not-implemented``); planned for AP3."
             ),
         ),
@@ -88,7 +83,8 @@ class DbPortalQuery:
             default=None,
             description=(
                 "Target database.  Omit for cross-db count-only.  "
-                "``trad`` / ``taxonomy`` return 501 in AP1 (planned for AP4)."
+                "``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch "
+                "(Solr); the other six DBs use Elasticsearch."
             ),
         ),
         page: int = Query(
