@@ -1,127 +1,20 @@
-"""Tests for ddbj_search_api.solr.query (AP4).
+"""Tests for ddbj_search_api.solr.query (AP4 + AP2).
 
-Covers auto-phrase trigger set (Solr extended), keyword parsing with
-comma-split and quoted preservation, Solr phrase escaping, and the
-edismax param builders for ARSA and TXSearch.
+Covers Solr-specific edismax param builders for ARSA and TXSearch and
+the q string assembler.  Trigger set / tokenize / escape behaviour for
+the shared helpers lives in ``tests/unit/search/test_phrase.py``.
 """
 
 from __future__ import annotations
 
-import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from ddbj_search_api.solr.query import (
-    _SOLR_AUTO_PHRASE_CHARS,
     _build_q_string,
-    _escape_solr_phrase,
-    _has_solr_auto_phrase_trigger,
-    _parse_solr_keywords,
     build_arsa_params,
     build_txsearch_params,
 )
-
-# === Symbol set ===
-
-
-class TestSolrAutoPhraseChars:
-    """Solr auto-phrase set: ES chars + Solr syntax meta chars."""
-
-    @pytest.mark.parametrize("c", list("-/.+:"))
-    def test_es_triggers_included(self, c: str) -> None:
-        assert c in _SOLR_AUTO_PHRASE_CHARS
-
-    @pytest.mark.parametrize("c", list("*?()[]{}^~!|&\\"))
-    def test_solr_extra_triggers(self, c: str) -> None:
-        assert c in _SOLR_AUTO_PHRASE_CHARS
-
-    @pytest.mark.parametrize("c", list("abcXYZ0123 _"))
-    def test_alphanumeric_not_trigger(self, c: str) -> None:
-        assert c not in _SOLR_AUTO_PHRASE_CHARS
-
-
-class TestHasSolrAutoPhraseTrigger:
-    def test_plain_word(self) -> None:
-        assert _has_solr_auto_phrase_trigger("cancer") is False
-
-    def test_hyphen(self) -> None:
-        assert _has_solr_auto_phrase_trigger("HIF-1") is True
-
-    def test_slash(self) -> None:
-        assert _has_solr_auto_phrase_trigger("BRCA1/2") is True
-
-    def test_wildcard(self) -> None:
-        assert _has_solr_auto_phrase_trigger("can*") is True
-
-    def test_backslash(self) -> None:
-        assert _has_solr_auto_phrase_trigger("a\\b") is True
-
-
-# === Keyword parser ===
-
-
-class TestParseSolrKeywords:
-    def test_none_returns_empty_list(self) -> None:
-        assert _parse_solr_keywords(None) == []
-
-    def test_empty_returns_empty_list(self) -> None:
-        assert _parse_solr_keywords("") == []
-
-    def test_whitespace_only_returns_empty(self) -> None:
-        assert _parse_solr_keywords("   ") == []
-
-    def test_single_keyword(self) -> None:
-        assert _parse_solr_keywords("cancer") == ["cancer"]
-
-    def test_quoted_keyword_preserves_hyphen(self) -> None:
-        assert _parse_solr_keywords('"RNA-Seq"') == ["RNA-Seq"]
-
-    def test_quoted_keyword_strips_quotes(self) -> None:
-        assert _parse_solr_keywords('"cancer"') == ["cancer"]
-
-    def test_comma_separated(self) -> None:
-        assert _parse_solr_keywords("cancer,human") == ["cancer", "human"]
-
-    def test_comma_separated_with_whitespace(self) -> None:
-        assert _parse_solr_keywords("cancer , human") == ["cancer", "human"]
-
-    def test_quote_with_inner_comma_preserved(self) -> None:
-        assert _parse_solr_keywords('"cancer, human"') == ["cancer, human"]
-
-    def test_mix_quoted_and_plain(self) -> None:
-        assert _parse_solr_keywords('"HIF-1",cancer') == ["HIF-1", "cancer"]
-
-    def test_empty_inside_quotes_dropped(self) -> None:
-        assert _parse_solr_keywords('""') == []
-
-    def test_unclosed_quote_cleaned(self) -> None:
-        # stray quote removed; token kept
-        assert _parse_solr_keywords('HIF-1"') == ["HIF-1"]
-
-
-# === Phrase escape ===
-
-
-class TestEscapeSolrPhrase:
-    def test_plain(self) -> None:
-        assert _escape_solr_phrase("cancer") == "cancer"
-
-    def test_backslash_doubled(self) -> None:
-        assert _escape_solr_phrase("a\\b") == "a\\\\b"
-
-    def test_quote_escaped(self) -> None:
-        assert _escape_solr_phrase('a"b') == 'a\\"b'
-
-    def test_backslash_escaped_before_quote(self) -> None:
-        # "\"" --> "\\\""  (backslash doubled THEN quote escaped)
-        assert _escape_solr_phrase('a\\"b') == 'a\\\\\\"b'
-
-    def test_hyphen_unchanged(self) -> None:
-        assert _escape_solr_phrase("HIF-1") == "HIF-1"
-
-    def test_slash_unchanged(self) -> None:
-        assert _escape_solr_phrase("BRCA1/2") == "BRCA1/2"
-
 
 # === q string builder ===
 
@@ -143,9 +36,9 @@ class TestBuildQString:
         assert _build_q_string("cancer,human") == '"cancer" "human"'
 
     def test_quote_inside_keyword_stripped(self) -> None:
-        # _parse_solr_keywords treats stray ``"`` as parser toggles and
-        # strips them before escape, mirroring ES ``_parse_keywords`` so
-        # that a single ``"`` in user input never injects phrase syntax.
+        # tokenize_keywords treats stray ``"`` as parser toggles and
+        # strips them before escape, so that a single ``"`` in user input
+        # never injects phrase syntax.
         assert _build_q_string('a"b') == '"ab"'
 
     def test_backslash_inside_keyword_escaped(self) -> None:
@@ -305,14 +198,10 @@ class TestSolrQueryPBT:
         assert int(p["rows"]) == per_page
         assert int(p["start"]) == (page - 1) * per_page
 
-    @given(text=st.text(max_size=50))
-    def test_parse_never_crashes(self, text: str) -> None:
-        tokens = _parse_solr_keywords(text)
-        for t in tokens:
-            assert '"' not in t  # stripped / cleaned
-
-    @given(text=st.text(max_size=30).filter(lambda s: s.strip() and "," not in s))
-    def test_escape_preserves_non_meta(self, text: str) -> None:
-        escaped = _escape_solr_phrase(text)
-        # backslash count must not decrease (only increase via doubling)
-        assert escaped.count("\\") >= text.count("\\")
+    @given(text=st.text(max_size=30).filter(lambda s: '"' not in s and "," not in s and s.strip()))
+    def test_q_string_quoted_keyword_via_build(self, text: str) -> None:
+        # _build_q_string が tokenize_keywords + escape_solr_phrase を統合し
+        # 必ず ``"..."`` で wrap することの統合 regression check
+        q = _build_q_string(text)
+        assert q.startswith('"')
+        assert q.endswith('"')

@@ -7,6 +7,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from ddbj_search_api.search.phrase import (
+    ES_AUTO_PHRASE_CHARS,
+    parse_keywords_with_autophrase,
+)
+
 # API field name → ES field name mapping
 _SORT_FIELD_MAP: dict[str, str] = {
     "datePublished": "datePublished",
@@ -23,15 +28,6 @@ _UMBRELLA_MAP: dict[str, str] = {
     "TRUE": "UmbrellaBioProject",
     "FALSE": "BioProject",
 }
-
-# Tokens containing any of these chars are promoted to multi_match(type=phrase)
-# so the ES standard analyzer does not split them and inflate hit counts.
-_ES_AUTO_PHRASE_CHARS: frozenset[str] = frozenset("-/.+:")
-
-
-def _has_auto_phrase_trigger(text: str) -> bool:
-    """Return True if `text` contains any ES auto-phrase trigger character."""
-    return any(c in _ES_AUTO_PHRASE_CHARS for c in text)
 
 
 def pagination_to_from_size(
@@ -143,43 +139,7 @@ def build_source_filter(
 
 
 def _parse_keywords(keywords: str | None) -> list[tuple[str, bool]]:
-    """Split comma-separated keywords, stripping whitespace.
-
-    Returns a list of ``(text, is_phrase)`` tuples. A token is marked as a
-    phrase either when it is enclosed in double quotes or when it contains
-    an auto-phrase trigger character. Other tokens use best-fields matching.
-    """
-    if not keywords:
-        return []
-
-    tokens: list[str] = []
-    current: list[str] = []
-    in_quotes = False
-    for ch in keywords:
-        if ch == '"':
-            in_quotes = not in_quotes
-            current.append(ch)
-        elif ch == "," and not in_quotes:
-            tokens.append("".join(current).strip())
-            current = []
-        else:
-            current.append(ch)
-    tokens.append("".join(current).strip())
-
-    result: list[tuple[str, bool]] = []
-    for token in tokens:
-        if not token:
-            continue
-        if token.startswith('"') and token.endswith('"') and len(token) > 1:
-            inner = token[1:-1]
-            if inner:
-                result.append((inner, True))
-        else:
-            # Strip any stray quotes (e.g. unclosed quote)
-            cleaned = token.replace('"', "")
-            if cleaned:
-                result.append((cleaned, _has_auto_phrase_trigger(cleaned)))
-    return result
+    return parse_keywords_with_autophrase(keywords, ES_AUTO_PHRASE_CHARS)
 
 
 def build_search_query(

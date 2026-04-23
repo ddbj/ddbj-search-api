@@ -59,3 +59,31 @@ valid_accession_id = st.text(
 # === BioProject accession (umbrella tree) ===
 
 bioproject_accession = st.from_regex(r"PRJ(DB|NA|EB)[0-9]{1,7}", fullmatch=True)
+
+# === Auto-phrase triggers (mirror ddbj_search_api.search.phrase constants) ===
+
+ES_AUTO_PHRASE_TRIGGERS: str = "-/.+:"
+SOLR_AUTO_PHRASE_TRIGGERS: str = "-/.+:*?()[]{}^~!|&\\"
+
+
+def alphanumeric_no_trigger(trigger_chars: str) -> st.SearchStrategy[str]:
+    """Alphanumeric text excluding trigger char, comma, quote, whitespace."""
+    return st.text(
+        alphabet=st.characters(
+            whitelist_categories=("L", "N"),
+            blacklist_characters='",' + trigger_chars + " \t\r\n",
+        ),
+        min_size=1,
+        max_size=30,
+    )
+
+
+def text_with_trigger(trigger_chars: str) -> st.SearchStrategy[str]:
+    """Text guaranteed to contain at least one trigger char (sandwiched)."""
+    inner = alphanumeric_no_trigger(trigger_chars)
+    return st.builds(
+        lambda prefix, trigger, suffix: prefix + trigger + suffix,
+        inner,
+        st.sampled_from(list(trigger_chars)),
+        inner,
+    )

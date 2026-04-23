@@ -8,11 +8,7 @@ Solr 4.4.0 interprets bare tokens like ``HIF-1`` as NOT expressions
 
 from __future__ import annotations
 
-# Solr edismax meta chars.  Superset of the ES auto-phrase set: ES uses
-# ``-/.+:`` only; Solr additionally reserves wildcards / grouping /
-# boolean operators / escaping as syntax.  All tokens containing any of
-# these are quoted to avoid operator interpretation.
-_SOLR_AUTO_PHRASE_CHARS: frozenset[str] = frozenset("-/.+:*?()[]{}^~!|&\\")
+from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
 
 _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^5 Organism^3 ReferenceTitle^2"
 _ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,score"
@@ -26,63 +22,12 @@ _ARSA_SORT_ALLOWLIST: dict[str, str] = {
 }
 
 
-def _has_solr_auto_phrase_trigger(text: str) -> bool:
-    return any(c in _SOLR_AUTO_PHRASE_CHARS for c in text)
-
-
-def _parse_solr_keywords(keywords: str | None) -> list[str]:
-    """Split comma-separated keywords, preserving quoted content.
-
-    Returns cleaned keyword strings (surrounding quotes removed, stray
-    quotes stripped).  Empty / all-whitespace input yields ``[]``.
-    """
-    if not keywords:
-        return []
-
-    tokens: list[str] = []
-    current: list[str] = []
-    in_quotes = False
-    for ch in keywords:
-        if ch == '"':
-            in_quotes = not in_quotes
-            current.append(ch)
-        elif ch == "," and not in_quotes:
-            tokens.append("".join(current).strip())
-            current = []
-        else:
-            current.append(ch)
-    tokens.append("".join(current).strip())
-
-    result: list[str] = []
-    for token in tokens:
-        if not token:
-            continue
-        if token.startswith('"') and token.endswith('"') and len(token) > 1:
-            inner = token[1:-1]
-            if inner:
-                result.append(inner)
-        else:
-            cleaned = token.replace('"', "")
-            if cleaned:
-                result.append(cleaned)
-    return result
-
-
-def _escape_solr_phrase(text: str) -> str:
-    """Escape ``\\`` and ``"`` for embedding inside a Solr phrase.
-
-    Backslash must be doubled first; otherwise the backslashes inserted
-    by quote escaping would themselves get doubled.
-    """
-    return text.replace("\\", "\\\\").replace('"', '\\"')
-
-
 def _build_q_string(keywords: str | None) -> str:
     """Build the ``q`` parameter: all tokens quoted and space-joined."""
-    parsed = _parse_solr_keywords(keywords)
+    parsed = tokenize_keywords(keywords)
     if not parsed:
         return _DEFAULT_Q
-    return " ".join(f'"{_escape_solr_phrase(t)}"' for t in parsed)
+    return " ".join(f'"{escape_solr_phrase(t)}"' for t in parsed)
 
 
 def _pagination_to_start_rows(page: int, per_page: int) -> tuple[int, int]:

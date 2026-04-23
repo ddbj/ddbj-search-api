@@ -22,6 +22,11 @@ from ddbj_search_api.es.query import (
     pagination_to_from_size,
     validate_keyword_fields,
 )
+from tests.unit.strategies import (
+    ES_AUTO_PHRASE_TRIGGERS,
+    alphanumeric_no_trigger,
+    text_with_trigger,
+)
 
 # ===================================================================
 # pagination_to_from_size
@@ -743,32 +748,15 @@ class TestParseKeywordsAutoPhraseEdgeCases:
         assert _parse_keywords('"RNA-Seq') == [("RNA-Seq", True)]
 
 
-_AUTO_PHRASE_TRIGGERS = "-/.+:"
-_alphanumeric_no_trigger = st.text(
-    alphabet=st.characters(
-        whitelist_categories=("L", "N"),
-        blacklist_characters='",' + _AUTO_PHRASE_TRIGGERS + " \t\r\n",
-    ),
-    min_size=1,
-    max_size=30,
-)
-_text_with_trigger = st.builds(
-    lambda prefix, trigger, suffix: prefix + trigger + suffix,
-    _alphanumeric_no_trigger,
-    st.sampled_from(list(_AUTO_PHRASE_TRIGGERS)),
-    _alphanumeric_no_trigger,
-)
-
-
 class TestParseKeywordsAutoPhrasePBT:
     """Property-based tests for auto-phrase detection."""
 
-    @given(text=_alphanumeric_no_trigger)
+    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_TRIGGERS))
     def test_alphanumeric_without_trigger_is_not_phrase(self, text: str) -> None:
         """Any alphanumeric text without trigger chars → is_phrase=False."""
         assert _parse_keywords(text) == [(text, False)]
 
-    @given(text=_text_with_trigger)
+    @given(text=text_with_trigger(ES_AUTO_PHRASE_TRIGGERS))
     def test_text_containing_trigger_is_phrase(self, text: str) -> None:
         """Any text containing a trigger char → is_phrase=True."""
         result = _parse_keywords(text)
@@ -777,7 +765,7 @@ class TestParseKeywordsAutoPhrasePBT:
         assert returned_text == text
         assert is_phrase is True
 
-    @given(text=_alphanumeric_no_trigger)
+    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_TRIGGERS))
     def test_quoted_alphanumeric_is_always_phrase(self, text: str) -> None:
         """Explicit quote always produces phrase, even without trigger chars."""
         assert _parse_keywords(f'"{text}"') == [(text, True)]
