@@ -78,7 +78,7 @@ def _make_bioproject(identifier: str) -> BioProject:
     return BioProject.model_construct(
         identifier=identifier,
         type_="bioproject",
-        isPartOf="BioProject",
+        isPartOf="bioproject",
         objectType="BioProject",
         status="public",
         accessibility="public-access",

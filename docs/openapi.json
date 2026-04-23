@@ -7783,6 +7783,203 @@
         }
       }
     },
+    "/db-portal/search": {
+      "get": {
+        "tags": [
+          "db-portal"
+        ],
+        "summary": "DB Portal unified search (cross-db count / db-specific hits)",
+        "description": "Unified db-portal search: dispatch by (q/adv) x (db).",
+        "operationId": "_search_db_portal_db_portal_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.",
+              "title": "Q"
+            },
+            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match."
+          },
+          {
+            "name": "adv",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Advanced Search DSL.  Not implemented (returns 501 ``advanced-search-not-implemented``); planned for AP3.",
+              "title": "Adv"
+            },
+            "description": "Advanced Search DSL.  Not implemented (returns 501 ``advanced-search-not-implemented``); planned for AP3."
+          },
+          {
+            "name": "db",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DbPortalDb"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Target database.  Omit for cross-db count-only.  ``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); the other six DBs use Elasticsearch.",
+              "title": "Db"
+            },
+            "description": "Target database.  Omit for cross-db count-only.  ``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); the other six DBs use Elasticsearch."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-based).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-based)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "Items per page.  Allowed: 20, 50, 100.",
+              "default": 20,
+              "title": "Perpage"
+            },
+            "description": "Items per page.  Allowed: 20, 50, 100."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min).",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min)."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``.",
+              "title": "Sort"
+            },
+            "description": "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DbPortalCrossSearchResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DbPortalHitsResponse"
+                    }
+                  ],
+                  "title": "Response  Search Db Portal Db Portal Search Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (e.g. deep paging limit exceeded).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Not Implemented (Advanced Search)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway (all databases failed, or Solr upstream error)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/service-info": {
       "get": {
         "tags": [
@@ -7845,94 +8042,6 @@
         ],
         "title": "AccessionType"
       },
-      "Agency": {
-        "properties": {
-          "abbreviation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Abbreviation"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "abbreviation",
-          "name"
-        ],
-        "title": "Agency"
-      },
-      "Attribute": {
-        "properties": {
-          "attribute_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attribute Name"
-          },
-          "display_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "harmonized_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Harmonized Name"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          }
-        },
-        "type": "object",
-        "required": [
-          "attribute_name",
-          "display_name",
-          "harmonized_name",
-          "content"
-        ],
-        "title": "Attribute"
-      },
       "BioProject": {
         "properties": {
           "identifier": {
@@ -7951,7 +8060,7 @@
           },
           "isPartOf": {
             "type": "string",
-            "const": "BioProject",
+            "const": "bioproject",
             "title": "Ispartof"
           },
           "type": {
@@ -8135,14 +8244,6 @@
           "organism",
           "title",
           "description",
-          "organization",
-          "publication",
-          "grant",
-          "externalLink",
-          "dbXrefs",
-          "parentBioProjects",
-          "childBioProjects",
-          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8169,7 +8270,7 @@
           },
           "isPartOf": {
             "type": "string",
-            "const": "BioProject",
+            "const": "bioproject",
             "title": "Ispartof"
           },
           "type": {
@@ -8360,14 +8461,6 @@
           "organism",
           "title",
           "description",
-          "organization",
-          "publication",
-          "grant",
-          "externalLink",
-          "dbXrefs",
-          "parentBioProjects",
-          "childBioProjects",
-          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8396,7 +8489,7 @@
           },
           "isPartOf": {
             "type": "string",
-            "const": "BioProject",
+            "const": "bioproject",
             "title": "Ispartof"
           },
           "type": {
@@ -8588,14 +8681,6 @@
           "organism",
           "title",
           "description",
-          "organization",
-          "publication",
-          "grant",
-          "externalLink",
-          "dbXrefs",
-          "parentBioProjects",
-          "childBioProjects",
-          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8625,7 +8710,7 @@
           },
           "isPartOf": {
             "type": "string",
-            "const": "BioSample",
+            "const": "biosample",
             "title": "Ispartof"
           },
           "type": {
@@ -8680,16 +8765,16 @@
             ],
             "title": "Description"
           },
-          "attributes": {
+          "organization": {
             "items": {
-              "$ref": "#/components/schemas/Attribute"
+              "$ref": "#/components/schemas/Organization"
             },
             "type": "array",
-            "title": "Attributes"
+            "title": "Organization"
           },
           "model": {
             "items": {
-              "$ref": "#/components/schemas/Model"
+              "type": "string"
             },
             "type": "array",
             "title": "Model"
@@ -8697,7 +8782,7 @@
           "package": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Package"
+                "$ref": "#/components/schemas/BioSamplePackage"
               },
               {
                 "type": "null"
@@ -8782,11 +8867,7 @@
           "organism",
           "title",
           "description",
-          "attributes",
-          "model",
           "package",
-          "dbXrefs",
-          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8813,7 +8894,7 @@
           },
           "isPartOf": {
             "type": "string",
-            "const": "BioSample",
+            "const": "biosample",
             "title": "Ispartof"
           },
           "type": {
@@ -8868,16 +8949,16 @@
             ],
             "title": "Description"
           },
-          "attributes": {
+          "organization": {
             "items": {
-              "$ref": "#/components/schemas/Attribute"
+              "$ref": "#/components/schemas/Organization"
             },
             "type": "array",
-            "title": "Attributes"
+            "title": "Organization"
           },
           "model": {
             "items": {
-              "$ref": "#/components/schemas/Model"
+              "type": "string"
             },
             "type": "array",
             "title": "Model"
@@ -8885,7 +8966,7 @@
           "package": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Package"
+                "$ref": "#/components/schemas/BioSamplePackage"
               },
               {
                 "type": "null"
@@ -8977,11 +9058,7 @@
           "organism",
           "title",
           "description",
-          "attributes",
-          "model",
           "package",
-          "dbXrefs",
-          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -9010,7 +9087,7 @@
           },
           "isPartOf": {
             "type": "string",
-            "const": "BioSample",
+            "const": "biosample",
             "title": "Ispartof"
           },
           "type": {
@@ -9065,16 +9142,16 @@
             ],
             "title": "Description"
           },
-          "attributes": {
+          "organization": {
             "items": {
-              "$ref": "#/components/schemas/Attribute"
+              "$ref": "#/components/schemas/Organization"
             },
             "type": "array",
-            "title": "Attributes"
+            "title": "Organization"
           },
           "model": {
             "items": {
-              "$ref": "#/components/schemas/Model"
+              "type": "string"
             },
             "type": "array",
             "title": "Model"
@@ -9082,7 +9159,7 @@
           "package": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Package"
+                "$ref": "#/components/schemas/BioSamplePackage"
               },
               {
                 "type": "null"
@@ -9175,11 +9252,7 @@
           "organism",
           "title",
           "description",
-          "attributes",
-          "model",
           "package",
-          "dbXrefs",
-          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -9190,6 +9263,30 @@
         ],
         "title": "BioSampleEntryJsonLdResponse",
         "description": "BioSample entry in JSON-LD format."
+      },
+      "BioSamplePackage": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BioSamplePackage"
       },
       "BulkFormat": {
         "type": "string",
@@ -9392,6 +9489,262 @@
         ],
         "title": "DbLinksTypesResponse",
         "description": "Response for GET /dblink/."
+      },
+      "DbPortalCount": {
+        "properties": {
+          "db": {
+            "$ref": "#/components/schemas/DbPortalDb",
+            "description": "Database identifier."
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count",
+            "description": "Hit count (null when error is set)."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbPortalCountError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Failure reason (null on success)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "db",
+          "count",
+          "error"
+        ],
+        "title": "DbPortalCount",
+        "description": "A single DB entry in the cross-search count-only response."
+      },
+      "DbPortalCountError": {
+        "type": "string",
+        "enum": [
+          "timeout",
+          "upstream_5xx",
+          "connection_refused",
+          "unknown"
+        ],
+        "title": "DbPortalCountError",
+        "description": "Error reason for a DB entry in the cross-search count response."
+      },
+      "DbPortalCrossSearchResponse": {
+        "properties": {
+          "databases": {
+            "items": {
+              "$ref": "#/components/schemas/DbPortalCount"
+            },
+            "type": "array",
+            "title": "Databases",
+            "description": "Count per database.  Fixed length 8, fixed order."
+          }
+        },
+        "type": "object",
+        "required": [
+          "databases"
+        ],
+        "title": "DbPortalCrossSearchResponse",
+        "description": "Cross-database count-only response (8 entries, fixed order).\n\nOrder: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy."
+      },
+      "DbPortalDb": {
+        "type": "string",
+        "enum": [
+          "trad",
+          "sra",
+          "bioproject",
+          "biosample",
+          "jga",
+          "gea",
+          "metabobank",
+          "taxonomy"
+        ],
+        "title": "DbPortalDb",
+        "description": "Database identifier for db-portal search (8 values)."
+      },
+      "DbPortalHit": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Entry type (e.g. 'bioproject', 'sra-study')."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organism",
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers (from ES _source)."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references.  In AP1 this passes through ES _source only (DuckDB enrichment is deferred)."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHit",
+        "description": "A single hit in the DB-specific search response.\n\n``extra=\"allow\"`` keeps DB-specific ``_source`` fields intact so the\nresponse can evolve without schema churn."
+      },
+      "DbPortalHitsResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total matching hits (track_total_hits=true)."
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/DbPortalHit"
+            },
+            "type": "array",
+            "title": "Hits",
+            "description": "Search hits."
+          },
+          "hardLimitReached": {
+            "type": "boolean",
+            "title": "Hardlimitreached",
+            "description": "True when total >= 10000 (aligned with Solr hard limit)."
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page",
+            "description": "Current page (null in cursor mode)."
+          },
+          "perPage": {
+            "type": "integer",
+            "title": "Perpage",
+            "description": "Items per page (20, 50, or 100)."
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor",
+            "description": "Cursor token for the next page (null on last page)."
+          },
+          "hasNext": {
+            "type": "boolean",
+            "title": "Hasnext",
+            "description": "Whether more pages are available.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "hits",
+          "hardLimitReached",
+          "page",
+          "perPage"
+        ],
+        "title": "DbPortalHitsResponse",
+        "description": "DB-specific search response (hits envelope + pagination)."
       },
       "DbType": {
         "type": "string",
@@ -9805,7 +10158,7 @@
           },
           "agency": {
             "items": {
-              "$ref": "#/components/schemas/Agency"
+              "$ref": "#/components/schemas/Organization"
             },
             "type": "array",
             "title": "Agency"
@@ -9895,6 +10248,55 @@
               }
             ],
             "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "grant": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array",
+            "title": "Grant"
+          },
+          "externalLink": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            },
+            "type": "array",
+            "title": "Externallink"
+          },
+          "studyType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Studytype"
+          },
+          "datasetType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Datasettype"
+          },
+          "vendor": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Vendor"
           },
           "dbXrefs": {
             "items": {
@@ -10053,6 +10455,55 @@
               }
             ],
             "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "grant": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array",
+            "title": "Grant"
+          },
+          "externalLink": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            },
+            "type": "array",
+            "title": "Externallink"
+          },
+          "studyType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Studytype"
+          },
+          "datasetType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Datasettype"
+          },
+          "vendor": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Vendor"
           },
           "dbXrefs": {
             "items": {
@@ -10221,6 +10672,55 @@
             ],
             "title": "Description"
           },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "grant": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array",
+            "title": "Grant"
+          },
+          "externalLink": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            },
+            "type": "array",
+            "title": "Externallink"
+          },
+          "studyType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Studytype"
+          },
+          "datasetType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Datasettype"
+          },
+          "vendor": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Vendor"
+          },
           "dbXrefs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -10321,19 +10821,6 @@
         "title": "KeywordOperator",
         "description": "Boolean operator for combining keywords."
       },
-      "Model": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "Model"
-      },
       "Organism": {
         "properties": {
           "identifier": {
@@ -10379,10 +10866,44 @@
             ],
             "title": "Name"
           },
-          "organizationType": {
+          "abbreviation": {
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbreviation"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "participant",
+                  "submitter",
+                  "broker"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "organizationType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "institute",
+                  "center",
+                  "consortium",
+                  "lab"
+                ]
               },
               {
                 "type": "null"
@@ -10390,7 +10911,7 @@
             ],
             "title": "Organizationtype"
           },
-          "role": {
+          "department": {
             "anyOf": [
               {
                 "type": "string"
@@ -10399,7 +10920,7 @@
                 "type": "null"
               }
             ],
-            "title": "Role"
+            "title": "Department"
           },
           "url": {
             "anyOf": [
@@ -10411,46 +10932,10 @@
               }
             ],
             "title": "Url"
-          },
-          "abbreviation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Abbreviation"
           }
         },
         "type": "object",
-        "required": [
-          "name",
-          "organizationType",
-          "role",
-          "url",
-          "abbreviation"
-        ],
         "title": "Organization"
-      },
-      "Package": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "display_name"
-        ],
-        "title": "Package"
       },
       "Pagination": {
         "properties": {
@@ -10607,7 +11092,7 @@
             ],
             "title": "Date"
           },
-          "Reference": {
+          "reference": {
             "anyOf": [
               {
                 "type": "string"
@@ -10629,38 +11114,25 @@
             ],
             "title": "Url"
           },
-          "DbType": {
+          "dbType": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "pubmed",
+                  "doi",
+                  "pmc",
+                  "other"
+                ]
               },
               {
                 "type": "null"
               }
             ],
             "title": "Dbtype"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
           }
         },
         "type": "object",
-        "required": [
-          "title",
-          "date",
-          "Reference",
-          "url",
-          "DbType",
-          "status"
-        ],
         "title": "Publication"
       },
       "SRA": {
@@ -10743,6 +11215,81 @@
             ],
             "title": "Description"
           },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "libraryStrategy": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Librarystrategy"
+          },
+          "librarySource": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Librarysource"
+          },
+          "librarySelection": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Libraryselection"
+          },
+          "libraryLayout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarylayout"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "instrumentModel": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Instrumentmodel"
+          },
+          "analysisType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysistype"
+          },
           "dbXrefs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -10821,8 +11368,9 @@
           "organism",
           "title",
           "description",
-          "dbXrefs",
-          "sameAs",
+          "libraryLayout",
+          "platform",
+          "analysisType",
           "status",
           "accessibility",
           "dateCreated",
@@ -10948,6 +11496,81 @@
             ],
             "title": "Description"
           },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "libraryStrategy": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Librarystrategy"
+          },
+          "librarySource": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Librarysource"
+          },
+          "librarySelection": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Libraryselection"
+          },
+          "libraryLayout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarylayout"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "instrumentModel": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Instrumentmodel"
+          },
+          "analysisType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysistype"
+          },
           "dbXrefs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -11033,8 +11656,9 @@
           "organism",
           "title",
           "description",
-          "dbXrefs",
-          "sameAs",
+          "libraryLayout",
+          "platform",
+          "analysisType",
           "status",
           "accessibility",
           "dateCreated",
@@ -11125,6 +11749,81 @@
             ],
             "title": "Description"
           },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "libraryStrategy": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Librarystrategy"
+          },
+          "librarySource": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Librarysource"
+          },
+          "librarySelection": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Libraryselection"
+          },
+          "libraryLayout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarylayout"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "instrumentModel": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Instrumentmodel"
+          },
+          "analysisType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysistype"
+          },
           "dbXrefs": {
             "items": {
               "$ref": "#/components/schemas/Xref"
@@ -11211,8 +11910,9 @@
           "organism",
           "title",
           "description",
-          "dbXrefs",
-          "sameAs",
+          "libraryLayout",
+          "platform",
+          "analysisType",
           "status",
           "accessibility",
           "dateCreated",

@@ -877,3 +877,60 @@ class TestBuildSearchQueryAutoPhrase:
         mm = result["bool"]["must"][0]["multi_match"]
         assert mm["type"] == "phrase"
         assert set(mm["fields"]) == {"title", "description"}
+
+
+# ===================================================================
+# nested filters: organization / publication / grant
+#
+# converter の ES mapping は organization / publication / grant を
+# `type: nested` で定義している。query は nested clause を生成する
+# 必要があり、flat field に変えるとマッチしなくなる。converter bump
+# 時の回帰防止として shape を固定する。
+# ===================================================================
+
+
+class TestBuildSearchQueryNestedFilters:
+    """organization/publication/grant は nested query として組み立てられる."""
+
+    def test_organization_builds_nested_clause(self) -> None:
+        result = build_search_query(organization="DDBJ")
+        filters = result["bool"]["filter"]
+        nested_clauses = [c for c in filters if "nested" in c]
+        assert len(nested_clauses) == 1
+        nested = nested_clauses[0]["nested"]
+        assert nested["path"] == "organization"
+        assert nested["query"] == {"match": {"organization.name": "DDBJ"}}
+
+    def test_publication_builds_nested_clause(self) -> None:
+        result = build_search_query(publication="Genomic variants")
+        filters = result["bool"]["filter"]
+        nested_clauses = [c for c in filters if "nested" in c]
+        assert len(nested_clauses) == 1
+        nested = nested_clauses[0]["nested"]
+        assert nested["path"] == "publication"
+        assert nested["query"] == {"match": {"publication.title": "Genomic variants"}}
+
+    def test_grant_builds_nested_clause(self) -> None:
+        result = build_search_query(grant="JST CREST")
+        filters = result["bool"]["filter"]
+        nested_clauses = [c for c in filters if "nested" in c]
+        assert len(nested_clauses) == 1
+        nested = nested_clauses[0]["nested"]
+        assert nested["path"] == "grant"
+        assert nested["query"] == {"match": {"grant.title": "JST CREST"}}
+
+    def test_multiple_nested_filters_combined(self) -> None:
+        result = build_search_query(
+            organization="DDBJ",
+            publication="Genomic variants",
+            grant="JST CREST",
+        )
+        filters = result["bool"]["filter"]
+        nested_paths = {c["nested"]["path"] for c in filters if "nested" in c}
+        assert nested_paths == {"organization", "publication", "grant"}
+
+    def test_no_nested_filter_when_params_absent(self) -> None:
+        result = build_search_query(keywords="cancer")
+        # keywords のみ → filter は存在しないか、nested を含まない
+        filters = result.get("bool", {}).get("filter", [])
+        assert not any("nested" in c for c in filters)
