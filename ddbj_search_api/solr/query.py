@@ -8,18 +8,24 @@ Solr 4.4.0 interprets bare tokens like ``HIF-1`` as NOT expressions
 
 from __future__ import annotations
 
+from ddbj_search_api.search.dsl import arsa_uf_fields, txsearch_uf_fields
 from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
 
 _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^5 Organism^3 ReferenceTitle^2"
-_ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,score"
+# ``fl`` must include every source field that ``arsa_docs_to_hits`` reads;
+# omitting ``MolecularType`` / ``SequenceLength`` silently drops them into the
+# DbPortalHitTrad envelope as ``None`` even though Solr has the values.
+_ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,MolecularType,SequenceLength,score"
 _TXSEARCH_QF = "scientific_name^10 scientific_name_ex^20 common_name^5 synonym^3 japanese_name^5 text^0.1"
 _TXSEARCH_FL = "tax_id,scientific_name,common_name,japanese_name,rank,lineage,score"
 _DEFAULT_Q = "*:*"
 
 # ``uf`` (user fields) restricts edismax field references in the q string to
-# the DSL allowlist (defense-in-depth alongside the server-side validator).
-_ARSA_ADV_UF = "PrimaryAccessionNumber Definition AllText Organism Lineage Date"
-_TXSEARCH_ADV_UF = "tax_id scientific_name text"
+# the DSL allowlist.  Derived from compile_to_solr's field map so the two
+# cannot drift — omitting a field here silently demotes ``Field:value`` in
+# ``q`` to a bare keyword and matches it against ``qf`` (= wrong counts).
+_ARSA_ADV_UF = " ".join(arsa_uf_fields())
+_TXSEARCH_ADV_UF = " ".join(txsearch_uf_fields())
 
 _ARSA_SORT_ALLOWLIST: dict[str, str] = {
     "datePublished:desc": "Date desc",

@@ -10,9 +10,12 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
+from ddbj_search_api.search.dsl import arsa_uf_fields, txsearch_uf_fields
 from ddbj_search_api.solr.query import (
     _build_q_string,
+    build_arsa_adv_params,
     build_arsa_params,
+    build_txsearch_adv_params,
     build_txsearch_params,
 )
 
@@ -78,7 +81,19 @@ class TestBuildArsaParams:
     def test_fl_includes_arsa_fields(self) -> None:
         p = build_arsa_params(keywords="x", page=1, per_page=20, sort=None, shards=None)
         fl = p["fl"]
-        for field in ("PrimaryAccessionNumber", "Definition", "Organism", "Division", "Date", "score"):
+        # Must match every field arsa_docs_to_hits reads; otherwise Solr
+        # drops the value from its response and the hit envelope ends up
+        # with ``None`` (regression: 2026-04-24 MolecularType/SequenceLength).
+        for field in (
+            "PrimaryAccessionNumber",
+            "Definition",
+            "Organism",
+            "Division",
+            "Date",
+            "MolecularType",
+            "SequenceLength",
+            "score",
+        ):
             assert field in fl
 
     def test_start_and_rows(self) -> None:
@@ -175,6 +190,31 @@ class TestBuildTxsearchParams:
     def test_wt_json(self) -> None:
         p = build_txsearch_params(keywords="x", page=1, per_page=20, sort=None)
         assert p["wt"] == "json"
+
+
+# === adv params: uf allowlist coverage ===
+
+
+class TestAdvUfAllowlistCoverage:
+    """``uf`` must cover every field compile_to_solr can emit.
+
+    Otherwise edismax treats ``Field:value`` as a bare keyword, matches it
+    against ``qf`` (= wrong field), and returns wildly wrong counts —
+    staging probe 2026-04-24: ``Division:"BCT"`` returned 88.8M / all-docs
+    without ``uf`` vs 753k with it.
+    """
+
+    def test_arsa_adv_uf_covers_every_compiler_field(self) -> None:
+        p = build_arsa_adv_params(q="*:*", page=1, per_page=20, sort=None, shards=None)
+        uf_set = set(p["uf"].split())
+        for field in arsa_uf_fields():
+            assert field in uf_set, f"ARSA compiler field {field!r} missing from uf allowlist"
+
+    def test_txsearch_adv_uf_covers_every_compiler_field(self) -> None:
+        p = build_txsearch_adv_params(q="*:*", page=1, per_page=20, sort=None)
+        uf_set = set(p["uf"].split())
+        for field in txsearch_uf_fields():
+            assert field in uf_set, f"TXSearch compiler field {field!r} missing from uf allowlist"
 
 
 # === PBT ===

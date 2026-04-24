@@ -132,6 +132,27 @@ class TestArsaDocsToHits:
         dumped = h.model_dump(by_alias=True)
         assert dumped["division"] == "SYN"
 
+    def test_molecular_type_passthrough(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "MolecularType": "DNA"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["molecularType"] == "DNA"
+
+    def test_sequence_length_int(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "SequenceLength": 73308}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["sequenceLength"] == 73308
+
+    def test_sequence_length_string_digit(self) -> None:
+        """ARSA may serialize SequenceLength as a string; accept digit strings."""
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "SequenceLength": "726"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["sequenceLength"] == 726
+
+    def test_sequence_length_invalid_becomes_none(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "SequenceLength": "abc"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["sequenceLength"] is None
+
     def test_same_as_and_db_xrefs_none(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
         assert h.same_as is None

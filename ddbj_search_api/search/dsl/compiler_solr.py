@@ -134,6 +134,30 @@ _TXSEARCH_UNAVAILABLE: frozenset[str] = frozenset(
 _NO_MATCH_LITERAL = "(-*:*)"
 
 
+def arsa_uf_fields() -> tuple[str, ...]:
+    """All ARSA Solr fields reachable through ``compile_to_solr(dialect="arsa")``.
+
+    edismax's ``uf`` parameter allowlists field names inside ``q``.  A field
+    that compile_to_solr may emit but is absent from ``uf`` is silently
+    demoted to a bare keyword and then matched against ``qf`` — producing
+    wildly wrong counts (staging probe 2026-04-24: ``Division:"BCT"``
+    returned 88.8M / all-docs without ``uf``, 753k with it).  Derive the
+    allowlist from the field map so query.py cannot drift.
+    """
+    seen: set[str] = set()
+    for mapped in _ARSA_FIELD_MAP.values():
+        seen.update(mapped)
+    return tuple(sorted(seen))
+
+
+def txsearch_uf_fields() -> tuple[str, ...]:
+    """All TXSearch Solr fields reachable through ``compile_to_solr(dialect="txsearch")``."""
+    seen: set[str] = set()
+    for mapped in _TXSEARCH_FIELD_MAP.values():
+        seen.update(mapped)
+    return tuple(sorted(seen))
+
+
 def compile_to_solr(ast: Node, *, dialect: SolrDialect) -> str:
     """Convert a validated AST to an edismax ``q`` string for the given Solr dialect."""
     return _compile_node(ast, dialect=dialect)
