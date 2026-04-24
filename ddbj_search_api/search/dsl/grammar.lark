@@ -1,0 +1,33 @@
+// AP3 Advanced Search DSL (Lark LALR(1)).
+// SSOT: db-portal/docs/search-backends.md §パーサ実装 (L416-470)
+//       db-portal/docs/search.md §採用構文 (L670-689)
+// Unsupported on purpose: boost `^`, fuzzy `~`, regex `/.../`.
+
+start: or_expr
+
+or_expr: and_expr (OR and_expr)*
+and_expr: not_expr (AND not_expr)*
+not_expr: NOT atom   -> not_op
+        | atom       -> atom_passthrough
+?atom: field_clause
+     | "(" or_expr ")"
+field_clause: FIELD ":" value
+
+value: PHRASE    -> v_phrase
+     | RANGE     -> v_range
+     | WILDCARD  -> v_wildcard
+     | DATE      -> v_date
+     | WORD      -> v_word
+
+AND: "AND"
+OR: "OR"
+NOT: "NOT"
+
+PHRASE.5: /"(?:[^"\\]|\\.)*"/
+RANGE.5: /\[[^\s\]]+\s+TO\s+[^\s\]]+\]/
+DATE.4: /\d{4}-\d{2}-\d{2}/
+WILDCARD.3: /[A-Za-z0-9_]*[*?][A-Za-z0-9_*?]*/
+FIELD.2: /[a-z_]+/
+WORD.1: /[^\s:()\[\]"{}^~*?\/]+/
+
+%ignore /\s+/

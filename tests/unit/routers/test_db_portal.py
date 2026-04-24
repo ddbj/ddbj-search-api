@@ -65,7 +65,7 @@ class TestDbPortalRouting:
 
 
 class TestDbPortalQueryCombination:
-    """q / adv exclusivity (400 invalid-query-combination) and adv stub (501)."""
+    """q / adv exclusivity (400) and AP3 DSL parse/validate error surfacing."""
 
     def test_q_and_adv_together_returns_400(
         self,
@@ -73,35 +73,66 @@ class TestDbPortalQueryCombination:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "foo", "adv": "type=bioproject"},
+            params={"q": "foo", "adv": "title:cancer"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_query_combination.value
 
-    def test_adv_alone_returns_501(self, app_with_db_portal: TestClient) -> None:
+    def test_adv_parse_error_returns_400_unexpected_token(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        # `type=bioproject` is not a valid DSL (no `:` and uses `=`).
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"adv": "type=bioproject"},
         )
-        assert resp.status_code == 501
+        assert resp.status_code == 400
         body = resp.json()
-        assert body["type"] == DbPortalErrorType.advanced_search_not_implemented.value
+        assert body["type"] == DbPortalErrorType.unexpected_token.value
 
-    def test_adv_with_db_returns_501(self, app_with_db_portal: TestClient) -> None:
+    def test_adv_unknown_field_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "foo:bar"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.unknown_field.value
+
+    def test_adv_invalid_operator_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "date:cancer*"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.invalid_operator_for_field.value
+
+    def test_adv_with_db_parse_error_still_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"adv": "type=bioproject", "db": "sra"},
         )
-        assert resp.status_code == 501
+        assert resp.status_code == 400
         body = resp.json()
-        assert body["type"] == DbPortalErrorType.advanced_search_not_implemented.value
+        assert body["type"] == DbPortalErrorType.unexpected_token.value
 
     def test_q_and_adv_with_db_returns_400_first(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """Exclusivity check has priority over adv stub."""
+        """Exclusivity check has priority over DSL parse."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"q": "foo", "adv": "bar", "db": "sra"},
@@ -109,6 +140,20 @@ class TestDbPortalQueryCombination:
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_query_combination.value
+
+    def test_advanced_search_not_implemented_never_emitted(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """AP3 完了後、501 advanced-search-not-implemented は返らない."""
+        for params in (
+            {"adv": "foo:bar"},
+            {"adv": "title:cancer^2"},
+            {"adv": "type=bioproject"},
+        ):
+            resp = app_with_db_portal.get("/db-portal/search", params=params)
+            assert resp.status_code != 501
+            assert resp.json()["type"] != DbPortalErrorType.advanced_search_not_implemented.value
 
 
 # === Enum / Literal validation ===
@@ -603,18 +648,23 @@ class TestDbPortalErrorFormat:
         assert "timestamp" in body
         assert "requestId" in body
 
-    def test_501_adv_not_implemented_shape(
+    def test_400_adv_invalid_dsl_shape(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "foo"},
+            params={"adv": "foo:bar"},
         )
-        assert resp.status_code == 501
+        assert resp.status_code == 400
+        assert resp.headers["content-type"].startswith("application/problem+json")
         body = resp.json()
-        assert body["type"] == DbPortalErrorType.advanced_search_not_implemented.value
-        assert body["title"] == "Not Implemented"
+        assert body["type"] == DbPortalErrorType.unknown_field.value
+        assert body["title"] == "Bad Request"
+        assert body["status"] == 400
+        assert "detail" in body
+        # column 情報が自然言語で detail に埋め込まれる (source.md §AP1 決定)
+        assert "column" in body["detail"]
 
     def test_400_cursor_not_supported_shape(
         self,
@@ -1351,3 +1401,220 @@ class TestDbPortalCrossSearchAP5PBT:
         assert resp.status_code == 200
         body = resp.json()
         assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
+
+
+# === AP3 Advanced Search DSL dispatch ===
+
+
+class TestDbPortalAdvValidDispatch:
+    """AP3 adv: valid DSL dispatch routes to ES / ARSA / TXSearch.
+
+    Mock boundary is the HTTP client for each backend (upstream), so the
+    parse → validate → compile → dispatch pipeline is exercised end-to-end
+    inside the router.
+    """
+
+    def test_adv_cross_db_returns_8_counts(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
+        assert all(e["count"] == 0 for e in body["databases"])
+
+    def test_adv_cross_db_with_date_alias_fan_out(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=5)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=3)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "date:[2020-01-01 TO 2024-12-31]"},
+        )
+        assert resp.status_code == 200
+        counts = {e["db"]: e["count"] for e in resp.json()["databases"]}
+        assert counts["bioproject"] == 5
+        assert counts["trad"] == 3
+        # TXSearch degenerates date field → numFound=0 (mock returns 0)
+        assert counts["taxonomy"] == 0
+
+    def test_adv_with_db_bioproject_returns_hits(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            hits=[{"_id": "PRJDB1", "_source": {"identifier": "PRJDB1", "type": "bioproject"}}],
+            total=1,
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer", "db": "bioproject"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["hits"][0]["identifier"] == "PRJDB1"
+
+    def test_adv_with_db_trad_uses_arsa(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(
+            docs=[{"PrimaryAccessionNumber": "AB000001", "Definition": "human sample"}],
+            num_found=1,
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": 'title:"human"', "db": "trad"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+
+    def test_adv_with_db_taxonomy_uses_txsearch(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            docs=[{"tax_id": "9606", "scientific_name": "Homo sapiens"}],
+            num_found=1,
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:human", "db": "taxonomy"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+
+    def test_adv_es_body_contains_compiled_query(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer", "db": "bioproject"},
+        )
+        # 最後の call args の body に compile_to_es 結果が入っていることを確認
+        call_args = mock_es_search_db_portal.await_args
+        assert call_args is not None
+        body = call_args.args[2] if len(call_args.args) >= 3 else call_args.kwargs.get("body")
+        assert body is not None
+        assert body["query"] == {"match_phrase": {"title": "cancer"}}
+
+    def test_adv_arsa_q_contains_compiled_solr(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer", "db": "trad"},
+        )
+        call_args = mock_arsa_search_db_portal.await_args
+        assert call_args is not None
+        params = call_args.kwargs.get("params")
+        assert params is not None
+        assert params["q"] == 'Definition:"cancer"'
+        assert params["defType"] == "edismax"
+        # uf パラメータで allowlist 制御 (defense-in-depth)
+        assert "uf" in params
+
+    def test_adv_cursor_with_solr_db_returns_cursor_not_supported(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer", "db": "trad", "cursor": "abc.def"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.cursor_not_supported.value
+
+    def test_adv_cursor_with_es_db_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer", "db": "bioproject", "cursor": "abc.def"},
+        )
+        assert resp.status_code == 400
+        # adv + cursor 排他は about:blank
+        body = resp.json()
+        assert body["type"] == "about:blank"
+
+    def test_adv_nest_depth_exceeded_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        dsl = "title:a"
+        for i in range(6):
+            dsl = f"({dsl} AND title:v{i})"
+        resp = app_with_db_portal.get("/db-portal/search", params={"adv": dsl})
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.nest_depth_exceeded.value
+
+    def test_adv_missing_value_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": 'title:""'},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.missing_value.value
+
+    def test_adv_invalid_date_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "date_published:2024-99-99"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.invalid_date_format.value
+
+    def test_adv_over_max_length_returns_unexpected_token(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        dsl = "title:" + ("x" * 5000)
+        resp = app_with_db_portal.get("/db-portal/search", params={"adv": dsl})
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
+
+    def test_adv_and_q_mutual_exclusion_preserved(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "foo", "adv": "title:cancer", "db": "bioproject"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.invalid_query_combination.value

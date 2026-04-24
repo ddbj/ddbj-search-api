@@ -78,10 +78,12 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: 3 problem type URIs."""
+    """DbPortalErrorType: AP1 (3) + AP3 (7) = 10 problem type URIs."""
 
-    def test_has_exactly_3_members(self) -> None:
-        assert len(DbPortalErrorType) == 3
+    def test_has_all_ap1_and_ap3_members(self) -> None:
+        # AP1 base 3 + AP3 DSL 7 = 10.  advanced_search_not_implemented stays for
+        # backward compatibility until a later cleanup PR but is never emitted.
+        assert len(DbPortalErrorType) == 10
 
     def test_prefix_is_ddbj_problems(self) -> None:
         prefix = "https://ddbj.nig.ac.jp/problems/"
@@ -102,6 +104,20 @@ class TestDbPortalErrorType:
 
     def test_cursor_not_supported_uri(self) -> None:
         assert DbPortalErrorType.cursor_not_supported.value == "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
+
+    def test_ap3_dsl_slugs_present(self) -> None:
+        """AP3 で追加した 7 slug の URI (source.md §AP1 L125-134 表)."""
+        expected_slugs = {
+            "unexpected-token",
+            "unknown-field",
+            "field-not-available-in-cross-db",
+            "invalid-date-format",
+            "invalid-operator-for-field",
+            "nest-depth-exceeded",
+            "missing-value",
+        }
+        actual_slugs = {e.value.rsplit("/", 1)[-1] for e in DbPortalErrorType}
+        assert expected_slugs <= actual_slugs
 
 
 # === DbPortalQuery ===

@@ -639,21 +639,55 @@ db-portal フロントエンド専用の統合検索エンドポイント。`/en
 - AP1 (完了): 4 パターン分岐の骨組み、ES 対応 6 DB のシンプル検索、cursor/hits envelope
 - AP4 (完了): Solr proxy で `trad` (ARSA 8-shard fan-out) / `taxonomy` (TXSearch) を有効化。cursor は未対応 (Solr 4.4.0 に PIT 相当なし) のため `db=trad`/`db=taxonomy` + `cursor` は 400 `cursor-not-supported`
 - AP5 (完了): 横断 count-only を `asyncio.create_task` + `asyncio.wait(ALL_COMPLETED)` で並列 fan-out、per-backend timeout (ES 10s / ARSA 15s / TXSearch 5s) + 全体 20s を適用
-- AP3 (予定): Advanced Search DSL パーサ (Lark LALR(1)) で `adv` を有効化
+- AP3 (完了): Advanced Search DSL パーサ (Lark LALR(1)) で `adv` を有効化。ES 6 DB + ARSA + TXSearch の 8 DB 全対応。DSL 実装は `ddbj_search_api/search/dsl/*` (grammar / ast / allowlist / errors / parser / validator / compiler_es / compiler_solr / serde)
 
 #### `GET /db-portal/search`
 
-4 パターンに分岐する:
+5 パターンに分岐する:
 
 | # | クエリ | 処理 |
 |---|-------|-----|
 | 1 | `q` のみ | 横断シンプル検索 (count-only、8 DB に並列発行。個別 timeout ES 10s / ARSA 15s / TXSearch 5s、全体 20s で早期打切り。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES) |
 | 2 | `q` + `db` (ES 対応 6 DB) | DB 指定シンプル検索 (`hits` envelope + cursor/offset pagination) |
 | 3 | `q` + `db=trad` / `db=taxonomy` | DB 指定シンプル検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却) |
-| 4 | `adv` (`db` 指定有無問わず) | 501 (`advanced-search-not-implemented`) |
-| 5 | `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は offset-only) |
+| 4 | `adv` のみ | 横断 Advanced Search (count-only、DSL を Lark でパース → validator → ES/Solr にコンパイルして 8 DB 並列発行) |
+| 5 | `adv` + `db` | DB 指定 Advanced Search (DSL を対象バックエンドにコンパイル、hits envelope を返却) |
+| 6 | `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は offset-only) |
+| 7 | `cursor` + `adv` | 400 (adv は offset-only、`db=trad`/`taxonomy` は `cursor-not-supported` を優先、それ以外は `about:blank`) |
 
 `q` と `adv` の同時指定は 400 (`invalid-query-combination`)。
+
+##### Advanced Search DSL (AP3)
+
+- **文法** (Lark LALR(1), Lucene サブセット、実装は `ddbj_search_api/search/dsl/grammar.lark`):
+  - `field:value` / `field:"phrase"` / `field:[a TO b]` / `field:value*` / `field:value?`
+  - `AND` / `OR` / `NOT` (大文字必須)、優先度 `AND > OR`、`(...)` でグルーピング
+  - 非対応構文 (boost `^` / fuzzy `~` / 正規表現 `/.../`) は構文エラー (`unexpected-token`)
+  - ネスト深さ上限 5 (`dsl_max_depth`)、DSL 長さ上限 4096 文字 (`dsl_max_length`) 超過は `unexpected-token`
+- **フィールド allowlist (AP3 は Tier 1 の 8 個のみ対応、Tier 2/3 は AP6 で追加予定)**:
+  - 識別子: `identifier` (`eq` / `wildcard`)
+  - テキスト: `title` / `description` (`contains` / `wildcard`)
+  - 生物種: `organism` (`eq` — ES 側で `organism.name` / `organism.identifier` の OR 展開)
+  - 日付: `date_published` / `date_modified` / `date_created` (`eq` / `between`)
+  - 日付エイリアス: `date` (ES 側で 3 日付フィールドの OR 展開、ARSA は `Date` に集約、TXSearch は degenerate)
+  - 許容外フィールドは 400 `unknown-field`、Tier 1 対象外の演算子組み合わせは 400 `invalid-operator-for-field`
+- **バックエンド変換**:
+  - ES: AST → `bool` クエリ (`term` / `match_phrase` / `wildcard` / `range`)
+  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、`date_modified`/`date_created`/`date` は `(-*:*)` に degenerate、`uf` で allowlist 制御)
+  - TXSearch: AST → edismax `q` 文字列 (フィールド名マッピング、`organism`/`date_*` は `(-*:*)` に degenerate、`uf` で allowlist 制御)
+- **エラー位置情報**: `ProblemDetails` スキーマは無変更、`detail` 文字列に自然言語で `at column N (length M)` を埋め込む (source.md §AP1 決定準拠、機械判別は type URI slug のみ)
+
+例:
+
+```
+/search?db=bioproject&adv=organism%3A%22Homo+sapiens%22+AND+date_published%3A%5B2020-01-01+TO+2024-12-31%5D+AND+(title%3Acancer+OR+title%3Atumor)
+```
+
+URL デコード後:
+
+```
+organism:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)
+```
 
 Trailing slash なし (`/db-portal/search`) が canonical。
 
@@ -662,7 +696,7 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 | パラメータ | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
 | `q` | string | — | シンプル検索キーワード。既存 `/entries/` と同じ auto-phrase (記号 `-` `/` `.` `+` `:` 含むと phrase match) が適用される |
-| `adv` | string | — | Advanced Search DSL (AP3 で実装)。AP1 時点で指定すると 501 |
+| `adv` | string | — | Advanced Search DSL (AP3 で有効)。Tier 1 フィールド + `AND`/`OR`/`NOT`/`( )` + フレーズ/範囲/ワイルドカードをサポート |
 | `db` | enum | — | 検索対象 DB。値: `trad`, `sra`, `bioproject`, `biosample`, `jga`, `gea`, `metabobank`, `taxonomy`。省略時は横断 count-only |
 | `page` | integer | `1` | ページ番号 (1 始まり) |
 | `perPage` | integer | `20` | 1 ページあたりの件数。許容値: `20`, `50`, `100` のみ (他は 422) |
@@ -746,16 +780,23 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 
 **エラー** (type URI + HTTP status):
 
-| type URI (prefix `https://ddbj.nig.ac.jp/problems/` + slug) | HTTP | 条件 | 廃止予定 |
-|------|------|------|---------|
+| type URI (prefix `https://ddbj.nig.ac.jp/problems/` + slug) | HTTP | 条件 | 備考 |
+|------|------|------|------|
 | `invalid-query-combination` | 400 | `q` と `adv` 同時指定 | — |
-| `advanced-search-not-implemented` | 501 | `adv` 指定 | AP3 |
-| `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は offset-only) | — |
-| `about:blank` | 400 | Deep paging 超過、cursor 排他違反、不正な cursor、cursor 期限切れ | — |
+| `advanced-search-not-implemented` | — | (未使用) | AP3 完了で事実上廃止 (enum は backward compat のため残置) |
+| `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は offset-only)。`adv` + `cursor` + `db=trad/taxonomy` もこちらを優先 | — |
+| `unexpected-token` | 400 | DSL 構文エラー (非対応構文 / 過長 DSL / 空入力 含む) | AP3 |
+| `unknown-field` | 400 | allowlist 外フィールド。`detail` に column 位置と候補一覧を埋め込み | AP3 |
+| `field-not-available-in-cross-db` | 400 | 横断モードで Tier 3 フィールド使用 (AP6 で有効化予定、AP3 時点では Tier 3 未定義のため発動せず) | AP3 |
+| `invalid-date-format` | 400 | `YYYY-MM-DD` 以外、実在しない日付 | AP3 |
+| `invalid-operator-for-field` | 400 | フィールド型と演算子の非互換 (例: `date:cancer*`, `identifier:[a TO b]`) | AP3 |
+| `nest-depth-exceeded` | 400 | AND/OR/NOT ネスト深さ > 5 (`dsl_max_depth`) | AP3 |
+| `missing-value` | 400 | `field:""` 等の空値 | AP3 |
+| `about:blank` | 400 | Deep paging 超過、cursor 排他違反 (adv/q/sort/page と同時)、不正な cursor、cursor 期限切れ | — |
 | `about:blank` | 422 | `db` / `sort` / `perPage` 等の enum・Literal 違反、型不一致 | — |
 | `about:blank` | 502 | 横断 count-only で全 DB 失敗、Solr DB 指定検索で upstream エラー | — |
 
-URI prefix `https://ddbj.nig.ac.jp/problems/` は dereferenceable である必要はなく、識別子として機能する (RFC 7807 §3.1)。AP3 完了時に `advanced-search-not-implemented` は廃止される。AP3 で DSL パーサが加わる時点で `unexpected-token`, `unknown-field`, `field-not-available-in-cross-db`, `invalid-date-format`, `invalid-operator-for-field`, `nest-depth-exceeded`, `missing-value` の slug が追加される予定。
+URI prefix `https://ddbj.nig.ac.jp/problems/` は dereferenceable である必要はなく、識別子として機能する (RFC 7807 §3.1)。AP3 完了時点で DSL 関連 7 slug が enum に追加された。`advanced-search-not-implemented` は router からは emit されなくなったが、OpenAPI 契約の互換性のため enum に残置している (将来の cleanup PR で物理削除予定)。
 
 **CORS / rate limit**: 既存 API と同じ (`CORS: *`、rate limit は nginx レイヤ)。
 

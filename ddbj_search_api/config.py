@@ -72,6 +72,10 @@ class AppConfig(BaseSettings):
     txsearch_timeout: float = 5.0
     cross_search_total_timeout: float = 20.0
 
+    # AP3 Advanced Search DSL limits (DoS / complexity guard).
+    dsl_max_length: int = 4096
+    dsl_max_depth: int = 5
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def debug(self) -> bool:

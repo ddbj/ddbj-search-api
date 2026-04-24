@@ -13,6 +13,7 @@ dependencies = [
     "duckdb",
     "fastapi",
     "httpx",
+    "lark",
     "pydantic",
     "pydantic-settings",
     "uvicorn[standard]",

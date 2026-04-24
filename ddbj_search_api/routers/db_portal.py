@@ -1,17 +1,19 @@
 """Search endpoint for db-portal frontend: GET /db-portal/search.
 
-Four request patterns dispatched by a single handler:
+Five request patterns dispatched by a single handler:
 
 1. ``q`` only            → cross-database count-only (8 entries, ES + Solr)
 2. ``q`` + ``db``        → db-specific hits envelope
                            (ES for 6 DBs, Solr for ``trad`` / ``taxonomy``)
-3. ``adv`` (any ``db``)  → 501 (AP3 will implement Advanced Search DSL)
-4. ``cursor`` + ``db=trad/taxonomy`` → 400 ``cursor-not-supported``
+3. ``adv`` only          → cross-database count-only via the DSL compiler (AP3)
+4. ``adv`` + ``db``      → db-specific hits envelope via the DSL compiler (AP3)
+5. ``cursor`` + ``db=trad/taxonomy`` → 400 ``cursor-not-supported``
                            (Solr is offset-only; no PIT equivalent in 4.4.0)
 
 Mutually exclusive ``q`` + ``adv`` returns 400.  Cross-search count-only
 fans out in parallel (AP5) with per-backend ``asyncio.wait_for`` bounds
-and an overall ``asyncio.wait`` deadline.
+and an overall ``asyncio.wait`` deadline.  DSL errors (unknown-field,
+invalid-date-format, etc.) surface as 400 + RFC 7807 + dedicated type URI.
 """
 
 from __future__ import annotations
@@ -44,13 +46,26 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalHitsResponse,
     DbPortalQuery,
 )
+from ddbj_search_api.search.dsl import (
+    DslError,
+    compile_to_es,
+    compile_to_solr,
+    parse,
+    validate,
+)
+from ddbj_search_api.search.dsl.ast import Node as DslNode
 from ddbj_search_api.solr import get_solr_client
 from ddbj_search_api.solr.client import arsa_search, txsearch_search
 from ddbj_search_api.solr.mappers import (
     arsa_response_to_envelope,
     txsearch_response_to_envelope,
 )
-from ddbj_search_api.solr.query import build_arsa_params, build_txsearch_params
+from ddbj_search_api.solr.query import (
+    build_arsa_adv_params,
+    build_arsa_params,
+    build_txsearch_adv_params,
+    build_txsearch_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -411,6 +426,343 @@ async def _cross_search_count_only(
     return DbPortalCrossSearchResponse(databases=databases)
 
 
+# === AP3: Advanced Search DSL cross-db count ===
+
+
+async def _count_arsa_adv(
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    q_string: str,
+) -> DbPortalCount:
+    if not config.solr_arsa_base_url:
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=DbPortalCountError.unknown,
+        )
+    params = build_arsa_adv_params(
+        q=q_string,
+        page=1,
+        per_page=0,
+        sort=None,
+        shards=config.solr_arsa_shards,
+    )
+    try:
+        resp = await asyncio.wait_for(
+            arsa_search(
+                client,
+                base_url=config.solr_arsa_base_url,
+                core=config.solr_arsa_core,
+                params=params,
+            ),
+            timeout=config.arsa_timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal adv cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
+            config.arsa_timeout,
+        )
+        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.timeout)
+    except Exception as exc:
+        error = _map_httpx_error(exc)
+        logger.warning(
+            "db-portal adv cross-search failed for db=trad (ARSA): %s (error=%s)",
+            type(exc).__name__,
+            error.value,
+        )
+        return DbPortalCount(db=DbPortalDb.trad, count=None, error=error)
+    try:
+        count = int(resp["response"]["numFound"])
+    except (KeyError, TypeError, ValueError):
+        logger.warning("db-portal adv cross-search: unexpected ARSA response shape")
+        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.unknown)
+    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None)
+
+
+async def _count_txsearch_adv(
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    q_string: str,
+) -> DbPortalCount:
+    if not config.solr_txsearch_url:
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=DbPortalCountError.unknown,
+        )
+    params = build_txsearch_adv_params(
+        q=q_string,
+        page=1,
+        per_page=0,
+        sort=None,
+    )
+    try:
+        resp = await asyncio.wait_for(
+            txsearch_search(
+                client,
+                url=config.solr_txsearch_url,
+                params=params,
+            ),
+            timeout=config.txsearch_timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal adv cross-search timed out for db=taxonomy (TXSearch, txsearch_timeout=%.2fs)",
+            config.txsearch_timeout,
+        )
+        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.timeout)
+    except Exception as exc:
+        error = _map_httpx_error(exc)
+        logger.warning(
+            "db-portal adv cross-search failed for db=taxonomy (TXSearch): %s (error=%s)",
+            type(exc).__name__,
+            error.value,
+        )
+        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=error)
+    try:
+        count = int(resp["response"]["numFound"])
+    except (KeyError, TypeError, ValueError):
+        logger.warning("db-portal adv cross-search: unexpected TXSearch response shape")
+        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.unknown)
+    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None)
+
+
+async def _count_one_db_adv(
+    es_client: httpx.AsyncClient,
+    solr_client: httpx.AsyncClient,
+    config: AppConfig,
+    db: DbPortalDb,
+    es_query_body: dict[str, Any],
+    arsa_q: str,
+    txsearch_q: str,
+) -> DbPortalCount:
+    if db == DbPortalDb.trad:
+        return await _count_arsa_adv(solr_client, config, arsa_q)
+    if db == DbPortalDb.taxonomy:
+        return await _count_txsearch_adv(solr_client, config, txsearch_q)
+    return await _count_one_db_es(es_client, config, db, es_query_body)
+
+
+async def _adv_cross_search_count_only(
+    es_client: httpx.AsyncClient,
+    solr_client: httpx.AsyncClient,
+    config: AppConfig,
+    ast: DslNode,
+) -> DbPortalCrossSearchResponse:
+    """Parallel cross-database adv count-only (AP3 + AP5 pattern).
+
+    Compiles the AST once per backend dialect, then fans out 8 DBs via
+    ``asyncio.create_task`` with ``ALL_COMPLETED`` + ``cross_search_total_timeout``.
+    Partial-success policy (200 unless every DB failed) matches AP5.
+    """
+    es_query_body = compile_to_es(ast)
+    arsa_q = compile_to_solr(ast, dialect="arsa")
+    txsearch_q = compile_to_solr(ast, dialect="txsearch")
+    task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
+    for db in _DB_ORDER:
+        task = asyncio.create_task(
+            _count_one_db_adv(
+                es_client,
+                solr_client,
+                config,
+                db,
+                es_query_body,
+                arsa_q,
+                txsearch_q,
+            ),
+        )
+        task_map[task] = db
+    done, pending = await asyncio.wait(
+        task_map.keys(),
+        timeout=config.cross_search_total_timeout,
+        return_when=asyncio.ALL_COMPLETED,
+    )
+    results: dict[DbPortalDb, DbPortalCount] = {}
+    for task in done:
+        results[task_map[task]] = task.result()
+    for task in pending:
+        task.cancel()
+        db = task_map[task]
+        logger.warning(
+            "db-portal adv cross-search hit total timeout for db=%s (cancelled, total_timeout=%.2fs)",
+            db.value,
+            config.cross_search_total_timeout,
+        )
+        results[db] = DbPortalCount(db=db, count=None, error=DbPortalCountError.timeout)
+    databases = [results[db] for db in _DB_ORDER]
+    if all(item.error is not None for item in databases):
+        raise HTTPException(
+            status_code=502,
+            detail="All databases failed to respond.",
+        )
+    return DbPortalCrossSearchResponse(databases=databases)
+
+
+# === AP3: Advanced Search DSL db-specific hits ===
+
+
+async def _search_arsa_adv(
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    query: DbPortalQuery,
+    q_string: str,
+) -> DbPortalHitsResponse:
+    if not config.solr_arsa_base_url:
+        raise HTTPException(
+            status_code=502,
+            detail="ARSA backend is not configured.",
+        )
+    params = build_arsa_adv_params(
+        q=q_string,
+        page=query.page,
+        per_page=query.per_page,
+        sort=query.sort,
+        shards=config.solr_arsa_shards,
+    )
+    try:
+        resp = await arsa_search(
+            client,
+            base_url=config.solr_arsa_base_url,
+            core=config.solr_arsa_core,
+            params=params,
+        )
+    except Exception as exc:
+        error = _map_httpx_error(exc)
+        logger.warning(
+            "db-portal adv db-specific search failed for db=trad (ARSA): %s (error=%s)",
+            type(exc).__name__,
+            error.value,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"ARSA upstream failure: {error.value}",
+        ) from exc
+    return arsa_response_to_envelope(
+        resp,
+        page=query.page,
+        per_page=query.per_page,
+        sort=query.sort,
+    )
+
+
+async def _search_txsearch_adv(
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    query: DbPortalQuery,
+    q_string: str,
+) -> DbPortalHitsResponse:
+    if not config.solr_txsearch_url:
+        raise HTTPException(
+            status_code=502,
+            detail="TXSearch backend is not configured.",
+        )
+    params = build_txsearch_adv_params(
+        q=q_string,
+        page=query.page,
+        per_page=query.per_page,
+        sort=query.sort,
+    )
+    try:
+        resp = await txsearch_search(
+            client,
+            url=config.solr_txsearch_url,
+            params=params,
+        )
+    except Exception as exc:
+        error = _map_httpx_error(exc)
+        logger.warning(
+            "db-portal adv db-specific search failed for db=taxonomy (TXSearch): %s (error=%s)",
+            type(exc).__name__,
+            error.value,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"TXSearch upstream failure: {error.value}",
+        ) from exc
+    return txsearch_response_to_envelope(
+        resp,
+        page=query.page,
+        per_page=query.per_page,
+        sort=query.sort,
+    )
+
+
+async def _db_specific_search_es_adv(
+    client: httpx.AsyncClient,
+    query: DbPortalQuery,
+    es_query_body: dict[str, Any],
+) -> DbPortalHitsResponse:
+    """ES hits envelope for adv + db (offset-only; cursor + adv is blocked upstream)."""
+    assert query.db is not None
+    _validate_deep_paging(query.page, query.per_page)
+    sort_body = build_sort_with_tiebreaker(query.sort)
+    from_, size = pagination_to_from_size(query.page, query.per_page)
+    body: dict[str, Any] = {
+        "query": es_query_body,
+        "from": from_,
+        "size": size,
+        "sort": sort_body,
+    }
+    es_resp = await es_search(client, _db_to_index(query.db), body)
+    raw_hits = es_resp["hits"]["hits"]
+    total = int(es_resp["hits"]["total"]["value"])
+    hits = [_hit_from_source(h) for h in raw_hits]
+    next_cursor, has_next = _compute_next_cursor(
+        raw_hits=raw_hits,
+        size=size,
+        total=total,
+        offset=from_,
+        sort_with_tiebreaker=sort_body,
+        query=es_query_body,
+        pit_id=None,
+    )
+    return DbPortalHitsResponse(  # type: ignore[call-arg]
+        total=total,
+        hits=hits,
+        hard_limit_reached=(total >= _DEEP_PAGING_LIMIT),
+        page=query.page,
+        per_page=query.per_page,
+        next_cursor=next_cursor,
+        has_next=has_next,
+    )
+
+
+async def _adv_db_specific_search(
+    es_client: httpx.AsyncClient,
+    solr_client: httpx.AsyncClient,
+    config: AppConfig,
+    query: DbPortalQuery,
+    ast: DslNode,
+) -> DbPortalHitsResponse:
+    assert query.db is not None
+    if query.db in _SOLR_DBS:
+        if query.cursor is not None:
+            raise DbPortalHTTPException(
+                status_code=400,
+                type_uri=DbPortalErrorType.cursor_not_supported,
+                detail=(
+                    f"Cursor-based pagination is not supported for db='{query.db.value}'. "
+                    "Use 'page' + 'perPage' (offset-only) instead."
+                ),
+            )
+        _validate_deep_paging(query.page, query.per_page)
+        if query.db == DbPortalDb.trad:
+            return await _search_arsa_adv(
+                solr_client,
+                config,
+                query,
+                compile_to_solr(ast, dialect="arsa"),
+            )
+        return await _search_txsearch_adv(
+            solr_client,
+            config,
+            query,
+            compile_to_solr(ast, dialect="txsearch"),
+        )
+    # ES DB: cursor + adv is blocked by _validate_cursor_exclusivity (adv in conflict list).
+    return await _db_specific_search_es_adv(es_client, query, compile_to_es(ast))
+
+
 # === DB-specific hits search ===
 
 
@@ -646,11 +998,40 @@ async def _search_db_portal(
             detail="'q' and 'adv' are mutually exclusive; specify exactly one.",
         )
     if query.adv is not None:
-        raise DbPortalHTTPException(
-            status_code=501,
-            type_uri=DbPortalErrorType.advanced_search_not_implemented,
-            detail="Advanced Search DSL will be available in a future release.",
-        )
+        if query.cursor is not None:
+            if query.db in _SOLR_DBS:
+                assert query.db is not None
+                raise DbPortalHTTPException(
+                    status_code=400,
+                    type_uri=DbPortalErrorType.cursor_not_supported,
+                    detail=(
+                        f"Cursor-based pagination is not supported for db='{query.db.value}'. "
+                        "Use 'page' + 'perPage' (offset-only) instead."
+                    ),
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot use 'cursor' with 'adv'. Advanced Search uses offset pagination; omit 'cursor' to paginate."
+                ),
+            )
+        try:
+            ast = parse(query.adv, max_length=config.dsl_max_length)
+            validate(
+                ast,
+                mode="cross" if query.db is None else "single",
+                db=query.db,
+                max_depth=config.dsl_max_depth,
+            )
+        except DslError as exc:
+            raise DbPortalHTTPException(
+                status_code=400,
+                type_uri=DbPortalErrorType[exc.type.name],
+                detail=exc.detail,
+            ) from exc
+        if query.db is None:
+            return await _adv_cross_search_count_only(es_client, solr_client, config, ast)
+        return await _adv_db_specific_search(es_client, solr_client, config, query, ast)
     if query.cursor is not None and query.db is None:
         raise HTTPException(
             status_code=400,
@@ -667,8 +1048,10 @@ router.add_api_route(
     methods=["GET"],
     response_model=DbPortalCrossSearchResponse | DbPortalHitsResponse,
     responses={
-        501: {
-            "description": "Not Implemented (Advanced Search)",
+        400: {
+            "description": (
+                "Bad Request (q/adv exclusivity, cursor exclusivity, DSL parse/validate error, deep paging limit)."
+            ),
             "model": ProblemDetails,
         },
         502: {
@@ -676,6 +1059,6 @@ router.add_api_route(
             "model": ProblemDetails,
         },
     },
-    summary="DB Portal unified search (cross-db count / db-specific hits)",
+    summary="DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
     tags=["db-portal"],
 )

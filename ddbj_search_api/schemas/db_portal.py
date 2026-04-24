@@ -42,11 +42,24 @@ class DbPortalErrorType(str, Enum):
     """Problem Details ``type`` URI for db-portal-specific errors.
 
     URIs are RFC 7807 §3.1 identifiers and need not be dereferenceable.
+
+    Member names mirror ``ddbj_search_api.search.dsl.errors.ErrorType`` so the
+    router can map a ``DslError`` to the db-portal enum via ``DbPortalErrorType[err.type.name]``.
+    ``advanced_search_not_implemented`` is retained for backward compatibility but never
+    emitted once AP3 is live (slated for removal in a future cleanup PR).
     """
 
     invalid_query_combination = "https://ddbj.nig.ac.jp/problems/invalid-query-combination"
     advanced_search_not_implemented = "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
+    # AP3: DSL parser error types.
+    unexpected_token = "https://ddbj.nig.ac.jp/problems/unexpected-token"
+    unknown_field = "https://ddbj.nig.ac.jp/problems/unknown-field"
+    field_not_available_in_cross_db = "https://ddbj.nig.ac.jp/problems/field-not-available-in-cross-db"
+    invalid_date_format = "https://ddbj.nig.ac.jp/problems/invalid-date-format"
+    invalid_operator_for_field = "https://ddbj.nig.ac.jp/problems/invalid-operator-for-field"
+    nest_depth_exceeded = "https://ddbj.nig.ac.jp/problems/nest-depth-exceeded"
+    missing_value = "https://ddbj.nig.ac.jp/problems/missing-value"
 
 
 ALLOWED_DB_PORTAL_SORTS: frozenset[str] = frozenset({"datePublished:desc", "datePublished:asc"})
@@ -75,8 +88,14 @@ class DbPortalQuery:
         adv: str | None = Query(
             default=None,
             description=(
-                "Advanced Search DSL.  Not implemented (returns 501 "
-                "``advanced-search-not-implemented``); planned for AP3."
+                "Advanced Search DSL (AP3).  Lark LALR(1)-parsed Lucene subset with "
+                "field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, "
+                '``organism:"Homo sapiens"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` '
+                "(case-sensitive, uppercase).  Tier 1 allowlist: ``identifier``, ``title``, "
+                "``description``, ``organism``, ``date_published``, ``date_modified``, "
+                "``date_created``, ``date`` (OR-alias of the three date fields).  "
+                "Errors surface as RFC 7807 problem details with a dedicated ``type`` URI "
+                "(``unexpected-token`` / ``unknown-field`` / ``invalid-date-format`` / etc.)."
             ),
         ),
         db: DbPortalDb | None = Query(
