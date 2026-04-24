@@ -83,7 +83,8 @@ class TestBuildArsaParams:
         fl = p["fl"]
         # Must match every field arsa_docs_to_hits reads; otherwise Solr
         # drops the value from its response and the hit envelope ends up
-        # with ``None`` (regression: 2026-04-24 MolecularType/SequenceLength).
+        # with ``None`` (regression: 2026-04-24 MolecularType/SequenceLength,
+        # Feature added so we can recover TaxID for organism.identifier).
         for field in (
             "PrimaryAccessionNumber",
             "Definition",
@@ -92,6 +93,7 @@ class TestBuildArsaParams:
             "Date",
             "MolecularType",
             "SequenceLength",
+            "Feature",
             "score",
         ):
             assert field in fl

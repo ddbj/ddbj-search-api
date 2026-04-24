@@ -13,9 +13,10 @@ from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
 
 _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^5 Organism^3 ReferenceTitle^2"
 # ``fl`` must include every source field that ``arsa_docs_to_hits`` reads;
-# omitting ``MolecularType`` / ``SequenceLength`` silently drops them into the
-# DbPortalHitTrad envelope as ``None`` even though Solr has the values.
-_ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,MolecularType,SequenceLength,score"
+# omitting one silently demotes it to ``None`` in the DbPortalHitTrad envelope
+# even though Solr has the value.  ``Feature`` is needed only to recover the
+# TaxID from ``/db_xref="taxon:..."`` so ``organism.identifier`` can be set.
+_ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,MolecularType,SequenceLength,Feature,score"
 _TXSEARCH_QF = "scientific_name^10 scientific_name_ex^20 common_name^5 synonym^3 japanese_name^5 text^0.1"
 _TXSEARCH_FL = "tax_id,scientific_name,common_name,japanese_name,rank,lineage,score"
 _DEFAULT_Q = "*:*"

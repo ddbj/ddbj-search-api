@@ -8,6 +8,7 @@ that ARSA / TXSearch schema drift does not propagate to 500 responses.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ddbj_search_api.schemas.db_portal import (
@@ -15,6 +16,11 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalHitsResponse,
     _DbPortalHitAdapter,
 )
+
+# GenBank Feature qualifier ``/db_xref="taxon:NNNN"`` — NCBI TaxID embedded in
+# ARSA Feature blocks.  Captures the digits after ``taxon:``; whitespace or
+# quoting around the value varies so the regex is intentionally lenient.
+_FEATURE_TAXON_RE = re.compile(r'/db_xref="taxon:(\d+)"')
 
 _DEEP_PAGING_LIMIT = 10_000
 _ARSA_URL_PREFIX = "https://getentry.ddbj.nig.ac.jp/getentry/na/"
@@ -40,46 +46,42 @@ def _first_or_self(value: Any) -> Any:
     return value
 
 
-def _join_nonempty(parts: list[str | None], sep: str = " / ") -> str | None:
-    cleaned = [p for p in parts if p is not None and p != ""]
-    if not cleaned:
+def _extract_taxon_id(feature: Any) -> str | None:
+    """Pull the TaxID out of a GenBank source feature's ``/db_xref="taxon:NNNN"``.
+
+    ARSA's ``Feature`` field holds the flat GenBank feature table as a list of
+    multi-line strings; the source feature always carries a ``db_xref`` with
+    ``taxon:`` when the record has an organism linked to NCBI Taxonomy.  The
+    scan stops at the first match to keep per-hit cost low; records without
+    a source feature (or without a taxon xref) return ``None``.
+    """
+    if isinstance(feature, list):
+        for entry in feature:
+            if not isinstance(entry, str):
+                continue
+            match = _FEATURE_TAXON_RE.search(entry)
+            if match is not None:
+                return match.group(1)
         return None
-    return sep.join(cleaned)
-
-
-def _lineage_to_str(value: Any) -> str | None:
-    if isinstance(value, list):
-        non_empty = [str(x) for x in value if x is not None and x != ""]
-        return "; ".join(non_empty) if non_empty else None
-    if isinstance(value, str):
-        return value or None
+    if isinstance(feature, str):
+        match = _FEATURE_TAXON_RE.search(feature)
+        return match.group(1) if match is not None else None
     return None
 
 
-def _arsa_description(
-    definition: Any,
-    organism: Any,
-    division: Any,
-) -> str | None:
-    parts: list[str | None] = [
-        str(definition) if isinstance(definition, str) and definition else None,
-        str(organism) if isinstance(organism, str) and organism else None,
-        f"Division: {division}" if isinstance(division, str) and division else None,
-    ]
-    return _join_nonempty(parts)
+def _drop_self_from_lineage(value: Any, self_name: Any) -> Any:
+    """TXSearch prepends the taxon's own scientific name to ``lineage``.
 
-
-def _txsearch_description(
-    common_name: Any,
-    rank: Any,
-    lineage: Any,
-) -> str | None:
-    common = _first_or_self(common_name)
-    common_str = common if isinstance(common, str) and common else None
-    rank_str = f"rank: {rank}" if isinstance(rank, str) and rank else None
-    lineage_str = _lineage_to_str(lineage)
-    lineage_part = f"lineage: {lineage_str}" if lineage_str else None
-    return _join_nonempty([common_str, rank_str, lineage_part])
+    Strip it so downstream consumers get the NCBI-standard ancestor-only
+    lineage.  Preserves the original container shape (list → list,
+    string → string) and leaves the payload untouched when the head does
+    not match ``self_name``.
+    """
+    if isinstance(value, list):
+        if value and isinstance(value[0], str) and value[0] == self_name:
+            return value[1:]
+        return value
+    return value
 
 
 def _to_int_or_none(value: Any) -> int | None:
@@ -99,16 +101,21 @@ def arsa_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
     for doc in docs:
         acc = doc.get("PrimaryAccessionNumber")
         organism_raw = doc.get("Organism")
+        organism: dict[str, Any] | None = None
+        if organism_raw:
+            organism = {"name": organism_raw}
+            tax_id = _extract_taxon_id(doc.get("Feature"))
+            if tax_id is not None:
+                organism["identifier"] = tax_id
+        # ``description`` is left null: Definition is already in ``title`` and
+        # Organism / Division surface in their own fields, so synthesizing a
+        # joined blurb only duplicates information in the UI.
         payload: dict[str, Any] = {
             "identifier": str(acc) if acc is not None else None,
             "type": "trad",
             "title": doc.get("Definition"),
-            "organism": {"name": organism_raw} if organism_raw else None,
-            "description": _arsa_description(
-                doc.get("Definition"),
-                organism_raw,
-                doc.get("Division"),
-            ),
+            "organism": organism,
+            "description": None,
             "datePublished": _parse_arsa_date(doc.get("Date")),
             "url": f"{_ARSA_URL_PREFIX}{acc}/" if acc else None,
             "sameAs": None,
@@ -134,16 +141,16 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
                 organism["name"] = scientific
             if tax_id:
                 organism["identifier"] = tax_id
+        # ``description`` is left null: common_name / rank / lineage surface
+        # in their own fields and the previous ``/``-joined blurb only
+        # duplicated them in the UI.  ``lineage`` also drops its own head
+        # entry so the list matches NCBI's ancestor-only convention.
         payload: dict[str, Any] = {
             "identifier": tax_id,
             "type": "taxonomy",
             "title": scientific,
             "organism": organism,
-            "description": _txsearch_description(
-                doc.get("common_name"),
-                doc.get("rank"),
-                doc.get("lineage"),
-            ),
+            "description": None,
             "datePublished": None,
             "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}" if tax_id else None,
             "sameAs": None,
@@ -151,7 +158,7 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "rank": doc.get("rank"),
             "commonName": _first_or_self(doc.get("common_name")),
             "japaneseName": _first_or_self(doc.get("japanese_name")),
-            "lineage": doc.get("lineage"),
+            "lineage": _drop_self_from_lineage(doc.get("lineage"), scientific),
         }
         hits.append(_DbPortalHitAdapter.validate_python(payload))
     return hits

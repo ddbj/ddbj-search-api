@@ -106,7 +106,8 @@ class TestArsaDocsToHits:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "AY967397"}])[0]
         assert h.url == "https://getentry.ddbj.nig.ac.jp/getentry/na/AY967397/"
 
-    def test_description_joined(self) -> None:
+    def test_description_always_none(self) -> None:
+        """description は空: Definition は title、Organism/Division は別 field で提示する."""
         h = arsa_docs_to_hits(
             [
                 {
@@ -117,15 +118,47 @@ class TestArsaDocsToHits:
                 },
             ],
         )[0]
-        assert h.description == "def / orga / Division: SYN"
+        assert h.description is None
 
-    def test_description_skips_missing_parts(self) -> None:
-        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "Definition": "only def"}])[0]
-        assert h.description == "only def"
-
-    def test_description_all_missing_is_none(self) -> None:
+    def test_description_is_none_even_without_other_fields(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
         assert h.description is None
+
+    def test_organism_identifier_from_feature_taxon(self) -> None:
+        """GenBank ``source`` feature's ``/db_xref="taxon:NNNN"`` lifts to organism.identifier."""
+        h = arsa_docs_to_hits(
+            [
+                {
+                    "PrimaryAccessionNumber": "X",
+                    "Organism": "synthetic construct",
+                    "Feature": [
+                        'source\n1..726\n/organism="synthetic construct"\n/db_xref="taxon:32630"',
+                        'CDS\n1..726\n/product="unknown protein"',
+                    ],
+                },
+            ],
+        )[0]
+        assert h.organism is not None
+        assert h.organism.identifier == "32630"
+        assert h.organism.name == "synthetic construct"
+
+    def test_organism_identifier_missing_when_feature_has_no_taxon(self) -> None:
+        h = arsa_docs_to_hits(
+            [
+                {
+                    "PrimaryAccessionNumber": "X",
+                    "Organism": "no taxon",
+                    "Feature": ['source\n1..100\n/organism="no taxon"'],
+                },
+            ],
+        )[0]
+        assert h.organism is not None
+        assert h.organism.identifier is None
+
+    def test_organism_identifier_missing_when_feature_absent(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "Organism": "orga"}])[0]
+        assert h.organism is not None
+        assert h.organism.identifier is None
 
     def test_division_passthrough(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "Division": "SYN"}])[0]
@@ -239,7 +272,8 @@ class TestTxsearchDocsToHits:
         dumped = h.model_dump(by_alias=True)
         assert dumped.get("japaneseName") is None
 
-    def test_description_with_common_name_rank_lineage(self) -> None:
+    def test_description_always_none(self) -> None:
+        """description は空: common_name / rank / lineage は独立 field として露出する."""
         h = txsearch_docs_to_hits(
             [
                 {
@@ -251,24 +285,58 @@ class TestTxsearchDocsToHits:
                 },
             ],
         )[0]
-        # common_name first / rank / lineage joined
-        assert h.description == "human / rank: species / lineage: Homo sapiens; Homo; Hominidae"
-
-    def test_description_lineage_string_passthrough(self) -> None:
-        h = txsearch_docs_to_hits(
-            [
-                {
-                    "tax_id": "9606",
-                    "rank": "species",
-                    "lineage": "Homo sapiens",
-                },
-            ],
-        )[0]
-        assert h.description == "rank: species / lineage: Homo sapiens"
+        assert h.description is None
 
     def test_description_all_missing_is_none(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
         assert h.description is None
+
+    def test_lineage_drops_self_when_head_matches_scientific_name(self) -> None:
+        """TXSearch は lineage に自身の scientific_name を含めるが、NCBI 流の祖先のみ返す."""
+        h = txsearch_docs_to_hits(
+            [
+                {
+                    "tax_id": "9606",
+                    "scientific_name": "Homo sapiens",
+                    "lineage": ["Homo sapiens", "Homo", "Homininae", "Hominidae"],
+                },
+            ],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["lineage"] == ["Homo", "Homininae", "Hominidae"]
+
+    def test_lineage_preserved_when_head_does_not_match(self) -> None:
+        """稀に head が自身でない doc もそのまま返す (自己除去は head match 時だけ)."""
+        h = txsearch_docs_to_hits(
+            [
+                {
+                    "tax_id": "9606",
+                    "scientific_name": "Homo sapiens",
+                    "lineage": ["Boreoeutheria", "Eutheria"],
+                },
+            ],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["lineage"] == ["Boreoeutheria", "Eutheria"]
+
+    def test_lineage_string_passthrough(self) -> None:
+        """string 形式の lineage はそのまま (list でないので head チェック対象外)."""
+        h = txsearch_docs_to_hits(
+            [
+                {
+                    "tax_id": "9606",
+                    "scientific_name": "Homo sapiens",
+                    "lineage": "Homo sapiens; Homo",
+                },
+            ],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["lineage"] == "Homo sapiens; Homo"
+
+    def test_lineage_missing_is_none(self) -> None:
+        h = txsearch_docs_to_hits([{"tax_id": "9606", "scientific_name": "Homo sapiens"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("lineage") is None
 
     def test_same_as_and_db_xrefs_none(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
