@@ -14,7 +14,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from ddbj_search_api.schemas.db_portal import DbPortalHit, DbPortalHitsResponse
+from ddbj_search_api.schemas.db_portal import DbPortalHitBase, DbPortalHitsResponse
 from ddbj_search_api.solr.mappers import (
     _parse_arsa_date,
     arsa_docs_to_hits,
@@ -86,7 +86,9 @@ class TestArsaDocsToHits:
 
     def test_organism_wrapped_as_name(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "Organism": "Homo sapiens"}])[0]
-        assert h.organism == {"name": "Homo sapiens"}
+        assert h.organism is not None
+        assert h.organism.name == "Homo sapiens"
+        assert h.organism.identifier is None
 
     def test_organism_missing_is_none(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
@@ -167,7 +169,9 @@ class TestTxsearchDocsToHits:
 
     def test_organism_self_reference(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606", "scientific_name": "Homo sapiens"}])[0]
-        assert h.organism == {"name": "Homo sapiens", "identifier": "9606"}
+        assert h.organism is not None
+        assert h.organism.name == "Homo sapiens"
+        assert h.organism.identifier == "9606"
 
     def test_date_published_always_none(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606", "scientific_name": "Homo sapiens"}])[0]
@@ -360,7 +364,7 @@ class TestMappersPBT:
         hits = arsa_docs_to_hits([{"PrimaryAccessionNumber": acc}])
         assert hits[0].identifier == acc
         assert hits[0].type == "trad"
-        assert isinstance(hits[0], DbPortalHit)
+        assert isinstance(hits[0], DbPortalHitBase)
 
     @given(tax_id=st.integers(min_value=1, max_value=10_000_000))
     def test_txsearch_any_tax_id_produces_hit(self, tax_id: int) -> None:

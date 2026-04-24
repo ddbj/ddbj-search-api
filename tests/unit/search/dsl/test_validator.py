@@ -14,7 +14,7 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import DslError, ErrorType, parse
-from ddbj_search_api.search.dsl.allowlist import TIER1_FIELDS
+from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS
 from ddbj_search_api.search.dsl.validator import validate
 
 
@@ -198,6 +198,212 @@ class TestBoolCombinations:
         validate(parse("NOT title:cancer"), mode="cross")
 
 
+# === AP6: Tier 2/3 validator tests ===
+
+
+class TestTier2CrossModeAccepted:
+    """Tier 2 (submitter / publication) は cross mode で accept される。"""
+
+    def test_submitter_word_accepted(self) -> None:
+        validate(parse('submitter:"Tokyo University"'), mode="cross")
+
+    def test_submitter_phrase_accepted(self) -> None:
+        validate(parse('submitter:"National Institute of Genetics"'), mode="cross")
+
+    def test_submitter_wildcard_accepted(self) -> None:
+        validate(parse("submitter:Tok*"), mode="cross")
+
+    def test_publication_word_accepted(self) -> None:
+        validate(parse("publication:12345678"), mode="cross")
+
+    def test_publication_wildcard_accepted(self) -> None:
+        validate(parse("publication:123*"), mode="cross")
+
+
+class TestTier3CrossModeReject:
+    """Tier 3 は cross mode で field-not-available-in-cross-db で reject される。"""
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            # BioProject
+            ("project_type", "BioProject"),
+            ("grant_agency", "JSPS"),
+            # SRA
+            ("library_strategy", "WGS"),
+            ("library_source", "GENOMIC"),
+            ("library_layout", "SINGLE"),
+            ("platform", "ILLUMINA"),
+            ("instrument_model", "NovaSeq"),
+            # JGA
+            ("study_type", "Cohort"),
+            # GEA / MetaboBank
+            ("experiment_type", "RNA-Seq"),
+            ("submission_type", "metabolite"),
+            # Trad
+            ("division", "BCT"),
+            ("molecular_type", "DNA"),
+            ("feature_gene_name", "BRCA1"),
+            ("reference_journal", "Nature"),
+            # Taxonomy
+            ("rank", "species"),
+            ("lineage", "Eukaryota"),
+            ("kingdom", "Animalia"),
+            ("phylum", "Chordata"),
+            ("class", "Mammalia"),
+            ("order", "Primates"),
+            ("family", "Hominidae"),
+            ("genus", "Homo"),
+            ("species", "sapiens"),
+            ("common_name", "human"),
+        ],
+    )
+    def test_each_tier3_field_rejected_in_cross_mode(self, field: str, value: str) -> None:
+        ast = parse(f"{field}:{value}")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert exc_info.value.type == ErrorType.field_not_available_in_cross_db
+
+    def test_sequence_length_range_rejected_in_cross_mode(self) -> None:
+        ast = parse("sequence_length:[100 TO 5000]")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert exc_info.value.type == ErrorType.field_not_available_in_cross_db
+
+    def test_detail_contains_single_db_hint(self) -> None:
+        ast = parse("library_strategy:WGS")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=sra" in exc_info.value.detail
+
+    def test_detail_contains_multiple_db_hints(self) -> None:
+        """候補 DB が複数ある field (grant_agency) は全て列挙する。"""
+        ast = parse('grant_agency:"National Institutes of Health"')
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=bioproject or db=jga" in exc_info.value.detail
+
+    def test_detail_contains_field_name(self) -> None:
+        ast = parse("platform:ILLUMINA")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "'platform'" in exc_info.value.detail
+
+    def test_detail_contains_column(self) -> None:
+        ast = parse("title:cancer AND platform:ILLUMINA")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        # "title:cancer AND " で 17 文字、"platform" は column 18 開始
+        assert exc_info.value.column == 18
+
+
+class TestTier3SingleModeAccepted:
+    """Tier 3 は single mode (db 指定) で accept される。"""
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("project_type", "BioProject"),
+            ("library_strategy", "WGS"),
+            ("study_type", "Cohort"),
+            ("division", "BCT"),
+            ("rank", "species"),
+        ],
+    )
+    def test_single_mode_accepts_tier3(self, field: str, value: str) -> None:
+        validate(parse(f"{field}:{value}"), mode="single", db=DbPortalDb.bioproject)
+
+    def test_sequence_length_range_accepted_in_single_mode(self) -> None:
+        validate(parse("sequence_length:[100 TO 5000]"), mode="single", db=DbPortalDb.trad)
+
+    def test_sequence_length_eq_accepted_in_single_mode(self) -> None:
+        validate(parse("sequence_length:1000"), mode="single", db=DbPortalDb.trad)
+
+
+class TestEnumValueKindCompat:
+    """enum 型フィールドは word / phrase のみ accept。"""
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "library_strategy:WGS",
+            'library_strategy:"VIRAL RNA"',  # 空白含みは phrase 必須
+            "library_source:GENOMIC",
+            "platform:ILLUMINA",
+            "rank:species",
+            "project_type:BioProject",
+            "division:BCT",
+            "molecular_type:DNA",
+        ],
+    )
+    def test_enum_word_or_phrase_accepted(self, dsl: str) -> None:
+        validate(parse(dsl), mode="single", db=DbPortalDb.bioproject)
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "library_strategy:WGS*",  # wildcard
+            "platform:ILLU*",
+            "rank:2024-01-01",  # date
+            "project_type:[A TO B]",  # range
+        ],
+    )
+    def test_enum_wildcard_range_date_rejected(self, dsl: str) -> None:
+        ast = parse(dsl)
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=DbPortalDb.bioproject)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+
+class TestNumberValueKindCompat:
+    """number 型フィールド (sequence_length) は word / range のみ accept。"""
+
+    def test_number_eq_accepted(self) -> None:
+        validate(parse("sequence_length:5000"), mode="single", db=DbPortalDb.trad)
+
+    def test_number_range_accepted(self) -> None:
+        validate(parse("sequence_length:[100 TO 5000]"), mode="single", db=DbPortalDb.trad)
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            'sequence_length:"5000"',  # phrase
+            "sequence_length:500*",  # wildcard
+            "sequence_length:2024-01-01",  # date
+        ],
+    )
+    def test_number_phrase_wildcard_date_rejected(self, dsl: str) -> None:
+        ast = parse(dsl)
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=DbPortalDb.trad)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+
+class TestNumberDigitValidation:
+    """number 型の値は digit のみ受け付ける (invalid_operator_for_field を流用)。"""
+
+    def test_non_digit_word_rejected(self) -> None:
+        ast = parse("sequence_length:abc")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=DbPortalDb.trad)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+    def test_non_digit_range_from_rejected(self) -> None:
+        ast = parse("sequence_length:[abc TO 5000]")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=DbPortalDb.trad)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+    def test_non_digit_range_to_rejected(self) -> None:
+        ast = parse("sequence_length:[100 TO xyz]")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=DbPortalDb.trad)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+    def test_digit_range_accepted(self) -> None:
+        validate(parse("sequence_length:[100 TO 5000]"), mode="single", db=DbPortalDb.trad)
+
+
 class TestValidatorPBT:
     @given(
         field=st.sampled_from(["title", "description", "organism"]),
@@ -221,7 +427,7 @@ class TestValidatorPBT:
             alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z"), whitelist_characters="_"),
             min_size=3,
             max_size=20,
-        ).filter(lambda s: s not in TIER1_FIELDS),
+        ).filter(lambda s: s not in ALL_ALLOWED_FIELDS),
     )
     @settings(max_examples=30, deadline=None)
     def test_random_unknown_field_rejected(self, unknown: str) -> None:
@@ -229,3 +435,111 @@ class TestValidatorPBT:
         with pytest.raises(DslError) as exc_info:
             validate(ast, mode="cross")
         assert exc_info.value.type == ErrorType.unknown_field
+
+
+# === AP6: PBT for enum / number value_kind compatibility ===
+
+
+_ENUM_FIELDS = [
+    "project_type",
+    "library_strategy",
+    "library_source",
+    "library_layout",
+    "platform",
+    "study_type",
+    "division",
+    "molecular_type",
+    "rank",
+]
+_ENUM_DBS: dict[str, DbPortalDb] = {
+    "project_type": DbPortalDb.bioproject,
+    "library_strategy": DbPortalDb.sra,
+    "library_source": DbPortalDb.sra,
+    "library_layout": DbPortalDb.sra,
+    "platform": DbPortalDb.sra,
+    "study_type": DbPortalDb.jga,
+    "division": DbPortalDb.trad,
+    "molecular_type": DbPortalDb.trad,
+    "rank": DbPortalDb.taxonomy,
+}
+
+
+class TestTier3PBT:
+    """hypothesis PBT: enum / number field x value_kind の互換性."""
+
+    @given(
+        field=st.sampled_from(_ENUM_FIELDS),
+        value=st.text(
+            alphabet=st.characters(
+                min_codepoint=ord("A"),
+                max_codepoint=ord("z"),
+                whitelist_categories=("Lu", "Ll", "Nd"),
+                whitelist_characters="-_",
+            ),
+            min_size=1,
+            max_size=15,
+        ),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_enum_word_always_accepted(self, field: str, value: str) -> None:
+        db = _ENUM_DBS[field]
+        validate(parse(f"{field}:{value}"), mode="single", db=db)
+
+    @given(
+        field=st.sampled_from(_ENUM_FIELDS),
+        suffix=st.text(
+            alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_enum_wildcard_always_rejected(self, field: str, suffix: str) -> None:
+        db = _ENUM_DBS[field]
+        ast = parse(f"{field}:{suffix}*")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=db)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+    @given(
+        value=st.integers(min_value=0, max_value=1_000_000),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_number_digit_value_accepted(self, value: int) -> None:
+        validate(parse(f"sequence_length:{value}"), mode="single", db=DbPortalDb.trad)
+
+    @given(
+        low=st.integers(min_value=0, max_value=500_000),
+        high=st.integers(min_value=0, max_value=1_000_000),
+    )
+    @settings(max_examples=40, deadline=None)
+    def test_number_range_digit_accepted(self, low: int, high: int) -> None:
+        validate(
+            parse(f"sequence_length:[{low} TO {high}]"),
+            mode="single",
+            db=DbPortalDb.trad,
+        )
+
+    @given(
+        value=st.text(
+            alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_number_non_digit_rejected(self, value: str) -> None:
+        ast = parse(f"sequence_length:{value}")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="single", db=DbPortalDb.trad)
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+    @given(field=st.sampled_from(sorted(set(_ENUM_FIELDS) | {"sequence_length"})))
+    @settings(max_examples=20, deadline=None)
+    def test_any_tier3_rejected_in_cross_mode(self, field: str) -> None:
+        """全 Tier 3 (enum + number) は cross mode で reject される (SRA subtype や DB 関係なく)."""
+        dsl = f"{field}:val" if field != "sequence_length" else f"{field}:100"
+        ast = parse(dsl)
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert exc_info.value.type == ErrorType.field_not_available_in_cross_db

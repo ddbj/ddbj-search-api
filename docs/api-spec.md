@@ -642,6 +642,7 @@ db-portal フロントエンド専用の統合検索エンドポイント。`/en
 - AP5 (完了): 横断 count-only を `asyncio.create_task` + `asyncio.wait(ALL_COMPLETED)` で並列 fan-out、per-backend timeout (ES 10s / ARSA 15s / TXSearch 5s) + 全体 20s を適用
 - AP3 (完了): Advanced Search DSL パーサ (Lark LALR(1)) で `adv` を有効化。ES 6 DB + ARSA + TXSearch の 8 DB 全対応。DSL 実装は `ddbj_search_api/search/dsl/*` (grammar / ast / allowlist / errors / parser / validator / compiler_es / compiler_solr / serde)
 - AP7 (完了): DSL → GUI 逆パーサ `GET /db-portal/parse?adv=...` を追加。AP3 の `serde.ast_to_json` を endpoint 経由で公開し、共有 URL (`?adv=...`) から Advanced Search GUI の state を復元できるようにする
+- AP6 (完了): Tier 2 (submitter / publication) + Tier 3 (DB 別 25 unique / per-DB 集計 28) を allowlist に追加。`FieldType` に `enum` / `number` を追加、`_ES_FIELD_STRATEGY` で `flat` / `or_flat` / `nested` / `nested2` の 4 pattern に分岐。`DbPortalHit` の `extra="allow"` を撤去し、`type` discriminator を持つ discriminated union 8 variant に明示型化 (A1-3 完全履行)。横断モードでの Tier 3 は 400 `field-not-available-in-cross-db` (候補 DB 列挙 detail) で拒否
 
 #### `GET /db-portal/search`
 
@@ -659,24 +660,46 @@ db-portal フロントエンド専用の統合検索エンドポイント。`/en
 
 `q` と `adv` の同時指定は 400 (`invalid-query-combination`)。
 
-##### Advanced Search DSL (AP3)
+##### Advanced Search DSL (AP3 + AP6)
 
 - **文法** (Lark LALR(1), Lucene サブセット、実装は `ddbj_search_api/search/dsl/grammar.lark`):
   - `field:value` / `field:"phrase"` / `field:[a TO b]` / `field:value*` / `field:value?`
   - `AND` / `OR` / `NOT` (大文字必須)、優先度 `AND > OR`、`(...)` でグルーピング
   - 非対応構文 (boost `^` / fuzzy `~` / 正規表現 `/.../`) は構文エラー (`unexpected-token`)
   - ネスト深さ上限 5 (`dsl_max_depth`)、DSL 長さ上限 4096 文字 (`dsl_max_length`) 超過は `unexpected-token`
-- **フィールド allowlist (AP3 は Tier 1 の 8 個のみ対応、Tier 2/3 は AP6 で追加予定)**:
-  - 識別子: `identifier` (`eq` / `wildcard`)
-  - テキスト: `title` / `description` (`contains` / `wildcard`)
-  - 生物種: `organism` (`eq` — ES 側で `organism.name` / `organism.identifier` の OR 展開)
-  - 日付: `date_published` / `date_modified` / `date_created` (`eq` / `between`)
-  - 日付エイリアス: `date` (ES 側で 3 日付フィールドの OR 展開、ARSA は `Date` に集約、TXSearch は degenerate)
-  - 許容外フィールドは 400 `unknown-field`、Tier 1 対象外の演算子組み合わせは 400 `invalid-operator-for-field`
+- **フィールド allowlist (Tier 1/2/3)**: AP3 で Tier 1 (8 field)、AP6 で Tier 2 (2 field) + Tier 3 (25 unique / per-DB 集計 28) を追加。横断 (cross) モードで Tier 3 を使うと 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)。
+  - **Tier 1 (横断可)**:
+    - 識別子: `identifier` (`eq` / `wildcard`)
+    - テキスト: `title` / `description` (`contains` / `wildcard`)
+    - 生物種: `organism` (`eq` — ES 側で `organism.name` / `organism.identifier` の OR 展開)
+    - 日付: `date_published` / `date_modified` / `date_created` (`eq` / `between`)
+    - 日付エイリアス: `date` (ES 側で 3 日付フィールドの OR 展開、ARSA は `Date` に集約、TXSearch は degenerate)
+  - **Tier 2 (横断可、AP6 で追加、converter 正規化済の共通 field)**:
+    - `submitter` (text; ES nested on `organization.name`、ARSA/TXSearch degenerate)
+    - `publication` (identifier; ES nested on `publication.id`、ARSA は `ReferencePubmedID`、TXSearch degenerate)
+  - **Tier 3 (単一 DB 指定必須、AP6 で追加)**:
+    - BioProject (2): `project_type` (enum={BioProject, UmbrellaBioProject} → `objectType`)、`grant_agency` (text, 2 段 nested `grant → grant.agency.name`)
+    - SRA (5、実質 sra-experiment のみヒット): `library_strategy` / `library_source` / `library_layout` / `platform` (enum)、`instrument_model` (text)
+    - JGA (2、実質 jga-study のみヒット): `study_type` (enum)、`grant_agency` (text; BioProject と共通)
+    - GEA (1): `experiment_type` (text)
+    - MetaboBank (3): `study_type` / `experiment_type` / `submission_type` (text)
+    - Trad / ARSA (5): `division` / `molecular_type` (enum)、`sequence_length` (number; range + eq)、`feature_gene_name` / `reference_journal` (text)
+    - Taxonomy / TXSearch (10): `rank` (enum)、`lineage` / `kingdom` / `phylum` / `class` / `order` / `family` / `genus` / `species` / `common_name` (text)。`japanese_name` は staging TXSearch の schema に不在のため AP6.5 送り
+  - 許容外フィールドは 400 `unknown-field`、型と演算子の非互換は 400 `invalid-operator-for-field`
+- **演算子マトリクス** (型 → 許容演算子):
+  - `identifier`: `eq` / `wildcard`
+  - `text`: `contains` / `wildcard`
+  - `organism`: `eq`
+  - `date`: `eq` / `between`
+  - `enum` (AP6): `eq` (word / phrase、phrase は空白含み値 e.g. `"VIRAL RNA"` 用)
+  - `number` (AP6): `eq` / `between` (digit のみ、非 digit は `invalid-operator-for-field` に流用)
+  - GUI の `not_equals` は `NOT field:value` で表現 (Operator Literal 拡張なし、A6 plan §14)
+  - GUI の `starts_with` は wildcard `value*` で表現
 - **バックエンド変換**:
-  - ES: AST → `bool` クエリ (`term` / `match_phrase` / `wildcard` / `range`)
-  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、`date_modified`/`date_created`/`date` は `(-*:*)` に degenerate、`uf` で allowlist 制御)
-  - TXSearch: AST → edismax `q` 文字列 (フィールド名マッピング、`organism`/`date_*` は `(-*:*)` に degenerate、`uf` で allowlist 制御)
+  - ES: `_ES_FIELD_STRATEGY` で `flat` / `or_flat` / `nested` / `nested2` の 4 pattern に分岐。AP6 では `submitter` / `publication` が nested、`grant_agency` が 2 段 nested (`grant` → `grant.agency` → `match_phrase(grant.agency.name)`)、その他 Tier 3 は flat
+  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、number range はそのまま、対応外 field は `(-*:*)` degenerate、`uf` で allowlist 制御)
+  - TXSearch: AST → edismax `q` 文字列 (Tier 1 + Taxonomy Tier 3 のみ対応、他は `(-*:*)` degenerate、`uf` で allowlist 制御)
+- **横断モードでの Tier 3 拒否** (AP6 で発動): 400 `field-not-available-in-cross-db`、detail に候補 DB を列挙 (例: `field 'library_strategy' is only available in single-DB mode at column 1. use db=sra.`)
 - **エラー位置情報**: `ProblemDetails` スキーマは無変更、`detail` 文字列に自然言語で `at column N (length M)` を埋め込む (source.md §AP1 決定準拠、機械判別は type URI slug のみ)
 
 例:
@@ -767,9 +790,26 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 
 - `total`: マッチ総件数 (`track_total_hits=true`)
 - `hardLimitReached`: `total >= 10000` のとき `true` (Solr 10,000 件上限と統一)
-- `hits`: `DbPortalHit` の配列。共通フィールド (`identifier`, `type`, `title`, `description`, `organism`, `datePublished`, `url`, `sameAs`, `dbXrefs`) を返す。DB 別の追加フィールドは `extra="allow"` で透過
+- `hits`: `DbPortalHit` discriminated union (8 variant、`type` が discriminator) の配列。AP1 の `extra="allow"` は AP6 で撤去 (A1-3 完全履行)、converter 側の新 field は silently drop (`extra="ignore"`)
 - `page` / `perPage`: offset mode で指定値。cursor mode では `page` が `null`
 - `nextCursor` / `hasNext`: 既存 cursor ページネーションと同じ方式 (HMAC 署名、プロセス再起動で失効)
+
+**DbPortalHit 8 variant** (AP6 で明示型化):
+
+| variant | `type` 値 | DB 別追加 field |
+|---------|-----------|----------------|
+| `DbPortalHitBioProject` | `bioproject` | `projectType` (Literal: BioProject / UmbrellaBioProject) / `organization` / `publication` / `grant` / `externalLink` |
+| `DbPortalHitBioSample` | `biosample` | `organization` / `package` / `model` |
+| `DbPortalHitSra` | `sra-submission` / `sra-study` / `sra-experiment` / `sra-run` / `sra-sample` / `sra-analysis` | `organization` / `publication` / `libraryStrategy` / `librarySource` / `librarySelection` / `libraryLayout` / `platform` / `instrumentModel` / `analysisType` (subtype により一部 `null`) |
+| `DbPortalHitJga` | `jga-study` / `jga-dataset` / `jga-dac` / `jga-policy` | `organization` / `publication` / `grant` / `externalLink` / `studyType` / `datasetType` / `vendor` |
+| `DbPortalHitGea` | `gea` | `organization` / `publication` / `experimentType` |
+| `DbPortalHitMetabobank` | `metabobank` | `organization` / `publication` / `studyType` / `experimentType` / `submissionType` |
+| `DbPortalHitTrad` | `trad` | `division` / `molecularType` / `sequenceLength` |
+| `DbPortalHitTaxonomy` | `taxonomy` | `rank` / `commonName` / `japaneseName` / `lineage` |
+
+共通フィールド (全 variant の base `DbPortalHitBase`): `identifier` / `title` / `description` / `organism` / `datePublished` / `dateModified` / `dateCreated` / `url` / `sameAs` / `dbXrefs` / `status` (Literal: public / private / suppressed / withdrawn) / `accessibility` (Literal: public-access / controlled-access)
+
+OpenAPI schema では `DbPortalHit` が `oneOf` 8 member として表現される。db-portal 側は `openapi-typescript` で TypeScript discriminated union に展開可能。
 
 **AP1 注意**: `dbXrefs` は AP1 時点で DuckDB 注入しない (ES `_source.dbXrefs` があればそのまま返す、無ければ `null`)。UI 向け dbXrefs 統合は将来の phase で検討する。
 
@@ -789,7 +829,7 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 | `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は offset-only)。`adv` + `cursor` + `db=trad/taxonomy` もこちらを優先 | — |
 | `unexpected-token` | 400 | DSL 構文エラー (非対応構文 / 過長 DSL / 空入力 含む) | AP3 |
 | `unknown-field` | 400 | allowlist 外フィールド。`detail` に column 位置と候補一覧を埋め込み | AP3 |
-| `field-not-available-in-cross-db` | 400 | 横断モードで Tier 3 フィールド使用 (AP6 で有効化予定、AP3 時点では Tier 3 未定義のため発動せず) | AP3 |
+| `field-not-available-in-cross-db` | 400 | 横断モードで Tier 3 フィールド使用。`detail` に候補 DB を列挙 (例: `use db=sra or db=gea`) | AP3 enum + AP6 発動 |
 | `invalid-date-format` | 400 | `YYYY-MM-DD` 以外、実在しない日付 | AP3 |
 | `invalid-operator-for-field` | 400 | フィールド型と演算子の非互換 (例: `date:cancer*`, `identifier:[a TO b]`) | AP3 |
 | `nest-depth-exceeded` | 400 | AND/OR/NOT ネスト深さ > 5 (`dsl_max_depth`) | AP3 |

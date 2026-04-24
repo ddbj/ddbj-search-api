@@ -1,16 +1,20 @@
 """Solr response mappers for ARSA (Trad) and TXSearch (NCBI Taxonomy).
 
-Convert raw Solr ``/select`` JSON to the unified ``DbPortalHit`` /
-``DbPortalHitsResponse`` shapes consumed by ``/db-portal/search``.
+Convert raw Solr ``/select`` JSON to the unified ``DbPortalHit`` discriminated
+union (AP6) and ``DbPortalHitsResponse`` envelope consumed by ``/db-portal/search``.
 Mappers are pure; missing fields map to ``None`` rather than raising so
-that ARSA schema drift does not propagate to 500 responses.
+that ARSA / TXSearch schema drift does not propagate to 500 responses.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ddbj_search_api.schemas.db_portal import DbPortalHit, DbPortalHitsResponse
+from ddbj_search_api.schemas.db_portal import (
+    DbPortalHit,
+    DbPortalHitsResponse,
+    _DbPortalHitAdapter,
+)
 
 _DEEP_PAGING_LIMIT = 10_000
 _ARSA_URL_PREFIX = "https://getentry.ddbj.nig.ac.jp/getentry/na/"
@@ -78,6 +82,18 @@ def _txsearch_description(
     return _join_nonempty([common_str, rank_str, lineage_part])
 
 
+def _to_int_or_none(value: Any) -> int | None:
+    """Safe int cast: str/int → int, anything else (including list) → None.
+
+    ARSA の SequenceLength は doc で string ("5000") or int (5000) のケースがあるため。
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
 def arsa_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
     hits: list[DbPortalHit] = []
     for doc in docs:
@@ -97,10 +113,11 @@ def arsa_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "url": f"{_ARSA_URL_PREFIX}{acc}/" if acc else None,
             "sameAs": None,
             "dbXrefs": None,
+            "division": doc.get("Division"),
+            "molecularType": doc.get("MolecularType"),
+            "sequenceLength": _to_int_or_none(doc.get("SequenceLength")),
         }
-        if "Division" in doc and doc["Division"] is not None:
-            payload["division"] = doc["Division"]
-        hits.append(DbPortalHit.model_validate(payload))
+        hits.append(_DbPortalHitAdapter.validate_python(payload))
     return hits
 
 
@@ -131,16 +148,12 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}" if tax_id else None,
             "sameAs": None,
             "dbXrefs": None,
+            "rank": doc.get("rank"),
+            "commonName": _first_or_self(doc.get("common_name")),
+            "japaneseName": _first_or_self(doc.get("japanese_name")),
+            "lineage": doc.get("lineage"),
         }
-        if "rank" in doc and doc["rank"] is not None:
-            payload["rank"] = doc["rank"]
-        common_scalar = _first_or_self(doc.get("common_name"))
-        if common_scalar is not None:
-            payload["commonName"] = common_scalar
-        japanese_scalar = _first_or_self(doc.get("japanese_name"))
-        if japanese_scalar is not None:
-            payload["japaneseName"] = japanese_scalar
-        hits.append(DbPortalHit.model_validate(payload))
+        hits.append(_DbPortalHitAdapter.validate_python(payload))
     return hits
 
 

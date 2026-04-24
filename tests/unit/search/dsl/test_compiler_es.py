@@ -16,6 +16,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import parse
 from ddbj_search_api.search.dsl.compiler_es import compile_to_es
 from ddbj_search_api.search.dsl.validator import validate
@@ -24,6 +25,13 @@ from ddbj_search_api.search.dsl.validator import validate
 def _compile(dsl: str) -> dict[str, Any]:
     ast = parse(dsl)
     validate(ast, mode="cross")
+    return compile_to_es(ast)
+
+
+def _compile_single(dsl: str, db: DbPortalDb = DbPortalDb.bioproject) -> dict[str, Any]:
+    """Tier 3 field (single mode required) を compile するヘルパ."""
+    ast = parse(dsl)
+    validate(ast, mode="single", db=db)
     return compile_to_es(ast)
 
 
@@ -226,3 +234,179 @@ class TestCompilerPBT:
         q = _compile(f"title:a {op} title:b")
         expected_key = "must" if op == "AND" else "should"
         assert expected_key in q["bool"]
+
+
+# === AP6: Tier 2 nested queries ===
+
+
+class TestTier2Submitter:
+    def test_submitter_word(self) -> None:
+        assert _compile('submitter:"Tokyo University"') == {
+            "nested": {
+                "path": "organization",
+                "query": {"match_phrase": {"organization.name": "Tokyo University"}},
+            },
+        }
+
+    def test_submitter_phrase(self) -> None:
+        assert _compile('submitter:"National Institute"') == {
+            "nested": {
+                "path": "organization",
+                "query": {"match_phrase": {"organization.name": "National Institute"}},
+            },
+        }
+
+    def test_submitter_wildcard(self) -> None:
+        assert _compile("submitter:Tok*") == {
+            "nested": {
+                "path": "organization",
+                "query": {"wildcard": {"organization.name": "Tok*"}},
+            },
+        }
+
+
+class TestTier2Publication:
+    def test_publication_word(self) -> None:
+        assert _compile("publication:12345678") == {
+            "nested": {
+                "path": "publication",
+                "query": {"term": {"publication.id": "12345678"}},
+            },
+        }
+
+    def test_publication_wildcard(self) -> None:
+        assert _compile("publication:123*") == {
+            "nested": {
+                "path": "publication",
+                "query": {"wildcard": {"publication.id": "123*"}},
+            },
+        }
+
+
+# === AP6: Tier 3 flat queries ===
+
+
+class TestTier3FlatEnum:
+    @pytest.mark.parametrize(
+        ("dsl", "db", "es_field", "value"),
+        [
+            ("project_type:BioProject", DbPortalDb.bioproject, "objectType", "BioProject"),
+            ("library_strategy:WGS", DbPortalDb.sra, "libraryStrategy", "WGS"),
+            ("library_source:GENOMIC", DbPortalDb.sra, "librarySource", "GENOMIC"),
+            ("library_layout:SINGLE", DbPortalDb.sra, "libraryLayout", "SINGLE"),
+            ("platform:ILLUMINA", DbPortalDb.sra, "platform", "ILLUMINA"),
+            ("study_type:Cohort", DbPortalDb.jga, "studyType", "Cohort"),
+        ],
+    )
+    def test_enum_eq(self, dsl: str, db: DbPortalDb, es_field: str, value: str) -> None:
+        assert _compile_single(dsl, db) == {"term": {es_field: value}}
+
+    def test_enum_phrase_with_spaces(self) -> None:
+        """enum value に空白を含む場合 (VIRAL RNA) は phrase 経由."""
+        assert _compile_single('library_source:"VIRAL RNA"', DbPortalDb.sra) == {
+            "term": {"librarySource": "VIRAL RNA"},
+        }
+
+
+class TestTier3FlatText:
+    @pytest.mark.parametrize(
+        ("dsl", "db", "es_field"),
+        [
+            ("instrument_model:NovaSeq", DbPortalDb.sra, "instrumentModel"),
+            ("experiment_type:ChIP-Seq", DbPortalDb.gea, "experimentType"),
+            ("submission_type:metabolite", DbPortalDb.metabobank, "submissionType"),
+        ],
+    )
+    def test_text_match_phrase(self, dsl: str, db: DbPortalDb, es_field: str) -> None:
+        value = dsl.split(":", 1)[1].strip('"')
+        assert _compile_single(dsl, db) == {"match_phrase": {es_field: value}}
+
+
+class TestTier3GrantAgencyNested2:
+    def test_grant_agency_word_two_level_nested(self) -> None:
+        assert _compile_single("grant_agency:JSPS", DbPortalDb.bioproject) == {
+            "nested": {
+                "path": "grant",
+                "query": {
+                    "nested": {
+                        "path": "grant.agency",
+                        "query": {"match_phrase": {"grant.agency.name": "JSPS"}},
+                    },
+                },
+            },
+        }
+
+    def test_grant_agency_phrase(self) -> None:
+        assert _compile_single('grant_agency:"National Institutes"', DbPortalDb.jga) == {
+            "nested": {
+                "path": "grant",
+                "query": {
+                    "nested": {
+                        "path": "grant.agency",
+                        "query": {"match_phrase": {"grant.agency.name": "National Institutes"}},
+                    },
+                },
+            },
+        }
+
+
+class TestTier3NotEnum:
+    """GUI の not_equals 演算子は NOT FieldClause で表現される (Operator Literal 拡張なし)."""
+
+    def test_not_platform(self) -> None:
+        assert _compile_single("NOT platform:ILLUMINA", DbPortalDb.sra) == {
+            "bool": {"must_not": [{"term": {"platform": "ILLUMINA"}}]},
+        }
+
+    def test_not_nested_submitter(self) -> None:
+        assert _compile('NOT submitter:"Xyz Labs"') == {
+            "bool": {
+                "must_not": [
+                    {
+                        "nested": {
+                            "path": "organization",
+                            "query": {"match_phrase": {"organization.name": "Xyz Labs"}},
+                        },
+                    },
+                ],
+            },
+        }
+
+
+class TestTier3BoolCombinations:
+    def test_and_two_sra_enums(self) -> None:
+        assert _compile_single("library_strategy:WGS AND platform:ILLUMINA", DbPortalDb.sra) == {
+            "bool": {
+                "must": [
+                    {"term": {"libraryStrategy": "WGS"}},
+                    {"term": {"platform": "ILLUMINA"}},
+                ],
+            },
+        }
+
+    def test_or_two_platforms(self) -> None:
+        assert _compile_single("platform:ILLUMINA OR platform:PACBIO_SMRT", DbPortalDb.sra) == {
+            "bool": {
+                "should": [
+                    {"term": {"platform": "ILLUMINA"}},
+                    {"term": {"platform": "PACBIO_SMRT"}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
+
+    def test_tier2_with_tier1(self) -> None:
+        """Tier 2 nested と Tier 1 leaf を AND 結合."""
+        assert _compile("submitter:DDBJ AND title:cancer") == {
+            "bool": {
+                "must": [
+                    {
+                        "nested": {
+                            "path": "organization",
+                            "query": {"match_phrase": {"organization.name": "DDBJ"}},
+                        },
+                    },
+                    {"match_phrase": {"title": "cancer"}},
+                ],
+            },
+        }

@@ -7823,10 +7823,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Advanced Search DSL (AP3).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 allowlist: ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date`` (OR-alias of the three date fields).  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``invalid-date-format`` / etc.).",
+              "description": "Advanced Search DSL (AP3 + AP6).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
               "title": "Adv"
             },
-            "description": "Advanced Search DSL (AP3).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 allowlist: ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date`` (OR-alias of the three date fields).  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``invalid-date-format`` / etc.)."
+            "description": "Advanced Search DSL (AP3 + AP6).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
           },
           {
             "name": "db",
@@ -9361,6 +9361,31 @@
         ],
         "title": "BioSamplePackage"
       },
+      "BioSamplePackageOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BioSamplePackageOut",
+        "description": "BioSample package metadata."
+      },
       "BulkFormat": {
         "type": "string",
         "enum": [
@@ -9646,17 +9671,12 @@
         "title": "DbPortalDb",
         "description": "Database identifier for db-portal search (8 values)."
       },
-      "DbPortalHit": {
+      "DbPortalHitBioProject": {
         "properties": {
           "identifier": {
             "type": "string",
             "title": "Identifier",
             "description": "Entry identifier."
-          },
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "description": "Entry type (e.g. 'bioproject', 'sra-study')."
           },
           "title": {
             "anyOf": [
@@ -9684,12 +9704,13 @@
           },
           "organism": {
             "anyOf": [
-              {},
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
               {
                 "type": "null"
               }
             ],
-            "title": "Organism",
             "description": "Organism information."
           },
           "datePublished": {
@@ -9703,6 +9724,30 @@
             ],
             "title": "Datepublished",
             "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
           },
           "url": {
             "anyOf": [
@@ -9719,7 +9764,9 @@
           "sameAs": {
             "anyOf": [
               {
-                "items": {},
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
                 "type": "array"
               },
               {
@@ -9727,12 +9774,14 @@
               }
             ],
             "title": "Sameas",
-            "description": "Equivalent identifiers (from ES _source)."
+            "description": "Equivalent identifiers."
           },
           "dbXrefs": {
             "anyOf": [
               {
-                "items": {},
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
                 "type": "array"
               },
               {
@@ -9740,17 +9789,1771 @@
               }
             ],
             "title": "Dbxrefs",
-            "description": "Cross-references.  In AP1 this passes through ES _source only (DuckDB enrichment is deferred)."
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "const": "bioproject",
+            "title": "Type",
+            "description": "Hit type discriminator."
+          },
+          "objectType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "BioProject",
+                  "UmbrellaBioProject"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objecttype",
+            "description": "Umbrella vs regular BioProject."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PublicationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication"
+          },
+          "grant": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GrantOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant"
+          },
+          "externalLink": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExternalLinkOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Externallink"
           }
         },
-        "additionalProperties": true,
         "type": "object",
         "required": [
           "identifier",
           "type"
         ],
-        "title": "DbPortalHit",
-        "description": "A single hit in the DB-specific search response.\n\n``extra=\"allow\"`` keeps DB-specific ``_source`` fields intact so the\nresponse can evolve without schema churn."
+        "title": "DbPortalHitBioProject",
+        "description": "BioProject hit (AP6)."
+      },
+      "DbPortalHitBioSample": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "const": "biosample",
+            "title": "Type",
+            "description": "Hit type discriminator."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BioSamplePackageOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitBioSample",
+        "description": "BioSample hit (AP6)."
+      },
+      "DbPortalHitGea": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "const": "gea",
+            "title": "Type",
+            "description": "Hit type discriminator."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PublicationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication"
+          },
+          "experimentType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experimenttype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitGea",
+        "description": "GEA hit (AP6)."
+      },
+      "DbPortalHitJga": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "jga-study",
+              "jga-dataset",
+              "jga-dac",
+              "jga-policy"
+            ],
+            "title": "Type",
+            "description": "Hit type discriminator (4 JGA entity types)."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PublicationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication"
+          },
+          "grant": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GrantOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant"
+          },
+          "externalLink": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExternalLinkOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Externallink"
+          },
+          "studyType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Studytype"
+          },
+          "datasetType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasettype"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitJga",
+        "description": "JGA hit (AP6). 4 subtype; subtype-specific fields are optional.\n\n``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` / ``jga-policy``.\nstudy_type / grant / publication は jga-study のみ、dataset_type は jga-dataset のみ。"
+      },
+      "DbPortalHitMetabobank": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Type",
+            "description": "Hit type discriminator."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PublicationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication"
+          },
+          "studyType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Studytype"
+          },
+          "experimentType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experimenttype"
+          },
+          "submissionType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submissiontype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitMetabobank",
+        "description": "MetaboBank hit (AP6)."
+      },
+      "DbPortalHitSra": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "sra-submission",
+              "sra-study",
+              "sra-experiment",
+              "sra-run",
+              "sra-sample",
+              "sra-analysis"
+            ],
+            "title": "Type",
+            "description": "Hit type discriminator (6 SRA entity types)."
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PublicationOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication"
+          },
+          "libraryStrategy": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarystrategy"
+          },
+          "librarySource": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarysource"
+          },
+          "librarySelection": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryselection"
+          },
+          "libraryLayout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarylayout"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "instrumentModel": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrumentmodel"
+          },
+          "analysisType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysistype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitSra",
+        "description": "SRA hit (AP6). 6 subtype in a single variant; subtype-specific fields are optional.\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``. library_* / platform /\ninstrument_model は sra-experiment のみ、analysis_type は sra-analysis のみ\n実値が入る。他 subtype では ``None``。"
+      },
+      "DbPortalHitTaxonomy": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "const": "taxonomy",
+            "title": "Type",
+            "description": "Hit type discriminator."
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "commonName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commonname"
+          },
+          "japaneseName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Japanesename"
+          },
+          "lineage": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lineage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitTaxonomy",
+        "description": "Taxonomy (TXSearch-backed) hit (AP6).\n\n``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist への追加は AP6.5\n(staging TXSearch の schema luke で field 不在を確認済、plan §リスク #6)。"
+      },
+      "DbPortalHitTrad": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "sameAs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sameas",
+            "description": "Equivalent identifiers."
+          },
+          "dbXrefs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XrefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbxrefs",
+            "description": "Cross-references."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "type": {
+            "type": "string",
+            "const": "trad",
+            "title": "Type",
+            "description": "Hit type discriminator."
+          },
+          "division": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Division"
+          },
+          "molecularType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moleculartype"
+          },
+          "sequenceLength": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequencelength"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalHitTrad",
+        "description": "Trad (ARSA-backed) hit (AP6)."
       },
       "DbPortalHitsResponse": {
         "properties": {
@@ -9761,11 +11564,57 @@
           },
           "hits": {
             "items": {
-              "$ref": "#/components/schemas/DbPortalHit"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/DbPortalHitBioProject"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitBioSample"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitSra"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitJga"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitGea"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitMetabobank"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitTrad"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalHitTaxonomy"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "bioproject": "#/components/schemas/DbPortalHitBioProject",
+                  "biosample": "#/components/schemas/DbPortalHitBioSample",
+                  "gea": "#/components/schemas/DbPortalHitGea",
+                  "jga-dac": "#/components/schemas/DbPortalHitJga",
+                  "jga-dataset": "#/components/schemas/DbPortalHitJga",
+                  "jga-policy": "#/components/schemas/DbPortalHitJga",
+                  "jga-study": "#/components/schemas/DbPortalHitJga",
+                  "metabobank": "#/components/schemas/DbPortalHitMetabobank",
+                  "sra-analysis": "#/components/schemas/DbPortalHitSra",
+                  "sra-experiment": "#/components/schemas/DbPortalHitSra",
+                  "sra-run": "#/components/schemas/DbPortalHitSra",
+                  "sra-sample": "#/components/schemas/DbPortalHitSra",
+                  "sra-study": "#/components/schemas/DbPortalHitSra",
+                  "sra-submission": "#/components/schemas/DbPortalHitSra",
+                  "taxonomy": "#/components/schemas/DbPortalHitTaxonomy",
+                  "trad": "#/components/schemas/DbPortalHitTrad"
+                }
+              }
             },
             "type": "array",
             "title": "Hits",
-            "description": "Search hits."
+            "description": "Search hits (oneOf 8 DB variants)."
           },
           "hardLimitReached": {
             "type": "boolean",
@@ -10258,6 +12107,25 @@
         ],
         "title": "ExternalLink"
       },
+      "ExternalLinkOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "label"
+        ],
+        "title": "ExternalLinkOut",
+        "description": "External link (BioProject / JGA)."
+      },
       "FacetBucket": {
         "properties": {
           "value": {
@@ -10397,6 +12265,42 @@
           "agency"
         ],
         "title": "Grant"
+      },
+      "GrantOut": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "agency": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationOut"
+            },
+            "type": "array",
+            "title": "Agency"
+          }
+        },
+        "type": "object",
+        "title": "GrantOut",
+        "description": "Grant information (nested, agency is nested-of-nested)."
       },
       "JGA": {
         "properties": {
@@ -11080,6 +12984,37 @@
         ],
         "title": "Organism"
       },
+      "OrganismOut": {
+        "properties": {
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier",
+            "description": "NCBI Taxonomy ID."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Scientific / common organism name."
+          }
+        },
+        "type": "object",
+        "title": "OrganismOut",
+        "description": "Organism information (common across all DB variants)."
+      },
       "Organization": {
         "properties": {
           "name": {
@@ -11163,6 +13098,91 @@
         },
         "type": "object",
         "title": "Organization"
+      },
+      "OrganizationOut": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "abbreviation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbreviation"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "participant",
+                  "submitter",
+                  "broker"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "organizationType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "institute",
+                  "center",
+                  "consortium",
+                  "lab"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizationtype"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "title": "OrganizationOut",
+        "description": "Submitting organization (nested in BioProject / BioSample / SRA / JGA / GEA / MetaboBank)."
       },
       "Pagination": {
         "properties": {
@@ -11361,6 +13381,86 @@
         },
         "type": "object",
         "title": "Publication"
+      },
+      "PublicationOut": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Publication ID (PubMed / DOI / PMC)."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "dbType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pubmed",
+                  "doi",
+                  "pmc",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dbtype"
+          }
+        },
+        "type": "object",
+        "title": "PublicationOut",
+        "description": "Related publication (nested)."
       },
       "SRA": {
         "properties": {
@@ -12264,6 +14364,30 @@
           "url"
         ],
         "title": "Xref"
+      },
+      "XrefOut": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type",
+          "url"
+        ],
+        "title": "XrefOut",
+        "description": "Cross-reference entry (dbXrefs / sameAs).\n\nconverter 側 XrefType は 22 値 Literal だが、API 側は str で緩く受ける\n(converter の XrefType 拡張時に API を同期せずとも動くようにする)。"
       }
     }
   },

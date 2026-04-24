@@ -602,10 +602,20 @@ class TestDbPortalCursorPBT:
         db: str,
         per_page: int,
     ) -> None:
+        # AP6: DbPortalHit discriminated union の type は subtype 付き (sra-study など)
+        db_to_type = {
+            "sra": "sra-study",
+            "jga": "jga-study",
+            "bioproject": "bioproject",
+            "biosample": "biosample",
+            "gea": "gea",
+            "metabobank": "metabobank",
+        }
+        source_type = db_to_type[db]
         hits: list[dict[str, Any]] = [
             {
                 "_id": f"DOC{i}",
-                "_source": {"identifier": f"DOC{i}", "type": db},
+                "_source": {"identifier": f"DOC{i}", "type": source_type},
                 "sort": [f"2024-01-{i + 1:02d}", f"DOC{i}"],
             }
             for i in range(per_page)
@@ -1618,3 +1628,236 @@ class TestDbPortalAdvValidDispatch:
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.invalid_query_combination.value
+
+
+# === AP6: Tier 2 / Tier 3 end-to-end ===
+
+
+class TestDbPortalAdvTier2Tier3:
+    """AP6 Tier 2 (submitter / publication) と Tier 3 (DB 別 28 per-DB) の
+    cross-mode 拒否と single-mode 成功、nested query 発行を検証。
+    """
+
+    def test_tier3_in_cross_mode_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """Tier 3 x cross mode は field-not-available-in-cross-db で 400 (AP6 で初発動)."""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "library_strategy:WGS"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.field_not_available_in_cross_db.value
+
+    def test_tier3_cross_mode_detail_includes_single_db_hint(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """detail 文字列に候補 DB 列挙 (use db=sra)。"""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "library_strategy:WGS"},
+        )
+        body = resp.json()
+        assert "use db=sra" in body["detail"]
+
+    def test_tier3_cross_mode_detail_lists_multiple_candidate_dbs(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """grant_agency は BioProject + JGA 共通 → 両方列挙."""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": 'grant_agency:"NIH"'},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "use db=bioproject or db=jga" in body["detail"]
+
+    def test_tier3_taxonomy_cross_mode_rejected(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "rank:species"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.field_not_available_in_cross_db.value
+        assert "use db=taxonomy" in body["detail"]
+
+    def test_tier3_sra_single_mode_compiles_term_query(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """`library_strategy:WGS AND platform:ILLUMINA` + db=sra → ES term queries."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "adv": "library_strategy:WGS AND platform:ILLUMINA",
+                "db": "sra",
+            },
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        # compiled query が term + term の AND になっている
+        must = body["query"]["bool"]["must"]
+        assert {"term": {"libraryStrategy": "WGS"}} in must
+        assert {"term": {"platform": "ILLUMINA"}} in must
+
+    def test_tier3_bioproject_grant_agency_nested2(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """`grant_agency:JSPS` + db=bioproject → 2 段 nested query."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "grant_agency:JSPS", "db": "bioproject"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        # 期待形: nested(grant) → nested(grant.agency) → match_phrase(grant.agency.name)
+        outer = body["query"]
+        assert outer["nested"]["path"] == "grant"
+        inner = outer["nested"]["query"]
+        assert inner["nested"]["path"] == "grant.agency"
+        assert inner["nested"]["query"] == {"match_phrase": {"grant.agency.name": "JSPS"}}
+
+    def test_tier2_submitter_nested_query_to_es(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """Tier 2 submitter は cross mode で ES 単一 DB search にも nested で届く."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": 'submitter:"Tokyo University"', "db": "bioproject"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert body["query"] == {
+            "nested": {
+                "path": "organization",
+                "query": {"match_phrase": {"organization.name": "Tokyo University"}},
+            },
+        }
+
+    def test_tier2_cross_mode_fan_out_to_all_dbs(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        """Tier 2 submitter は cross mode で 8 DB fan-out される。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": 'submitter:"DDBJ"'},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
+
+    def test_tier3_taxonomy_rank_to_txsearch(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        """`rank:species` + db=taxonomy → TXSearch に q=rank:"species" が届く."""
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            docs=[
+                {"tax_id": "9606", "scientific_name": "Homo sapiens", "rank": "species"},
+            ],
+            num_found=1,
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "rank:species", "db": "taxonomy"},
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert 'rank:"species"' in params["q"]
+
+    def test_tier3_trad_division_to_arsa(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        """`division:BCT` + db=trad → ARSA に q=Division:"BCT" が届く."""
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "division:BCT", "db": "trad"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert 'Division:"BCT"' in params["q"]
+
+    def test_tier3_trad_sequence_length_range_to_arsa(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        """number range query が Solr range 構文で届く."""
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "sequence_length:[100 TO 5000]", "db": "trad"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert "SequenceLength:[100 TO 5000]" in params["q"]
+
+    def test_tier3_not_equals_compiled_to_must_not(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """GUI の not_equals は DSL の NOT FieldClause → ES must_not."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "NOT platform:ILLUMINA", "db": "sra"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert body["query"] == {
+            "bool": {"must_not": [{"term": {"platform": "ILLUMINA"}}]},
+        }
+
+    def test_tier3_unknown_field_still_rejected(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """GUI が送る可能性のない field (例: geo_loc_name、AP6.5 送り) は unknown-field."""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "geo_loc_name:Japan", "db": "biosample"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.unknown_field.value
+
+    def test_sra_number_non_digit_rejected_as_invalid_operator(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """number 型の非 digit 値は invalid_operator_for_field (new slug 不設けの方針)."""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "sequence_length:abc", "db": "trad"},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.invalid_operator_for_field.value

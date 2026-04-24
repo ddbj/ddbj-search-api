@@ -165,11 +165,7 @@ class TestDbPortalParseValidBool:
 
     def test_ssot_sample_nested(self, app_with_db_portal: TestClient) -> None:
         # SSOT search-backends.md L363-381 の完全サンプル。
-        dsl = (
-            'organism:"Homo sapiens" AND '
-            "date:[2020-01-01 TO 2024-12-31] AND "
-            "(title:cancer OR title:tumor)"
-        )
+        dsl = 'organism:"Homo sapiens" AND date:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)'
         resp = app_with_db_portal.get("/db-portal/parse", params={"adv": dsl})
         assert _ast(resp.json()) == {
             "op": "AND",

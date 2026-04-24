@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pydantic
 import pytest
 from fastapi import HTTPException
 from hypothesis import given
@@ -22,9 +23,11 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalCrossSearchResponse,
     DbPortalDb,
     DbPortalErrorType,
-    DbPortalHit,
+    DbPortalHitBase,
+    DbPortalHitBioProject,
     DbPortalHitsResponse,
     DbPortalQuery,
+    _DbPortalHitAdapter,
 )
 
 # === Enum tests ===
@@ -280,29 +283,56 @@ class TestDbPortalCrossSearchResponse:
 
 
 class TestDbPortalHit:
-    """DbPortalHit: hit entry with extra='allow'."""
+    """DbPortalHit: discriminated union dispatch via TypeAdapter (AP6).
 
-    def test_minimal(self) -> None:
-        h = DbPortalHit(identifier="PRJDB1", type="bioproject")
+    AP1 の ``extra="allow"`` は AP6 で撤去 (decisions.md §A1-3)。status /
+    accessibility 等は ``DbPortalHitBase`` に明示 field として定義されているため
+    pass-through 挙動は維持されるが、未定義の field は silently drop される。
+    """
+
+    def test_minimal_variant_instantiation(self) -> None:
+        # Union を直接インスタンス化はできないので、variant class を使う
+        h = DbPortalHitBioProject(identifier="PRJDB1", type="bioproject")
         assert h.identifier == "PRJDB1"
         assert h.type == "bioproject"
         assert h.title is None
 
-    def test_passes_through_unknown_fields(self) -> None:
-        h = DbPortalHit.model_validate(
+    def test_adapter_dispatches_to_bioproject(self) -> None:
+        h = _DbPortalHitAdapter.validate_python(
+            {"identifier": "PRJDB1", "type": "bioproject"},
+        )
+        assert isinstance(h, DbPortalHitBioProject)
+        assert h.identifier == "PRJDB1"
+        assert isinstance(h, DbPortalHitBase)
+
+    def test_status_and_accessibility_preserved_as_explicit_fields(self) -> None:
+        """AP6: status / accessibility は DbPortalHitBase の明示 field。"""
+        h = _DbPortalHitAdapter.validate_python(
             {
                 "identifier": "PRJDB1",
                 "type": "bioproject",
                 "status": "public",
-                "accessibility": "open",
-            }
+                "accessibility": "public-access",
+            },
         )
         dumped = h.model_dump(by_alias=True)
         assert dumped["status"] == "public"
-        assert dumped["accessibility"] == "open"
+        assert dumped["accessibility"] == "public-access"
+
+    def test_unknown_field_silently_ignored(self) -> None:
+        """AP6: extra="ignore" で converter 側の将来 field は silently drop。"""
+        h = _DbPortalHitAdapter.validate_python(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+                "some_new_field_in_ap7": "value",
+            },
+        )
+        dumped = h.model_dump(by_alias=True)
+        assert "some_new_field_in_ap7" not in dumped
 
     def test_date_published_alias(self) -> None:
-        h = DbPortalHit.model_validate(
+        h = _DbPortalHitAdapter.validate_python(
             {"identifier": "X", "type": "bioproject", "datePublished": "2024-01-15"},
         )
         assert h.date_published == "2024-01-15"
@@ -310,16 +340,34 @@ class TestDbPortalHit:
         assert dumped["datePublished"] == "2024-01-15"
 
     def test_same_as_and_db_xrefs_aliases(self) -> None:
-        h = DbPortalHit.model_validate(
+        h = _DbPortalHitAdapter.validate_python(
             {
                 "identifier": "X",
                 "type": "bioproject",
-                "sameAs": [{"identifier": "Y", "type": "bioproject"}],
-                "dbXrefs": [{"identifier": "Z", "type": "biosample"}],
+                "sameAs": [{"identifier": "Y", "type": "bioproject", "url": "https://example.com/Y"}],
+                "dbXrefs": [{"identifier": "Z", "type": "biosample", "url": "https://example.com/Z"}],
             },
         )
-        assert h.same_as == [{"identifier": "Y", "type": "bioproject"}]
-        assert h.db_xrefs == [{"identifier": "Z", "type": "biosample"}]
+        assert h.same_as is not None
+        assert h.same_as[0].identifier == "Y"
+        assert h.same_as[0].type == "bioproject"
+        assert h.db_xrefs is not None
+        assert h.db_xrefs[0].identifier == "Z"
+        assert h.db_xrefs[0].type == "biosample"
+        # serialize 時は alias "type" に戻る
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["sameAs"][0]["type"] == "bioproject"
+        assert dumped["dbXrefs"][0]["type"] == "biosample"
+
+    def test_missing_type_rejected(self) -> None:
+        """AP6: discriminator strict — type 欠損は ValidationError。"""
+        with pytest.raises(pydantic.ValidationError):
+            _DbPortalHitAdapter.validate_python({"identifier": "X"})
+
+    def test_unknown_type_rejected(self) -> None:
+        """AP6: discriminator strict — 未知 type は ValidationError。"""
+        with pytest.raises(pydantic.ValidationError):
+            _DbPortalHitAdapter.validate_python({"identifier": "X", "type": "xxx-unknown"})
 
 
 # === DbPortalHitsResponse ===

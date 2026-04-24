@@ -1,15 +1,19 @@
-"""AP3 DSL compiler for Solr edismax q string (Stage 3b).
+"""AP3 / AP6 DSL compiler for Solr edismax q string (Stage 3b).
 
-SSOT: search-backends.md §バックエンド変換 (L520, L542-543).
+SSOT: search-backends.md §バックエンド変換 (L520, L542-543, L560-575).
 
 Dialect:
-- ``arsa``: ARSA (Solr 4.4.0)、``PrimaryAccessionNumber`` / ``Definition`` /
-  ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``。``date_modified`` /
-  ``date_created`` / ``date``(エイリアス) は ARSA に対応フィールドがなく degenerate。
-- ``txsearch``: TXSearch (Solr 4.4.0)、``tax_id`` / ``scientific_name`` / ``text``。
-  organism 自体が Taxonomy のため ``organism`` と日付系は degenerate。
+- ``arsa``: ARSA (Solr 4.4.0)。Tier 1 (``PrimaryAccessionNumber`` / ``Definition`` /
+  ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + AP6 Tier 2 ``publication`` →
+  ``ReferencePubmedID`` + Trad Tier 3 (``Division`` / ``MolecularType`` / ``SequenceLength`` /
+  ``FeatureQualifier`` / ``ReferenceJournal``)。``date_modified`` / ``date_created`` /
+  ``date`` alias、submitter (organization は ARSA にない)、ES-only / Taxonomy 系 Tier 3 は degenerate。
+- ``txsearch``: TXSearch (Solr 4.4.0)。Tier 1 (``tax_id`` / ``scientific_name`` / ``text``) +
+  Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``common_name``; 10 field)。
+  organism 自体が Taxonomy のため ``organism`` + 日付 + Tier 2 + Trad/ES-only Tier 3 は degenerate。
+  ``japanese_name`` は staging TXSearch の schema に不在のため AP6.5 送り (現 allowlist 外)。
 
-degenerate は leaf を ``(-*:*)`` (no-match リテラル) に置換する。ツリー構造は維持する。
+degenerate は leaf を ``(-*:*)`` (no-match リテラル) に置換。ツリー構造は維持する。
 """
 
 from __future__ import annotations
@@ -22,22 +26,109 @@ from ddbj_search_api.search.phrase import escape_solr_phrase
 
 SolrDialect: TypeAlias = Literal["arsa", "txsearch"]
 
+# === ARSA (Trad) field map ===
+
 _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    # === Tier 1 (AP3) ===
     "identifier": ("PrimaryAccessionNumber",),
     "title": ("Definition",),
     "description": ("AllText",),
     "organism": ("Organism", "Lineage"),
     "date_published": ("Date",),
+    # === Tier 2 (AP6) ===
+    "publication": ("ReferencePubmedID",),
+    # submitter は ARSA に相当 field なし → _ARSA_UNAVAILABLE で degenerate
+    # === Tier 3 (AP6) Trad only ===
+    "division": ("Division",),
+    "molecular_type": ("MolecularType",),
+    "sequence_length": ("SequenceLength",),
+    "feature_gene_name": ("FeatureQualifier",),
+    "reference_journal": ("ReferenceJournal",),
 }
-_ARSA_UNAVAILABLE: frozenset[str] = frozenset({"date_modified", "date_created", "date"})
+
+_ARSA_UNAVAILABLE: frozenset[str] = frozenset(
+    {
+        # AP3: 日付 alias
+        "date_modified",
+        "date_created",
+        "date",
+        # AP6 Tier 2: ARSA に organization 相当 field なし
+        "submitter",
+        # AP6 Tier 3 (ES-only): BioProject / SRA / JGA / GEA / MetaboBank 系
+        "project_type",
+        "grant_agency",
+        "library_strategy",
+        "library_source",
+        "library_layout",
+        "platform",
+        "instrument_model",
+        "study_type",
+        "experiment_type",
+        "submission_type",
+        # AP6 Tier 3 (Taxonomy-only): TXSearch 系
+        "rank",
+        "lineage",
+        "kingdom",
+        "phylum",
+        "class",
+        "order",
+        "family",
+        "genus",
+        "species",
+        "common_name",
+    },
+)
+
+# === TXSearch (Taxonomy) field map ===
 
 _TXSEARCH_FIELD_MAP: dict[str, tuple[str, ...]] = {
+    # === Tier 1 (AP3) ===
     "identifier": ("tax_id",),
     "title": ("scientific_name",),
     "description": ("text",),
+    # === Tier 3 (AP6) Taxonomy ===
+    "rank": ("rank",),
+    "lineage": ("lineage",),
+    "kingdom": ("kingdom",),
+    "phylum": ("phylum",),
+    "class": ("class",),
+    "order": ("order",),
+    "family": ("family",),
+    "genus": ("genus",),
+    "species": ("species",),
+    "common_name": ("common_name",),
+    # japanese_name は staging TXSearch の schema luke で field 不在を確認済、AP6.5 送り
 }
+
 _TXSEARCH_UNAVAILABLE: frozenset[str] = frozenset(
-    {"organism", "date_published", "date_modified", "date_created", "date"},
+    {
+        # AP3: organism + 日付 (Taxonomy は日付概念なし、organism 自体が Taxonomy)
+        "organism",
+        "date_published",
+        "date_modified",
+        "date_created",
+        "date",
+        # AP6 Tier 2: TXSearch に organization / publication 相当 field なし
+        "submitter",
+        "publication",
+        # AP6 Tier 3 (ES-only)
+        "project_type",
+        "grant_agency",
+        "library_strategy",
+        "library_source",
+        "library_layout",
+        "platform",
+        "instrument_model",
+        "study_type",
+        "experiment_type",
+        "submission_type",
+        # AP6 Tier 3 (Trad-only)
+        "division",
+        "molecular_type",
+        "sequence_length",
+        "feature_gene_name",
+        "reference_journal",
+    },
 )
 
 _NO_MATCH_LITERAL = "(-*:*)"

@@ -20,6 +20,7 @@ from ddbj_search_api.search.dsl.allowlist import (
     ALL_ALLOWED_FIELDS,
     FIELD_TYPES,
     OPERATOR_BY_KIND,
+    TIER3_FIELD_DBS,
     TIER3_FIELDS,
 )
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Node, Range
@@ -30,6 +31,7 @@ ValidationMode: TypeAlias = Literal["cross", "single"]
 DEFAULT_MAX_DEPTH = 5
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DIGIT_RE = re.compile(r"^\d+$")
 
 
 def validate(
@@ -81,11 +83,13 @@ def _check_field(clause: FieldClause, *, mode: ValidationMode) -> None:
             length=clause.position.length,
         )
     if mode == "cross" and clause.field in TIER3_FIELDS:
+        dbs = TIER3_FIELD_DBS.get(clause.field, ())
+        hint = " or ".join(f"db={d}" for d in dbs) if dbs else "a 'db' parameter"
         raise DslError(
             type=ErrorType.field_not_available_in_cross_db,
             detail=(
-                f"field {clause.field!r} is not available in cross-db mode "
-                f"at column {clause.position.column}. specify a 'db' parameter to use this field."
+                f"field {clause.field!r} is only available in single-DB mode "
+                f"at column {clause.position.column}. use {hint}."
             ),
             column=clause.position.column,
             length=clause.position.length,
@@ -140,6 +144,31 @@ def _check_value(clause: FieldClause) -> None:
         if field_type == "date":
             _ensure_iso_date(clause.value.from_, clause)
             _ensure_iso_date(clause.value.to, clause)
+        elif field_type == "number":
+            _ensure_digit(clause.value.from_, clause)
+            _ensure_digit(clause.value.to, clause)
+    # number 型の単値 (e.g. sequence_length:5000) は digit 必須。
+    # Literal な new slug は増やさず、invalid_operator_for_field に流用 (plan §14)。
+    if clause.value_kind == "word" and isinstance(clause.value, str) and FIELD_TYPES.get(clause.field) == "number":
+        _ensure_digit(clause.value, clause)
+
+
+def _ensure_digit(value: str, clause: FieldClause) -> None:
+    """number 型フィールドの値は非負整数でなければならない。
+
+    AP6 では `sequence_length` のみが number 型。negative / 小数 / 非 digit は
+    `invalid_operator_for_field` として弾く (plan §14: 新 slug を増やさない方針で流用)。
+    """
+    if not _DIGIT_RE.match(value):
+        raise DslError(
+            type=ErrorType.invalid_operator_for_field,
+            detail=(
+                f"field {clause.field!r} requires a non-negative integer value, "
+                f"got {value!r} at column {clause.position.column} (length {clause.position.length})"
+            ),
+            column=clause.position.column,
+            length=clause.position.length,
+        )
 
 
 def _ensure_iso_date(value: str, clause: FieldClause) -> None:

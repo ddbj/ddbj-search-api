@@ -46,6 +46,7 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalHitsResponse,
     DbPortalParseResponse,
     DbPortalQuery,
+    _DbPortalHitAdapter,
 )
 from ddbj_search_api.search.dsl import (
     DslError,
@@ -201,7 +202,14 @@ def _compute_next_cursor(
 
 
 def _hit_from_source(hit: dict[str, Any]) -> DbPortalHit:
-    return DbPortalHit.model_validate(dict(hit.get("_source", {})))
+    """Dispatch ES ``_source`` dict into one of the 8 DbPortalHit variants.
+
+    AP6: ``DbPortalHit`` is a Pydantic v2 discriminated union keyed on ``type``
+    (plan §5). Unknown / missing ``type`` raises ``ValidationError`` and is
+    surfaced as a 500 by the caller (no silent fallback variant; A1-3 spirit).
+    """
+    source = dict(hit.get("_source", {}))
+    return _DbPortalHitAdapter.validate_python(source)  # type: ignore[no-any-return]
 
 
 def _map_httpx_error(exc: Exception) -> DbPortalCountError:

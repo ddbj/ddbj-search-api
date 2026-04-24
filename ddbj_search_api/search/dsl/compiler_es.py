@@ -1,31 +1,77 @@
-"""AP3 DSL compiler for Elasticsearch (Stage 3a: AST → ES bool query dict).
+"""AP3 / AP6 DSL compiler for Elasticsearch (Stage 3a: AST → ES bool query dict).
 
-SSOT: search-backends.md §バックエンド変換 (L517-520).
+SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
 
-前提: validator で ``(field_type, value_kind)`` の互換性は担保済。
-- organism は ``organism.name`` + ``organism.identifier`` の bool should で OR 展開
-- ``date`` (エイリアス) は ``datePublished`` + ``dateModified`` + ``dateCreated`` の 3-way OR
-- その他の Tier 1 フィールドは 1:1 で ES フィールドへマッピング
+- AP3 Tier 1 は 6 flat + 2 or_flat (organism / date alias)。
+- AP6 Tier 2 は 2 nested (submitter: organization, publication: publication)。
+- AP6 Tier 3 (ES 対象) は 8 flat (BioProject project_type / SRA 5 / JGA/MetaboBank shared 3) +
+  1 double-nested (grant_agency: grant → grant.agency)。
+- Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
+
+前提: validator で ``(field_type, value_kind)`` 互換性および cross-mode Tier 3 拒否は担保済。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, Node, Range
 
-_ES_FIELD_MAP: dict[str, str] = {
-    "identifier": "identifier",
-    "title": "title",
-    "description": "description",
-    "date_published": "datePublished",
-    "date_modified": "dateModified",
-    "date_created": "dateCreated",
-}
 
-_ORGANISM_ES_FIELDS: tuple[str, ...] = ("organism.name", "organism.identifier")
-_DATE_ALIAS_ES_FIELDS: tuple[str, ...] = ("datePublished", "dateModified", "dateCreated")
+@dataclass(frozen=True, slots=True)
+class _ESStrategy:
+    """DSL field 名 → ES query 構築方針。
+
+    `kind` に応じて使うフィールドが異なる:
+    - ``flat``    : ``path`` (単一 top-level) に basic leaf を直接投げる。
+    - ``or_flat`` : ``paths`` (複数 top-level) に OR (bool should) で投げる。
+    - ``nested``  : ``path`` の nested wrapper + ``sub`` に basic leaf。
+    - ``nested2`` : ``path`` → ``inner_path`` の 2 段 nested + ``sub`` に basic leaf。
+    """
+
+    kind: Literal["flat", "or_flat", "nested", "nested2"]
+    path: str | None = None
+    paths: tuple[str, ...] | None = None
+    sub: str | None = None
+    inner_path: str | None = None
+
+
+_ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
+    # === Tier 1 (AP3) ===
+    "identifier": _ESStrategy(kind="flat", path="identifier"),
+    "title": _ESStrategy(kind="flat", path="title"),
+    "description": _ESStrategy(kind="flat", path="description"),
+    "organism": _ESStrategy(kind="or_flat", paths=("organism.name", "organism.identifier")),
+    "date_published": _ESStrategy(kind="flat", path="datePublished"),
+    "date_modified": _ESStrategy(kind="flat", path="dateModified"),
+    "date_created": _ESStrategy(kind="flat", path="dateCreated"),
+    "date": _ESStrategy(kind="or_flat", paths=("datePublished", "dateModified", "dateCreated")),
+    # === Tier 2 (AP6) ===
+    "submitter": _ESStrategy(kind="nested", path="organization", sub="organization.name"),
+    "publication": _ESStrategy(kind="nested", path="publication", sub="publication.id"),
+    # === Tier 3 (AP6) flat ===
+    "project_type": _ESStrategy(kind="flat", path="objectType"),
+    "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy"),
+    "library_source": _ESStrategy(kind="flat", path="librarySource"),
+    "library_layout": _ESStrategy(kind="flat", path="libraryLayout"),
+    "platform": _ESStrategy(kind="flat", path="platform"),
+    "instrument_model": _ESStrategy(kind="flat", path="instrumentModel"),
+    "study_type": _ESStrategy(kind="flat", path="studyType"),
+    "experiment_type": _ESStrategy(kind="flat", path="experimentType"),
+    "submission_type": _ESStrategy(kind="flat", path="submissionType"),
+    # === Tier 3 (AP6) double-nested ===
+    # BioProject / JGA 共通: grant[].agency[].name。GUI 側で bioproject_grant_agency /
+    # jga_grant_agency の ID 区別あり、DSL 名は `grant_agency` 統一 (search-backends.md L551)。
+    "grant_agency": _ESStrategy(
+        kind="nested2",
+        path="grant",
+        inner_path="grant.agency",
+        sub="grant.agency.name",
+    ),
+    # Trad / Taxonomy 系 Tier 3 は ES 対象外 (compiler_solr で処理)。本 map には入れない。
+}
 
 
 def compile_to_es(ast: Node) -> dict[str, Any]:
@@ -55,12 +101,37 @@ def _compile_node(node: Node) -> dict[str, Any]:
 
 
 def _compile_leaf(clause: FieldClause) -> dict[str, Any]:
-    if clause.field == "organism":
-        return _or_over_fields(clause, _ORGANISM_ES_FIELDS)
-    if clause.field == "date":
-        return _or_over_fields(clause, _DATE_ALIAS_ES_FIELDS)
-    es_field = _ES_FIELD_MAP[clause.field]
-    return _basic_leaf(es_field, clause)
+    strategy = _ES_FIELD_STRATEGY[clause.field]
+    if strategy.kind == "flat":
+        assert strategy.path is not None
+        return _basic_leaf(strategy.path, clause)
+    if strategy.kind == "or_flat":
+        assert strategy.paths is not None
+        return _or_over_fields(clause, strategy.paths)
+    if strategy.kind == "nested":
+        assert strategy.path is not None
+        assert strategy.sub is not None
+        return {
+            "nested": {
+                "path": strategy.path,
+                "query": _basic_leaf(strategy.sub, clause),
+            },
+        }
+    # nested2
+    assert strategy.path is not None
+    assert strategy.inner_path is not None
+    assert strategy.sub is not None
+    return {
+        "nested": {
+            "path": strategy.path,
+            "query": {
+                "nested": {
+                    "path": strategy.inner_path,
+                    "query": _basic_leaf(strategy.sub, clause),
+                },
+            },
+        },
+    }
 
 
 def _or_over_fields(clause: FieldClause, es_fields: tuple[str, ...]) -> dict[str, Any]:
