@@ -43,7 +43,9 @@ class TestIdentifierField:
         assert _compile('identifier:"PRJDB1"') == {"term": {"identifier": "PRJDB1"}}
 
     def test_wildcard(self) -> None:
-        assert _compile("identifier:PRJ*") == {"wildcard": {"identifier": "PRJ*"}}
+        assert _compile("identifier:PRJ*") == {
+            "wildcard": {"identifier": {"value": "PRJ*", "case_insensitive": True}},
+        }
 
 
 class TestTextFields:
@@ -59,7 +61,9 @@ class TestTextFields:
 
     @pytest.mark.parametrize(("field", "es_field"), [("title", "title"), ("description", "description")])
     def test_wildcard(self, field: str, es_field: str) -> None:
-        assert _compile(f"{field}:canc*") == {"wildcard": {es_field: "canc*"}}
+        assert _compile(f"{field}:canc*") == {
+            "wildcard": {es_field: {"value": "canc*", "case_insensitive": True}},
+        }
 
 
 class TestOrganismField:
@@ -260,7 +264,9 @@ class TestTier2Submitter:
         assert _compile("submitter:Tok*") == {
             "nested": {
                 "path": "organization",
-                "query": {"wildcard": {"organization.name": "Tok*"}},
+                "query": {
+                    "wildcard": {"organization.name": {"value": "Tok*", "case_insensitive": True}},
+                },
             },
         }
 
@@ -278,7 +284,9 @@ class TestTier2Publication:
         assert _compile("publication:123*") == {
             "nested": {
                 "path": "publication",
-                "query": {"wildcard": {"publication.id": "123*"}},
+                "query": {
+                    "wildcard": {"publication.id": {"value": "123*", "case_insensitive": True}},
+                },
             },
         }
 
@@ -408,5 +416,62 @@ class TestTier3BoolCombinations:
                     },
                     {"match_phrase": {"title": "cancer"}},
                 ],
+            },
+        }
+
+
+# === Wildcard case-insensitivity ===
+
+
+class TestWildcardCaseInsensitive:
+    """ES wildcard does not run the value through the analyzer, so without
+    ``case_insensitive: true`` text-type tokens (lowercased) and keyword
+    values (case-preserving) would skip mixed-case patterns.  Staging probe
+    2026-04-24: ``title:Cancer*`` returned 0 / ``title:cancer*`` returned
+    10k+ — both must return the same set.  The compile_to_es contract must
+    attach the flag to every wildcard leaf it emits.
+    """
+
+    @pytest.mark.parametrize(
+        ("dsl", "es_field", "value"),
+        [
+            # text-type with uppercase prefix (lowercased tokens in index)
+            ("title:Cancer*", "title", "Cancer*"),
+            ("title:BRCA*", "title", "BRCA*"),
+            ("description:COVID*", "description", "COVID*"),
+            # keyword-type with lowercase (accessions stored uppercase)
+            ("identifier:prjdb*", "identifier", "prjdb*"),
+            # keyword-type with mixed case
+            ("identifier:PrJdB*", "identifier", "PrJdB*"),
+        ],
+    )
+    def test_wildcard_leaf_carries_case_insensitive_flag(
+        self,
+        dsl: str,
+        es_field: str,
+        value: str,
+    ) -> None:
+        assert _compile(dsl) == {
+            "wildcard": {es_field: {"value": value, "case_insensitive": True}},
+        }
+
+    def test_grant_agency_wildcard_preserves_double_nested_shape(self) -> None:
+        """nested2 strategy keeps the flag inside the inner leaf."""
+        assert _compile_single("grant_agency:JSPS*", DbPortalDb.bioproject) == {
+            "nested": {
+                "path": "grant",
+                "query": {
+                    "nested": {
+                        "path": "grant.agency",
+                        "query": {
+                            "wildcard": {
+                                "grant.agency.name": {
+                                    "value": "JSPS*",
+                                    "case_insensitive": True,
+                                },
+                            },
+                        },
+                    },
+                },
             },
         }

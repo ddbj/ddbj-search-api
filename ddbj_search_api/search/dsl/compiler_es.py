@@ -152,7 +152,12 @@ def _basic_leaf(es_field: str, clause: FieldClause) -> dict[str, Any]:
     if op == "contains":
         return {"match_phrase": {es_field: value}}
     if op == "wildcard":
-        return {"wildcard": {es_field: value}}
+        # ES wildcard does not apply the analyzer to the value, so text-type
+        # fields (tokenized lowercase) miss any uppercase letter in the
+        # pattern and keyword fields miss values that do not match case
+        # exactly.  ``case_insensitive`` restores the symmetric behaviour
+        # users expect (staging probe 2026-04-24: ``title:Cancer*`` 0 → 10k).
+        return {"wildcard": {es_field: {"value": value, "case_insensitive": True}}}
     if op == "between" and isinstance(value, Range):
         return {"range": {es_field: {"gte": value.from_, "lte": value.to}}}
     # 構造上ここに到達しない (validator が弾いている) が、mypy 安全のため
