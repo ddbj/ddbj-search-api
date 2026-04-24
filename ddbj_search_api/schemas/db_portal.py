@@ -10,7 +10,7 @@ allowlist.  Existing ``EntryListItem`` is not reused since the SSOT
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -230,4 +230,62 @@ class DbPortalHitsResponse(BaseModel):
         default=False,
         alias="hasNext",
         description="Whether more pages are available.",
+    )
+
+
+# === AP7: GET /db-portal/parse response schema ===
+#
+# SSOT: db-portal/docs/search-backends.md §スキーマ仕様 (L363-381).
+# `op` discriminator は全 7 値 (AND/OR/NOT/eq/contains/wildcard/between) が
+# 重複なしで単一 discriminator 成立。BoolOp.rules は再帰 union のため
+# string forward ref + ``model_rebuild()`` で解決する。
+
+
+class DbPortalParseLeafValue(BaseModel):
+    """Leaf clause with scalar value (eq / contains / wildcard)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    field: str = Field(description="Allowlist field name (identifier, title, ...).")
+    op: Literal["eq", "contains", "wildcard"] = Field(description="Operator derived from (field_type, value_kind).")
+    value: str = Field(description="Operand value.")
+
+
+class DbPortalParseLeafRange(BaseModel):
+    """Leaf clause for a date range (op='between')."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    field: str = Field(description="Date field (date_published, date_modified, date_created, or alias 'date').")
+    op: Literal["between"] = Field(description="Always 'between' for range clauses.")
+    from_: str = Field(alias="from", description="Range start (YYYY-MM-DD).")
+    to: str = Field(description="Range end (YYYY-MM-DD).")
+
+
+class DbPortalParseBoolOp(BaseModel):
+    """Boolean node combining child clauses with AND / OR / NOT."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    op: Literal["AND", "OR", "NOT"] = Field(description="Boolean operator.")
+    # forward ref: ``DbPortalParseNode`` は本クラス定義後に evaluate されるので
+    # ``from __future__ import annotations`` + ``model_rebuild()`` で解決する。
+    rules: list[DbPortalParseNode] = Field(description="Child nodes (NOT has exactly one).")
+
+
+DbPortalParseNode = Annotated[
+    DbPortalParseBoolOp | DbPortalParseLeafValue | DbPortalParseLeafRange,
+    Field(discriminator="op"),
+]
+
+DbPortalParseBoolOp.model_rebuild()
+
+
+class DbPortalParseResponse(BaseModel):
+    """Response envelope for GET /db-portal/parse."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    ast: DbPortalParseNode = Field(
+        description="Parsed AST as SSOT query-tree JSON (search-backends.md §L363-381).",
     )

@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ddbj_search_api.config import AppConfig, get_config
@@ -44,10 +44,12 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalErrorType,
     DbPortalHit,
     DbPortalHitsResponse,
+    DbPortalParseResponse,
     DbPortalQuery,
 )
 from ddbj_search_api.search.dsl import (
     DslError,
+    ast_to_json,
     compile_to_es,
     compile_to_solr,
     parse,
@@ -1060,5 +1062,61 @@ router.add_api_route(
         },
     },
     summary="DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
+    tags=["db-portal"],
+)
+
+
+# === AP7: GET /db-portal/parse — DSL → GUI 逆パーサ ===
+
+
+async def _parse_db_portal(
+    adv: str = Query(
+        ...,
+        description=(
+            "Advanced Search DSL to parse into AST.  Same grammar as "
+            "``GET /db-portal/search?adv=...`` (AP3).  Returned JSON tree "
+            "follows SSOT search-backends.md §L363-381 and is intended for "
+            "GUI state restoration from shared URLs."
+        ),
+    ),
+    db: DbPortalDb | None = Query(
+        default=None,
+        description=(
+            "Validator mode target.  Omit for cross-db mode (Tier 1 only); "
+            "specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist)."
+        ),
+    ),
+    config: AppConfig = Depends(_get_config_dep),
+) -> DbPortalParseResponse:
+    """Parse ``adv`` DSL and return the SSOT query-tree JSON for GUI restoration."""
+    try:
+        ast = parse(adv, max_length=config.dsl_max_length)
+        validate(
+            ast,
+            mode="cross" if db is None else "single",
+            db=db,
+            max_depth=config.dsl_max_depth,
+        )
+    except DslError as exc:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType[exc.type.name],
+            detail=exc.detail,
+        ) from exc
+    return DbPortalParseResponse.model_validate({"ast": ast_to_json(ast)})
+
+
+router.add_api_route(
+    "/db-portal/parse",
+    _parse_db_portal,
+    methods=["GET"],
+    response_model=DbPortalParseResponse,
+    responses={
+        400: {
+            "description": "Bad Request (DSL parse/validate error).",
+            "model": ProblemDetails,
+        },
+    },
+    summary="Parse Advanced Search DSL into the SSOT query-tree JSON for GUI state restoration.",
     tags=["db-portal"],
 )

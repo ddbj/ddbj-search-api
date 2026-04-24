@@ -3,7 +3,7 @@
   "info": {
     "title": "DDBJ Search API",
     "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.",
-    "version": "0.1.2.dev10+g1b4a0f500.d20260409"
+    "version": "0.2.1.dev8+g242e3b0b3.d20260424"
   },
   "paths": {
     "/entries/": {
@@ -7788,7 +7788,7 @@
         "tags": [
           "db-portal"
         ],
-        "summary": "DB Portal unified search (cross-db count / db-specific hits)",
+        "summary": "DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
         "description": "Unified db-portal search: dispatch by (q/adv) x (db).",
         "operationId": "_search_db_portal_db_portal_search_get",
         "parameters": [
@@ -7823,10 +7823,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Advanced Search DSL.  Not implemented (returns 501 ``advanced-search-not-implemented``); planned for AP3.",
+              "description": "Advanced Search DSL (AP3).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 allowlist: ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date`` (OR-alias of the three date fields).  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``invalid-date-format`` / etc.).",
               "title": "Adv"
             },
-            "description": "Advanced Search DSL.  Not implemented (returns 501 ``advanced-search-not-implemented``); planned for AP3."
+            "description": "Advanced Search DSL (AP3).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 allowlist: ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date`` (OR-alias of the three date fields).  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``invalid-date-format`` / etc.)."
           },
           {
             "name": "db",
@@ -7928,7 +7928,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+            "description": "Bad Request (q/adv exclusivity, cursor exclusivity, DSL parse/validate error, deep paging limit).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7957,8 +7957,71 @@
               }
             }
           },
-          "501": {
-            "description": "Not Implemented (Advanced Search)",
+          "502": {
+            "description": "Bad Gateway (all databases failed, or Solr upstream error)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/db-portal/parse": {
+      "get": {
+        "tags": [
+          "db-portal"
+        ],
+        "summary": "Parse Advanced Search DSL into the SSOT query-tree JSON for GUI state restoration.",
+        "description": "Parse ``adv`` DSL and return the SSOT query-tree JSON for GUI restoration.",
+        "operationId": "_parse_db_portal_db_portal_parse_get",
+        "parameters": [
+          {
+            "name": "adv",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...`` (AP3).  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs.",
+              "title": "Adv"
+            },
+            "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...`` (AP3).  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs."
+          },
+          {
+            "name": "db",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DbPortalDb"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Validator mode target.  Omit for cross-db mode (Tier 1 only); specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist).",
+              "title": "Db"
+            },
+            "description": "Validator mode target.  Omit for cross-db mode (Tier 1 only); specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbPortalParseResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found (entry does not exist or invalid type).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7967,8 +8030,18 @@
               }
             }
           },
-          "502": {
-            "description": "Bad Gateway (all databases failed, or Solr upstream error)",
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9745,6 +9818,160 @@
         ],
         "title": "DbPortalHitsResponse",
         "description": "DB-specific search response (hits envelope + pagination)."
+      },
+      "DbPortalParseBoolOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "AND",
+              "OR",
+              "NOT"
+            ],
+            "title": "Op",
+            "description": "Boolean operator."
+          },
+          "rules": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/DbPortalParseBoolOp"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalParseLeafValue"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalParseLeafRange"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "op",
+                "mapping": {
+                  "AND": "#/components/schemas/DbPortalParseBoolOp",
+                  "NOT": "#/components/schemas/DbPortalParseBoolOp",
+                  "OR": "#/components/schemas/DbPortalParseBoolOp",
+                  "between": "#/components/schemas/DbPortalParseLeafRange",
+                  "contains": "#/components/schemas/DbPortalParseLeafValue",
+                  "eq": "#/components/schemas/DbPortalParseLeafValue",
+                  "wildcard": "#/components/schemas/DbPortalParseLeafValue"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Rules",
+            "description": "Child nodes (NOT has exactly one)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "op",
+          "rules"
+        ],
+        "title": "DbPortalParseBoolOp",
+        "description": "Boolean node combining child clauses with AND / OR / NOT."
+      },
+      "DbPortalParseLeafRange": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field",
+            "description": "Date field (date_published, date_modified, date_created, or alias 'date')."
+          },
+          "op": {
+            "type": "string",
+            "const": "between",
+            "title": "Op",
+            "description": "Always 'between' for range clauses."
+          },
+          "from": {
+            "type": "string",
+            "title": "From",
+            "description": "Range start (YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "title": "To",
+            "description": "Range end (YYYY-MM-DD)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "op",
+          "from",
+          "to"
+        ],
+        "title": "DbPortalParseLeafRange",
+        "description": "Leaf clause for a date range (op='between')."
+      },
+      "DbPortalParseLeafValue": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field",
+            "description": "Allowlist field name (identifier, title, ...)."
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "contains",
+              "wildcard"
+            ],
+            "title": "Op",
+            "description": "Operator derived from (field_type, value_kind)."
+          },
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "description": "Operand value."
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "op",
+          "value"
+        ],
+        "title": "DbPortalParseLeafValue",
+        "description": "Leaf clause with scalar value (eq / contains / wildcard)."
+      },
+      "DbPortalParseResponse": {
+        "properties": {
+          "ast": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DbPortalParseBoolOp"
+              },
+              {
+                "$ref": "#/components/schemas/DbPortalParseLeafValue"
+              },
+              {
+                "$ref": "#/components/schemas/DbPortalParseLeafRange"
+              }
+            ],
+            "title": "Ast",
+            "description": "Parsed AST as SSOT query-tree JSON (search-backends.md §L363-381).",
+            "discriminator": {
+              "propertyName": "op",
+              "mapping": {
+                "AND": "#/components/schemas/DbPortalParseBoolOp",
+                "NOT": "#/components/schemas/DbPortalParseBoolOp",
+                "OR": "#/components/schemas/DbPortalParseBoolOp",
+                "between": "#/components/schemas/DbPortalParseLeafRange",
+                "contains": "#/components/schemas/DbPortalParseLeafValue",
+                "eq": "#/components/schemas/DbPortalParseLeafValue",
+                "wildcard": "#/components/schemas/DbPortalParseLeafValue"
+              }
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "ast"
+        ],
+        "title": "DbPortalParseResponse",
+        "description": "Response envelope for GET /db-portal/parse."
       },
       "DbType": {
         "type": "string",
