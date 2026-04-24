@@ -4,7 +4,7 @@ Verifies the dispatcher shape against a real ES cluster.  Solr-backed
 DBs (``trad`` / ``taxonomy``) surface ``error=unknown`` on the count
 path and 502 on the db-specific path when ``solr_arsa_base_url`` and
 ``solr_txsearch_url`` are unset, which is the default for integration
-runs.  AP3 (Advanced Search DSL) is still stubbed at 501.
+runs.  Advanced Search DSL (``adv``) is still stubbed at 501 in this integration suite.
 """
 
 from __future__ import annotations

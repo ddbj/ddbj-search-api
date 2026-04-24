@@ -1,6 +1,6 @@
-"""Tests for ddbj_search_api.search.dsl.allowlist (AP3 + AP6).
+"""Tests for ddbj_search_api.search.dsl.allowlist.
 
-AP6 で追加した Tier 2/3 allowlist (30 field per DB 集計 = 27 unique) と
+3 段構成の Tier 1/2/3 allowlist (30 field per DB 集計 = 27 unique) と
 `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
 db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
 """

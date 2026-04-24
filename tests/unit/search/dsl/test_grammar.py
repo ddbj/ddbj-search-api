@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.search.dsl.parser (AP3 Stage 1: DSL → AST).
+"""Tests for ddbj_search_api.search.dsl.parser (Stage 1: DSL → AST).
 
 SSOT:
 - search-backends.md §パーサ実装 (L416-470) : Lark LALR(1), Lucene サブセット
@@ -6,7 +6,7 @@ SSOT:
 
 Parser stage の責務は「構文的に認識された value 種別 (value_kind)」を AST に載せること。
 operator は compiler 側で (field_type, value_kind) から導出する。
-validator は allowlist / 演算子互換性 / 日付フォーマット / ネスト深さ を見る (M2)。
+validator は allowlist / 演算子互換性 / 日付フォーマット / ネスト深さ を見る。
 """
 
 from __future__ import annotations

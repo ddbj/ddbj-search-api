@@ -131,14 +131,13 @@ class TestAppConfigEnvOverrides:
         assert config.solr_txsearch_url == "http://localhost:32005/solr-rgm/ncbi_taxonomy/select"
 
 
-# === Per-backend timeouts (AP5) ===
+# === Per-backend timeouts ===
 
 
 class TestAppConfigPerBackendTimeouts:
-    """AP5: cross-search per-backend timeouts replace the single ``solr_timeout``.
+    """Cross-search per-backend timeouts replace the single ``solr_timeout``.
 
-    Initial values (SSOT portal-impl/source.md §AP5):
-    ES 10s / ARSA 15s / TXSearch 5s / total 20s.
+    Default values: ES 10s / ARSA 15s / TXSearch 5s / total 20s.
     """
 
     @pytest.fixture

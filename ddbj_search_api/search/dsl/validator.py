@@ -1,4 +1,4 @@
-"""AP3 DSL validator (Stage 2: AST → 検証).
+"""DSL validator (Stage 2: AST → 検証).
 
 チェック項目:
 1. フィールド名が allowlist (Tier 1/2/3) に含まれるか → unknown-field
@@ -148,7 +148,7 @@ def _check_value(clause: FieldClause) -> None:
             _ensure_digit(clause.value.from_, clause)
             _ensure_digit(clause.value.to, clause)
     # number 型の単値 (e.g. sequence_length:5000) は digit 必須。
-    # Literal な new slug は増やさず、invalid_operator_for_field に流用 (plan §14)。
+    # Literal な new slug は増やさず、invalid_operator_for_field に流用。
     if clause.value_kind == "word" and isinstance(clause.value, str) and FIELD_TYPES.get(clause.field) == "number":
         _ensure_digit(clause.value, clause)
 
@@ -156,8 +156,8 @@ def _check_value(clause: FieldClause) -> None:
 def _ensure_digit(value: str, clause: FieldClause) -> None:
     """number 型フィールドの値は非負整数でなければならない。
 
-    AP6 では `sequence_length` のみが number 型。negative / 小数 / 非 digit は
-    `invalid_operator_for_field` として弾く (plan §14: 新 slug を増やさない方針で流用)。
+    現状 `sequence_length` のみが number 型。negative / 小数 / 非 digit は
+    `invalid_operator_for_field` として弾く (新 slug を増やさない方針で流用)。
     """
     if not _DIGIT_RE.match(value):
         raise DslError(

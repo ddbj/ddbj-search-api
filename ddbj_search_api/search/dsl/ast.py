@@ -1,8 +1,7 @@
-"""AP3 DSL AST ノード型 (Stage 1 output).
+"""DSL AST ノード型 (Stage 1 output).
 
 parser.py が生成し、validator.py / compiler_es.py / compiler_solr.py / serde.py が消費する。
-operator は AST には持たず、(field_type, value_kind) から compiler/serde 段で導出する
-(AP3 設計 plan 参照)。
+operator は AST には持たず、(field_type, value_kind) から compiler/serde 段で導出する。
 """
 
 from __future__ import annotations

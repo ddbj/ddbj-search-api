@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.solr.query (AP4 + AP2).
+"""Tests for ddbj_search_api.solr.query.
 
 Covers Solr-specific edismax param builders for ARSA and TXSearch and
 the q string assembler.  Trigger set / tokenize / escape behaviour for

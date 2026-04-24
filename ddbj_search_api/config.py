@@ -63,7 +63,7 @@ class AppConfig(BaseSettings):
     solr_arsa_core: str = "collection1"
     solr_txsearch_url: str | None = None
 
-    # AP5 cross-search (``/db-portal/search`` count-only) per-backend and
+    # Cross-search (``/db-portal/search`` count-only) per-backend and
     # overall timeouts. ``es_timeout`` above stays as the client-level default
     # for /entries/* and other routers; these four apply only inside
     # ``routers.db_portal._cross_search_count_only`` via ``asyncio.wait_for``.
@@ -72,7 +72,7 @@ class AppConfig(BaseSettings):
     txsearch_timeout: float = 5.0
     cross_search_total_timeout: float = 20.0
 
-    # AP3 Advanced Search DSL limits (DoS / complexity guard).
+    # Advanced Search DSL limits (DoS / complexity guard).
     dsl_max_length: int = 4096
     dsl_max_depth: int = 5
 

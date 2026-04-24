@@ -227,7 +227,7 @@ class TestLifespanSolrClient:
 
     def test_solr_client_timeout_uses_max_of_backend_timeouts(self) -> None:
         """Solr client's client-level timeout is the hard cap shared by ARSA
-        and TXSearch; per-call ``asyncio.wait_for`` (AP5) tightens it further.
+        and TXSearch; per-call ``asyncio.wait_for`` tightens it further.
         """
         config = AppConfig()
         object.__setattr__(config, "arsa_timeout", 30.0)

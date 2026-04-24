@@ -1,10 +1,10 @@
-"""AP3 / AP6 DSL compiler for Elasticsearch (Stage 3a: AST → ES bool query dict).
+"""DSL compiler for Elasticsearch (Stage 3a: AST → ES bool query dict).
 
 SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
 
-- AP3 Tier 1 は 6 flat + 2 or_flat (organism / date alias)。
-- AP6 Tier 2 は 2 nested (submitter: organization, publication: publication)。
-- AP6 Tier 3 (ES 対象) は 8 flat (BioProject project_type / SRA 5 / JGA/MetaboBank shared 3) +
+- Tier 1 は 6 flat + 2 or_flat (organism / date alias)。
+- Tier 2 は 2 nested (submitter: organization, publication: publication)。
+- Tier 3 (ES 対象) は 8 flat (BioProject project_type / SRA 5 / JGA/MetaboBank shared 3) +
   1 double-nested (grant_agency: grant → grant.agency)。
 - Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
 
@@ -39,7 +39,7 @@ class _ESStrategy:
 
 
 _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
-    # === Tier 1 (AP3) ===
+    # === Tier 1 ===
     "identifier": _ESStrategy(kind="flat", path="identifier"),
     "title": _ESStrategy(kind="flat", path="title"),
     "description": _ESStrategy(kind="flat", path="description"),
@@ -48,10 +48,10 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "date_modified": _ESStrategy(kind="flat", path="dateModified"),
     "date_created": _ESStrategy(kind="flat", path="dateCreated"),
     "date": _ESStrategy(kind="or_flat", paths=("datePublished", "dateModified", "dateCreated")),
-    # === Tier 2 (AP6) ===
+    # === Tier 2 ===
     "submitter": _ESStrategy(kind="nested", path="organization", sub="organization.name"),
     "publication": _ESStrategy(kind="nested", path="publication", sub="publication.id"),
-    # === Tier 3 (AP6) flat ===
+    # === Tier 3 flat ===
     "project_type": _ESStrategy(kind="flat", path="objectType"),
     "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy"),
     "library_source": _ESStrategy(kind="flat", path="librarySource"),
@@ -61,7 +61,7 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "study_type": _ESStrategy(kind="flat", path="studyType"),
     "experiment_type": _ESStrategy(kind="flat", path="experimentType"),
     "submission_type": _ESStrategy(kind="flat", path="submissionType"),
-    # === Tier 3 (AP6) double-nested ===
+    # === Tier 3 double-nested ===
     # BioProject / JGA 共通: grant[].agency[].name。GUI 側で bioproject_grant_agency /
     # jga_grant_agency の ID 区別あり、DSL 名は `grant_agency` 統一 (search-backends.md L551)。
     "grant_agency": _ESStrategy(

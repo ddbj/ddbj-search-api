@@ -1,9 +1,9 @@
-"""Advanced Search DSL (AP3).
+"""Advanced Search DSL.
 
 3-stage pipeline:
-1. ``parse(dsl)`` → ``ast.Node`` (Stage 1, implemented).
-2. ``validate(ast, mode, db)`` → raise ``DslError`` on violation (Stage 2, M2).
-3. ``compile_to_es(ast)`` / ``compile_to_solr(ast, dialect)`` → backend query (Stage 3, M3/M4).
+1. ``parse(dsl)`` → ``ast.Node`` (Stage 1).
+2. ``validate(ast, mode, db)`` → raise ``DslError`` on violation (Stage 2).
+3. ``compile_to_es(ast)`` / ``compile_to_solr(ast, dialect)`` → backend query (Stage 3).
 
 Error model: ``DslError(type, detail, column, length)``. ``type_uri(error_type)`` maps
 an ``ErrorType`` enum to the full ``https://ddbj.nig.ac.jp/problems/<slug>`` URI.

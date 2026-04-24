@@ -16,7 +16,7 @@ _TXSEARCH_QF = "scientific_name^10 scientific_name_ex^20 common_name^5 synonym^3
 _TXSEARCH_FL = "tax_id,scientific_name,common_name,japanese_name,rank,lineage,score"
 _DEFAULT_Q = "*:*"
 
-# AP3: ``uf`` (user fields) restricts edismax field references in the q string to
+# ``uf`` (user fields) restricts edismax field references in the q string to
 # the DSL allowlist (defense-in-depth alongside the server-side validator).
 _ARSA_ADV_UF = "PrimaryAccessionNumber Definition AllText Organism Lineage Date"
 _TXSEARCH_ADV_UF = "tax_id scientific_name text"
@@ -104,7 +104,7 @@ def build_arsa_adv_params(
     sort: str | None,
     shards: str | None,
 ) -> dict[str, str]:
-    """Build Solr params for ARSA when the caller already has a DSL-compiled ``q`` string (AP3).
+    """Build Solr params for ARSA when the caller already has a DSL-compiled ``q`` string.
 
     Same shape as :func:`build_arsa_params` except that ``q`` is passed through verbatim
     and ``uf`` restricts referenceable fields to the DSL allowlist.
@@ -134,7 +134,7 @@ def build_txsearch_adv_params(
     per_page: int,
     sort: str | None,
 ) -> dict[str, str]:
-    """Build Solr params for TXSearch with a DSL-compiled ``q`` string (AP3)."""
+    """Build Solr params for TXSearch with a DSL-compiled ``q`` string."""
     _ = sort
     start, rows = _pagination_to_start_rows(page, per_page)
     return {

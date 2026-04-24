@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.search.dsl.errors (AP3)."""
+"""Tests for ddbj_search_api.search.dsl.errors."""
 
 from __future__ import annotations
 

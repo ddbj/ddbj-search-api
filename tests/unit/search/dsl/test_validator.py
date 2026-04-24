@@ -1,9 +1,8 @@
-"""Tests for ddbj_search_api.search.dsl.validator (AP3 Stage 2).
+"""Tests for ddbj_search_api.search.dsl.validator (Stage 2).
 
 SSOT:
 - search.md §演算子とフィールドの組み合わせ (L225-236)
 - search-backends.md §値のバリデーション (L400-414)
-- source.md §AP3 (L99-102)
 """
 
 from __future__ import annotations
@@ -198,7 +197,7 @@ class TestBoolCombinations:
         validate(parse("NOT title:cancer"), mode="cross")
 
 
-# === AP6: Tier 2/3 validator tests ===
+# === Tier 2/3 validator tests ===
 
 
 class TestTier2CrossModeAccepted:
@@ -437,7 +436,7 @@ class TestValidatorPBT:
         assert exc_info.value.type == ErrorType.unknown_field
 
 
-# === AP6: PBT for enum / number value_kind compatibility ===
+# === PBT for enum / number value_kind compatibility ===
 
 
 _ENUM_FIELDS = [

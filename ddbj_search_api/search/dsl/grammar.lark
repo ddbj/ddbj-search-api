@@ -1,4 +1,4 @@
-// AP3 Advanced Search DSL (Lark LALR(1)).
+// Advanced Search DSL (Lark LALR(1)).
 // SSOT: db-portal/docs/search-backends.md §パーサ実装 (L416-470)
 //       db-portal/docs/search.md §採用構文 (L670-689)
 // Unsupported on purpose: boost `^`, fuzzy `~`, regex `/.../`.

@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.search.dsl.serde (AP3 internal, AP7 forward-compat).
+"""Tests for ddbj_search_api.search.dsl.serde.
 
 SSOT: search-backends.md §スキーマ仕様 (L363-381).
 """

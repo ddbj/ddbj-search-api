@@ -1,10 +1,13 @@
-"""Tier-based field allowlist and operator matrix (AP3 / AP6 SSOT).
+"""Tier-based field allowlist and operator matrix.
 
-- AP3 は Tier 1 (8 フィールド) のみ有効化。
-- AP6 で Tier 2 (2 field) + Tier 3 (25 unique field、per-DB 集計 28) を有効化。
-- SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス。
-  db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
-- API 側が allowlist の唯一の source of truth (decisions.md A2-5)。
+3 段構成:
+- Tier 1 (横断可、8 field): identifier / text / organism / date 系の基本 field。
+- Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
+- Tier 3 (単一 DB 指定必須、25 unique / per-DB 集計 28 field): DB 特化 field。
+
+SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス、
+db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
+API 側が allowlist の唯一の source of truth。
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ TIER1_FIELDS: frozenset[str] = frozenset(
     },
 )
 
-# AP6: 横断検索で使える Tier 2 (converter 側で正規化済の field)。
+# 横断検索で使える Tier 2 (converter 側で正規化済の field)。
 # SSOT: search-backends.md L546-554 Tier 2 共通フィールド。
 TIER2_FIELDS: frozenset[str] = frozenset(
     {
@@ -39,11 +42,12 @@ TIER2_FIELDS: frozenset[str] = frozenset(
     },
 )
 
-# AP6: 単一 DB 選択時のみ使える Tier 3 (DB 特化 field)。
+# 単一 DB 選択時のみ使える Tier 3 (DB 特化 field)。
 # unique 25 field、ただし per-DB 集計は 28 (grant_agency / study_type / experiment_type が 2 DB 間で shared)。
 # SSOT: search-backends.md L560-575 Tier 3 DB 別フィールド。
-# AP6.5 送り: BioSample attributes 系 6 field / JGA principal_investigator / submitting_organization /
-#             BioProject project_type の INSDC 値域 / Taxonomy japanese_name (staging TXSearch に不在)。
+# 未 allowlist 化で保留中の候補 field: BioSample attributes 系 6 field / JGA principal_investigator /
+# submitting_organization / BioProject project_type の INSDC 値域 / Taxonomy japanese_name
+# (staging TXSearch に field 不在)。
 TIER3_FIELDS: frozenset[str] = frozenset(
     {
         # BioProject (2): grant_agency は JGA と共通
@@ -67,7 +71,7 @@ TIER3_FIELDS: frozenset[str] = frozenset(
         "sequence_length",
         "feature_gene_name",
         "reference_journal",
-        # Taxonomy (10) — TXSearch。japanese_name は AP6.5 (staging TXSearch に field 不在)
+        # Taxonomy (10) — TXSearch。japanese_name は staging TXSearch に field 不在のため allowlist 外
         "rank",
         "lineage",
         "kingdom",
@@ -84,7 +88,7 @@ TIER3_FIELDS: frozenset[str] = frozenset(
 ALL_ALLOWED_FIELDS: frozenset[str] = TIER1_FIELDS | TIER2_FIELDS | TIER3_FIELDS
 
 FIELD_TYPES: dict[str, FieldType] = {
-    # === Tier 1 (AP3) ===
+    # === Tier 1 (cross) ===
     "identifier": "identifier",
     "title": "text",
     "description": "text",
@@ -93,32 +97,32 @@ FIELD_TYPES: dict[str, FieldType] = {
     "date_modified": "date",
     "date_created": "date",
     "date": "date",
-    # === Tier 2 (AP6) ===
+    # === Tier 2 (cross, converter-normalized) ===
     "submitter": "text",
     "publication": "identifier",
-    # === Tier 3 (AP6) BioProject ===
+    # === Tier 3 BioProject ===
     "project_type": "enum",
     "grant_agency": "text",
-    # === Tier 3 (AP6) SRA ===
+    # === Tier 3 SRA ===
     "library_strategy": "enum",
     "library_source": "enum",
     "library_layout": "enum",
     "platform": "enum",
     "instrument_model": "text",
-    # === Tier 3 (AP6) JGA ===
+    # === Tier 3 JGA ===
     "study_type": "enum",
-    # === Tier 3 (AP6) GEA / MetaboBank ===
+    # === Tier 3 GEA / MetaboBank ===
     # experiment_type は spec L562 で SRA 同等の enum 想定だが、converter 実装は list[str]。
-    # AP6 では text 型として開放、enum 値域検証は DP3/AP6.5 送り。
+    # ここでは text 型として開放し、enum 値域検証は converter 側での正規化完了後に導入する。
     "experiment_type": "text",
     "submission_type": "text",
-    # === Tier 3 (AP6) Trad (ARSA) ===
+    # === Tier 3 Trad (ARSA) ===
     "division": "enum",
     "molecular_type": "enum",
     "sequence_length": "number",
     "feature_gene_name": "text",
     "reference_journal": "text",
-    # === Tier 3 (AP6) Taxonomy (TXSearch) ===
+    # === Tier 3 Taxonomy (TXSearch) ===
     "rank": "enum",
     "lineage": "text",
     "kingdom": "text",
@@ -134,7 +138,7 @@ FIELD_TYPES: dict[str, FieldType] = {
 # (field_type, value_kind) → 導出される operator。
 # 含まれない組み合わせは invalid-operator-for-field となる。
 OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
-    # === Tier 1 (AP3) ===
+    # === Tier 1 ===
     ("identifier", "word"): "eq",
     ("identifier", "phrase"): "eq",
     ("identifier", "wildcard"): "wildcard",
@@ -145,7 +149,7 @@ OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
     ("organism", "phrase"): "eq",
     ("date", "date"): "eq",
     ("date", "range"): "between",
-    # === AP6 ===
+    # === enum / number ===
     # enum: 列挙値は equals / not_equals のみ。DSL では not_equals は NOT FieldClause で表現。
     # 空白含みの値 (例: "VIRAL RNA") を扱えるよう phrase も許可。
     ("enum", "word"): "eq",
@@ -155,7 +159,7 @@ OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
     ("number", "range"): "between",
 }
 
-# AP6: Tier 3 field → 使用可能な DbPortalDb 値の tuple (cross-mode 拒否時の detail 文字列用)。
+# Tier 3 field → 使用可能な DbPortalDb 値の tuple (cross-mode 拒否時の detail 文字列用)。
 # SSOT: search-backends.md L530-575 のバックエンドマッピング表。
 # 複数 DB 共通の field (grant_agency / study_type / experiment_type) は候補 DB を列挙して提示する。
 TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {

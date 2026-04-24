@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.search.dsl.compiler_solr (AP3 Stage 3b).
+"""Tests for ddbj_search_api.search.dsl.compiler_solr (Stage 3b).
 
 ARSA / TXSearch 両 dialect をカバー。
 SSOT: search-backends.md §バックエンド変換 (L520).
@@ -144,7 +144,7 @@ class TestPhraseEscaping:
         assert _c(r'title:"foo\\bar"') == 'Definition:"foo\\\\bar"'
 
 
-"""=== AP6: Tier 2 / Tier 3 ==="""
+"""=== Tier 2 / Tier 3 ==="""
 
 
 class TestArsaTier2Publication:

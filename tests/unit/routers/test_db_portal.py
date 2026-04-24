@@ -65,7 +65,7 @@ class TestDbPortalRouting:
 
 
 class TestDbPortalQueryCombination:
-    """q / adv exclusivity (400) and AP3 DSL parse/validate error surfacing."""
+    """q / adv exclusivity (400) and DSL parse/validate error surfacing."""
 
     def test_q_and_adv_together_returns_400(
         self,
@@ -145,7 +145,7 @@ class TestDbPortalQueryCombination:
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """AP3 完了後、501 advanced-search-not-implemented は返らない."""
+        """DSL 実装済のため 501 advanced-search-not-implemented は返らない."""
         for params in (
             {"adv": "foo:bar"},
             {"adv": "title:cancer^2"},
@@ -602,7 +602,7 @@ class TestDbPortalCursorPBT:
         db: str,
         per_page: int,
     ) -> None:
-        # AP6: DbPortalHit discriminated union の type は subtype 付き (sra-study など)
+        # DbPortalHit discriminated union の type は subtype 付き (sra-study など)
         db_to_type = {
             "sra": "sra-study",
             "jga": "jga-study",
@@ -673,7 +673,7 @@ class TestDbPortalErrorFormat:
         assert body["title"] == "Bad Request"
         assert body["status"] == 400
         assert "detail" in body
-        # column 情報が自然言語で detail に埋め込まれる (source.md §AP1 決定)
+        # column 情報が自然言語で detail に埋め込まれる (機械判別は type URI slug のみ)
         assert "column" in body["detail"]
 
     def test_400_cursor_not_supported_shape(
@@ -1028,7 +1028,7 @@ class TestDbPortalSolrErrorPropagation:
         assert resp.status_code == 502
 
 
-# === AP5: parallel fan-out + per-backend timeouts ===
+# === Parallel fan-out + per-backend timeouts ===
 
 
 def _delayed_es_response(delay: float, total: int = 0) -> Any:
@@ -1057,8 +1057,8 @@ def _delayed_txsearch_response(delay: float, num_found: int = 0) -> Any:
     return _run
 
 
-class TestDbPortalCrossSearchAP5Parallelization:
-    """AP5: parallel fan-out + per-backend timeouts + total timeout.
+class TestDbPortalCrossSearchParallelization:
+    """Parallel fan-out + per-backend timeouts + total timeout.
 
     Mock boundary stays at ``es_search`` / ``arsa_search`` / ``txsearch_search``
     (AsyncMock). ``asyncio.wait_for`` and ``asyncio.wait`` are internal
@@ -1285,7 +1285,7 @@ class TestDbPortalCrossSearchAP5Parallelization:
         assert resp.status_code == 200
 
 
-class TestDbPortalCrossSearchAP5PBT:
+class TestDbPortalCrossSearchPBT:
     """Property-based tests: response shape + DB order invariants."""
 
     _OUTCOME_STRATEGY = st.sampled_from(("success", "timeout", "connect_error", "http_5xx"))
@@ -1413,11 +1413,11 @@ class TestDbPortalCrossSearchAP5PBT:
         assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
 
 
-# === AP3 Advanced Search DSL dispatch ===
+# === Advanced Search DSL dispatch ===
 
 
 class TestDbPortalAdvValidDispatch:
-    """AP3 adv: valid DSL dispatch routes to ES / ARSA / TXSearch.
+    """adv: valid DSL dispatch routes to ES / ARSA / TXSearch.
 
     Mock boundary is the HTTP client for each backend (upstream), so the
     parse → validate → compile → dispatch pipeline is exercised end-to-end
@@ -1630,11 +1630,11 @@ class TestDbPortalAdvValidDispatch:
         assert resp.json()["type"] == DbPortalErrorType.invalid_query_combination.value
 
 
-# === AP6: Tier 2 / Tier 3 end-to-end ===
+# === Tier 2 / Tier 3 end-to-end ===
 
 
 class TestDbPortalAdvTier2Tier3:
-    """AP6 Tier 2 (submitter / publication) と Tier 3 (DB 別 28 per-DB) の
+    """Tier 2 (submitter / publication) と Tier 3 (DB 別 28 per-DB) の
     cross-mode 拒否と single-mode 成功、nested query 発行を検証。
     """
 
@@ -1642,7 +1642,7 @@ class TestDbPortalAdvTier2Tier3:
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """Tier 3 x cross mode は field-not-available-in-cross-db で 400 (AP6 で初発動)."""
+        """Tier 3 x cross mode は field-not-available-in-cross-db で 400."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"adv": "library_strategy:WGS"},
@@ -1840,7 +1840,7 @@ class TestDbPortalAdvTier2Tier3:
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """GUI が送る可能性のない field (例: geo_loc_name、AP6.5 送り) は unknown-field."""
+        """GUI が送る可能性のない field (例: geo_loc_name、未 allowlist 化) は unknown-field."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"adv": "geo_loc_name:Japan", "db": "biosample"},

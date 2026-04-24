@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.search.dsl.compiler_es (AP3 Stage 3a).
+"""Tests for ddbj_search_api.search.dsl.compiler_es (Stage 3a).
 
 SSOT: search-backends.md §バックエンド変換 (L517-520).
 
@@ -236,7 +236,7 @@ class TestCompilerPBT:
         assert expected_key in q["bool"]
 
 
-# === AP6: Tier 2 nested queries ===
+# === Tier 2 nested queries ===
 
 
 class TestTier2Submitter:
@@ -283,7 +283,7 @@ class TestTier2Publication:
         }
 
 
-# === AP6: Tier 3 flat queries ===
+# === Tier 3 flat queries ===
 
 
 class TestTier3FlatEnum:

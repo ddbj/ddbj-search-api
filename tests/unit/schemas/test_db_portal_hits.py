@@ -1,9 +1,9 @@
-"""Tests for AP6 discriminated union DbPortalHit variants.
+"""Tests for DbPortalHit discriminated union variants.
 
 8 variant (BioProject / BioSample / SRA / JGA / GEA / MetaboBank / Trad / Taxonomy)
 の各 `type` discriminator 値に対する validate 経路、subtype 固有 field、
-`extra="ignore"` 挙動、alias 往復を検証する。SSOT は source.md §AP1 DB 別 hit 表 +
-search-backends.md §L64-69、および converter 側 `schema.py`。
+`extra="ignore"` 挙動、alias 往復を検証する。SSOT は search-backends.md §L64-69
+および converter 側 `schema.py`。
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ class TestBioProjectVariant:
         assert h.grant[0].agency[0].name == "JSPS"
 
     def test_project_type_literal_rejects_invalid_value(self) -> None:
-        # spec 外 (INSDC ProjectType 系、AP6.5 送り)
+        # spec 外 (INSDC ProjectType 系は未 allowlist 化)
         with pytest.raises(pydantic.ValidationError):
             _validate(
                 {

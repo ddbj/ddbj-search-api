@@ -1,16 +1,14 @@
-"""Tests for GET /db-portal/parse (AP7).
+"""Tests for GET /db-portal/parse.
 
-AP7: ``adv`` DSL を SSOT query-tree JSON (search-backends.md §L363-381) に変換する
+``adv`` DSL を SSOT query-tree JSON (search-backends.md §L363-381) に変換する
 endpoint。共有 URL (``?adv=...``) から Advanced Search GUI の state を復元する用途。
 
-AP3 の ``parse`` / ``validate`` / ``ast_to_json`` を wiring するだけで、コア DSL
+既存の ``parse`` / ``validate`` / ``ast_to_json`` を wiring するだけで、コア DSL
 処理は完全再利用。validator mode は既存 ``/db-portal/search?adv=...`` と同一
 (``db`` 未指定 → ``mode='cross'`` / 指定 → ``mode='single'``)。
 
-エラー契約: AP3 で確定した 7 slug をそのまま発火 (新 slug 追加なし)。
-``advanced-search-not-implemented`` は AP3 完了後 never emitted (AP7 でも同様)。
-``field-not-available-in-cross-db`` は AP3 時点で ``TIER3_FIELDS`` が空のため実際には
-発火しないが、enum member としては存在する (AP6 で Tier 3 追加時に enable)。
+エラー契約: DSL 関連 7 slug をそのまま発火 (新 slug 追加なし)。
+``advanced-search-not-implemented`` は DSL-backed router では never emitted。
 """
 
 from __future__ import annotations
@@ -224,7 +222,7 @@ class TestDbPortalParseKeysShape:
 
 
 class TestDbPortalParseErrorSlugs:
-    """7 DSL slug (AP3 確定) + AP3 直前の never-emitted slug の契約確認.
+    """DSL 関連 7 slug + never-emitted slug の契約確認.
 
     トリガ DSL は tests/unit/search/dsl/test_errors.py の
     TestParserErrorPosition / TestValidatorErrorPosition / TestErrorDetailEmbeddings
@@ -297,8 +295,8 @@ class TestDbPortalParseErrorSlugs:
         assert "5" in body["detail"]  # default max_depth が detail に含まれる
 
     def test_field_not_available_in_cross_db_enum_exists(self) -> None:
-        # AP3 時点で TIER3_FIELDS は空なので runtime では発火しない。
-        # AP6 で Tier 3 追加時に enable する placeholder。enum 存在だけ保証。
+        # 実発火は TestModeValidation で cross-mode Tier 3 のケースを別途検証する。
+        # ここでは enum member が期待 URI で存在することだけ保証する。
         assert DbPortalErrorType.field_not_available_in_cross_db.value == (
             "https://ddbj.nig.ac.jp/problems/field-not-available-in-cross-db"
         )
@@ -307,7 +305,7 @@ class TestDbPortalParseErrorSlugs:
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        # AP3 完了で 501 legacy slug は never emitted (schemas/db_portal.py L48-49 コメント)。
+        # DSL-backed router で 501 legacy slug は never emitted。
         # parse endpoint でも同様。複数の典型的な error DSL で確認。
         for bad in ["foo:bar", "date_published:2024-99-99", 'title:""', ""]:
             resp = app_with_db_portal.get("/db-portal/parse", params={"adv": bad})

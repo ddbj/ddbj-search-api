@@ -7823,10 +7823,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Advanced Search DSL (AP3 + AP6).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
+              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
               "title": "Adv"
             },
-            "description": "Advanced Search DSL (AP3 + AP6).  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
           },
           {
             "name": "db",
@@ -7985,10 +7985,10 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...`` (AP3).  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs.",
+              "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs.",
               "title": "Adv"
             },
-            "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...`` (AP3).  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs."
+            "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs."
           },
           {
             "name": "db",
@@ -9910,7 +9910,7 @@
           "type"
         ],
         "title": "DbPortalHitBioProject",
-        "description": "BioProject hit (AP6)."
+        "description": "BioProject hit."
       },
       "DbPortalHitBioSample": {
         "properties": {
@@ -10117,7 +10117,7 @@
           "type"
         ],
         "title": "DbPortalHitBioSample",
-        "description": "BioSample hit (AP6)."
+        "description": "BioSample hit."
       },
       "DbPortalHitGea": {
         "properties": {
@@ -10328,7 +10328,7 @@
           "type"
         ],
         "title": "DbPortalHitGea",
-        "description": "GEA hit (AP6)."
+        "description": "GEA hit."
       },
       "DbPortalHitJga": {
         "properties": {
@@ -10600,7 +10600,7 @@
           "type"
         ],
         "title": "DbPortalHitJga",
-        "description": "JGA hit (AP6). 4 subtype; subtype-specific fields are optional.\n\n``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` / ``jga-policy``.\nstudy_type / grant / publication は jga-study のみ、dataset_type は jga-dataset のみ。"
+        "description": "JGA hit. 4 subtype; subtype-specific fields are optional.\n\n``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` / ``jga-policy``.\nstudy_type / grant / publication は jga-study のみ、dataset_type は jga-dataset のみ。"
       },
       "DbPortalHitMetabobank": {
         "properties": {
@@ -10839,7 +10839,7 @@
           "type"
         ],
         "title": "DbPortalHitMetabobank",
-        "description": "MetaboBank hit (AP6)."
+        "description": "MetaboBank hit."
       },
       "DbPortalHitSra": {
         "properties": {
@@ -11132,7 +11132,7 @@
           "type"
         ],
         "title": "DbPortalHitSra",
-        "description": "SRA hit (AP6). 6 subtype in a single variant; subtype-specific fields are optional.\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``. library_* / platform /\ninstrument_model は sra-experiment のみ、analysis_type は sra-analysis のみ\n実値が入る。他 subtype では ``None``。"
+        "description": "SRA hit. 6 subtype in a single variant; subtype-specific fields are optional.\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``. library_* / platform /\ninstrument_model は sra-experiment のみ、analysis_type は sra-analysis のみ\n実値が入る。他 subtype では ``None``。"
       },
       "DbPortalHitTaxonomy": {
         "properties": {
@@ -11351,7 +11351,7 @@
           "type"
         ],
         "title": "DbPortalHitTaxonomy",
-        "description": "Taxonomy (TXSearch-backed) hit (AP6).\n\n``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist への追加は AP6.5\n(staging TXSearch の schema luke で field 不在を確認済、plan §リスク #6)。"
+        "description": "Taxonomy (TXSearch-backed) hit.\n\n``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist へは追加しない\n(staging TXSearch の schema luke で field 不在を確認済のため)。"
       },
       "DbPortalHitTrad": {
         "properties": {
@@ -11553,7 +11553,7 @@
           "type"
         ],
         "title": "DbPortalHitTrad",
-        "description": "Trad (ARSA-backed) hit (AP6)."
+        "description": "Trad (ARSA-backed) hit."
       },
       "DbPortalHitsResponse": {
         "properties": {

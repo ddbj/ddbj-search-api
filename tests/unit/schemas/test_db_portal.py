@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.schemas.db_portal (AP1).
+"""Tests for ddbj_search_api.schemas.db_portal.
 
 Covers enum shape, DbPortalQuery attribute storage & sort allowlist,
 Pydantic alias handling, and cursor round-trip with db-portal payload
@@ -81,10 +81,10 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: AP1 (3) + AP3 (7) = 10 problem type URIs."""
+    """DbPortalErrorType: base 3 + DSL 7 = 10 problem type URIs."""
 
-    def test_has_all_ap1_and_ap3_members(self) -> None:
-        # AP1 base 3 + AP3 DSL 7 = 10.  advanced_search_not_implemented stays for
+    def test_has_all_members(self) -> None:
+        # base 3 + DSL 7 = 10.  advanced_search_not_implemented stays for
         # backward compatibility until a later cleanup PR but is never emitted.
         assert len(DbPortalErrorType) == 10
 
@@ -108,8 +108,8 @@ class TestDbPortalErrorType:
     def test_cursor_not_supported_uri(self) -> None:
         assert DbPortalErrorType.cursor_not_supported.value == "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
 
-    def test_ap3_dsl_slugs_present(self) -> None:
-        """AP3 で追加した 7 slug の URI (source.md §AP1 L125-134 表)."""
+    def test_dsl_slugs_present(self) -> None:
+        """DSL 関連 7 slug の URI."""
         expected_slugs = {
             "unexpected-token",
             "unknown-field",
@@ -283,11 +283,11 @@ class TestDbPortalCrossSearchResponse:
 
 
 class TestDbPortalHit:
-    """DbPortalHit: discriminated union dispatch via TypeAdapter (AP6).
+    """DbPortalHit: discriminated union dispatch via TypeAdapter.
 
-    AP1 の ``extra="allow"`` は AP6 で撤去 (decisions.md §A1-3)。status /
-    accessibility 等は ``DbPortalHitBase`` に明示 field として定義されているため
-    pass-through 挙動は維持されるが、未定義の field は silently drop される。
+    ``extra="ignore"`` により、``DbPortalHitBase`` に明示 field として定義される
+    status / accessibility などは pass-through される一方、未定義の field は
+    silently drop される。
     """
 
     def test_minimal_variant_instantiation(self) -> None:
@@ -306,7 +306,7 @@ class TestDbPortalHit:
         assert isinstance(h, DbPortalHitBase)
 
     def test_status_and_accessibility_preserved_as_explicit_fields(self) -> None:
-        """AP6: status / accessibility は DbPortalHitBase の明示 field。"""
+        """status / accessibility は DbPortalHitBase の明示 field。"""
         h = _DbPortalHitAdapter.validate_python(
             {
                 "identifier": "PRJDB1",
@@ -320,16 +320,16 @@ class TestDbPortalHit:
         assert dumped["accessibility"] == "public-access"
 
     def test_unknown_field_silently_ignored(self) -> None:
-        """AP6: extra="ignore" で converter 側の将来 field は silently drop。"""
+        """extra="ignore" で converter 側の将来 field は silently drop。"""
         h = _DbPortalHitAdapter.validate_python(
             {
                 "identifier": "PRJDB1",
                 "type": "bioproject",
-                "some_new_field_in_ap7": "value",
+                "some_future_field": "value",
             },
         )
         dumped = h.model_dump(by_alias=True)
-        assert "some_new_field_in_ap7" not in dumped
+        assert "some_future_field" not in dumped
 
     def test_date_published_alias(self) -> None:
         h = _DbPortalHitAdapter.validate_python(
@@ -360,12 +360,12 @@ class TestDbPortalHit:
         assert dumped["dbXrefs"][0]["type"] == "biosample"
 
     def test_missing_type_rejected(self) -> None:
-        """AP6: discriminator strict — type 欠損は ValidationError。"""
+        """discriminator strict — type 欠損は ValidationError。"""
         with pytest.raises(pydantic.ValidationError):
             _DbPortalHitAdapter.validate_python({"identifier": "X"})
 
     def test_unknown_type_rejected(self) -> None:
-        """AP6: discriminator strict — 未知 type は ValidationError。"""
+        """discriminator strict — 未知 type は ValidationError。"""
         with pytest.raises(pydantic.ValidationError):
             _DbPortalHitAdapter.validate_python({"identifier": "X", "type": "xxx-unknown"})
 

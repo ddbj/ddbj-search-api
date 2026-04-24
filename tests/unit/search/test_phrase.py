@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.search.phrase (AP2 共通 util).
+"""Tests for ddbj_search_api.search.phrase (ES/Solr 共通 auto-phrase util).
 
 ES と Solr 両 backend で再利用する auto-phrase 関連 helper:
 - ``ES_AUTO_PHRASE_CHARS`` / ``SOLR_AUTO_PHRASE_CHARS`` : trigger char set

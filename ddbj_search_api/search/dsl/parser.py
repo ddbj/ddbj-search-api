@@ -1,4 +1,4 @@
-"""AP3 DSL parser (Stage 1: DSL text → AST).
+"""DSL parser (Stage 1: DSL text → AST).
 
 Lark LALR(1) で ``grammar.lark`` を適用し、DSL 文字列を AST (``ast.Node``) に変換する。
 Lark の ``propagate_positions=True`` + ``@v_args(meta=True)`` で ``Position`` を全ノードに付与。

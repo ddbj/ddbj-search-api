@@ -1,8 +1,7 @@
-"""AP3 DSL エラー型.
+"""DSL エラー型.
 
-AP1 決定 (source.md §AP1 L140-142) に従い、``ProblemDetails`` schema は拡張しない。
-エラー位置情報 (column / length) は ``detail`` 文字列に自然言語で埋め込み、
-type URI slug で機械判別する。
+``ProblemDetails`` schema は拡張せず、エラー位置情報 (column / length) は ``detail``
+文字列に自然言語で埋め込み、type URI slug で機械判別する。
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ TYPE_URI_PREFIX = "https://ddbj.nig.ac.jp/problems/"
 
 
 class ErrorType(str, Enum):
-    """AP3 で追加する 7 slug (``advanced-search-not-implemented`` は AP3 完了時に事実上廃止)."""
+    """DSL 実装で導入した 7 slug (``advanced-search-not-implemented`` は DSL 実装後に emit されない)."""
 
     unexpected_token = "unexpected-token"
     unknown_field = "unknown-field"

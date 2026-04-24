@@ -5,14 +5,14 @@ Five request patterns dispatched by a single handler:
 1. ``q`` only            → cross-database count-only (8 entries, ES + Solr)
 2. ``q`` + ``db``        → db-specific hits envelope
                            (ES for 6 DBs, Solr for ``trad`` / ``taxonomy``)
-3. ``adv`` only          → cross-database count-only via the DSL compiler (AP3)
-4. ``adv`` + ``db``      → db-specific hits envelope via the DSL compiler (AP3)
+3. ``adv`` only          → cross-database count-only via the DSL compiler
+4. ``adv`` + ``db``      → db-specific hits envelope via the DSL compiler
 5. ``cursor`` + ``db=trad/taxonomy`` → 400 ``cursor-not-supported``
                            (Solr is offset-only; no PIT equivalent in 4.4.0)
 
 Mutually exclusive ``q`` + ``adv`` returns 400.  Cross-search count-only
-fans out in parallel (AP5) with per-backend ``asyncio.wait_for`` bounds
-and an overall ``asyncio.wait`` deadline.  DSL errors (unknown-field,
+fans out in parallel with per-backend ``asyncio.wait_for`` bounds and an
+overall ``asyncio.wait`` deadline.  DSL errors (unknown-field,
 invalid-date-format, etc.) surface as 400 + RFC 7807 + dedicated type URI.
 """
 
@@ -77,7 +77,7 @@ router = APIRouter()
 # Deep paging limit aligned with /entries/* (see routers.entries._DEEP_PAGING_LIMIT).
 _DEEP_PAGING_LIMIT = 10000
 
-# Cross-search `databases[]` order (SSOT source.md § AP1).
+# Cross-search `databases[]` order (fixed, exposed in OpenAPI spec).
 _DB_ORDER: tuple[DbPortalDb, ...] = (
     DbPortalDb.trad,
     DbPortalDb.sra,
@@ -182,8 +182,8 @@ def _compute_next_cursor(
 ) -> tuple[str | None, bool]:
     """Build nextCursor/hasNext from ES hits.
 
-    Duplicates ``routers.entries._compute_next_cursor``; AP5 will
-    consolidate the two into a shared helper.
+    Duplicates ``routers.entries._compute_next_cursor``; a future refactor
+    can consolidate the two into a shared helper.
     """
     if not raw_hits or len(raw_hits) < size:
         return (None, False)
@@ -204,9 +204,9 @@ def _compute_next_cursor(
 def _hit_from_source(hit: dict[str, Any]) -> DbPortalHit:
     """Dispatch ES ``_source`` dict into one of the 8 DbPortalHit variants.
 
-    AP6: ``DbPortalHit`` is a Pydantic v2 discriminated union keyed on ``type``
-    (plan §5). Unknown / missing ``type`` raises ``ValidationError`` and is
-    surfaced as a 500 by the caller (no silent fallback variant; A1-3 spirit).
+    ``DbPortalHit`` is a Pydantic v2 discriminated union keyed on ``type``.
+    Unknown / missing ``type`` raises ``ValidationError`` and is surfaced as
+    a 500 by the caller (no silent fallback variant).
     """
     source = dict(hit.get("_source", {}))
     return _DbPortalHitAdapter.validate_python(source)  # type: ignore[no-any-return]
@@ -389,14 +389,14 @@ async def _cross_search_count_only(
     config: AppConfig,
     q: str | None,
 ) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database count-only search (AP5).
+    """Parallel cross-database count-only search.
 
     All 8 DBs fan out via ``asyncio.create_task``; ``asyncio.wait`` with
     ``ALL_COMPLETED`` + ``cross_search_total_timeout`` collects them.
     Per-backend timeouts are applied inside each ``_count_one_db_*``
     via ``asyncio.wait_for``.  Tasks still pending at the total deadline
     are cancelled and surfaced as ``error=timeout`` in the response,
-    preserving the AP1 partial-success policy (200 as long as any DB
+    preserving the partial-success policy (200 as long as any DB
     returned a count; 502 only when every DB failed).
     """
     query_body = build_search_query(keywords=q, keyword_operator="AND")
@@ -436,7 +436,7 @@ async def _cross_search_count_only(
     return DbPortalCrossSearchResponse(databases=databases)
 
 
-# === AP3: Advanced Search DSL cross-db count ===
+# === Advanced Search DSL cross-db count ===
 
 
 async def _count_arsa_adv(
@@ -559,11 +559,11 @@ async def _adv_cross_search_count_only(
     config: AppConfig,
     ast: DslNode,
 ) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database adv count-only (AP3 + AP5 pattern).
+    """Parallel cross-database adv count-only.
 
     Compiles the AST once per backend dialect, then fans out 8 DBs via
     ``asyncio.create_task`` with ``ALL_COMPLETED`` + ``cross_search_total_timeout``.
-    Partial-success policy (200 unless every DB failed) matches AP5.
+    Partial-success policy (200 unless every DB failed) matches the simple-search flow.
     """
     es_query_body = compile_to_es(ast)
     arsa_q = compile_to_solr(ast, dialect="arsa")
@@ -608,7 +608,7 @@ async def _adv_cross_search_count_only(
     return DbPortalCrossSearchResponse(databases=databases)
 
 
-# === AP3: Advanced Search DSL db-specific hits ===
+# === Advanced Search DSL db-specific hits ===
 
 
 async def _search_arsa_adv(
@@ -1074,7 +1074,7 @@ router.add_api_route(
 )
 
 
-# === AP7: GET /db-portal/parse — DSL → GUI 逆パーサ ===
+# === GET /db-portal/parse — DSL → GUI 逆パーサ ===
 
 
 async def _parse_db_portal(
@@ -1082,7 +1082,7 @@ async def _parse_db_portal(
         ...,
         description=(
             "Advanced Search DSL to parse into AST.  Same grammar as "
-            "``GET /db-portal/search?adv=...`` (AP3).  Returned JSON tree "
+            "``GET /db-portal/search?adv=...``.  Returned JSON tree "
             "follows SSOT search-backends.md §L363-381 and is intended for "
             "GUI state restoration from shared URLs."
         ),

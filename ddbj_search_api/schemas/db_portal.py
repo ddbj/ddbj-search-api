@@ -1,13 +1,13 @@
-"""DB Portal API schemas (AP1 / AP3 / AP6 / AP7).
+"""DB Portal API schemas.
 
 Request/response types for ``GET /db-portal/search`` and ``GET /db-portal/parse``.
 
-- AP1 で暫定導入された ``DbPortalHit.extra="allow"`` は AP6 で撤去
-  (decisions.md §A1-3 完全履行)。DB 別 hit は ``type`` discriminator を持つ
-  Pydantic v2 discriminated union の 8 variant に分割し、明示型化する。
+- ``DbPortalHit`` は ``type`` discriminator を持つ Pydantic v2 discriminated union
+  の 8 variant に分割して明示型化。``extra="ignore"`` で converter 側の将来新 field は
+  silently drop する。
 - helper DTO (`OrganismOut` / `OrganizationOut` / `PublicationOut` / `GrantOut` /
   `XrefOut` / `ExternalLinkOut` / `BioSamplePackageOut`) は converter 側 model を
-  import せずに API 側で再定義 (Pin drift 回避、plan §6)。
+  import せずに API 側で再定義 (Pin drift 回避)。
 - ``_DbPortalHitAdapter`` は discriminated union の TypeAdapter。ES ``_source`` /
   Solr doc の dict → 正しい variant への dispatch を担う。
 """
@@ -50,14 +50,14 @@ class DbPortalErrorType(str, Enum):
 
     Member names mirror ``ddbj_search_api.search.dsl.errors.ErrorType`` so the
     router can map a ``DslError`` to the db-portal enum via ``DbPortalErrorType[err.type.name]``.
-    ``advanced_search_not_implemented`` is retained for backward compatibility but never
-    emitted once AP3 is live (slated for removal in a future cleanup PR).
+    ``advanced_search_not_implemented`` is retained for backward compatibility but is
+    not emitted by the DSL-backed router (slated for removal in a future cleanup PR).
     """
 
     invalid_query_combination = "https://ddbj.nig.ac.jp/problems/invalid-query-combination"
     advanced_search_not_implemented = "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
-    # AP3: DSL parser error types.
+    # DSL parser error types.
     unexpected_token = "https://ddbj.nig.ac.jp/problems/unexpected-token"
     unknown_field = "https://ddbj.nig.ac.jp/problems/unknown-field"
     field_not_available_in_cross_db = "https://ddbj.nig.ac.jp/problems/field-not-available-in-cross-db"
@@ -93,7 +93,7 @@ class DbPortalQuery:
         adv: str | None = Query(
             default=None,
             description=(
-                "Advanced Search DSL (AP3 + AP6).  Lark LALR(1)-parsed Lucene subset with "
+                "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with "
                 "field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, "
                 '``organism:"Homo sapiens"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` '
                 "(case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, "
@@ -179,7 +179,7 @@ class DbPortalCrossSearchResponse(BaseModel):
     )
 
 
-# === AP6: helper DTO (converter model を import せずに再定義、Pin drift 回避) ===
+# === helper DTO (converter model を import せずに再定義、Pin drift 回避) ===
 
 # Converter 側 Literal 値と一致させる (`ddbj_search_converter.schema` L8-11)。
 # Status の値域: public / private / suppressed / withdrawn
@@ -269,15 +269,14 @@ class BioSamplePackageOut(BaseModel):
     display_name: str | None = Field(default=None, alias="displayName")
 
 
-# === AP6: DbPortalHit discriminated union (8 variant) ===
+# === DbPortalHit discriminated union (8 variant) ===
 
 
 class DbPortalHitBase(BaseModel):
     """Common fields across all DB-specific hit variants.
 
-    AP1 では ``DbPortalHit(extra="allow")`` で DB 別追加フィールドを透過的に通していたが、
-    A1-3 履行のため AP6 で明示型化。``extra="ignore"`` で converter 側の将来新 field は
-    silently drop して次 phase (AP6.5) で明示追加する方針。
+    ``extra="ignore"`` で converter 側の将来新 field は silently drop する
+    (未 allowlist 化 field は後続で明示追加する方針)。
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
@@ -320,7 +319,7 @@ class DbPortalHitBase(BaseModel):
 
 
 class DbPortalHitBioProject(DbPortalHitBase):
-    """BioProject hit (AP6)."""
+    """BioProject hit."""
 
     type: Literal["bioproject"] = Field(description="Hit type discriminator.")
     project_type: Literal["BioProject", "UmbrellaBioProject"] | None = Field(
@@ -335,7 +334,7 @@ class DbPortalHitBioProject(DbPortalHitBase):
 
 
 class DbPortalHitBioSample(DbPortalHitBase):
-    """BioSample hit (AP6)."""
+    """BioSample hit."""
 
     type: Literal["biosample"] = Field(description="Hit type discriminator.")
     organization: list[OrganizationOut] | None = None
@@ -344,7 +343,7 @@ class DbPortalHitBioSample(DbPortalHitBase):
 
 
 class DbPortalHitSra(DbPortalHitBase):
-    """SRA hit (AP6). 6 subtype in a single variant; subtype-specific fields are optional.
+    """SRA hit. 6 subtype in a single variant; subtype-specific fields are optional.
 
     ``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /
     ``sra-run`` / ``sra-sample`` / ``sra-analysis``. library_* / platform /
@@ -372,7 +371,7 @@ class DbPortalHitSra(DbPortalHitBase):
 
 
 class DbPortalHitJga(DbPortalHitBase):
-    """JGA hit (AP6). 4 subtype; subtype-specific fields are optional.
+    """JGA hit. 4 subtype; subtype-specific fields are optional.
 
     ``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` / ``jga-policy``.
     study_type / grant / publication は jga-study のみ、dataset_type は jga-dataset のみ。
@@ -394,7 +393,7 @@ class DbPortalHitJga(DbPortalHitBase):
 
 
 class DbPortalHitGea(DbPortalHitBase):
-    """GEA hit (AP6)."""
+    """GEA hit."""
 
     type: Literal["gea"] = Field(description="Hit type discriminator.")
     organization: list[OrganizationOut] | None = None
@@ -403,7 +402,7 @@ class DbPortalHitGea(DbPortalHitBase):
 
 
 class DbPortalHitMetabobank(DbPortalHitBase):
-    """MetaboBank hit (AP6)."""
+    """MetaboBank hit."""
 
     type: Literal["metabobank"] = Field(description="Hit type discriminator.")
     organization: list[OrganizationOut] | None = None
@@ -414,7 +413,7 @@ class DbPortalHitMetabobank(DbPortalHitBase):
 
 
 class DbPortalHitTrad(DbPortalHitBase):
-    """Trad (ARSA-backed) hit (AP6)."""
+    """Trad (ARSA-backed) hit."""
 
     type: Literal["trad"] = Field(description="Hit type discriminator.")
     division: str | None = None
@@ -423,10 +422,10 @@ class DbPortalHitTrad(DbPortalHitBase):
 
 
 class DbPortalHitTaxonomy(DbPortalHitBase):
-    """Taxonomy (TXSearch-backed) hit (AP6).
+    """Taxonomy (TXSearch-backed) hit.
 
-    ``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist への追加は AP6.5
-    (staging TXSearch の schema luke で field 不在を確認済、plan §リスク #6)。
+    ``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist へは追加しない
+    (staging TXSearch の schema luke で field 不在を確認済のため)。
     """
 
     type: Literal["taxonomy"] = Field(description="Hit type discriminator.")
@@ -481,7 +480,7 @@ class DbPortalHitsResponse(BaseModel):
     )
 
 
-# === AP7: GET /db-portal/parse response schema ===
+# === GET /db-portal/parse response schema ===
 #
 # SSOT: db-portal/docs/search-backends.md §スキーマ仕様 (L363-381).
 # `op` discriminator は全 7 値 (AND/OR/NOT/eq/contains/wildcard/between) が

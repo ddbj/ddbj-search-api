@@ -32,7 +32,7 @@ from pydantic import ValidationError
 
 
 class TestPublicationContract:
-    """Publication 再設計 (CP3): e 接頭辞撤廃 / status 廃止 / reference lowercase."""
+    """Publication 再設計: e 接頭辞撤廃 / status 廃止 / reference lowercase."""
 
     @pytest.mark.parametrize("value", ["pubmed", "doi", "pmc", "other"])
     def test_new_dbtype_values_accepted(self, value: str) -> None:
@@ -57,7 +57,7 @@ class TestPublicationContract:
 
 
 class TestGrantContract:
-    """Grant.agency が list[Organization] (CP2): 旧 Agency 型は廃止."""
+    """Grant.agency が list[Organization]: 旧 Agency 型は廃止."""
 
     def test_agency_accepts_list_of_organization(self) -> None:
         grant = Grant(
@@ -259,7 +259,7 @@ _BIOPROJECT_MIN: dict[str, Any] = {
 
 
 class TestIsPartOfLowercase:
-    """isPartOf Literal が lowercase 統一 (CP0): capitalize 旧値は拒否."""
+    """isPartOf Literal が lowercase 統一: capitalize 旧値は拒否."""
 
     def test_bioproject_lowercase_accepted(self) -> None:
         bp = BioProject(**_BIOPROJECT_MIN)

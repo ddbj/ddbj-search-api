@@ -1,4 +1,4 @@
-"""Tests for ddbj_search_api.solr.mappers (AP4).
+"""Tests for ddbj_search_api.solr.mappers.
 
 Covers ARSA (Trad) and TXSearch (NCBI Taxonomy) Solr response mappers:
 doc → DbPortalHit, envelope (total, hardLimitReached, hasNext),

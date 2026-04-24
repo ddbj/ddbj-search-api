@@ -1,4 +1,4 @@
-"""AST → JSON tree (AP3 internal use + AP7 forward-compat).
+"""AST → JSON tree.
 
 SSOT: search-backends.md §スキーマ仕様 (L363-381).
 
@@ -8,7 +8,7 @@ Tree form::
     Leaf (value): {"field": "...", "op": "eq"|"contains"|"wildcard", "value": "..."}
     Leaf (range): {"field": "...", "op": "between", "from": "...", "to": "..."}
 
-AP3 では内部利用のみ。AP7 で ``GET /db-portal/parse?adv=...`` endpoint から返す形式として再利用する。
+``GET /db-portal/parse?adv=...`` endpoint のレスポンス形式として使用する。
 """
 
 from __future__ import annotations
