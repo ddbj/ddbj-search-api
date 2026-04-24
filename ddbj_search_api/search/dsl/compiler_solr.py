@@ -147,6 +147,12 @@ def _compile_node(node: Node, *, dialect: SolrDialect) -> str:
         return "(" + " AND ".join(children_q) + ")"
     if node.op == "OR":
         return "(" + " OR ".join(children_q) + ")"
+    # Top-level `(NOT x)` is pure-negative.  Solr 4.4.0 rewrites this to
+    # `MatchAllDocsQuery AND NOT x` automatically (staging probe 2026-04-24:
+    # ARSA `(NOT Definition:"human")` = total - matches).  Wrapping in
+    # `(*:* AND NOT x)` is NOT safe — edismax expands `*:*` via `qf` and
+    # scores differently (TXSearch probe: `(NOT sn:"Homo")` = 2,737,968 but
+    # `(*:* AND NOT sn:"Homo")` = 173,055).
     return f"(NOT {children_q[0]})"
 
 

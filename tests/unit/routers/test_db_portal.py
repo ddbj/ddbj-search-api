@@ -1563,18 +1563,18 @@ class TestDbPortalAdvValidDispatch:
         body = resp.json()
         assert body["type"] == DbPortalErrorType.cursor_not_supported.value
 
-    def test_adv_cursor_with_es_db_returns_400(
+    def test_adv_cursor_with_es_db_returns_cursor_not_supported(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
+        """adv + cursor は ES DB でも cursor_not_supported slug を流用."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"adv": "title:cancer", "db": "bioproject", "cursor": "abc.def"},
         )
         assert resp.status_code == 400
-        # adv + cursor 排他は about:blank
         body = resp.json()
-        assert body["type"] == "about:blank"
+        assert body["type"] == DbPortalErrorType.cursor_not_supported.value
 
     def test_adv_nest_depth_exceeded_returns_400(
         self,

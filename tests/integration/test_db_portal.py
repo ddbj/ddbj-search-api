@@ -4,7 +4,8 @@ Verifies the dispatcher shape against a real ES cluster.  Solr-backed
 DBs (``trad`` / ``taxonomy``) surface ``error=unknown`` on the count
 path and 502 on the db-specific path when ``solr_arsa_base_url`` and
 ``solr_txsearch_url`` are unset, which is the default for integration
-runs.  Advanced Search DSL (``adv``) is still stubbed at 501 in this integration suite.
+runs.  Advanced Search DSL (``adv``) is parsed by the Lark grammar and
+surfaces DSL errors as RFC 7807 400s with dedicated ``type`` URIs.
 """
 
 from __future__ import annotations
@@ -87,11 +88,19 @@ def test_db_specific_per_page_50(app: TestClient) -> None:
 # === Dispatch: Solr unconfigured / 400 / 422 ===
 
 
-def test_adv_returns_501(app: TestClient) -> None:
-    """`adv` dispatches to the Advanced Search stub."""
+def test_adv_syntax_error_returns_400_unexpected_token(app: TestClient) -> None:
+    """DSL syntax errors (e.g. ``field=value``) surface as 400 unexpected-token."""
     resp = app.get("/db-portal/search", params={"adv": "type=bioproject"})
-    assert resp.status_code == 501
-    assert resp.json()["type"] == DbPortalErrorType.advanced_search_not_implemented.value
+    assert resp.status_code == 400
+    assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
+
+
+def test_adv_valid_tier1_runs_against_es(app: TestClient) -> None:
+    """A well-formed Tier 1 DSL dispatches through the cross-db count path."""
+    resp = app.get("/db-portal/search", params={"adv": "title:human"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["databases"]) == 8
 
 
 def test_db_trad_returns_502_when_arsa_unset(app: TestClient) -> None:

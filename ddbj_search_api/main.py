@@ -272,16 +272,23 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 responses = operation.get("responses", {})
 
                 # Remove inapplicable error codes per endpoint.
-                # 400: only paginated list endpoints (deep paging) and
-                # /db-portal/search (q/adv exclusivity + deep paging).
+                # 400: paginated list endpoints (deep paging), /db-portal/search
+                # (q/adv exclusivity, cursor exclusivity, DSL errors, deep paging),
+                # and /db-portal/parse (DSL parse/validate errors).
                 _is_list = path == "/entries/" or (
                     path.startswith("/entries/") and path.endswith("/") and "{" not in path
                 )
-                if not (_is_list or path == "/db-portal/search"):
+                if not (_is_list or path in ("/db-portal/search", "/db-portal/parse")):
                     responses.pop("400", None)
 
                 # 404: only endpoints with {type}/{id} or per-type path.
-                if path in ("/entries/", "/facets", "/service-info", "/db-portal/search"):
+                if path in (
+                    "/entries/",
+                    "/facets",
+                    "/service-info",
+                    "/db-portal/search",
+                    "/db-portal/parse",
+                ):
                     responses.pop("404", None)
 
                 # 422: not needed for /service-info or extension

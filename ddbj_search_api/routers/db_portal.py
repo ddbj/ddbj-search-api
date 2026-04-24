@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ddbj_search_api.config import AppConfig, get_config
-from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.cursor import compute_next_cursor, decode_cursor
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
@@ -169,36 +169,6 @@ def _validate_cursor_exclusivity(query: DbPortalQuery) -> None:
                 "When using cursor-based pagination, only 'db' and 'perPage' are allowed."
             ),
         )
-
-
-def _compute_next_cursor(
-    raw_hits: list[dict[str, Any]],
-    size: int,
-    total: int,
-    offset: int,
-    sort_with_tiebreaker: list[dict[str, Any]],
-    query: dict[str, Any],
-    pit_id: str | None,
-) -> tuple[str | None, bool]:
-    """Build nextCursor/hasNext from ES hits.
-
-    Duplicates ``routers.entries._compute_next_cursor``; a future refactor
-    can consolidate the two into a shared helper.
-    """
-    if not raw_hits or len(raw_hits) < size:
-        return (None, False)
-    if pit_id is None and offset + size >= total:
-        return (None, False)
-    last_sort = raw_hits[-1].get("sort")
-    if last_sort is None:
-        return (None, False)
-    payload = CursorPayload(
-        pit_id=pit_id,
-        search_after=last_sort,
-        sort=sort_with_tiebreaker,
-        query=query,
-    )
-    return (encode_cursor(payload), True)
 
 
 def _hit_from_source(hit: dict[str, Any]) -> DbPortalHit:
@@ -717,7 +687,7 @@ async def _db_specific_search_es_adv(
     raw_hits = es_resp["hits"]["hits"]
     total = int(es_resp["hits"]["total"]["value"])
     hits = [_hit_from_source(h) for h in raw_hits]
-    next_cursor, has_next = _compute_next_cursor(
+    next_cursor, has_next = compute_next_cursor(
         raw_hits=raw_hits,
         size=size,
         total=total,
@@ -905,7 +875,7 @@ async def _db_specific_search_offset(
     raw_hits = es_resp["hits"]["hits"]
     total = int(es_resp["hits"]["total"]["value"])
     hits = [_hit_from_source(h) for h in raw_hits]
-    next_cursor, has_next = _compute_next_cursor(
+    next_cursor, has_next = compute_next_cursor(
         raw_hits=raw_hits,
         size=size,
         total=total,
@@ -962,7 +932,7 @@ async def _db_specific_search_cursor(
     total = int(es_resp["hits"]["total"]["value"])
     updated_pit_id: str = es_resp.get("pit_id", pit_id)
     hits = [_hit_from_source(h) for h in raw_hits]
-    next_cursor, has_next = _compute_next_cursor(
+    next_cursor, has_next = compute_next_cursor(
         raw_hits=raw_hits,
         size=query.per_page,
         total=total,
@@ -1019,10 +989,12 @@ async def _search_db_portal(
                         "Use 'page' + 'perPage' (offset-only) instead."
                     ),
                 )
-            raise HTTPException(
+            raise DbPortalHTTPException(
                 status_code=400,
+                type_uri=DbPortalErrorType.cursor_not_supported,
                 detail=(
-                    "Cannot use 'cursor' with 'adv'. Advanced Search uses offset pagination; omit 'cursor' to paginate."
+                    "Cursor-based pagination is not supported with 'adv'. "
+                    "Advanced Search uses offset pagination; omit 'cursor' to paginate."
                 ),
             )
         try:

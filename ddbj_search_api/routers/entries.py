@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
-from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.cursor import compute_next_cursor, decode_cursor
 from ddbj_search_api.dblink.client import count_linked_ids_bulk, get_linked_ids_limited_bulk
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
@@ -157,39 +157,6 @@ def _build_source_body(source: list[str] | dict[str, Any] | None) -> dict[str, A
         return {"_source": {"excludes": excludes}}
 
     return {"_source": {"excludes": ["dbXrefs"]}}
-
-
-def _compute_next_cursor(
-    raw_hits: list[dict[str, Any]],
-    size: int,
-    total: int,
-    offset: int,
-    sort_with_tiebreaker: list[dict[str, Any]],
-    query: dict[str, Any],
-    pit_id: str | None,
-) -> tuple[str | None, bool]:
-    """Compute nextCursor and hasNext from search results.
-
-    Returns (next_cursor_token, has_next).
-    """
-    if not raw_hits or len(raw_hits) < size:
-        return (None, False)
-
-    if pit_id is None and offset + size >= total:
-        return (None, False)
-
-    last_sort = raw_hits[-1].get("sort")
-    if last_sort is None:
-        return (None, False)
-
-    payload = CursorPayload(
-        pit_id=pit_id,
-        search_after=last_sort,
-        sort=sort_with_tiebreaker,
-        query=query,
-    )
-
-    return (encode_cursor(payload), True)
 
 
 async def _do_search(
@@ -332,7 +299,7 @@ async def _do_search_offset(
         )
 
     # 11. Compute nextCursor
-    next_cursor, has_next = _compute_next_cursor(
+    next_cursor, has_next = compute_next_cursor(
         raw_hits=raw_hits,
         size=size,
         total=total,
@@ -429,7 +396,7 @@ async def _do_search_cursor(
     items = await _enrich_hits(raw_hits, db_xrefs_limit, include_db_xrefs=include_db_xrefs)
 
     # 6. Compute nextCursor
-    next_cursor, has_next = _compute_next_cursor(
+    next_cursor, has_next = compute_next_cursor(
         raw_hits=raw_hits,
         size=per_page,
         total=total,

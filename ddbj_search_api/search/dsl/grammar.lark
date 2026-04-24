@@ -26,7 +26,10 @@ NOT: "NOT"
 PHRASE.5: /"(?:[^"\\]|\\.)*"/
 RANGE.5: /\[[^\s\]]+\s+TO\s+[^\s\]]+\]/
 DATE.4: /\d{4}-\d{2}-\d{2}/
-WILDCARD.3: /[A-Za-z0-9_]*[*?][A-Za-z0-9_*?]*/
+// WILDCARD uses the same character class as WORD but requires at least one
+// ``*`` / ``?``.  Symbol-bearing tokens like ``HIF-1*`` / ``COVID-19*`` must
+// parse as wildcards so users can prefix-search gene / disease names.
+WILDCARD.3: /[^\s:()\[\]"{}^~\/]*[*?][^\s:()\[\]"{}^~\/]*/
 FIELD.2: /[a-z_]+/
 WORD.1: /[^\s:()\[\]"{}^~*?\/]+/
 

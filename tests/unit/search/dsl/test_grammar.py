@@ -61,6 +61,30 @@ class TestFieldClauseValueKinds:
         assert ast.value_kind == "wildcard"
         assert ast.value == "PRJ*123"
 
+    def test_wildcard_with_hyphen(self) -> None:
+        ast = parse("title:HIF-1*")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "wildcard"
+        assert ast.value == "HIF-1*"
+
+    def test_wildcard_with_hyphen_and_digits(self) -> None:
+        ast = parse("title:COVID-19*")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "wildcard"
+        assert ast.value == "COVID-19*"
+
+    def test_wildcard_with_multiple_hyphens(self) -> None:
+        ast = parse("title:SARS-CoV-2*")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "wildcard"
+        assert ast.value == "SARS-CoV-2*"
+
+    def test_wildcard_with_dot(self) -> None:
+        ast = parse("title:1.5*")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "wildcard"
+        assert ast.value == "1.5*"
+
     def test_date(self) -> None:
         ast = parse("date_published:2024-01-01")
         assert isinstance(ast, FieldClause)

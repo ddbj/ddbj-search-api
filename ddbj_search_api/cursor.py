@@ -57,6 +57,38 @@ def encode_cursor(payload: CursorPayload) -> str:
     return f"{signature}.{b64_payload}"
 
 
+def compute_next_cursor(
+    raw_hits: list[dict[str, Any]],
+    size: int,
+    total: int,
+    offset: int,
+    sort_with_tiebreaker: list[dict[str, Any]],
+    query: dict[str, Any],
+    pit_id: str | None,
+) -> tuple[str | None, bool]:
+    """Build (nextCursor, hasNext) from ES hits.
+
+    - ``pit_id`` non-None: cursor mode. The total-reached guard is skipped
+      because search_after does not rely on offsets.
+    - ``pit_id`` None: offset mode. ``offset + size >= total`` terminates.
+    - A short final page or a hit without ``sort`` also terminates.
+    """
+    if not raw_hits or len(raw_hits) < size:
+        return (None, False)
+    if pit_id is None and offset + size >= total:
+        return (None, False)
+    last_sort = raw_hits[-1].get("sort")
+    if last_sort is None:
+        return (None, False)
+    payload = CursorPayload(
+        pit_id=pit_id,
+        search_after=last_sort,
+        sort=sort_with_tiebreaker,
+        query=query,
+    )
+    return (encode_cursor(payload), True)
+
+
 def decode_cursor(token: str) -> CursorPayload:
     """Decode and verify a signed cursor token.
 
