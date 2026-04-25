@@ -24,10 +24,12 @@ def _source(
     parents: list[str] | None = None,
     children: list[str] | None = None,
     object_type: str = "BioProject",
+    status: str = "public",
 ) -> dict[str, Any]:
     return {
         "identifier": identifier,
         "objectType": object_type,
+        "status": status,
         "parentBioProjects": [_xref(p) for p in (parents or [])],
         "childBioProjects": [_xref(c) for c in (children or [])],
     }
@@ -418,3 +420,116 @@ class TestOrphanPBT:
         assert resp.status_code == 200
         assert resp.json() == {"query": accession, "roots": [accession], "edges": []}
         mock_es_mget_source.assert_not_called()
+
+
+# === Status gating (docs/api-spec.md § データ可視性) ===
+
+
+class TestUmbrellaTreeStatusGating:
+    """umbrella-tree は status に基づいて可視性を制御する。
+
+    - seed が withdrawn/private → 404 (存在秘匿)
+    - 中間 node (parent/child) が withdrawn/private → 該当 edge を削除
+    """
+
+    @pytest.mark.parametrize("status", ["withdrawn", "private"])
+    def test_hidden_seed_returns_404(
+        self,
+        app_with_umbrella_tree: TestClient,
+        mock_es_get_source: AsyncMock,
+        status: str,
+    ) -> None:
+        mock_es_get_source.return_value = _source("PRJDB1", status=status)
+        resp = app_with_umbrella_tree.get("/entries/bioproject/PRJDB1/umbrella-tree")
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["detail"] == "The requested bioproject 'PRJDB1' was not found."
+
+    def test_hidden_parent_is_dropped(
+        self,
+        app_with_umbrella_tree: TestClient,
+        mock_es_get_source: AsyncMock,
+        mock_es_mget_source: AsyncMock,
+    ) -> None:
+        """中間 parent が withdrawn の場合、その edge は結果から除外される。"""
+        # seed (PRJDB1) has parent PRJDB_HIDDEN (withdrawn)
+        mock_es_get_source.return_value = _source("PRJDB1", parents=["PRJDB_HIDDEN"])
+        mock_es_mget_source.return_value = {
+            "PRJDB_HIDDEN": _source("PRJDB_HIDDEN", status="withdrawn"),
+        }
+
+        resp = app_with_umbrella_tree.get("/entries/bioproject/PRJDB1/umbrella-tree")
+        assert resp.status_code == 200
+        data = resp.json()
+        # parent が withdrawn なので、PRJDB1 自身が root に昇格し edge 0
+        assert data["roots"] == ["PRJDB1"]
+        assert data["edges"] == []
+
+    def test_hidden_child_is_dropped(
+        self,
+        app_with_umbrella_tree: TestClient,
+        mock_es_get_source: AsyncMock,
+        mock_es_mget_source: AsyncMock,
+    ) -> None:
+        """中間 child が private の場合、その edge は結果から除外される。"""
+        # seed (PRJDB1) has child PRJDB_PRIVATE (private)
+        mock_es_get_source.return_value = _source("PRJDB1", children=["PRJDB_PRIVATE"])
+        mock_es_mget_source.return_value = {
+            "PRJDB_PRIVATE": _source("PRJDB_PRIVATE", status="private"),
+        }
+
+        resp = app_with_umbrella_tree.get("/entries/bioproject/PRJDB1/umbrella-tree")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["roots"] == ["PRJDB1"]
+        assert data["edges"] == []
+
+    def test_visible_siblings_survive_when_one_sibling_hidden(
+        self,
+        app_with_umbrella_tree: TestClient,
+        mock_es_get_source: AsyncMock,
+        mock_es_mget_source: AsyncMock,
+    ) -> None:
+        """複数 children のうち 1 件だけ withdrawn でも、他の可視 edge は残る。"""
+        mock_es_get_source.return_value = _source(
+            "PRJDB_ROOT",
+            children=["PRJDB_OK", "PRJDB_HIDDEN"],
+        )
+        mock_es_mget_source.return_value = {
+            "PRJDB_OK": _source("PRJDB_OK", status="public"),
+            "PRJDB_HIDDEN": _source("PRJDB_HIDDEN", status="withdrawn"),
+        }
+
+        resp = app_with_umbrella_tree.get("/entries/bioproject/PRJDB_ROOT/umbrella-tree")
+        assert resp.status_code == 200
+        data = resp.json()
+        edges = {(e["parent"], e["child"]) for e in data["edges"]}
+        assert edges == {("PRJDB_ROOT", "PRJDB_OK")}
+
+    def test_suppressed_seed_returns_200(
+        self,
+        app_with_umbrella_tree: TestClient,
+        mock_es_get_source: AsyncMock,
+    ) -> None:
+        """suppressed の seed は直接アクセスに相当し、200 で返る
+        (docs/api-spec.md § データ可視性 の直接アクセス ルール)。"""
+        mock_es_get_source.return_value = _source("PRJDB_SUPP", status="suppressed")
+        resp = app_with_umbrella_tree.get("/entries/bioproject/PRJDB_SUPP/umbrella-tree")
+        assert resp.status_code == 200
+
+    def test_hidden_seed_same_as_missing(
+        self,
+        app_with_umbrella_tree: TestClient,
+        mock_es_get_source: AsyncMock,
+        mock_es_resolve_same_as_umbrella: AsyncMock,
+    ) -> None:
+        """withdrawn seed と missing の 404 レスポンスは同一文面。"""
+        mock_es_get_source.return_value = _source("PRJDB1", status="withdrawn")
+        resp_hidden = app_with_umbrella_tree.get("/entries/bioproject/PRJDB1/umbrella-tree")
+
+        mock_es_get_source.return_value = None
+        mock_es_resolve_same_as_umbrella.return_value = None
+        resp_missing = app_with_umbrella_tree.get("/entries/bioproject/PRJDB1/umbrella-tree")
+
+        assert resp_hidden.status_code == resp_missing.status_code == 404
+        assert resp_hidden.json()["detail"] == resp_missing.json()["detail"]

@@ -26,9 +26,6 @@ def _facets_aggs_with_data() -> dict[str, Any]:
             {"key": "Homo sapiens", "doc_count": 100},
             {"key": "Mus musculus", "doc_count": 50},
         ],
-        status=[
-            {"key": "public", "doc_count": 120},
-        ],
         accessibility=[
             {"key": "unrestricted", "doc_count": 150},
         ],
@@ -98,8 +95,9 @@ class TestFacetsResponse:
         assert "facets" in data
         facets = data["facets"]
         assert "organism" in facets
-        assert "status" in facets
         assert "accessibility" in facets
+        # status facet は全件 public のため廃止 (docs/api-spec.md § データ可視性)
+        assert "status" not in facets
 
     def test_cross_type_includes_type_facet(
         self,
@@ -576,3 +574,58 @@ class TestFacetsEsError:
         mock_es_search_facets.side_effect = Exception("ES down")
         resp = app_with_facets.get("/facets/bioproject")
         assert resp.status_code == 500
+
+
+# === Status visibility ===
+
+
+class TestFacetsStatusPublicOnly:
+    """/facets 系は常に status:public に絞り込んで集計する
+    (docs/api-spec.md § データ可視性)。
+    """
+
+    def _extract_status_filter(self, body: dict[str, Any]) -> dict[str, Any]:
+        filters: list[dict[str, Any]] = body["query"]["bool"]["filter"]
+        for f in filters:
+            if "term" in f and "status" in f["term"]:
+                return f
+        raise AssertionError(f"No status filter found in {filters}")
+
+    def test_cross_facets_uses_public_only(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets")
+        body = mock_es_search_facets.call_args[0][2]
+        assert self._extract_status_filter(body) == {"term": {"status": "public"}}
+
+    def test_type_facets_uses_public_only(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets/biosample")
+        body = mock_es_search_facets.call_args[0][2]
+        assert self._extract_status_filter(body) == {"term": {"status": "public"}}
+
+    def test_accession_keyword_still_uses_public_only(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        """keywords が accession 完全一致でも /facets は public のみ集計する
+        (suppressed が facet カウントに混ざらない)。
+        """
+        app_with_facets.get("/facets", params={"keywords": "PRJDB1234"})
+        body = mock_es_search_facets.call_args[0][2]
+        assert self._extract_status_filter(body) == {"term": {"status": "public"}}
+
+    def test_status_not_in_aggs(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets")
+        body = mock_es_search_facets.call_args[0][2]
+        assert "status" not in body["aggs"]

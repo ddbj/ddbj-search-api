@@ -114,32 +114,32 @@ class TestFacetBucketPBT:
 
 
 class TestFacets:
-    """Facets model: common + optional facet fields."""
+    """Facets model: common + optional facet fields.
+
+    ``status`` は docs/api-spec.md § データ可視性 に従い削除された。
+    ``organism`` と ``accessibility`` のみが必須共通フィールド。
+    """
 
     def test_common_facets_required(self) -> None:
         facets = Facets(
             organism=[FacetBucket(value="human", count=10)],
-            status=[FacetBucket(value="public", count=5)],
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
         assert len(facets.organism) == 1
-        assert len(facets.status) == 1
         assert len(facets.accessibility) == 1
 
+    def test_status_field_not_present(self) -> None:
+        facets = Facets(organism=[], accessibility=[])
+        assert not hasattr(facets, "status")
+        data = facets.model_dump(by_alias=True)
+        assert "status" not in data
+
     def test_optional_type_defaults_to_none(self) -> None:
-        facets = Facets(
-            organism=[],
-            status=[],
-            accessibility=[],
-        )
+        facets = Facets(organism=[], accessibility=[])
         assert facets.type is None
 
     def test_optional_object_type_defaults_to_none(self) -> None:
-        facets = Facets(
-            organism=[],
-            status=[],
-            accessibility=[],
-        )
+        facets = Facets(organism=[], accessibility=[])
         assert facets.object_type is None
 
     def test_cross_type_search_includes_type_facet(self) -> None:
@@ -149,7 +149,6 @@ class TestFacets:
                 FacetBucket(value="biosample", count=200),
             ],
             organism=[],
-            status=[],
             accessibility=[],
         )
         assert facets.type is not None
@@ -158,7 +157,6 @@ class TestFacets:
     def test_bioproject_search_includes_object_type_facet(self) -> None:
         facets = Facets(
             organism=[],
-            status=[],
             accessibility=[],
             objectType=[
                 FacetBucket(value="UmbrellaBioProject", count=5),
@@ -171,7 +169,6 @@ class TestFacets:
     def test_alias_serialization(self) -> None:
         facets = Facets(
             organism=[],
-            status=[],
             accessibility=[],
             objectType=[FacetBucket(value="BioProject", count=1)],
         )
@@ -181,7 +178,7 @@ class TestFacets:
 
     def test_missing_required_field_raises_error(self) -> None:
         with pytest.raises(ValidationError):
-            Facets(organism=[], status=[])  # type: ignore[call-arg]
+            Facets(organism=[])  # type: ignore[call-arg]
 
 
 # === EntryListItem ===

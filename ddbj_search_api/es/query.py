@@ -5,12 +5,14 @@ Pure functions that convert API parameters to Elasticsearch query DSL.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ddbj_search_api.search.phrase import (
     ES_AUTO_PHRASE_CHARS,
     parse_keywords_with_autophrase,
 )
+
+StatusMode = Literal["public_only", "include_suppressed"]
 
 # API field name → ES field name mapping
 _SORT_FIELD_MAP: dict[str, str] = {
@@ -142,6 +144,18 @@ def _parse_keywords(keywords: str | None) -> list[tuple[str, bool]]:
     return parse_keywords_with_autophrase(keywords, ES_AUTO_PHRASE_CHARS)
 
 
+def build_status_filter(status_mode: StatusMode) -> dict[str, Any]:
+    """Build an ES filter clause that limits results by ``status``.
+
+    ``public_only`` keeps only ``public`` entries; ``include_suppressed``
+    keeps ``public`` and ``suppressed`` (used when the query matches an
+    accession exactly). ``withdrawn`` / ``private`` are always excluded.
+    """
+    if status_mode == "include_suppressed":
+        return {"terms": {"status": ["public", "suppressed"]}}
+    return {"term": {"status": "public"}}
+
+
 def build_search_query(
     keywords: str | None = None,
     keyword_fields: str | list[str] | None = None,
@@ -156,24 +170,37 @@ def build_search_query(
     publication: str | None = None,
     grant: str | None = None,
     umbrella: str | None = None,
+    status_mode: StatusMode | None = "public_only",
 ) -> dict[str, Any]:
     """Build ES query dict from search parameters.
 
     ``keyword_fields`` accepts either a pre-validated ``list[str]`` or a
     raw comma-separated string (which will be validated here).
+
+    A status filter (derived from ``status_mode``) is prepended to
+    ``bool.filter`` by default so that ``withdrawn`` / ``private``
+    entries never leak into search results. Pass ``status_mode=None`` to
+    opt out of the status filter entirely (used by ``/db-portal/search``
+    where status filtering is intentionally Future work — see
+    docs/api-spec.md § データ可視性).
     """
     keyword_list = _parse_keywords(keywords)
-    filters = _build_filter_clauses(
-        organism=organism,
-        date_published_from=date_published_from,
-        date_published_to=date_published_to,
-        date_modified_from=date_modified_from,
-        date_modified_to=date_modified_to,
-        types=types,
-        organization=organization,
-        publication=publication,
-        grant=grant,
-        umbrella=umbrella,
+    filters: list[dict[str, Any]] = []
+    if status_mode is not None:
+        filters.append(build_status_filter(status_mode))
+    filters.extend(
+        _build_filter_clauses(
+            organism=organism,
+            date_published_from=date_published_from,
+            date_published_to=date_published_to,
+            date_modified_from=date_modified_from,
+            date_modified_to=date_modified_to,
+            types=types,
+            organization=organization,
+            publication=publication,
+            grant=grant,
+            umbrella=umbrella,
+        )
     )
 
     if not keyword_list and not filters:
@@ -290,10 +317,16 @@ def build_facet_aggs(
     is_cross_type: bool = False,
     db_type: str | None = None,
 ) -> dict[str, Any]:
-    """Build ES aggregation queries for facets."""
+    """Build ES aggregation queries for facets.
+
+    ``status`` is intentionally not aggregated: the query that feeds the
+    facet aggregations is always constrained to ``status:public``
+    upstream, so a status bucket would always carry a single ``public``
+    value and provides no information (see
+    ``docs/api-spec.md`` § データ可視性).
+    """
     aggs: dict[str, Any] = {
         "organism": {"terms": {"field": "organism.name", "size": 50}},
-        "status": {"terms": {"field": "status", "size": 50}},
         "accessibility": {"terms": {"field": "accessibility", "size": 50}},
     }
 

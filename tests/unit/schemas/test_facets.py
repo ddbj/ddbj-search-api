@@ -16,7 +16,6 @@ class TestFacetsResponse:
         resp = FacetsResponse(
             facets=Facets(
                 organism=[FacetBucket(value="human", count=10)],
-                status=[FacetBucket(value="public", count=5)],
                 accessibility=[FacetBucket(value="public-access", count=8)],
             ),
         )
@@ -34,7 +33,6 @@ class TestFacetsResponse:
                     FacetBucket(value="biosample", count=200),
                 ],
                 organism=[],
-                status=[],
                 accessibility=[],
             ),
         )

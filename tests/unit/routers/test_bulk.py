@@ -595,3 +595,142 @@ class TestBulkIncludeDbXrefs:
         assert resp.status_code == 200
         data = resp.json()
         assert "dbXrefs" in data["entries"][0]
+
+
+# === Status gating (docs/api-spec.md § データ可視性) ===
+
+
+def _make_mget_side_effect(statuses: dict[str, str | None]) -> object:
+    """Build an ``es_mget_source`` side_effect from an id → status map.
+
+    ``None`` means the document is missing; any other value is treated
+    as the document's ``status`` field.
+    """
+
+    async def _se(
+        _client: object,
+        _index: str,
+        ids: list[str],
+        **_kwargs: object,
+    ) -> dict[str, dict[str, str] | None]:
+        out: dict[str, dict[str, str] | None] = {}
+        for id_ in ids:
+            status = statuses.get(id_)
+            out[id_] = None if status is None else {"status": status}
+        return out
+
+    return _se
+
+
+class TestBulkStatusGating:
+    """Bulk API の status filter: public/suppressed のみ entries に出力、
+    withdrawn/private/missing は notFound (JSON) / skip (NDJSON)。
+    """
+
+    def test_json_mixed_statuses(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        mock_es_mget_source_bulk.side_effect = _make_mget_side_effect(
+            {
+                "PRJDB_PUBLIC": "public",
+                "PRJDB_SUPPRESSED": "suppressed",
+                "PRJDB_WITHDRAWN": "withdrawn",
+                "PRJDB_PRIVATE": "private",
+                "PRJDB_MISSING": None,
+            },
+        )
+
+        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
+            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
+
+        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
+
+        resp = _bulk_post(
+            app_with_bulk,
+            [
+                "PRJDB_PUBLIC",
+                "PRJDB_SUPPRESSED",
+                "PRJDB_WITHDRAWN",
+                "PRJDB_PRIVATE",
+                "PRJDB_MISSING",
+            ],
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        returned_ids = {e["identifier"] for e in data["entries"]}
+        assert returned_ids == {"PRJDB_PUBLIC", "PRJDB_SUPPRESSED"}
+        assert set(data["notFound"]) == {
+            "PRJDB_WITHDRAWN",
+            "PRJDB_PRIVATE",
+            "PRJDB_MISSING",
+        }
+
+    def test_ndjson_hidden_statuses_skipped(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        mock_es_mget_source_bulk.side_effect = _make_mget_side_effect(
+            {
+                "PRJDB_PUBLIC": "public",
+                "PRJDB_WITHDRAWN": "withdrawn",
+                "PRJDB_PRIVATE": "private",
+            },
+        )
+
+        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
+            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
+
+        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
+
+        resp = _bulk_post(
+            app_with_bulk,
+            ["PRJDB_PUBLIC", "PRJDB_WITHDRAWN", "PRJDB_PRIVATE"],
+            format_="ndjson",
+        )
+        assert resp.status_code == 200
+        lines = [line for line in resp.text.split("\n") if line]
+        returned_ids = [json.loads(line)["identifier"] for line in lines]
+        assert returned_ids == ["PRJDB_PUBLIC"]
+
+    def test_mget_called_with_all_ids(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """es_mget_source は一括で全 ID を 1 回で取得する (ラウンドトリップ節約)。"""
+
+        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
+            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
+
+        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
+
+        ids = ["PRJDB1", "PRJDB2", "PRJDB3"]
+        resp = _bulk_post(app_with_bulk, ids)
+        assert resp.status_code == 200
+        mock_es_mget_source_bulk.assert_awaited_once()
+        call_args = mock_es_mget_source_bulk.call_args
+        passed_ids = call_args[0][2] if len(call_args[0]) >= 3 else call_args.kwargs["ids"]
+        assert passed_ids == ids
+
+    def test_mget_uses_status_only_source_includes(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+        mock_es_get_source_stream_bulk: AsyncMock,
+    ) -> None:
+        """es_mget_source は軽量化のため ``status`` のみを含める。"""
+
+        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
+            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
+
+        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
+
+        _bulk_post(app_with_bulk, ["PRJDB1"])
+        kwargs = mock_es_mget_source_bulk.call_args.kwargs
+        assert kwargs.get("source_includes") == ["status"]

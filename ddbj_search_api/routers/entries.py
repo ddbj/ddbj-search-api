@@ -22,6 +22,7 @@ from ddbj_search_api.dblink.client import count_linked_ids_bulk, get_linked_ids_
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
+    StatusMode,
     build_facet_aggs,
     build_search_query,
     build_sort_with_tiebreaker,
@@ -39,6 +40,7 @@ from ddbj_search_api.schemas.queries import (
     SearchFilterQuery,
     TypesFilterQuery,
 )
+from ddbj_search_api.search.accession import detect_accession_exact_match
 from ddbj_search_api.utils import parse_facets
 
 logger = logging.getLogger(__name__)
@@ -239,7 +241,12 @@ async def _do_search_offset(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # 4. Build ES query
+    # 4. Build ES query.
+    # keywords が単一 accession ID と完全一致する場合のみ suppressed も許可する
+    # (docs/api-spec.md § データ可視性)。それ以外は常に public のみ。
+    status_mode: StatusMode = (
+        "include_suppressed" if detect_accession_exact_match(search_filter.keywords) is not None else "public_only"
+    )
     query = build_search_query(
         keywords=search_filter.keywords,
         keyword_fields=fields,
@@ -254,6 +261,7 @@ async def _do_search_offset(
         publication=publication,
         grant=grant,
         umbrella=umbrella,
+        status_mode=status_mode,
     )
 
     # 5. Pagination -> from/size

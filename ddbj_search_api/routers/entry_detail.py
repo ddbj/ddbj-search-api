@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_get_identifier, es_get_source_stream, es_head_exists, es_resolve_same_as
+from ddbj_search_api.es.client import es_get_source, es_get_source_stream, es_resolve_same_as
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
 from ddbj_search_api.schemas.entries import DetailResponse, EntryJsonLdResponse, EntryResponse
@@ -38,7 +38,57 @@ from ddbj_search_api.utils import format_xref
 router = APIRouter(tags=["Entry Detail"])
 
 
-# --- Helper: sameAs ID resolution ---
+# --- Helper: sameAs ID resolution + visibility check ---
+
+_VISIBLE_STATUSES = ("public", "suppressed")
+
+
+async def _resolve_visible_entry(
+    client: httpx.AsyncClient,
+    db_type: str,
+    id_: str,
+) -> str:
+    """Resolve the primary identifier with sameAs fallback and enforce visibility.
+
+    Returns the resolved primary identifier when the entry exists and
+    has status ``public`` or ``suppressed``.
+
+    Raises :class:`HTTPException` 404 when the entry does not exist, or
+    its status is ``withdrawn`` / ``private``. Missing entries and
+    hidden entries return identical responses so that existence cannot
+    be inferred from outside (see docs/api-spec.md § データ可視性).
+    """
+    not_found = HTTPException(
+        status_code=404,
+        detail=f"The requested {db_type} '{id_}' was not found.",
+    )
+
+    source = await es_get_source(
+        client,
+        db_type,
+        id_,
+        source_includes="identifier,status",
+    )
+    if source is None:
+        resolved_id = await es_resolve_same_as(client, db_type, id_)
+        if resolved_id is None:
+            raise not_found
+        source = await es_get_source(
+            client,
+            db_type,
+            resolved_id,
+            source_includes="identifier,status",
+        )
+        if source is None:
+            raise not_found
+
+    if source.get("status") not in _VISIBLE_STATUSES:
+        raise not_found
+
+    identifier = source.get("identifier")
+    if isinstance(identifier, str) and identifier:
+        return identifier
+    return id_
 
 
 async def _get_source_with_fallback(
@@ -47,33 +97,26 @@ async def _get_source_with_fallback(
     id_: str,
     source_excludes: str | None = None,
 ) -> tuple[httpx.Response, str]:
-    """Get ES source stream, falling back to sameAs resolution.
+    """Open a streaming ES _source connection after resolving & visibility check.
 
-    Returns ``(response, entry_id)`` where *entry_id* is the resolved
-    primary identifier (same as *id_* when the direct lookup succeeds).
-
-    Raises :class:`HTTPException` 404 if neither lookup finds a match.
+    Returns ``(response, entry_id)``. Raises :class:`HTTPException` 404
+    if the entry is missing, withdrawn, or private.
     """
-    response = await es_get_source_stream(client, db_type, id_, source_excludes=source_excludes)
-    if response is not None:
-        entry_id = await es_get_identifier(client, db_type, id_)
-        return response, entry_id
-
-    resolved_id = await es_resolve_same_as(client, db_type, id_)
-    if resolved_id is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"The requested {db_type} '{id_}' was not found.",
-        )
-
-    response = await es_get_source_stream(client, db_type, resolved_id, source_excludes=source_excludes)
+    primary_id = await _resolve_visible_entry(client, db_type, id_)
+    response = await es_get_source_stream(
+        client,
+        db_type,
+        primary_id,
+        source_excludes=source_excludes,
+    )
     if response is None:
+        # Edge case: document deleted between visibility check and stream.
+        # Return the same 404 payload for consistency.
         raise HTTPException(
             status_code=404,
             detail=f"The requested {db_type} '{id_}' was not found.",
         )
-
-    return response, resolved_id
+    return response, primary_id
 
 
 async def _check_exists_with_fallback(
@@ -81,23 +124,12 @@ async def _check_exists_with_fallback(
     db_type: str,
     id_: str,
 ) -> str:
-    """Check entry existence, falling back to sameAs resolution.
+    """Check entry existence with sameAs fallback and visibility enforcement.
 
-    Returns the resolved primary identifier.
-
-    Raises :class:`HTTPException` 404 if neither lookup finds a match.
+    Returns the resolved primary identifier when the entry is visible
+    (``public`` or ``suppressed``). Raises 404 otherwise.
     """
-    if await es_head_exists(client, db_type, id_):
-        return await es_get_identifier(client, db_type, id_)
-
-    resolved_id = await es_resolve_same_as(client, db_type, id_)
-    if resolved_id is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"The requested {db_type} '{id_}' was not found.",
-        )
-
-    return resolved_id
+    return await _resolve_visible_entry(client, db_type, id_)
 
 
 class JsonLdResponse(JSONResponse):

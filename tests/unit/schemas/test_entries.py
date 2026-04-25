@@ -131,7 +131,6 @@ class TestEntryListResponse:
     def test_with_facets(self) -> None:
         facets = Facets(
             organism=[FacetBucket(value="human", count=10)],
-            status=[FacetBucket(value="public", count=5)],
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
         resp = EntryListResponse(

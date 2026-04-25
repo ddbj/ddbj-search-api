@@ -19,6 +19,7 @@ from ddbj_search_api.es.query import (
     build_sort,
     build_sort_with_tiebreaker,
     build_source_filter,
+    build_status_filter,
     pagination_to_from_size,
     validate_keyword_fields,
 )
@@ -272,11 +273,25 @@ class TestBuildSourceFilter:
 
 
 class TestBuildSearchQueryNoParams:
-    """build_search_query with no parameters → match_all."""
+    """build_search_query with no parameters returns a bool query
+    containing only the default status filter (``status:public``).
 
-    def test_no_params_returns_match_all(self) -> None:
+    ``match_all`` is never returned because a status filter is always
+    prepended to guarantee visibility control.
+    """
+
+    def test_no_params_returns_bool_with_status_filter(self) -> None:
         result = build_search_query()
-        assert result == {"match_all": {}}
+        assert result == {
+            "bool": {
+                "filter": [{"term": {"status": "public"}}],
+            },
+        }
+
+    def test_no_params_has_no_must_or_should(self) -> None:
+        result = build_search_query()
+        assert "must" not in result["bool"]
+        assert "should" not in result["bool"]
 
 
 class TestBuildSearchQueryKeywords:
@@ -335,13 +350,21 @@ class TestBuildSearchQueryKeywords:
 class TestBuildSearchQueryKeywordsEdgeCases:
     """Edge cases for keyword handling."""
 
-    def test_empty_string_returns_match_all(self) -> None:
+    def test_empty_string_returns_status_only(self) -> None:
         result = build_search_query(keywords="")
-        assert result == {"match_all": {}}
+        assert result == {
+            "bool": {
+                "filter": [{"term": {"status": "public"}}],
+            },
+        }
 
-    def test_whitespace_only_returns_match_all(self) -> None:
+    def test_whitespace_only_returns_status_only(self) -> None:
         result = build_search_query(keywords="   ")
-        assert result == {"match_all": {}}
+        assert result == {
+            "bool": {
+                "filter": [{"term": {"status": "public"}}],
+            },
+        }
 
     def test_trailing_comma_ignores_empty(self) -> None:
         result = build_search_query(keywords="cancer,")
@@ -465,12 +488,18 @@ class TestBuildSearchQueryBioProject:
 
 
 class TestBuildSearchQueryCombined:
-    """Combined keyword + filter queries."""
+    """Combined keyword + filter queries.
+
+    A status filter (``status:public`` by default) is always prepended
+    to ``bool.filter``, so ``filter`` length is 1 greater than the
+    number of user-provided filter params.
+    """
 
     def test_keywords_with_organism(self) -> None:
         result = build_search_query(keywords="cancer", organism="9606")
         assert len(result["bool"]["must"]) == 1
-        assert len(result["bool"]["filter"]) == 1
+        # 2 = status filter と organism filter の 2 clause
+        assert len(result["bool"]["filter"]) == 2
 
     def test_keywords_with_multiple_filters(self) -> None:
         result = build_search_query(
@@ -479,13 +508,15 @@ class TestBuildSearchQueryCombined:
             date_published_from="2024-01-01",
         )
         assert len(result["bool"]["must"]) == 1
-        assert len(result["bool"]["filter"]) == 2
+        # 3 = status / organism / datePublished の 3 clause
+        assert len(result["bool"]["filter"]) == 3
 
     def test_only_filters_no_must(self) -> None:
         """Filters without keywords: bool.filter only, no bool.must."""
         result = build_search_query(organism="9606")
         assert "must" not in result["bool"]
-        assert len(result["bool"]["filter"]) == 1
+        # 2 = status filter と organism filter の 2 clause
+        assert len(result["bool"]["filter"]) == 2
 
     def test_or_keywords_with_filters(self) -> None:
         """OR keywords + filter → should + filter in same bool."""
@@ -496,7 +527,8 @@ class TestBuildSearchQueryCombined:
         )
         assert len(result["bool"]["should"]) == 2
         assert result["bool"]["minimum_should_match"] == 1
-        assert len(result["bool"]["filter"]) == 1
+        # status + organism
+        assert len(result["bool"]["filter"]) == 2
 
 
 # ===================================================================
@@ -512,16 +544,19 @@ class TestBuildFacetAggs:
     def test_common_facets_always_present(self) -> None:
         result = build_facet_aggs()
         assert "organism" in result
-        assert "status" in result
         assert "accessibility" in result
+
+    def test_status_agg_always_omitted(self) -> None:
+        """Status は常に public のみに絞り込んで集計するため、
+        status facet 自体は aggs に含めない (docs/api-spec.md
+        § データ可視性 参照)。
+        """
+        result = build_facet_aggs()
+        assert "status" not in result
 
     def test_organism_agg_field(self) -> None:
         result = build_facet_aggs()
         assert result["organism"]["terms"]["field"] == "organism.name"
-
-    def test_status_agg_field(self) -> None:
-        result = build_facet_aggs()
-        assert result["status"]["terms"]["field"] == "status"
 
     def test_accessibility_agg_field(self) -> None:
         result = build_facet_aggs()
@@ -555,7 +590,9 @@ class TestBuildFacetAggs:
 
 
 class TestBuildFacetAggsPBT:
-    """PBT: facet aggs always contain common facets regardless of params."""
+    """PBT: facet aggs always contain common facets regardless of params,
+    and ``status`` is never included.
+    """
 
     @given(
         is_cross_type=st.booleans(),
@@ -579,8 +616,100 @@ class TestBuildFacetAggsPBT:
             db_type=db_type,
         )
         assert "organism" in result
-        assert "status" in result
         assert "accessibility" in result
+        assert "status" not in result
+
+
+# ===================================================================
+# build_status_filter / build_search_query: status_mode
+# ===================================================================
+
+
+class TestBuildStatusFilter:
+    """build_status_filter returns the ES filter clause for status."""
+
+    def test_public_only(self) -> None:
+        assert build_status_filter("public_only") == {"term": {"status": "public"}}
+
+    def test_include_suppressed(self) -> None:
+        assert build_status_filter("include_suppressed") == {
+            "terms": {"status": ["public", "suppressed"]},
+        }
+
+
+class TestBuildSearchQueryStatusMode:
+    """status_mode prepends a status filter to bool.filter.
+
+    ``public_only`` (default) uses ``{"term": {"status": "public"}}``;
+    ``include_suppressed`` broadens to ``public`` + ``suppressed``.
+    The status filter is always the first element of ``bool.filter``.
+    """
+
+    def test_default_is_public_only(self) -> None:
+        result = build_search_query(keywords="cancer")
+        filters = result["bool"]["filter"]
+        assert filters[0] == {"term": {"status": "public"}}
+
+    def test_public_only_explicit(self) -> None:
+        result = build_search_query(keywords="cancer", status_mode="public_only")
+        filters = result["bool"]["filter"]
+        assert filters[0] == {"term": {"status": "public"}}
+
+    def test_include_suppressed(self) -> None:
+        result = build_search_query(keywords="PRJDB1234", status_mode="include_suppressed")
+        filters = result["bool"]["filter"]
+        assert filters[0] == {"terms": {"status": ["public", "suppressed"]}}
+
+    def test_status_filter_is_first(self) -> None:
+        result = build_search_query(
+            keywords="cancer",
+            organism="9606",
+            date_published_from="2024-01-01",
+            status_mode="public_only",
+        )
+        filters = result["bool"]["filter"]
+        # status が先頭にあることで ES の filter cache 効率も期待
+        assert filters[0] == {"term": {"status": "public"}}
+
+    def test_filter_contains_only_one_status_clause(self) -> None:
+        result = build_search_query(
+            keywords="cancer",
+            organism="9606",
+            status_mode="include_suppressed",
+        )
+        filters = result["bool"]["filter"]
+        status_clauses = [
+            f
+            for f in filters
+            if ("term" in f and "status" in f.get("term", {})) or ("terms" in f and "status" in f.get("terms", {}))
+        ]
+        assert len(status_clauses) == 1
+
+    def test_no_params_with_include_suppressed(self) -> None:
+        result = build_search_query(status_mode="include_suppressed")
+        assert result == {
+            "bool": {
+                "filter": [{"terms": {"status": ["public", "suppressed"]}}],
+            },
+        }
+
+    def test_none_opts_out_of_status_filter(self) -> None:
+        """status_mode=None は status filter を追加しない
+        (db-portal の Future work 用)。"""
+        result = build_search_query(status_mode=None)
+        assert result == {"match_all": {}}
+
+    def test_none_with_keywords_no_status_filter(self) -> None:
+        result = build_search_query(keywords="cancer", status_mode=None)
+        # bool.must のみ、bool.filter は keyword filter 以外の user filter が無いので空
+        assert "filter" not in result["bool"]
+
+    def test_none_with_organism_no_status_filter(self) -> None:
+        result = build_search_query(organism="9606", status_mode=None)
+        filters = result["bool"]["filter"]
+        # organism のみ
+        assert len(filters) == 1
+        assert filters[0]["term"]["organism.identifier"] == "9606"
 
 
 # ===================================================================

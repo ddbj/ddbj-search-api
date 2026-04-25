@@ -369,7 +369,9 @@ async def _cross_search_count_only(
     preserving the partial-success policy (200 as long as any DB
     returned a count; 502 only when every DB failed).
     """
-    query_body = build_search_query(keywords=q, keyword_operator="AND")
+    # db-portal の status filter は Future work (docs/api-spec.md § データ可視性)。
+    # ES 6 DB / Solr 2 DB の対称性を保つため、本 PR では status filter を適用しない。
+    query_body = build_search_query(keywords=q, keyword_operator="AND", status_mode=None)
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
         task = asyncio.create_task(
@@ -862,7 +864,8 @@ async def _db_specific_search_offset(
 ) -> DbPortalHitsResponse:
     assert query.db is not None
     _validate_deep_paging(query.page, query.per_page)
-    es_query = build_search_query(keywords=query.q, keyword_operator="AND")
+    # db-portal の status filter は Future work (docs/api-spec.md § データ可視性)。
+    es_query = build_search_query(keywords=query.q, keyword_operator="AND", status_mode=None)
     sort_body = build_sort_with_tiebreaker(query.sort)
     from_, size = pagination_to_from_size(query.page, query.per_page)
     body: dict[str, Any] = {

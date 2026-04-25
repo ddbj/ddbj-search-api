@@ -100,10 +100,9 @@ class TestDbxrefsFullRouting:
     def test_route_exists(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_head_exists: AsyncMock,
         db_type: str,
     ) -> None:
-        mock_es_head_exists.return_value = True
+        # default fixture returns status=public, so visibility check passes
         resp = app_with_entry_detail.get(
             f"/entries/{db_type}/TEST001/dbxrefs.json",
         )
@@ -299,9 +298,8 @@ class TestDbxrefsFullResponse:
     def test_200_with_dbxrefs(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_head_exists: AsyncMock,
     ) -> None:
-        mock_es_head_exists.return_value = True
+        # default fixture returns status=public
         resp = app_with_entry_detail.get(
             "/entries/bioproject/PRJDB1/dbxrefs.json",
         )
@@ -309,22 +307,25 @@ class TestDbxrefsFullResponse:
         data = resp.json()
         assert "dbXrefs" in data
 
-    def test_uses_es_head_for_existence(
+    def test_uses_es_source_for_existence(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_head_exists: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        """ES HEAD is used to check document existence."""
-        mock_es_head_exists.return_value = True
+        """ES _source fetch (with identifier,status includes) is used to
+        check document existence and visibility."""
         app_with_entry_detail.get("/entries/bioproject/PRJDB1/dbxrefs.json")
-        mock_es_head_exists.assert_awaited_once()
+        mock_es_get_source_entry_detail.assert_awaited()
 
     def test_404_when_not_found(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_head_exists: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        mock_es_head_exists.return_value = False
+        async def _not_found(*_args: object, **_kwargs: object) -> None:
+            return None
+
+        mock_es_get_source_entry_detail.side_effect = _not_found
         resp = app_with_entry_detail.get(
             "/entries/bioproject/NOTEXIST/dbxrefs.json",
         )
@@ -501,19 +502,27 @@ class TestDbXrefsLimitValidationPBT:
 
 
 class TestAliasDocResolution:
-    """Verify that alias documents resolve to the primary identifier."""
+    """Verify that alias documents resolve to the primary identifier
+    via ``es_get_source`` (which carries ``_source.identifier``).
+    """
+
+    @staticmethod
+    def _alias_source_side_effect() -> object:
+        async def _se(_client: object, _index: str, _id: str, **_kwargs: object) -> dict[str, str]:
+            return {"identifier": "JGAS000001", "status": "public"}
+
+        return _se
 
     def test_alias_doc_resolves_primary_id_for_detail(
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_identifier: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
         """When ES returns an alias doc, entry_id is resolved to primary."""
         body = json.dumps({"identifier": "JGAS000001", "type": "jga-study"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        mock_es_get_identifier.side_effect = None
-        mock_es_get_identifier.return_value = "JGAS000001"
+        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         with (
             patch(
@@ -538,13 +547,12 @@ class TestAliasDocResolution:
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_identifier: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
         """GET .json: alias doc resolves to primary ID for DuckDB."""
         body = json.dumps({"identifier": "JGAS000001"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        mock_es_get_identifier.side_effect = None
-        mock_es_get_identifier.return_value = "JGAS000001"
+        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         with patch(
             "ddbj_search_api.routers.entry_detail.iter_linked_ids",
@@ -561,13 +569,12 @@ class TestAliasDocResolution:
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_identifier: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
         """GET .jsonld: @id uses primary ID, not secondary."""
         body = json.dumps({"identifier": "JGAS000001"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        mock_es_get_identifier.side_effect = None
-        mock_es_get_identifier.return_value = "JGAS000001"
+        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         resp = app_with_entry_detail.get("/entries/jga-study/JGAS000556.jsonld")
 
@@ -578,13 +585,10 @@ class TestAliasDocResolution:
     def test_alias_doc_resolves_primary_id_for_dbxrefs(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_head_exists: AsyncMock,
-        mock_es_get_identifier: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
         """GET dbxrefs.json: alias doc resolves to primary ID for DuckDB."""
-        mock_es_head_exists.return_value = True
-        mock_es_get_identifier.side_effect = None
-        mock_es_get_identifier.return_value = "JGAS000001"
+        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         with patch(
             "ddbj_search_api.routers.entry_detail.iter_linked_ids",
@@ -603,12 +607,11 @@ class TestAliasDocResolution:
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_identifier: AsyncMock,
     ) -> None:
-        """Normal doc: es_get_identifier returns same id, passed through."""
+        """Normal doc: source.identifier == requested id, passed through."""
         body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        # Default side_effect returns id_ as-is (non-alias)
+        # default fixture: source.identifier = requested id_, so primary == id_
 
         resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
         assert resp.status_code == 200
@@ -620,14 +623,15 @@ class TestAliasDocResolution:
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
         mock_es_resolve_same_as: AsyncMock,
-        mock_es_get_identifier: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        """When direct lookup returns 404, sameAs fallback is used."""
+        """When direct es_get_source returns None, sameAs fallback is used."""
         body = json.dumps({"identifier": "JGAS000001", "type": "jga-study"}).encode()
-        # First call: 404 (not found), second call: found via resolved ID
-        mock_es_get_source_stream.side_effect = [
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        # First es_get_source: not found; second (with resolved id): found
+        mock_es_get_source_entry_detail.side_effect = [
             None,
-            make_mock_stream_response(body),
+            {"identifier": "JGAS000001", "status": "public"},
         ]
         mock_es_resolve_same_as.return_value = "JGAS000001"
 
@@ -635,17 +639,19 @@ class TestAliasDocResolution:
 
         assert resp.status_code == 200
         mock_es_resolve_same_as.assert_awaited_once()
-        # es_get_identifier should NOT be called (fallback path returns resolved_id directly)
-        mock_es_get_identifier.assert_not_awaited()
 
     def test_same_as_query_es_error_returns_404(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_get_source_stream: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
         mock_es_resolve_same_as: AsyncMock,
     ) -> None:
-        """When direct lookup fails and sameAs returns None (ES error), API returns 404."""
-        mock_es_get_source_stream.return_value = None
+        """Direct lookup None + sameAs None -> 404."""
+
+        async def _not_found(*_a: object, **_k: object) -> None:
+            return None
+
+        mock_es_get_source_entry_detail.side_effect = _not_found
         mock_es_resolve_same_as.return_value = None
 
         resp = app_with_entry_detail.get("/entries/biosample/SAMN99999999")
@@ -715,3 +721,119 @@ class TestEntryDetailIncludeDbXrefs:
         assert "dbXrefsCount" not in data
         mock_limited.assert_not_called()
         mock_count.assert_not_called()
+
+
+# === Status gating (docs/api-spec.md § データ可視性) ===
+
+
+def _make_status_source(status: str) -> object:
+    """Build an ``es_get_source`` side_effect returning the given status."""
+
+    async def _side_effect(_client: object, _index: str, id_: str, **_kwargs: object) -> dict[str, str]:
+        return {"identifier": id_, "status": status}
+
+    return _side_effect
+
+
+_NOT_FOUND_MESSAGE = "The requested bioproject 'PRJDB1' was not found."
+
+
+class TestEntryDetailStatusGating:
+    """/entries/{type}/{id} 4 variant に status filter が適用される。
+
+    - public / suppressed: 200
+    - withdrawn / private: 404 (存在秘匿、docs/api-spec.md § データ可視性)
+    """
+
+    @pytest.mark.parametrize("status", ["public", "suppressed"])
+    def test_visible_statuses_return_200(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        mock_es_get_source_entry_detail: AsyncMock,
+        status: str,
+    ) -> None:
+        body = json.dumps({"identifier": "PRJDB1", "status": status}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        mock_es_get_source_entry_detail.side_effect = _make_status_source(status)
+
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+        assert resp.status_code == 200
+
+    @pytest.mark.parametrize("status", ["withdrawn", "private"])
+    def test_hidden_statuses_return_404(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_entry_detail: AsyncMock,
+        status: str,
+    ) -> None:
+        mock_es_get_source_entry_detail.side_effect = _make_status_source(status)
+
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["detail"] == _NOT_FOUND_MESSAGE
+
+    @pytest.mark.parametrize("status", ["withdrawn", "private"])
+    def test_hidden_statuses_hide_on_json_variant(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_entry_detail: AsyncMock,
+        status: str,
+    ) -> None:
+        mock_es_get_source_entry_detail.side_effect = _make_status_source(status)
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.json")
+        assert resp.status_code == 404
+
+    @pytest.mark.parametrize("status", ["withdrawn", "private"])
+    def test_hidden_statuses_hide_on_jsonld_variant(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_entry_detail: AsyncMock,
+        status: str,
+    ) -> None:
+        mock_es_get_source_entry_detail.side_effect = _make_status_source(status)
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.jsonld")
+        assert resp.status_code == 404
+
+    @pytest.mark.parametrize("status", ["withdrawn", "private"])
+    def test_hidden_statuses_hide_on_dbxrefs_variant(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_entry_detail: AsyncMock,
+        status: str,
+    ) -> None:
+        mock_es_get_source_entry_detail.side_effect = _make_status_source(status)
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1/dbxrefs.json")
+        assert resp.status_code == 404
+
+    def test_unknown_status_returns_404(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_entry_detail: AsyncMock,
+    ) -> None:
+        """Defence in depth: a status value outside the 4 literals is also
+        treated as hidden."""
+        mock_es_get_source_entry_detail.side_effect = _make_status_source("unexpected")
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+        assert resp.status_code == 404
+
+    def test_hidden_entry_message_matches_missing(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_entry_detail: AsyncMock,
+    ) -> None:
+        """withdrawn/private と存在しないエントリーの 404 レスポンスは同一
+        (外部から status を推測できないようにする)。"""
+
+        async def _not_found(*_a: object, **_k: object) -> None:
+            return None
+
+        mock_es_get_source_entry_detail.side_effect = _make_status_source("withdrawn")
+        resp_hidden = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+
+        mock_es_get_source_entry_detail.side_effect = _not_found
+        resp_missing = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
+
+        assert resp_hidden.status_code == resp_missing.status_code == 404
+        assert resp_hidden.json()["detail"] == resp_missing.json()["detail"]

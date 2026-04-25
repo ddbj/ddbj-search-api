@@ -46,6 +46,8 @@ async def _do_facets(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Facet 集計は常に status:public に絞り込む
+    # (docs/api-spec.md § データ可視性)。
     query = build_search_query(
         keywords=search_filter.keywords,
         keyword_fields=fields,
@@ -60,6 +62,7 @@ async def _do_facets(
         publication=publication,
         grant=grant,
         umbrella=umbrella,
+        status_mode="public_only",
     )
 
     aggs = build_facet_aggs(

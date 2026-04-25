@@ -170,17 +170,6 @@ def mock_es_get_source_stream() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture
-def mock_es_head_exists() -> collections.abc.Iterator[AsyncMock]:
-    """Patch es_head_exists in the entry_detail router."""
-    with patch(
-        "ddbj_search_api.routers.entry_detail.es_head_exists",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.return_value = False
-        yield mock
-
-
-@pytest.fixture
 def mock_es_resolve_same_as() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_resolve_same_as in the entry_detail router."""
     with patch(
@@ -192,16 +181,24 @@ def mock_es_resolve_same_as() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture
-def mock_es_get_identifier() -> collections.abc.Iterator[AsyncMock]:
-    """Patch es_get_identifier in the entry_detail router.
+def mock_es_get_source_entry_detail() -> collections.abc.Iterator[AsyncMock]:
+    """Patch es_get_source in the entry_detail router.
 
-    Default: pass through the requested id_ (non-alias document).
+    Default: ``{"identifier": <requested id>, "status": "public"}``
+    so the visibility check (docs/api-spec.md § データ可視性) passes
+    for the majority of tests. Override ``.return_value`` or
+    ``.side_effect`` to emulate alias docs, hidden statuses, or missing
+    documents.
     """
     with patch(
-        "ddbj_search_api.routers.entry_detail.es_get_identifier",
+        "ddbj_search_api.routers.entry_detail.es_get_source",
         new_callable=AsyncMock,
     ) as mock:
-        mock.side_effect = lambda _client, _index, id_: id_
+
+        async def _default(_client: object, _index: str, id_: str, **_kwargs: object) -> dict[str, str]:
+            return {"identifier": id_, "status": "public"}
+
+        mock.side_effect = _default
         yield mock
 
 
@@ -229,9 +226,8 @@ def _mock_entry_detail_duckdb() -> collections.abc.Iterator[None]:
 def app_with_entry_detail(
     config: AppConfig,
     mock_es_get_source_stream: AsyncMock,
-    mock_es_head_exists: AsyncMock,
     mock_es_resolve_same_as: AsyncMock,
-    mock_es_get_identifier: AsyncMock,
+    mock_es_get_source_entry_detail: AsyncMock,
     _mock_entry_detail_duckdb: None,
 ) -> TestClient:
     """TestClient with entry_detail ES and DuckDB functions mocked."""
@@ -260,12 +256,42 @@ def mock_es_get_source_stream_bulk() -> collections.abc.Iterator[AsyncMock]:
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def mock_es_mget_source_bulk() -> collections.abc.Iterator[AsyncMock]:
+    """Autouse-patch es_mget_source in the bulk router.
+
+    Default: every requested ID maps to ``status=public`` so the
+    visibility check (docs/api-spec.md § データ可視性) passes and the
+    existing per-ID streaming flow is exercised. Override ``.side_effect``
+    or ``.return_value`` to emulate withdrawn/private/missing entries.
+
+    Autouse is used so that tests which construct a ``TestClient`` by
+    hand (without the ``app_with_bulk`` fixture) also get the mock.
+    """
+    with patch(
+        "ddbj_search_api.routers.bulk.es_mget_source",
+        new_callable=AsyncMock,
+    ) as mock:
+
+        async def _default(
+            _client: object,
+            _index: str,
+            ids: list[str],
+            **_kwargs: object,
+        ) -> dict[str, dict[str, str] | None]:
+            return {id_: {"status": "public"} for id_ in ids}
+
+        mock.side_effect = _default
+        yield mock
+
+
 @pytest.fixture
 def app_with_bulk(
     config: AppConfig,
     mock_es_get_source_stream_bulk: AsyncMock,
+    mock_es_mget_source_bulk: AsyncMock,
 ) -> TestClient:
-    """TestClient with es_get_source_stream mocked for bulk."""
+    """TestClient with es_get_source_stream and es_mget_source mocked for bulk."""
     fake_client = AsyncMock(spec=httpx.AsyncClient)
     application = create_app(config)
     application.dependency_overrides[get_es_client] = lambda: fake_client
@@ -278,15 +304,16 @@ def app_with_bulk(
 
 def make_facets_aggregations(
     organism: list[dict[str, Any]] | None = None,
-    status: list[dict[str, Any]] | None = None,
     accessibility: list[dict[str, Any]] | None = None,
     type_buckets: list[dict[str, Any]] | None = None,
     object_type: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Build aggregation data for facets tests."""
+    """Build aggregation data for facets tests.
+
+    ``status`` aggregation はビルドしない (docs/api-spec.md § データ可視性)。
+    """
     aggs: dict[str, Any] = {
         "organism": {"buckets": organism or []},
-        "status": {"buckets": status or []},
         "accessibility": {"buckets": accessibility or []},
     }
     if type_buckets is not None:

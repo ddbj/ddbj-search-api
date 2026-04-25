@@ -6,6 +6,7 @@ DuckDB functions, verifying the full request → response flow.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -438,16 +439,20 @@ class TestEntriesTypesFilter:
         resp = app_with_es.get("/entries/", params={"types": "bioproject"})
         assert resp.status_code == 200
 
-    def test_empty_types_uses_match_all(
+    def test_empty_types_uses_status_filter_only(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        """Empty types string is treated as no filter."""
+        """Empty types string は filter 無しと同じ。
+        status filter (public_only) だけが filter に残る。
+        """
         app_with_es.get("/entries/", params={"types": ""})
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
-        assert body["query"] == {"match_all": {}}
+        assert body["query"] == {
+            "bool": {"filter": [{"term": {"status": "public"}}]},
+        }
 
     def test_invalid_type_returns_422(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"types": "invalid-type"})
@@ -473,6 +478,8 @@ class TestEntriesTypesFilter:
 class TestEntriesEmptyKeywords:
     """Empty and whitespace-only keywords behaviour."""
 
+    _STATUS_ONLY_QUERY = {"bool": {"filter": [{"term": {"status": "public"}}]}}
+
     def test_empty_keywords_treated_as_no_filter(
         self,
         app_with_es: TestClient,
@@ -482,7 +489,8 @@ class TestEntriesEmptyKeywords:
         assert resp.status_code == 200
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
-        assert body["query"] == {"match_all": {}}
+        # keyword 無し → status filter のみの bool 句 (match_all ではない)
+        assert body["query"] == self._STATUS_ONLY_QUERY
 
     def test_whitespace_keywords_treated_as_no_filter(
         self,
@@ -493,7 +501,7 @@ class TestEntriesEmptyKeywords:
         assert resp.status_code == 200
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
-        assert body["query"] == {"match_all": {}}
+        assert body["query"] == self._STATUS_ONLY_QUERY
 
     def test_comma_only_keywords_treated_as_no_filter(
         self,
@@ -504,7 +512,7 @@ class TestEntriesEmptyKeywords:
         assert resp.status_code == 200
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
-        assert body["query"] == {"match_all": {}}
+        assert body["query"] == self._STATUS_ONLY_QUERY
 
 
 # === Deep paging ===
@@ -611,7 +619,6 @@ class TestEntriesFacets:
             aggregations={
                 "type": {"buckets": [{"key": "bioproject", "doc_count": 5}]},
                 "organism": {"buckets": []},
-                "status": {"buckets": []},
                 "accessibility": {"buckets": []},
             },
         )
@@ -643,7 +650,6 @@ class TestEntriesFacets:
             aggregations={
                 "type": {"buckets": []},
                 "organism": {"buckets": []},
-                "status": {"buckets": []},
                 "accessibility": {"buckets": []},
             },
         )
@@ -752,7 +758,6 @@ class TestEntriesTypeSearch:
             total=0,
             aggregations={
                 "organism": {"buckets": []},
-                "status": {"buckets": []},
                 "accessibility": {"buckets": []},
             },
         )
@@ -987,7 +992,6 @@ class TestEntriesFacetAggSize:
             aggregations={
                 "type": {"buckets": []},
                 "organism": {"buckets": []},
-                "status": {"buckets": []},
                 "accessibility": {"buckets": []},
             },
         )
@@ -995,8 +999,10 @@ class TestEntriesFacetAggSize:
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
         aggs = body["aggs"]
-        for agg_name in ("organism", "status", "accessibility", "type"):
+        for agg_name in ("organism", "accessibility", "type"):
             assert aggs[agg_name]["terms"]["size"] == 50, f"{agg_name} should have size=50"
+        # status facet は常に public になるので aggs に含めない
+        assert "status" not in aggs
 
 
 # === ES error handling ===
@@ -1543,3 +1549,145 @@ class TestEntriesIncludeDbXrefs:
         assert item.get("dbXrefsCount") is None
         mock_bulk_xrefs.assert_not_called()
         mock_bulk_counts.assert_not_called()
+
+
+# === Status mode (visibility) ===
+
+
+def _extract_status_filter(body: dict[str, Any]) -> dict[str, Any]:
+    """Pull the status filter clause out of an ES query body."""
+    filters: list[dict[str, Any]] = body["query"]["bool"]["filter"]
+    for f in filters:
+        if "term" in f and "status" in f["term"]:
+            return f
+        if "terms" in f and "status" in f["terms"]:
+            return f
+    raise AssertionError(f"No status filter found in {filters}")
+
+
+class TestEntriesStatusMode:
+    """keywords が accession ID に完全一致するとき suppressed を許可する。
+
+    docs/api-spec.md § データ可視性 (status 制御) の判定ルールが
+    /entries/ router で正しく配線されていることを検証する。
+    """
+
+    def test_no_keywords_uses_public_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/")
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {"term": {"status": "public"}}
+
+    def test_free_text_uses_public_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/", params={"keywords": "cancer"})
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {"term": {"status": "public"}}
+
+    @pytest.mark.parametrize(
+        "accession",
+        [
+            "PRJDB1234",
+            "SAMD00000001",
+            "DRA000001",
+            "JGAS000001",
+        ],
+    )
+    def test_accession_exact_match_allows_suppressed(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        accession: str,
+    ) -> None:
+        app_with_es.get("/entries/", params={"keywords": accession})
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {
+            "terms": {"status": ["public", "suppressed"]},
+        }
+
+    def test_accession_with_quotes_allows_suppressed(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/", params={"keywords": '"PRJDB1234"'})
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {
+            "terms": {"status": ["public", "suppressed"]},
+        }
+
+    def test_accession_with_other_filter_still_allows_suppressed(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """accession 完全一致 + organism 併用でも suppressed は許可される
+        (docs/api-spec.md § データ可視性 のルール)。
+        """
+        app_with_es.get(
+            "/entries/",
+            params={"keywords": "PRJDB1234", "organism": "9606"},
+        )
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {
+            "terms": {"status": ["public", "suppressed"]},
+        }
+
+    def test_multi_token_keywords_uses_public_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """accession を含んでいても複数トークンなら public のみ。"""
+        app_with_es.get("/entries/", params={"keywords": "PRJDB1234,cancer"})
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {"term": {"status": "public"}}
+
+    def test_wildcard_keywords_uses_public_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/", params={"keywords": "PRJDB*"})
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {"term": {"status": "public"}}
+
+    def test_non_db_type_accession_uses_public_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """DbType に含まれない accession (GSE, MTBKS 等) は通常キーワード扱い。"""
+        app_with_es.get("/entries/", params={"keywords": "GSE12345"})
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {"term": {"status": "public"}}
+
+
+class TestFacetsAlwaysPublicOnly:
+    """/facets 系は常に public_only で集計する。"""
+
+    def test_facets_uses_public_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """includeFacets=true の場合も public_only が適用される
+        (/entries/ の facets は /entries/ 系のルールが優先する前提、
+        今回の仕様では keywords が accession なら suppressed も
+        検索結果に含まれる)。"""
+        # keywords が accession 完全一致なら suppressed 許可が entries 側の挙動
+        app_with_es.get(
+            "/entries/",
+            params={"keywords": "cancer", "includeFacets": "true"},
+        )
+        body = mock_es_search.call_args[0][2]
+        assert _extract_status_filter(body) == {"term": {"status": "public"}}
+        # facet aggs には status が含まれない
+        if "aggs" in body:
+            assert "status" not in body["aggs"]

@@ -34,7 +34,6 @@ def parse_facets(
     return Facets(
         type=type_facet,
         organism=_buckets("organism"),
-        status=_buckets("status"),
         accessibility=_buckets("accessibility"),
         object_type=object_type_facet,  # type: ignore[call-arg]
     )

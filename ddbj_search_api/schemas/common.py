@@ -58,9 +58,13 @@ class FacetBucket(BaseModel):
 class Facets(BaseModel):
     """Facet aggregation results.
 
-    Common facets (organism, status, accessibility) are always present.
+    Common facets (organism, accessibility) are always present.
     ``type`` is included only for cross-type searches.
     ``objectType`` is included only for bioproject-type searches.
+
+    The ``status`` facet is intentionally omitted: aggregations are
+    always constrained to ``status:public`` upstream, so the bucket
+    would be degenerate. See ``docs/api-spec.md`` § データ可視性.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -71,9 +75,6 @@ class Facets(BaseModel):
     )
     organism: list[FacetBucket] = Field(
         description="Entry count per organism.",
-    )
-    status: list[FacetBucket] = Field(
-        description="Entry count per status.",
     )
     accessibility: list[FacetBucket] = Field(
         description="Entry count per accessibility level.",

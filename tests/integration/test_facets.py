@@ -8,15 +8,18 @@ from fastapi.testclient import TestClient
 
 
 def test_facets_cross_type_returns_all_facets(app: TestClient) -> None:
-    """Cross-type facets include organism, status, accessibility, type."""
+    """Cross-type facets include organism, accessibility, type.
+
+    ``status`` facet は docs/api-spec.md § データ可視性 に従い廃止。
+    """
     resp = app.get("/facets")
 
     assert resp.status_code == 200
     facets = resp.json()["facets"]
     assert "organism" in facets
-    assert "status" in facets
     assert "accessibility" in facets
     assert "type" in facets
+    assert "status" not in facets
 
 
 def test_facets_cross_type_structure(app: TestClient) -> None:
@@ -24,7 +27,7 @@ def test_facets_cross_type_structure(app: TestClient) -> None:
     resp = app.get("/facets")
     facets = resp.json()["facets"]
 
-    for key in ("organism", "status", "accessibility", "type"):
+    for key in ("organism", "accessibility", "type"):
         buckets = facets[key]
         assert isinstance(buckets, list)
         if len(buckets) > 0:
@@ -54,15 +57,18 @@ def test_facets_cross_type_keyword_narrows_counts(app: TestClient) -> None:
 
 
 def test_facets_type_specific_no_type_facet(app: TestClient) -> None:
-    """Type-specific facets do NOT include the type facet."""
+    """Type-specific facets do NOT include the type facet.
+
+    ``status`` facet も廃止 (docs/api-spec.md § データ可視性)。
+    """
     resp = app.get("/facets/bioproject")
 
     assert resp.status_code == 200
     facets = resp.json()["facets"]
     assert facets.get("type") is None
     assert "organism" in facets
-    assert "status" in facets
     assert "accessibility" in facets
+    assert "status" not in facets
 
 
 def test_facets_bioproject_has_object_type(app: TestClient) -> None:

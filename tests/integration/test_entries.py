@@ -115,9 +115,10 @@ def test_entries_cross_type_with_facets(app: TestClient) -> None:
     facets = body["facets"]
     assert facets is not None
     assert "organism" in facets
-    assert "status" in facets
     assert "accessibility" in facets
     assert "type" in facets
+    # status facet は廃止 (docs/api-spec.md § データ可視性)
+    assert "status" not in facets
 
 
 def test_entries_cross_type_db_xrefs_count(app: TestClient) -> None:

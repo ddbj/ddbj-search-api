@@ -23,11 +23,41 @@ from fastapi.responses import StreamingResponse
 from ddbj_search_api.config import DBLINK_DB_PATH
 from ddbj_search_api.dblink.client import iter_linked_ids
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_get_source_stream
+from ddbj_search_api.es.client import es_get_source_stream, es_mget_source
 from ddbj_search_api.schemas.bulk import BulkRequest, BulkResponse
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.queries import BulkFormat, BulkQuery
 from ddbj_search_api.utils import format_xref
+
+_VISIBLE_STATUSES = ("public", "suppressed")
+
+
+async def _resolve_visible_ids(
+    client: httpx.AsyncClient,
+    index: str,
+    ids: list[str],
+) -> tuple[list[str], list[str]]:
+    """Batch-classify bulk IDs by visibility using a single ``_mget`` call.
+
+    Returns ``(visible_ids, hidden_ids)`` where ``visible_ids`` is the
+    subset whose status is ``public`` or ``suppressed`` (in the original
+    input order), and ``hidden_ids`` contains the rest (missing,
+    ``withdrawn``, ``private``, or unknown). See
+    ``docs/api-spec.md`` § データ可視性 (status 制御).
+    """
+    if not ids:
+        return [], []
+    sources = await es_mget_source(client, index, ids, source_includes=["status"])
+    visible: list[str] = []
+    hidden: list[str] = []
+    for id_ in ids:
+        src = sources.get(id_)
+        if src is not None and src.get("status") in _VISIBLE_STATUSES:
+            visible.append(id_)
+        else:
+            hidden.append(id_)
+    return visible, hidden
+
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +114,19 @@ async def _generate_bulk_json(
     acc_type: str,
     include_db_xrefs: bool = True,
 ) -> collections.abc.AsyncIterator[bytes]:
-    """Stream ``{"entries":[...],"notFound":[...]}`` without loading all docs."""
+    """Stream ``{"entries":[...],"notFound":[...]}`` without loading all docs.
+
+    Before streaming entries, a single ``_mget`` call classifies IDs by
+    visibility (``status``): ``withdrawn`` / ``private`` and missing IDs
+    are all reported via ``notFound`` (docs/api-spec.md § データ可視性).
+    """
+    visible_ids, hidden_ids = await _resolve_visible_ids(client, index, ids)
+
     yield b'{"entries":['
-    not_found: list[str] = []
+    not_found: list[str] = list(hidden_ids)
     first = True
 
-    for id_ in ids:
+    for id_ in visible_ids:
         response = await es_get_source_stream(
             client,
             index,
@@ -97,6 +134,7 @@ async def _generate_bulk_json(
             source_excludes="dbXrefs",
         )
         if response is None:
+            # Race condition: doc deleted between visibility check and stream.
             not_found.append(id_)
             continue
         if not first:
@@ -120,8 +158,12 @@ async def _generate_bulk_ndjson(
     acc_type: str,
     include_db_xrefs: bool = True,
 ) -> collections.abc.AsyncIterator[bytes]:
-    """Stream one entry per line. notFound IDs are silently skipped."""
-    for id_ in ids:
+    """Stream one entry per line. Missing / withdrawn / private IDs are
+    silently skipped (docs/api-spec.md § データ可視性).
+    """
+    visible_ids, _hidden_ids = await _resolve_visible_ids(client, index, ids)
+
+    for id_ in visible_ids:
         response = await es_get_source_stream(
             client,
             index,
