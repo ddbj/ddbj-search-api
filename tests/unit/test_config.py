@@ -68,9 +68,9 @@ class TestAppConfigDebug:
         config = AppConfig(env=Env.dev)
         assert config.debug is True
 
-    def test_staging_is_debug(self) -> None:
+    def test_staging_is_not_debug(self) -> None:
         config = AppConfig(env=Env.staging)
-        assert config.debug is True
+        assert config.debug is False
 
     def test_production_is_not_debug(self) -> None:
         config = AppConfig(env=Env.production)

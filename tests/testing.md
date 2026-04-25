@@ -2,270 +2,72 @@
 
 ## 目的
 
-テストは**バグを見つけ、防止する**ために書く。
-すべてのテストは「このテストが落ちたら、どんなバグが検出されたことになるか？」に答えられなければならない。
+テストは **バグを見つけ、防ぐため** に書く。すべてのテストは「これが落ちたらどんなバグが検出されたことになるか」に答えられなければならない。通すために書くテスト、Happy path だけのテスト、アサーションのない smoke テストは書かない。
 
 ## 原則
 
-### TDD
-
-仕様書 (`docs/api-spec.md`) からテストケースを導出し、実装の前にテストを書く。
-
-1. **Red**: 失敗するテストを書く
-2. **Green**: テストを通す最小限のコードを書く
-3. **Refactor**: テストが通ったまま改善する
-
-### PBT
-
-hypothesis を使い、入力空間を広く自動探索する。
-
-### アンチパターン
-
-- **通すためのテスト**: 実装の鏡像で、実装にバグがあればテストも同じバグを持つ
-- **Happy path のみ**: 正常系だけテストして異常系を無視する
-- **アサーションなし**: smoke test と称して何も検証しない
-- **過剰な mock**: 内部実装の詳細を mock し、リファクタリングで壊れるテスト
-- **魔法の定数**: テストデータに意味のない値を使い、なぜその値かが不明
+- **TDD**: 仕様書 ([docs/api-spec.md](../docs/api-spec.md)) からテストを導出し、実装の前に書く。Red → Green → Refactor
+- **PBT (Property-Based Testing)**: hypothesis で入力空間を広く探索する。`@given` で書き、カスタムストラテジーは `tests/unit/strategies.py` に集約。テストデータは `hypothesis.strategies.builds()` で組み立てる (Pydantic v2 と相性が良い)
+- **境界値・エッジケース・異常系を必ず書く**: 正常系だけでは脆い
+- **mock は外部境界だけ**: ES client / DuckDB client のような外部 I/O を境界として mock し、内部 (Pydantic、レスポンス変換、FastAPI ルーティング) は実物を通す
+- **テスト間の独立性**: 状態を共有しない、実行順序に依存しない
 
 ## テスト分類
 
-### Unit テスト (`tests/unit/`)
+2 バケツに分ける。基準は「実 ES に接続するか」。
 
-- **対象**: バリデーション、変換ロジック、クエリ構築、レスポンス整形
-- **ES**: mock する (実 ES に接続しない)
-- **実行**: `uv run pytest` (デフォルト)
+- **Unit** (`tests/unit/`): 実 ES に接続しない。mock した ES client を `TestClient` 経由で叩く。`pyproject.toml` の `testpaths = ["tests/unit"]` でデフォルト実行対象になる
+- **Integration** (`tests/integration/`): 実 ES に接続する。`DDBJ_SEARCH_INTEGRATION_ES_URL` (デフォルト `http://localhost:9200`) で接続先を切替。ES に到達できなければ session 全体を skip
 
-### Integration テスト (`tests/integration/`)
-
-- **対象**: 実 ES に対する検索・取得の E2E 検証
-- **ES**: `localhost:9200` の ES (`ddbj-search-es-dev`) を前提
-- **実行**: `uv run pytest tests/integration/` (明示指定)
-
-pyproject.toml の `testpaths` を `["tests/unit"]` に設定し、`uv run pytest` では unit テストのみ実行する。
+実行コマンドは [docs/development.md § 日常コマンド](../docs/development.md) を参照。
 
 ## ディレクトリ構成
 
-`ddbj_search_api/` のディレクトリ構造をミラーする。
+`tests/` は `ddbj_search_api/` のディレクトリ構造をミラーする。共通 fixture は `unit/conftest.py` と `integration/conftest.py`、PBT カスタムストラテジーは `unit/strategies.py` に集約。新しいモジュールを作ったら同じ階層にテストファイルを追加する。
 
-```
-tests/
-├── testing.md
-├── unit/
-│   ├── conftest.py         # shared fixtures (mock ES client, etc.)
-│   ├── strategies.py       # hypothesis custom strategies
-│   ├── test_config.py
-│   ├── test_main.py
-│   ├── test_utils.py
-│   ├── schemas/
-│   │   ├── test_common.py
-│   │   ├── test_entries.py
-│   │   ├── test_bulk.py
-│   │   └── ...
-│   ├── routers/
-│   │   ├── test_entries.py
-│   │   ├── test_entry_detail.py
-│   │   ├── test_bulk.py
-│   │   ├── test_facets.py
-│   │   ├── test_service_info.py
-│   │   ├── test_dblink.py
-│   │   └── ...
-│   ├── es/
-│   │   └── test_client.py
-│   └── dblink/
-│       └── test_client.py
-└── integration/
-    ├── conftest.py
-    └── ...
-```
+## 命名規則
 
-## テストの書き方
+関数: `test_<対象>_<条件>_<期待結果>()`。読むだけで何を検証しているか分かる粒度。
 
-### 命名規則
+クラスで関心ごとに分ける:
 
-関数: `test_<対象>_<条件>_<期待結果>()`
+| クラス名 | 用途 |
+|---------|------|
+| `Test<Feature>` | 基本機能 |
+| `Test<Feature>PBT` | Property-based |
+| `Test<Feature>EdgeCases` | 境界値・異常系 |
+| `TestBug<N><Description>` | バグ回帰 |
 
-クラス: 1 ファイル内で関心事ごとに分ける。
+## Mock 戦略
 
-- `Test<Feature>`: 基本的な機能テスト
-- `Test<Feature>PBT`: Property-based tests
-- `Test<Feature>EdgeCases`: 境界値・異常系
-- `TestBug<N><Description>`: バグ回帰テスト
+外部境界 (ES client、DuckDB client) のレスポンスを mock し、内部実装は実物を通す。
 
-### PBT の書き方
+- **mock する**: ES の検索レスポンス・エラー、DuckDB の関数 (`iter_linked_ids`, `get_linked_ids_limited`, `count_linked_ids` など)
+- **mock しない**: Pydantic バリデーション、レスポンス変換ロジック、FastAPI ルーティング、`TestClient` の HTTP 経路
 
-`@given` で書く。カスタムストラテジーは `tests/unit/strategies.py` に集約する。
-テストデータの自動生成には `hypothesis.strategies.builds()` を使う (`from_type()` は Pydantic v2 との相性が悪い)。
+router テストでは `TestClient` で HTTP リクエスト → レスポンスの全体を検証する。内部関数を個別に mock しない (リファクタで壊れるため)。
 
-```python
-from hypothesis import given
-from hypothesis import strategies as st
+テストデータは converter の Pydantic モデル (`BioProject`, `BioSample`, `SRA`, `JGA`) を信頼して `builds()` で生成する。converter スキーマの位置は [docs/overview.md § ddbj-search-converter コードガイド](../docs/overview.md) を参照。
 
-valid_per_page = st.integers(min_value=1, max_value=100)
-invalid_per_page = st.integers().filter(lambda x: x < 1 or x > 100)
+## レイヤー別観点
 
+テストを書くときの「どこに重点を置くか」の方針。具体的な Property や境界値はテストコード自身が SSOT なので、ここには書かない。
 
-@given(per_page=valid_per_page)
-def test_with_valid_per_page_accepts(per_page: int):
-    query = PaginationQuery(perPage=per_page)
-    assert query.per_page == per_page
+- **schemas/**: PBT を最も活用する。pydantic バリデーションの境界、Enum 受入/拒否、カンマ区切り文字列のパース、デフォルト値
+- **routers/**: `TestClient` で HTTP レベル。ステータスコード、レスポンス構造、Trailing slash、`Content-Type`、CORS、`X-Request-ID` echo、RFC 7807 エラー形式
+- **es/**: ES クエリ DSL の構造を検証。実 ES に接続せず、構築された dict を比較する
+- **dblink/**: 実 DuckDB を `tmp_path` に作って実 SQL で検証する。DuckDB クエリ自体は mock しない (DuckDB の振る舞いが SSOT)
+- **solr/**: Solr query string と mapper の出力を検証。実 Solr には接続しない
+- **search/dsl/**: lark grammar のパース、ES / Solr へのコンパイラ出力構造、validator の allowlist
+- **config.py**: 環境変数からの読み込みとデフォルト値
 
+## Integration テスト
 
-@given(per_page=invalid_per_page)
-def test_with_invalid_per_page_rejects(per_page: int):
-    with pytest.raises(ValidationError):
-        PaginationQuery(perPage=per_page)
-```
+実 ES (場合により Solr) に対する E2E 検証。件数スナップショットは記録せず、構造的不変条件 (set 一致、相対比較、`>= 0`、`detail` 文字列一致) のみを assert する方針。
 
-### 境界値テスト
+- シナリオ列挙: [tests/integration-scenarios.md](integration-scenarios.md)
+- 環境構築・運用: [tests/integration-note.md](integration-note.md)
 
-PBT と併用し、境界値は明示的にテストする。
+## バグ回帰テスト
 
-| パラメータ | 境界値 |
-|-----------|--------|
-| `perPage` | 0 (NG), 1 (OK), 100 (OK), 101 (NG) |
-| `page` | 0 (NG), 1 (OK) |
-| Deep paging | `page=100, perPage=100` (OK: 10000), `page=101, perPage=100` (NG: 10100) |
-| `dbXrefsLimit` | -1 (NG), 0 (OK: 空配列), 1000 (OK), 1001 (NG) |
-| `BulkRequest.ids` | 空, 1件, 1000件, 1001件 |
-| `keywords` | 空文字, 空白のみ, カンマのみ, 非常に長い文字列 |
-
-### Mock 戦略
-
-Mock は**境界**で行う。内部の関数を個別に mock しない。
-
-```
-Router (テスト対象)
-  ├── ES Client (ここを mock)
-  │     └── Elasticsearch (テストでは接続しない)
-  └── DuckDB Client (ここを mock)
-        └── DuckDB (テストでは接続しない)
-```
-
-- **mock する**: ES client のレスポンス (検索結果、エラー)、DuckDB client の関数 (`iter_linked_ids`, `get_linked_ids_limited`, `get_linked_ids_limited_bulk`, `count_linked_ids`, `count_linked_ids_bulk`)
-- **mock しない**: Pydantic バリデーション、レスポンス変換ロジック、FastAPI のルーティング
-
-FastAPI の `TestClient` を使い、HTTP リクエスト → レスポンスの全体を検証する。
-
-### テストデータ
-
-- converter の Pydantic モデルを信頼し、`builds()` でテストデータを生成する
-- 特定のエッジケース (巨大な dbXrefs、特殊文字を含む ID 等) は明示的に fixture として定義する
-
-## レイヤー別テスト方針
-
-### schemas/
-
-PBT を最も積極的に適用する。
-
-- バリデーションの境界値 (有効/無効の分岐点)
-- デフォルト値の正しさ
-- カンマ区切り文字列のパース (keywords, keywordFields, types, fields)
-- Enum 値の受け入れ/拒否
-
-テストすべき性質:
-
-| 対象 | Property |
-|------|----------|
-| ページネーション | `page >= 1`, `1 <= perPage <= 100`, `page * perPage > 10000` は 400 |
-| dbXrefs 切り詰め | 各 type の件数 <= limit、`count` は常に正確 |
-| fields フィルタ | レスポンスに指定フィールドのみ含まれる |
-| sort パース | `{field}:{direction}` のみ有効、それ以外は 422 |
-| Bulk API | `len(entries) + len(notFound) == len(set(request.ids))` |
-
-### routers/
-
-TestClient で HTTP レベルの振る舞いをテストする。
-
-- ステータスコード (200, 400, 404, 422, 500)
-- レスポンスボディの構造 (必須フィールドの存在)
-- Trailing slash の扱い (`/entries` と `/entries/` が同じ結果)
-
-全エンドポイント共通の性質:
-
-| Property | 検証内容 |
-|----------|---------|
-| RFC 7807 | エラーレスポンスに `type`, `title`, `status`, `detail` が存在 |
-| X-Request-ID | 常にレスポンスヘッダーに存在。リクエスト指定時はエコー |
-| Content-Type | `.json` → `application/json`、`.jsonld` → `application/ld+json` |
-| CORS | `Access-Control-Allow-Origin: *` |
-
-### es/
-
-ES client が構築するクエリの構造をテストする。
-
-- 検索パラメータ → ES クエリ DSL の変換
-- フィルタ条件の組み合わせ (keywords + organism + date range)
-- ページネーションの from/size 計算
-- ファセット集計クエリの構造
-
-### dblink/
-
-DuckDB クライアント (`dblink/client.py`) のテスト。
-
-- **Mock 戦略**: テスト用の DuckDB ファイルを `tmp_path` に作成する。実 DuckDB を使い、SQL 実行結果を検証する
-- **mock しない**: DuckDB のクエリ実行。実際のデータベースファイルに対して検証する
-
-| 対象 | テスト内容 |
-|------|----------|
-| `get_linked_ids` | 正常系 (関連あり)、空結果 (関連なし) |
-| target フィルタ | 単一/複数 target、存在しない target |
-| ソート順 | タイプ昇順 → アクセッション昇順 |
-| DB 不在 | `FileNotFoundError` が raise される |
-| PBT | AccessionType と ID の組み合わせ |
-
-### schemas/dblink.py
-
-- AccessionType enum (21 値すべてが存在すること)
-- DbLinksResponse の構築・JSON シリアライズ
-- DbLinksQuery の target パース・バリデーション (カンマ区切り、無効値)
-- DbLinksTypesResponse の types がソート済み
-
-### routers/dblink.py
-
-TestClient で HTTP レベルの振る舞いをテストする。DuckDB クライアントを mock する。
-
-| テスト | 検証内容 |
-|--------|---------|
-| `GET /dblink/` | 200 + types 一覧 (21 タイプ) |
-| `GET /dblink/{type}/{id}` | 200 + links 構造 (Xref: identifier, type, url) |
-| 無効な type | 422 |
-| 無効な target | 422 |
-| DB 不在 | 500 |
-| Trailing slash | `/dblink` = `/dblink/`、`/dblink/{type}/{id}` = `/dblink/{type}/{id}/` |
-| PBT | 有効な AccessionType で 200 が返る |
-
-### config.py
-
-- 環境変数からの設定読み込み
-- デフォルト値
-
-## ddbj-search-converter リファレンス
-
-API は ES を読む側。書く側である [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter) (`~/git/github.com/ddbj/ddbj-search-converter`) が ES データ構造の唯一の情報源。
-
-converter の Pydantic モデル (`BioProject`, `BioSample`, `SRA`, `JGA` 等) は信頼して使う。API 側のテストではこれらの型が正しい前提でテストデータを生成する。
-
-| 知りたいこと | 見るファイル |
-|------------|------------|
-| ES ドキュメントの構造 (フィールド名、型、必須/任意) | `ddbj_search_converter/schema.py` |
-| ES マッピング (text/keyword/nested、検索可能か) | `ddbj_search_converter/es/mappings/{bioproject,biosample,sra,jga,common}.py` |
-| インデックス名、エイリアス (`entries`, `sra`, `jga`) | `ddbj_search_converter/es/index.py` |
-| データ生成の実装 (XML → Pydantic モデル) | `ddbj_search_converter/jsonl/{bp,bs,sra,jga}.py` |
-| dbXrefs の構築 | `ddbj_search_converter/jsonl/utils.py` |
-| ES インデックス設定 | `ddbj_search_converter/es/settings.py` |
-
-## 実行コマンド
-
-```bash
-# Unit テストのみ (デフォルト)
-uv run pytest
-
-# Integration テスト (実 ES 必要)
-uv run pytest tests/integration/
-
-# 全テスト
-uv run pytest tests/
-
-# PBT の再現 (失敗シードを指定)
-uv run pytest --hypothesis-seed=12345
-```
+修正したバグは `TestBug<N><Description>` クラスで再発防止テストを書く。コミットや PR の URL を docstring に残し、なぜそのテストがあるかを後から辿れるようにする。

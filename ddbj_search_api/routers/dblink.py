@@ -51,11 +51,6 @@ def list_types() -> DbLinksTypesResponse:
     response_model=DbLinksResponse,
     summary="Get linked accessions",
 )
-@router.get(
-    "/{type}/{id}/",
-    response_model=DbLinksResponse,
-    include_in_schema=False,
-)
 async def get_links(
     type: AccessionType = Path(description="Source accession type."),
     id: str = Path(description="Source accession identifier."),

@@ -97,9 +97,9 @@ async def _get_facets(
 ) -> FacetsResponse:
     """Get facet counts across all database types.
 
-    Returns aggregated counts for organism, status, accessibility, and
-    type.  Search filter parameters narrow the set of entries that
-    facets are computed over.
+    Returns aggregated counts for organism, accessibility, and type.
+    Search filter parameters narrow the set of entries that facets are
+    computed over.
     """
 
     return await _do_facets(

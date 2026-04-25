@@ -1,0 +1,279 @@
+# DB Portal API 仕様書
+
+[ddbj-search-front の db-portal 画面](https://github.com/ddbj/db-portal) 専用の統合検索 API。`/entries/*` 系の汎用 API ([api-spec.md](api-spec.md)) とは別系統で、UI 向けの `hits` envelope と Advanced Search DSL を提供する。
+
+エンドポイント・パラメータ・レスポンススキーマの raw spec は Swagger UI (`/search/api/docs`) または `/search/api/openapi.json` で確認する。本仕様書はコードや openapi.json では表現しきれないロジック・規約を集める。設計判断の背景は [overview.md](overview.md) を参照。
+
+## 主要機能
+
+- 5 パターンの統合検索 (シンプル / Advanced Search DSL × 横断 / 単一 DB 指定)、ES 6 DB + Solr 2 DB (`trad` = ARSA 8-shard fan-out、`taxonomy` = TXSearch) に対応
+- 横断 count-only は `asyncio.create_task` + `asyncio.wait(ALL_COMPLETED)` で並列 fan-out、per-backend timeout (ES 10s / ARSA 15s / TXSearch 5s) + 全体 20s で早期打切り (部分完了許容)
+- Advanced Search DSL (`ddbj_search_api/search/dsl/*`): Lark LALR(1) パーサ → allowlist validator → ES/Solr compiler の pipeline。`grammar` / `ast` / `allowlist` / `errors` / `parser` / `validator` / `compiler_es` / `compiler_solr` / `serde` の 9 module 構成
+- フィールド allowlist は 3 段構造: Tier 1 (横断可、8 field) / Tier 2 (横断可、converter 側正規化済の共通 field、2 field) / Tier 3 (単一 DB 指定必須、25 unique / per-DB 集計 28 field)
+- `FieldType` は `identifier` / `text` / `organism` / `date` / `enum` / `number` の 6 種、ES 側は `_ES_FIELD_STRATEGY` で `flat` / `or_flat` / `nested` / `nested2` の 4 pattern に分岐
+- `DbPortalHit` は `type` discriminator を持つ discriminated union 8 variant (`extra="ignore"` で converter 側の新 field は silently drop)
+- `GET /db-portal/parse`: DSL を JSON tree に逆変換 (共有 URL からの GUI state 復元用、`serde.ast_to_json` を endpoint 経由で公開)
+- Solr proxy (`db=trad` / `db=taxonomy`) は offset-only (Solr 4.4.0 に PIT 相当なし)、`cursor` 併用は 400 `cursor-not-supported`
+- 横断モードで Tier 3 field を使用すると 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)
+
+## `GET /db-portal/search`
+
+5 パターンに分岐する:
+
+| # | クエリ | 処理 |
+|---|-------|-----|
+| 1 | `q` のみ | 横断シンプル検索 (count-only、8 DB に並列発行。個別 timeout ES 10s / ARSA 15s / TXSearch 5s、全体 20s で早期打切り。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES) |
+| 2 | `q` + `db` (ES 対応 6 DB) | DB 指定シンプル検索 (`hits` envelope + cursor/offset pagination) |
+| 3 | `q` + `db=trad` / `db=taxonomy` | DB 指定シンプル検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却) |
+| 4 | `adv` のみ | 横断 Advanced Search (count-only、DSL を Lark でパース → validator → ES/Solr にコンパイルして 8 DB 並列発行) |
+| 5 | `adv` + `db` | DB 指定 Advanced Search (DSL を対象バックエンドにコンパイル、hits envelope を返却) |
+| 6 | `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は offset-only) |
+| 7 | `cursor` + `adv` | 400 (`cursor-not-supported` — adv は offset-only。`db` の値や省略を問わず常に同じ slug) |
+
+`q` と `adv` の同時指定は 400 (`invalid-query-combination`)。
+
+### Advanced Search DSL
+
+- **文法** (Lark LALR(1), Lucene サブセット、実装は `ddbj_search_api/search/dsl/grammar.lark`):
+  - `field:value` / `field:"phrase"` / `field:[a TO b]` / `field:value*` / `field:value?`
+  - `AND` / `OR` / `NOT` (大文字必須)、優先度 `AND > OR`、`(...)` でグルーピング
+  - 非対応構文 (boost `^` / fuzzy `~` / 正規表現 `/.../`) は構文エラー (`unexpected-token`)
+  - ネスト深さ上限 5 (`dsl_max_depth`)、DSL 長さ上限 4096 文字 (`dsl_max_length`) 超過は `unexpected-token`
+- **フィールド allowlist (Tier 1/2/3)**: Tier 1 (横断可、8 field) / Tier 2 (横断可、converter 側正規化済の共通 field、2 field) / Tier 3 (単一 DB 指定必須、25 unique / per-DB 集計 28) の 3 段構造。横断 (cross) モードで Tier 3 を使うと 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)。
+  - **Tier 1 (横断可)**:
+    - 識別子: `identifier` (`eq` / `wildcard`)
+    - テキスト: `title` / `description` (`contains` / `wildcard`)
+    - 生物種: `organism` (`eq` — ES 側で `organism.name` / `organism.identifier` の OR 展開)
+    - 日付: `date_published` / `date_modified` / `date_created` (`eq` / `between`)
+    - 日付エイリアス: `date` (ES 側で 3 日付フィールドの OR 展開、ARSA は `Date` に集約、TXSearch は degenerate)
+  - **Tier 2 (横断可、converter 正規化済の共通 field)**:
+    - `submitter` (text; ES nested on `organization.name`、ARSA/TXSearch degenerate)
+    - `publication` (identifier; ES nested on `publication.id`、ARSA は `ReferencePubmedID`、TXSearch degenerate)
+  - **Tier 3 (単一 DB 指定必須)**:
+    - BioProject (2): `project_type` (enum={BioProject, UmbrellaBioProject} → `objectType`)、`grant_agency` (text, 2 段 nested `grant → grant.agency.name`)
+    - SRA (5、実質 sra-experiment のみヒット): `library_strategy` / `library_source` / `library_layout` / `platform` (enum)、`instrument_model` (text)
+    - JGA (2、実質 jga-study のみヒット): `study_type` (enum)、`grant_agency` (text; BioProject と共通)
+    - GEA (1): `experiment_type` (text)
+    - MetaboBank (3): `study_type` / `experiment_type` / `submission_type` (text)
+    - Trad / ARSA (5): `division` / `molecular_type` (enum)、`sequence_length` (number; range + eq)、`feature_gene_name` / `reference_journal` (text)
+    - Taxonomy / TXSearch (10): `rank` (enum)、`lineage` / `kingdom` / `phylum` / `class` / `order` / `family` / `genus` / `species` / `common_name` (text)。`japanese_name` は staging TXSearch の schema に field 不在のため対応外 (TXSearch 側の enrichment 待ち)
+  - 許容外フィールドは 400 `unknown-field`、型と演算子の非互換は 400 `invalid-operator-for-field`
+- **演算子マトリクス** (型 → 許容演算子):
+  - `identifier`: `eq` / `wildcard`
+  - `text`: `contains` / `wildcard`
+  - `organism`: `eq`
+  - `date`: `eq` / `between`
+  - `enum`: `eq` (word / phrase、phrase は空白含み値 e.g. `"VIRAL RNA"` 用)
+  - `number`: `eq` / `between` (digit のみ、非 digit は `invalid-operator-for-field` に流用)
+  - GUI の `not_equals` は `NOT field:value` で表現 (Operator Literal 拡張なし)
+  - GUI の `starts_with` は wildcard `value*` で表現
+- **バックエンド変換**:
+  - ES: `_ES_FIELD_STRATEGY` で `flat` / `or_flat` / `nested` / `nested2` の 4 pattern に分岐。`submitter` / `publication` が nested、`grant_agency` が 2 段 nested (`grant` → `grant.agency` → `match_phrase(grant.agency.name)`)、その他 Tier 3 は flat
+  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、number range はそのまま、対応外 field は `(-*:*)` degenerate、`uf` で allowlist 制御)
+  - TXSearch: AST → edismax `q` 文字列 (Tier 1 + Taxonomy Tier 3 のみ対応、他は `(-*:*)` degenerate、`uf` で allowlist 制御)
+- **横断モードでの Tier 3 拒否**: 400 `field-not-available-in-cross-db`、detail に候補 DB を列挙 (例: `field 'library_strategy' is only available in single-DB mode at column 1. use db=sra.`)
+- **エラー位置情報**: `ProblemDetails` スキーマは無変更、`detail` 文字列に自然言語で `at column N (length M)` を埋め込む (機械判別は type URI slug のみ)
+
+例:
+
+```
+/search?db=bioproject&adv=organism%3A%22Homo+sapiens%22+AND+date_published%3A%5B2020-01-01+TO+2024-12-31%5D+AND+(title%3Acancer+OR+title%3Atumor)
+```
+
+URL デコード後:
+
+```
+organism:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)
+```
+
+Trailing slash なし (`/db-portal/search`) が canonical。
+
+### クエリパラメータ (`DbPortalQuery`)
+
+| パラメータ | 型 | デフォルト | 説明 |
+|----------|-----|-----------|------|
+| `q` | string | — | シンプル検索キーワード。既存 `/entries/` と同じ auto-phrase (記号 `-` `/` `.` `+` `:` 含むと phrase match) が適用される |
+| `adv` | string | — | Advanced Search DSL。Tier 1/2 フィールド (cross) または Tier 1/2/3 フィールド (single-DB) + `AND`/`OR`/`NOT`/`( )` + フレーズ/範囲/ワイルドカードをサポート |
+| `db` | enum | — | 検索対象 DB。値: `trad`, `sra`, `bioproject`, `biosample`, `jga`, `gea`, `metabobank`, `taxonomy`。省略時は横断 count-only |
+| `page` | integer | `1` | ページ番号 (1 始まり) |
+| `perPage` | integer | `20` | 1 ページあたりの件数。許容値: `20`, `50`, `100` のみ (他は 422) |
+| `cursor` | string | — | カーソルトークン (HMAC 署名付き、PIT 5 分) |
+| `sort` | string | — (relevance) | ソート順。許容値: `datePublished:desc`, `datePublished:asc`, または省略 (relevance = score desc + identifier tiebreaker)。他値は 422 |
+
+`q` と `adv` は排他 (同時指定で 400 `invalid-query-combination`)。
+
+### 横断レスポンス (`DbPortalCrossSearchResponse`、`db` 省略時)
+
+```json
+{
+  "databases": [
+    { "db": "trad",       "count": 15050, "error": null },
+    { "db": "sra",        "count": 1234,  "error": null },
+    { "db": "bioproject", "count": 567,   "error": null },
+    { "db": "biosample",  "count": 890,   "error": null },
+    { "db": "jga",        "count": 12,    "error": null },
+    { "db": "gea",        "count": 34,    "error": null },
+    { "db": "metabobank", "count": 5,     "error": null },
+    { "db": "taxonomy",   "count": 12,    "error": null }
+  ]
+}
+```
+
+- `databases` は常に 8 件、順序は固定 (`trad → sra → bioproject → biosample → jga → gea → metabobank → taxonomy`)
+- 各要素は `DbPortalCount`: `db` (enum 8 値)、`count` (int | null)、`error` (enum | null)
+- `count` は `track_total_hits=true` (ES) または Solr の `numFound` (Solr-backed DB) に基づく正確値
+- `error` 値: `timeout`, `upstream_5xx`, `connection_refused`, `unknown`
+- 1 つ以上の DB で成功: HTTP 200 (部分失敗許容)
+- 全 DB 失敗: HTTP 502 (`about:blank`)
+
+### タイムアウト挙動
+
+- 8 DB は `asyncio.create_task` で並列 fan-out、`asyncio.wait(return_when=ALL_COMPLETED, timeout=20s)` で集約。順序は task 完了順に依存せず常に上記固定順
+- 個別 timeout (ES 10s / ARSA 15s / TXSearch 5s) は各 DB 関数内の `asyncio.wait_for` で適用。超過した DB は `error=timeout` でレスポンスに含まれる
+- 全体 timeout (20s) 超過時、未完了の task は cancel され、対象 DB は `error=timeout` で補完される (部分完了分は維持、C2 パターン)
+- 呼び出し側は個別/全体どちらで切れたかを区別しない (内訳は X-Request-ID + サーバログで追える)
+- 初期値は `AppConfig` の `es_search_timeout` / `arsa_timeout` / `txsearch_timeout` / `cross_search_total_timeout` で env 経由に上書き可能
+
+### DB 指定レスポンス (`DbPortalHitsResponse`、`db` が ES 対応 6 DB のいずれか)
+
+```json
+{
+  "total": 1234,
+  "hits": [
+    {
+      "identifier": "PRJDB1234",
+      "type": "bioproject",
+      "title": "Human Cancer Study",
+      "description": "...",
+      "organism": {"identifier": "9606", "name": "Homo sapiens"},
+      "datePublished": "2023-05-01",
+      "url": "https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1234",
+      "sameAs": [],
+      "dbXrefs": null
+    }
+  ],
+  "hardLimitReached": false,
+  "page": 1,
+  "perPage": 20,
+  "nextCursor": "eyJwaXRfaWQi...",
+  "hasNext": true
+}
+```
+
+- `total`: マッチ総件数 (`track_total_hits=true`)
+- `hardLimitReached`: `total >= 10000` のとき `true` (Solr 10,000 件上限と統一)
+- `hits`: `DbPortalHit` discriminated union (8 variant、`type` が discriminator) の配列。`extra="ignore"` で converter 側の新 field は silently drop
+- `page` / `perPage`: offset mode で指定値。cursor mode では `page` が `null`
+- `nextCursor` / `hasNext`: 既存 cursor ページネーションと同じ方式 (HMAC 署名、プロセス再起動で失効)
+
+### `DbPortalHit` 8 variant
+
+| variant | `type` 値 | DB 別追加 field |
+|---------|-----------|----------------|
+| `DbPortalHitBioProject` | `bioproject` | `projectType` (Literal: BioProject / UmbrellaBioProject) / `organization` / `publication` / `grant` / `externalLink` |
+| `DbPortalHitBioSample` | `biosample` | `organization` / `package` / `model` |
+| `DbPortalHitSra` | `sra-submission` / `sra-study` / `sra-experiment` / `sra-run` / `sra-sample` / `sra-analysis` | `organization` / `publication` / `libraryStrategy` / `librarySource` / `librarySelection` / `libraryLayout` / `platform` / `instrumentModel` / `analysisType` (subtype により一部 `null`) |
+| `DbPortalHitJga` | `jga-study` / `jga-dataset` / `jga-dac` / `jga-policy` | `organization` / `publication` / `grant` / `externalLink` / `studyType` / `datasetType` / `vendor` |
+| `DbPortalHitGea` | `gea` | `organization` / `publication` / `experimentType` |
+| `DbPortalHitMetabobank` | `metabobank` | `organization` / `publication` / `studyType` / `experimentType` / `submissionType` |
+| `DbPortalHitTrad` | `trad` | `division` / `molecularType` / `sequenceLength` |
+| `DbPortalHitTaxonomy` | `taxonomy` | `rank` / `commonName` / `japaneseName` / `lineage` |
+
+共通フィールド (全 variant の base `DbPortalHitBase`): `identifier` / `title` / `description` / `organism` / `datePublished` / `dateModified` / `dateCreated` / `url` / `sameAs` / `dbXrefs` / `status` (Literal: public / private / suppressed / withdrawn) / `accessibility` (Literal: public-access / controlled-access)
+
+OpenAPI schema では `DbPortalHit` が `oneOf` 8 member として表現される。db-portal 側は `openapi-typescript` で TypeScript discriminated union に展開可能。
+
+**`dbXrefs` 注意**: DuckDB 注入しない (ES `_source.dbXrefs` があればそのまま返す、無ければ `null`)。UI 向け dbXrefs 統合は将来検討する。
+
+### ページネーション
+
+共通仕様「ページネーション」 ([api-spec.md](api-spec.md)) の cursor 排他ルールを db-portal 独自に適用:
+
+- `cursor` 指定時、以下は指定不可 (400): `q`, `adv`, `sort`, `page` (デフォルト `1` 以外)
+- `db` と `perPage` は `cursor` と併用可能 (cursor トークンには対象 index 情報が含まれないため、`db` は再指定必須)
+- `cursor` を指定して `db` を省略すると 400 (cross モードはカウントのみのため cursor 概念がない)
+- `page * perPage > 10000` は 400 (既存 `_DEEP_PAGING_LIMIT` と同じ)
+
+### エラー (type URI + HTTP status)
+
+| type URI (prefix `https://ddbj.nig.ac.jp/problems/` + slug) | HTTP | 条件 | 備考 |
+|------|------|------|------|
+| `invalid-query-combination` | 400 | `q` と `adv` 同時指定 | — |
+| `advanced-search-not-implemented` | — | (未使用) | DSL 実装後は emit されない (enum は backward compat のため残置) |
+| `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は offset-only)。`adv` + `cursor` も `db` の値・省略を問わず常にこの slug | — |
+| `unexpected-token` | 400 | DSL 構文エラー (非対応構文 / 過長 DSL / 空入力 含む) | DSL |
+| `unknown-field` | 400 | allowlist 外フィールド。`detail` に column 位置と候補一覧を埋め込み | DSL |
+| `field-not-available-in-cross-db` | 400 | 横断モードで Tier 3 フィールド使用。`detail` に候補 DB を列挙 (例: `use db=sra or db=gea`) | DSL |
+| `invalid-date-format` | 400 | `YYYY-MM-DD` 以外、実在しない日付 | DSL |
+| `invalid-operator-for-field` | 400 | フィールド型と演算子の非互換 (例: `date:cancer*`, `identifier:[a TO b]`) | DSL |
+| `nest-depth-exceeded` | 400 | AND/OR/NOT ネスト深さ > 5 (`dsl_max_depth`) | DSL |
+| `missing-value` | 400 | `field:""` 等の空値 | DSL |
+| `about:blank` | 400 | Deep paging 超過、cursor 排他違反 (adv/q/sort/page と同時)、不正な cursor、cursor 期限切れ | — |
+| `about:blank` | 422 | `db` / `sort` / `perPage` 等の enum・Literal 違反、型不一致 | — |
+| `about:blank` | 502 | 横断 count-only で全 DB 失敗、Solr DB 指定検索で upstream エラー | — |
+
+URI prefix `https://ddbj.nig.ac.jp/problems/` は dereferenceable である必要はなく、識別子として機能する (RFC 7807 §3.1)。DSL 関連 7 slug は DSL 実装時に enum へ追加済。`advanced-search-not-implemented` は router からは emit されなくなったが、OpenAPI 契約の互換性のため enum に残置している (将来の cleanup PR で物理削除予定)。
+
+## `GET /db-portal/parse`
+
+Advanced Search DSL を SSOT の JSON tree に変換し、GUI state を復元できる形で返す。共有 URL (`?adv=...`) を開いたユーザが Advanced Search GUI の条件ツリーを再構築するためのサーバ側エントリポイント。クライアント側に独自パーサを持たず、パース結果の構造化 JSON を GUI state に流し込むだけで済むようにする ([db-portal/docs/search.md §GUI ↔ DSL の方向性](https://github.com/ddbj/db-portal/blob/main/docs/search.md))。
+
+内部処理は `GET /db-portal/search?adv=...` の DSL 分岐と同一: `parse` (Lark LALR(1)) → `validate` (allowlist + mode + 深さ / 日付 / 値) → `ast_to_json` で JSON tree 化。既存 DSL 実装 (`ddbj_search_api/search/dsl/*`) を完全再利用し、エラー契約は DSL 関連 7 slug をそのまま共有する (新 slug 追加なし)。
+
+Trailing slash なし (`/db-portal/parse`) が canonical。
+
+例:
+
+```
+/db-portal/parse?adv=title%3Acancer+AND+date%3A%5B2020-01-01+TO+2024-12-31%5D
+```
+
+URL デコード後:
+
+```
+title:cancer AND date:[2020-01-01 TO 2024-12-31]
+```
+
+### クエリパラメータ
+
+| パラメータ | 型 | デフォルト | 説明 |
+|----------|-----|-----------|------|
+| `adv` | string (required) | — | Advanced Search DSL。`GET /db-portal/search?adv=...` と同一文法。未指定時は 422 |
+| `db` | enum | — | validator mode 切替。省略 → 横断 (`cross`, Tier 1 のみ) / 指定 → `single` (当該 DB の allowlist)。値は `DbPortalDb` (`trad` / `sra` / `bioproject` / `biosample` / `jga` / `gea` / `metabobank` / `taxonomy`) |
+
+`q` / `page` / `perPage` / `cursor` / `sort` は受け取らない (OpenAPI 上に現れず、指定されても無視)。
+
+### レスポンス (`DbPortalParseResponse`、`db-portal/docs/search-backends.md §スキーマ仕様` 準拠)
+
+```json
+{
+  "ast": {
+    "op": "AND",
+    "rules": [
+      { "field": "organism", "op": "eq", "value": "Homo sapiens" },
+      {
+        "field": "date",
+        "op": "between",
+        "from": "2020-01-01",
+        "to": "2024-12-31"
+      },
+      {
+        "op": "OR",
+        "rules": [
+          { "field": "title", "op": "contains", "value": "cancer" },
+          { "field": "title", "op": "contains", "value": "tumor" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- ノード判別は `op` (Pydantic v2 discriminated union)。全 7 値 (`AND` / `OR` / `NOT` / `eq` / `contains` / `wildcard` / `between`) が重複なしで単一 discriminator 成立
+- BoolOp (`op ∈ {AND, OR, NOT}`): `rules` に子ノード配列 (`NOT` は 1 件のみ)
+- FieldClause 値型 (`op ∈ {eq, contains, wildcard}`): `field` + `op` + `value`
+- FieldClause 範囲型 (`op = between`): `field` + `op` + `from` + `to` (日付フィールドのみ、Python 予約語回避のため Pydantic 内部は `from_` だが JSON key は `from`)
+
+### エラー
+
+`GET /db-portal/search` の DSL 関連 7 slug をそのまま共有する (`unexpected-token` / `unknown-field` / `field-not-available-in-cross-db` / `invalid-date-format` / `invalid-operator-for-field` / `nest-depth-exceeded` / `missing-value`、すべて 400 + `application/problem+json`)。`field-not-available-in-cross-db` は cross モードで Tier 3 field を使用した場合に発動する (単一 DB 指定必須のため)。`adv` 未指定 / `db` 値不正は FastAPI 標準の 422 (`about:blank`)。

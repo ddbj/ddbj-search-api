@@ -124,12 +124,12 @@ class TestGetLinks:
         assert "type" in data
         assert "dbXrefs" in data
 
-    def test_trailing_slash_works(self, app_with_dblink: TestClient) -> None:
-        resp_no_slash = app_with_dblink.get("/dblink/humandbs/hum0014")
-        resp_slash = app_with_dblink.get("/dblink/humandbs/hum0014/")
-        assert resp_no_slash.status_code == 200
-        assert resp_slash.status_code == 200
-        assert resp_no_slash.json() == resp_slash.json()
+    def test_trailing_slash_returns_404(self, app_with_dblink: TestClient) -> None:
+        """個別リソースは trailing なしのみを canonical とする (docs/api-spec.md § Trailing Slash)。"""
+        resp_canonical = app_with_dblink.get("/dblink/humandbs/hum0014")
+        resp_trailing = app_with_dblink.get("/dblink/humandbs/hum0014/")
+        assert resp_canonical.status_code == 200
+        assert resp_trailing.status_code == 404
 
 
 class TestGetLinksInvalidType:

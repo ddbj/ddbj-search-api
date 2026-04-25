@@ -55,9 +55,9 @@ class AppConfig(BaseSettings):
     port: int = 8080
     env: Env = Env.dev
 
-    # Solr (ARSA = Trad, TXSearch = NCBI Taxonomy). Unset in dev; staging/prod
-    # provide full URLs. ARSA staging runs Solr 4.4.0 with core ``collection1``
-    # (confirmed 2026-04-23); the core name stays env-overridable for prod.
+    # Solr (ARSA = Trad, TXSearch = NCBI Taxonomy). Unset in dev; staging and
+    # production both point at the production ARSA cluster (a011, 8 shards,
+    # Solr 4.4.0, core ``collection1``); the core name stays env-overridable.
     solr_arsa_base_url: str | None = None
     solr_arsa_shards: str | None = None
     solr_arsa_core: str = "collection1"
@@ -79,9 +79,9 @@ class AppConfig(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def debug(self) -> bool:
-        """Enable debug mode for dev and staging environments."""
+        """Enable debug mode for the dev environment only."""
 
-        return self.env in (Env.dev, Env.staging)
+        return self.env == Env.dev
 
 
 def parse_args() -> argparse.Namespace:
