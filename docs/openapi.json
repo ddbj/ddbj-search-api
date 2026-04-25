@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
-    "version": "0.2.1.dev19+g40196f754.d20260425"
+    "version": "0.2.1.dev21+g89d03574e.d20260425"
   },
   "paths": {
     "/entries/": {
@@ -8175,6 +8175,20 @@
             ],
             "title": "Description"
           },
+          "projectType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Projecttype"
+          },
+          "relevance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Relevance"
+          },
           "organization": {
             "items": {
               "$ref": "#/components/schemas/Organization"
@@ -8296,6 +8310,16 @@
           "organism",
           "title",
           "description",
+          "projectType",
+          "relevance",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "dbXrefs",
+          "parentBioProjects",
+          "childBioProjects",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8384,6 +8408,20 @@
               }
             ],
             "title": "Description"
+          },
+          "projectType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Projecttype"
+          },
+          "relevance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Relevance"
           },
           "organization": {
             "items": {
@@ -8513,6 +8551,16 @@
           "organism",
           "title",
           "description",
+          "projectType",
+          "relevance",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "dbXrefs",
+          "parentBioProjects",
+          "childBioProjects",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8604,6 +8652,20 @@
             ],
             "title": "Description"
           },
+          "projectType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Projecttype"
+          },
+          "relevance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Relevance"
+          },
           "organization": {
             "items": {
               "$ref": "#/components/schemas/Organization"
@@ -8733,6 +8795,16 @@
           "organism",
           "title",
           "description",
+          "projectType",
+          "relevance",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "dbXrefs",
+          "parentBioProjects",
+          "childBioProjects",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -8816,6 +8888,68 @@
               }
             ],
             "title": "Description"
+          },
+          "derivedFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Derivedfrom"
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname"
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "strain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strain"
+          },
+          "isolate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isolate"
           },
           "organization": {
             "items": {
@@ -8919,7 +9053,12 @@
           "organism",
           "title",
           "description",
+          "derivedFrom",
+          "organization",
+          "model",
           "package",
+          "dbXrefs",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -9000,6 +9139,68 @@
               }
             ],
             "title": "Description"
+          },
+          "derivedFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Derivedfrom"
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname"
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "strain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strain"
+          },
+          "isolate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isolate"
           },
           "organization": {
             "items": {
@@ -9110,7 +9311,12 @@
           "organism",
           "title",
           "description",
+          "derivedFrom",
+          "organization",
+          "model",
           "package",
+          "dbXrefs",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -9193,6 +9399,68 @@
               }
             ],
             "title": "Description"
+          },
+          "derivedFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Derivedfrom"
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname"
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "strain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strain"
+          },
+          "isolate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isolate"
           },
           "organization": {
             "items": {
@@ -9304,7 +9572,12 @@
           "organism",
           "title",
           "description",
+          "derivedFrom",
+          "organization",
+          "model",
           "package",
+          "dbXrefs",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -12488,6 +12761,13 @@
           "organism",
           "title",
           "description",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "studyType",
+          "datasetType",
+          "vendor",
           "dbXrefs",
           "sameAs",
           "status",
@@ -12702,6 +12982,13 @@
           "organism",
           "title",
           "description",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "studyType",
+          "datasetType",
+          "vendor",
           "dbXrefs",
           "sameAs",
           "status",
@@ -12919,6 +13206,13 @@
           "organism",
           "title",
           "description",
+          "organization",
+          "publication",
+          "grant",
+          "externalLink",
+          "studyType",
+          "datasetType",
+          "vendor",
           "dbXrefs",
           "sameAs",
           "status",
@@ -13624,6 +13918,28 @@
             "type": "array",
             "title": "Instrumentmodel"
           },
+          "libraryName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryname"
+          },
+          "libraryConstructionProtocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryconstructionprotocol"
+          },
           "analysisType": {
             "anyOf": [
               {
@@ -13634,6 +13950,35 @@
               }
             ],
             "title": "Analysistype"
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate"
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname"
+          },
+          "derivedFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Derivedfrom"
           },
           "dbXrefs": {
             "items": {
@@ -13713,9 +14058,18 @@
           "organism",
           "title",
           "description",
+          "organization",
+          "publication",
+          "libraryStrategy",
+          "librarySource",
+          "librarySelection",
           "libraryLayout",
           "platform",
+          "instrumentModel",
           "analysisType",
+          "derivedFrom",
+          "dbXrefs",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -13913,6 +14267,28 @@
             "type": "array",
             "title": "Instrumentmodel"
           },
+          "libraryName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryname"
+          },
+          "libraryConstructionProtocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryconstructionprotocol"
+          },
           "analysisType": {
             "anyOf": [
               {
@@ -13923,6 +14299,35 @@
               }
             ],
             "title": "Analysistype"
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate"
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname"
+          },
+          "derivedFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Derivedfrom"
           },
           "dbXrefs": {
             "items": {
@@ -14009,9 +14414,18 @@
           "organism",
           "title",
           "description",
+          "organization",
+          "publication",
+          "libraryStrategy",
+          "librarySource",
+          "librarySelection",
           "libraryLayout",
           "platform",
+          "instrumentModel",
           "analysisType",
+          "derivedFrom",
+          "dbXrefs",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",
@@ -14166,6 +14580,28 @@
             "type": "array",
             "title": "Instrumentmodel"
           },
+          "libraryName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryname"
+          },
+          "libraryConstructionProtocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryconstructionprotocol"
+          },
           "analysisType": {
             "anyOf": [
               {
@@ -14176,6 +14612,35 @@
               }
             ],
             "title": "Analysistype"
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate"
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname"
+          },
+          "derivedFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Derivedfrom"
           },
           "dbXrefs": {
             "items": {
@@ -14263,9 +14728,18 @@
           "organism",
           "title",
           "description",
+          "organization",
+          "publication",
+          "libraryStrategy",
+          "librarySource",
+          "librarySelection",
           "libraryLayout",
           "platform",
+          "instrumentModel",
           "analysisType",
+          "derivedFrom",
+          "dbXrefs",
+          "sameAs",
           "status",
           "accessibility",
           "dateCreated",

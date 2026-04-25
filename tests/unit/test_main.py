@@ -7,6 +7,7 @@ error handlers, and OpenAPI customisation.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import httpx
 import pytest
@@ -15,6 +16,12 @@ from fastapi.testclient import TestClient
 
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.main import create_app
+from tests._required_list_fields import (
+    REQUIRED_LIST_FIELDS_BIOPROJECT,
+    REQUIRED_LIST_FIELDS_BIOSAMPLE,
+    REQUIRED_LIST_FIELDS_JGA,
+    REQUIRED_LIST_FIELDS_SRA,
+)
 
 # === App factory ===
 
@@ -206,6 +213,51 @@ class TestOpenAPICustomisation:
         schema = app.openapi()
         schemas = schema.get("components", {}).get("schemas", {})
         assert "ValidationError" not in schemas
+
+
+# === OpenAPI required array fields ===
+#
+# converter で list[X] 必須化された項目は、子クラスの *DetailResponse / *EntryJsonLdResponse で
+# 再宣言しなくても継承で required になる。SDK 利用者が見るのは OpenAPI スキーマ生成結果なので、
+# 12 schema (raw 4 + Detail 4 + JsonLd 4) すべてで `required` に含まれることを end-to-end 確認する。
+
+_OPENAPI_REQUIRED_LIST_FIELDS: dict[str, list[str]] = {
+    "BioProject": REQUIRED_LIST_FIELDS_BIOPROJECT,
+    "BioProjectDetailResponse": REQUIRED_LIST_FIELDS_BIOPROJECT,
+    "BioProjectEntryJsonLdResponse": REQUIRED_LIST_FIELDS_BIOPROJECT,
+    "BioSample": REQUIRED_LIST_FIELDS_BIOSAMPLE,
+    "BioSampleDetailResponse": REQUIRED_LIST_FIELDS_BIOSAMPLE,
+    "BioSampleEntryJsonLdResponse": REQUIRED_LIST_FIELDS_BIOSAMPLE,
+    "SRA": REQUIRED_LIST_FIELDS_SRA,
+    "SraDetailResponse": REQUIRED_LIST_FIELDS_SRA,
+    "SraEntryJsonLdResponse": REQUIRED_LIST_FIELDS_SRA,
+    "JGA": REQUIRED_LIST_FIELDS_JGA,
+    "JgaDetailResponse": REQUIRED_LIST_FIELDS_JGA,
+    "JgaEntryJsonLdResponse": REQUIRED_LIST_FIELDS_JGA,
+}
+
+
+class TestOpenAPIRequiredArrayFields:
+    """All entry-related OpenAPI schemas surface converter-required list fields in `required`."""
+
+    @pytest.fixture(scope="class")
+    def schema(self) -> dict[str, Any]:
+        return create_app(AppConfig()).openapi()
+
+    @pytest.mark.parametrize(
+        ("schema_name", "field"),
+        [(name, field) for name, fields in _OPENAPI_REQUIRED_LIST_FIELDS.items() for field in fields],
+        ids=[f"{name}.{field}" for name, fields in _OPENAPI_REQUIRED_LIST_FIELDS.items() for field in fields],
+    )
+    def test_field_in_required(
+        self,
+        schema: dict[str, Any],
+        schema_name: str,
+        field: str,
+    ) -> None:
+        target = schema["components"]["schemas"][schema_name]
+        required = target.get("required", [])
+        assert field in required, f"OpenAPI schema {schema_name}: required does not include {field}"
 
 
 # === Lifespan: Solr client ===

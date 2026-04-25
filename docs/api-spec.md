@@ -371,6 +371,18 @@ ES ドキュメントの `status` フィールドは INSDC の公開状態を示
 
 DB Portal API の ES 経由検索 (`/db-portal/cross-search` の 6 ES DB 部分、および `/db-portal/search?db=bioproject|biosample|sra|jga|gea|metabobank`) に対する status filter は Future work とする。Solr proxy (`/db-portal/search?db=trad|taxonomy`) 側での status 相当の制御と対称性を取る必要があり、別途設計が必要なため。現状は 4 値いずれの status のエントリーも hit する可能性がある。
 
+### 配列フィールド
+
+エントリー詳細系の 3 endpoint (`/entries/{type}/{id}`、`/entries/{type}/{id}.json`、`/entries/{type}/{id}.jsonld`) のレスポンスに含まれる配列フィールド (`distribution`, `organization`, `publication`, `grant`, `externalLink`, `dbXrefs`, `parentBioProjects`, `childBioProjects`, `sameAs`, `model`, `derivedFrom`, `projectType`, `relevance`, `libraryStrategy`, `librarySource`, `librarySelection`, `instrumentModel`, `studyType`, `datasetType`, `vendor` 等) は、対象エントリーに該当する値がない場合でも JSON 上の key として常に空配列 `[]` で返却される。
+
+これにより SDK 利用者は optional chain なしで `response.dbXrefs.length` のように直接アクセスできる。OpenAPI スキーマ上は以下すべての schema の `required` に列挙される。
+
+- フロントエンド向け Detail: `BioProjectDetailResponse` / `BioSampleDetailResponse` / `SraDetailResponse` / `JgaDetailResponse`
+- raw レスポンス: `BioProject` / `BioSample` / `SRA` / `JGA` (`*EntryResponse` は converter スキーマの type alias)
+- JSON-LD レスポンス: `BioProjectEntryJsonLdResponse` / `BioSampleEntryJsonLdResponse` / `SraEntryJsonLdResponse` / `JgaEntryJsonLdResponse`
+
+エントリー型別の必須配列フィールドの完全な一覧は ddbj-search-converter のスキーマ仕様 ([data-architecture.md § 配列フィールドの契約](https://github.com/ddbj/ddbj-search-converter/blob/main/docs/data-architecture.md#%E9%85%8D%E5%88%97%E3%83%95%E3%82%A3%E3%83%BC%E3%83%AB%E3%83%89%E3%81%AE%E5%A5%91%E7%B4%84)) を参照する。
+
 ### dbXrefs
 
 エントリーの `dbXrefs` (データベース間参照) はエントリーによっては数千万件になるため、ES ドキュメントには含めず DuckDB (dblink.duckdb) から取得する。

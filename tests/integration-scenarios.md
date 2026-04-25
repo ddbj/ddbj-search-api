@@ -55,6 +55,7 @@
 - fields フィルタ (指定フィールドだけが返る)
 - types カンマ区切り (`types=bioproject,biosample`)
 - keywords 演算子 (AND / OR / NOT、引用符でフレーズ検索)
+- 配列フィールドの常時 key 返却契約: 検索結果 list の各 item が converter 必須化対象の list field を空配列でも持つ (`fields` フィルタを使わないデフォルトケース)
 
 ### IT-DETAIL-*: Entry Detail / sameAs / dbXrefs
 
@@ -66,6 +67,7 @@
 - 不在 entry の 404 と detail 文字列
 - dbXrefs 切り詰め (`dbXrefsLimit` の境界)
 - JSON-LD の `@id` が Primary ID
+- 配列フィールドの常時 key 返却契約 (converter `data-architecture.md § 配列フィールドの契約`、`api-spec.md § 配列フィールド` を参照): 全 4 type (BioProject / BioSample / SRA / JGA) × 3 endpoint (`/{id}`, `.json`, `.jsonld`) で対象 list field が空配列でも response に key として present であること。`.json` の streaming 経路は Pydantic を介さないため独立に検証する
 
 ### IT-BULK-*: Bulk API
 
@@ -77,6 +79,7 @@
 - 1000 件制限の境界
 - 空 IDs の 422
 - `_mget` の呼び出し回数 (大量 ID で 1 回にまとまっているか)
+- 配列フィールドの常時 key 返却契約: 各 entry が converter 必須化対象の list field を空配列でも持つ (NDJSON / JSON Array いずれも)
 
 ### IT-FACETS-*: Facets
 

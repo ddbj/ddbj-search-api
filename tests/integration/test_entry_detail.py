@@ -11,6 +11,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from tests._required_list_fields import (
+    REQUIRED_LIST_FIELDS_BIOPROJECT,
+    REQUIRED_LIST_FIELDS_BIOSAMPLE,
+)
+
 
 @pytest.fixture(scope="session")
 def bioproject_id(app: TestClient) -> tuple[str, str]:
@@ -240,3 +245,67 @@ def test_entry_detail_db_xrefs_count_consistency(
     total_from_xrefs = len(xrefs_body["dbXrefs"])
 
     assert total_from_count == total_from_xrefs
+
+
+# === Required array key contract (converter-required list fields) ===
+#
+# converter のスキーマで list[X] 必須化された項目は、エントリーに値が無くても
+# レスポンスに空配列の key として常に含まれる。staging ES に key 不在のドキュメントが残ると
+# OpenAPI 契約と乖離するため、実 ES からの取得経路で物理 key 存在を確認する。
+# SRA / JGA および raw `.json` endpoint のカバレッジは IT-DETAIL-* シナリオの一新時に追加予定。
+
+
+@pytest.mark.parametrize("field", REQUIRED_LIST_FIELDS_BIOPROJECT)
+def test_entry_detail_bioproject_required_array_key_present(
+    app: TestClient,
+    bioproject_id: tuple[str, str],
+    field: str,
+) -> None:
+    """Detail endpoint of bioproject returns every converter-required list field as an array key."""
+    db_type, entry_id = bioproject_id
+    body = app.get(f"/entries/{db_type}/{entry_id}").json()
+
+    assert field in body, f"detail bioproject: key '{field}' is missing"
+    assert isinstance(body[field], list), f"detail bioproject: key '{field}' is not list"
+
+
+@pytest.mark.parametrize("field", REQUIRED_LIST_FIELDS_BIOSAMPLE)
+def test_entry_detail_biosample_required_array_key_present(
+    app: TestClient,
+    biosample_id: tuple[str, str],
+    field: str,
+) -> None:
+    """Detail endpoint of biosample returns every converter-required list field as an array key."""
+    db_type, entry_id = biosample_id
+    body = app.get(f"/entries/{db_type}/{entry_id}").json()
+
+    assert field in body, f"detail biosample: key '{field}' is missing"
+    assert isinstance(body[field], list), f"detail biosample: key '{field}' is not list"
+
+
+@pytest.mark.parametrize("field", REQUIRED_LIST_FIELDS_BIOPROJECT)
+def test_entry_jsonld_bioproject_required_array_key_present(
+    app: TestClient,
+    bioproject_id: tuple[str, str],
+    field: str,
+) -> None:
+    """JSON-LD endpoint of bioproject returns every converter-required list field as an array key."""
+    db_type, entry_id = bioproject_id
+    body = app.get(f"/entries/{db_type}/{entry_id}.jsonld").json()
+
+    assert field in body, f"jsonld bioproject: key '{field}' is missing"
+    assert isinstance(body[field], list), f"jsonld bioproject: key '{field}' is not list"
+
+
+@pytest.mark.parametrize("field", REQUIRED_LIST_FIELDS_BIOSAMPLE)
+def test_entry_jsonld_biosample_required_array_key_present(
+    app: TestClient,
+    biosample_id: tuple[str, str],
+    field: str,
+) -> None:
+    """JSON-LD endpoint of biosample returns every converter-required list field as an array key."""
+    db_type, entry_id = biosample_id
+    body = app.get(f"/entries/{db_type}/{entry_id}.jsonld").json()
+
+    assert field in body, f"jsonld biosample: key '{field}' is missing"
+    assert isinstance(body[field], list), f"jsonld biosample: key '{field}' is not list"
