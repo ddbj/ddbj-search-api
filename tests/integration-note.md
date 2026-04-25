@@ -71,7 +71,7 @@ assert resp_hidden.json()["detail"] == resp_missing.json()["detail"]
 
 ## Solr 必須シナリオ
 
-`/db-portal/search` の一部は ARSA / TXSearch (Solr) を経由する。Solr はローカルに代替がなく、staging 環境にしかない。これらのシナリオは `@pytest.mark.staging_only` などで分離する想定 (現状 marker 未定義、整備時に `pyproject.toml` に追加)。
+`/db-portal/cross-search` の 8 DB fan-out と `/db-portal/search?db=trad|taxonomy` は ARSA / TXSearch (Solr) を経由する。Solr はローカルに代替がなく、staging 環境にしかない。これらのシナリオは `@pytest.mark.staging_only` などで分離する想定 (現状 marker 未定義、整備時に `pyproject.toml` に追加)。
 
 `staging_only` を付けたテストはデフォルトの `pytest tests/integration/` では skip し、`pytest -m staging_only` で明示的に有効化する。CI (Solr が無い) では skip され、staging に実環境を持つ作業者が手元で回す。
 

@@ -7661,13 +7661,113 @@
         }
       }
     },
+    "/db-portal/cross-search": {
+      "get": {
+        "tags": [
+          "db-portal"
+        ],
+        "summary": "DB Portal cross-database count-only search",
+        "description": "``GET /db-portal/cross-search``: cross-database count-only search.",
+        "operationId": "crossSearchDbPortal",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.",
+              "title": "Q"
+            },
+            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match."
+          },
+          {
+            "name": "adv",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
+              "title": "Adv"
+            },
+            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbPortalCrossSearchResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (q/adv exclusivity, unexpected parameter, DSL parse/validate error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway (all databases failed)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/db-portal/search": {
       "get": {
         "tags": [
           "db-portal"
         ],
-        "summary": "DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
-        "description": "Unified db-portal search: dispatch by (q/adv) x (db).",
+        "summary": "DB Portal db-specific hits search",
+        "description": "``GET /db-portal/search``: db-specific hits search.",
         "operationId": "searchDbPortal",
         "parameters": [
           {
@@ -7719,10 +7819,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Target database.  Omit for cross-db count-only.  ``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); the other six DBs use Elasticsearch.",
+              "description": "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, ``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  ``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); the other six DBs use Elasticsearch.  Omitting returns 400 ``missing-db``; for cross-database count, use ``/db-portal/cross-search``.",
               "title": "Db"
             },
-            "description": "Target database.  Omit for cross-db count-only.  ``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); the other six DBs use Elasticsearch."
+            "description": "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, ``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  ``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); the other six DBs use Elasticsearch.  Omitting returns 400 ``missing-db``; for cross-database count, use ``/db-portal/cross-search``."
           },
           {
             "name": "page",
@@ -7801,15 +7901,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/DbPortalCrossSearchResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/DbPortalHitsResponse"
-                    }
-                  ],
-                  "title": "Response Searchdbportal"
+                  "$ref": "#/components/schemas/DbPortalHitsResponse"
                 }
               }
             }
@@ -7825,7 +7917,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (q/adv exclusivity, cursor exclusivity, DSL parse/validate error, deep paging limit).",
+            "description": "Bad Request (missing-db, q/adv exclusivity, cursor exclusivity, DSL parse/validate error, deep paging limit).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7845,7 +7937,7 @@
             }
           },
           "502": {
-            "description": "Bad Gateway (all databases failed, or Solr upstream error)",
+            "description": "Bad Gateway (Solr upstream error)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7872,10 +7964,10 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs.",
+              "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/cross-search?adv=...`` / ``GET /db-portal/search?adv=...&db=<id>``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs.",
               "title": "Adv"
             },
-            "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/search?adv=...``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs."
+            "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/cross-search?adv=...`` / ``GET /db-portal/search?adv=...&db=<id>``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs."
           },
           {
             "name": "db",

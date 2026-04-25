@@ -198,7 +198,8 @@ def _make_lifespan(config: AppConfig) -> Any:
         # Shared Solr client for ARSA and TXSearch. No ``base_url``: each
         # call passes a full URL (ARSA ``{base}/{core}/select``, TXSearch
         # preformed ``/solr-rgm/.../select``). Smaller pool than ES: Solr
-        # traffic comes only from ``/db-portal/search``.
+        # traffic comes only from ``/db-portal/cross-search`` fan-out and
+        # ``/db-portal/search?db=trad|taxonomy``.
         #
         # Client-level timeout is the hard cap for Solr requests; cross-search
         # per-call bounds (``arsa_timeout`` / ``txsearch_timeout``) are further

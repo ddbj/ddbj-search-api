@@ -44,11 +44,14 @@ _DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank
 
 
 class TestDbPortalTrailingSlash:
-    """GET /db-portal/search/ is rejected; canonical path is no-trailing."""
+    """Both endpoints reject trailing-slash paths; canonical paths are no-trailing."""
 
-    def test_trailing_slash_not_canonical(self, app_with_db_portal: TestClient) -> None:
-        # Only /db-portal/search is registered; /db-portal/search/ is 404.
+    def test_search_trailing_slash_not_canonical(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get("/db-portal/search/")
+        assert resp.status_code == 404
+
+    def test_cross_search_trailing_slash_not_canonical(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/cross-search/")
         assert resp.status_code == 404
 
 
@@ -56,51 +59,66 @@ class TestDbPortalTrailingSlash:
 
 
 class TestDbPortalQueryCombination:
-    """q / adv exclusivity (400) and DSL parse/validate error surfacing."""
+    """q / adv exclusivity (400) and DSL parse/validate error surfacing.
 
+    Both endpoints share the same q/adv exclusivity check, so it is
+    parametrized over both.  DSL parse/validate errors are also raised
+    by both endpoints; cross-search exercises Tier 1/2 paths and search
+    exercises the full Tier 1/2/3 allowlist.
+    """
+
+    @pytest.mark.parametrize(
+        "endpoint, extra",
+        [
+            ("/db-portal/cross-search", {}),
+            ("/db-portal/search", {"db": "bioproject"}),
+        ],
+    )
     def test_q_and_adv_together_returns_400(
         self,
         app_with_db_portal: TestClient,
+        endpoint: str,
+        extra: dict[str, str],
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
-            params={"q": "foo", "adv": "title:cancer"},
+            endpoint,
+            params={"q": "foo", "adv": "title:cancer", **extra},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_query_combination.value
 
-    def test_adv_parse_error_returns_400_unexpected_token(
+    def test_adv_parse_error_returns_400_unexpected_token_on_cross_search(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         # `type=bioproject` is not a valid DSL (no `:` and uses `=`).
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "type=bioproject"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.unexpected_token.value
 
-    def test_adv_unknown_field_returns_400(
+    def test_adv_unknown_field_returns_400_on_cross_search(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "foo:bar"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.unknown_field.value
 
-    def test_adv_invalid_operator_returns_400(
+    def test_adv_invalid_operator_returns_400_on_cross_search(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "date:cancer*"},
         )
         assert resp.status_code == 400
@@ -123,7 +141,7 @@ class TestDbPortalQueryCombination:
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """Exclusivity check has priority over DSL parse."""
+        """Exclusivity check has priority over DSL parse on /db-portal/search."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"q": "foo", "adv": "bar", "db": "sra"},
@@ -132,19 +150,105 @@ class TestDbPortalQueryCombination:
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_query_combination.value
 
+    @pytest.mark.parametrize(
+        "endpoint, params",
+        [
+            ("/db-portal/cross-search", {"adv": "foo:bar"}),
+            ("/db-portal/cross-search", {"adv": "title:cancer^2"}),
+            ("/db-portal/cross-search", {"adv": "type=bioproject"}),
+            ("/db-portal/search", {"adv": "foo:bar", "db": "bioproject"}),
+            ("/db-portal/search", {"adv": "title:cancer^2", "db": "bioproject"}),
+            ("/db-portal/search", {"adv": "type=bioproject", "db": "bioproject"}),
+        ],
+    )
     def test_advanced_search_not_implemented_never_emitted(
         self,
         app_with_db_portal: TestClient,
+        endpoint: str,
+        params: dict[str, str],
     ) -> None:
         """DSL 実装済のため 501 advanced-search-not-implemented は返らない."""
-        for params in (
-            {"adv": "foo:bar"},
-            {"adv": "title:cancer^2"},
-            {"adv": "type=bioproject"},
-        ):
-            resp = app_with_db_portal.get("/db-portal/search", params=params)
-            assert resp.status_code != 501
-            assert resp.json()["type"] != DbPortalErrorType.advanced_search_not_implemented.value
+        resp = app_with_db_portal.get(endpoint, params=params)
+        assert resp.status_code != 501
+        assert resp.json()["type"] != DbPortalErrorType.advanced_search_not_implemented.value
+
+
+# === Endpoint-specific contract: cross-search rejects forbidden params, search requires db ===
+
+
+class TestDbPortalCrossSearchUnexpectedParameter:
+    """/db-portal/cross-search rejects forbidden params with 400 unexpected-parameter."""
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"db": "sra"},
+            {"cursor": "abc.def"},
+            {"page": "2"},
+            {"perPage": "20"},
+            {"sort": "datePublished:desc"},
+        ],
+    )
+    def test_forbidden_param_returns_400_unexpected_parameter(
+        self,
+        app_with_db_portal: TestClient,
+        extra: dict[str, str],
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "x", **extra},
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.unexpected_parameter.value
+        # detail mentions the offending parameter name.
+        forbidden_name = next(iter(extra.keys()))
+        assert forbidden_name in body["detail"]
+
+    def test_first_unexpected_param_named_when_multiple(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        # When multiple forbidden params are present, only the first one
+        # (in query string order) is reported.
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search?q=x&db=sra&cursor=abc",
+        )
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.unexpected_parameter.value
+        assert "'db'" in body["detail"]
+
+
+class TestDbPortalSearchMissingDb:
+    """/db-portal/search returns 400 missing-db when db is omitted."""
+
+    def test_missing_db_with_q(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.missing_db.value
+        assert "/db-portal/cross-search" in body["detail"]
+
+    def test_missing_db_with_adv(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"adv": "title:cancer"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.missing_db.value
+
+    def test_missing_db_takes_priority_over_q_adv_exclusivity(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """missing-db is raised before the q/adv exclusivity check."""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "foo", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.missing_db.value
 
 
 # === Enum / Literal validation ===
@@ -163,7 +267,7 @@ class TestDbPortalEnumValidation:
     def test_bogus_sort_returns_422(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"sort": "bogus"},
+            params={"db": "bioproject", "sort": "bogus"},
         )
         assert resp.status_code == 422
 
@@ -173,7 +277,7 @@ class TestDbPortalEnumValidation:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"sort": "dateModified:desc"},
+            params={"db": "bioproject", "sort": "dateModified:desc"},
         )
         assert resp.status_code == 422
 
@@ -225,7 +329,7 @@ class TestDbPortalEnumValidation:
 
 
 class TestDbPortalCrossSearch:
-    """Cross-DB count-only (`db` omitted)."""
+    """Cross-DB count-only via /db-portal/cross-search."""
 
     def test_eight_databases_returned_in_order(
         self,
@@ -233,7 +337,7 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
         mock_es_search_db_portal.return_value = make_es_search_response(total=1234)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["databases"]) == 8
@@ -249,7 +353,7 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal.return_value = make_es_search_response(total=1234)
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=77)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=9)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         body = resp.json()
         by_db = {e["db"]: e for e in body["databases"]}
         assert by_db["trad"]["count"] == 77
@@ -263,7 +367,7 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
         mock_es_search_db_portal.return_value = make_es_search_response(total=1234)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         body = resp.json()
         by_db = {e["db"]: e for e in body["databases"]}
         for db in _ES_DBS:
@@ -280,7 +384,7 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal.side_effect = httpx.TimeoutException("timeout")
         mock_arsa_search_db_portal.side_effect = httpx.TimeoutException("timeout")
         mock_txsearch_search_db_portal.side_effect = httpx.TimeoutException("timeout")
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         assert resp.status_code == 502
 
     def test_partial_success_returns_200(
@@ -294,7 +398,7 @@ class TestDbPortalCrossSearch:
             make_es_search_response(total=10),
             *[httpx.TimeoutException("timeout") for _ in range(5)],
         ]
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         assert resp.status_code == 200
         body = resp.json()
         # sra is the first ES-backed DB in the order, so it gets the
@@ -322,7 +426,7 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal.side_effect = error
         mock_arsa_search_db_portal.side_effect = error
         mock_txsearch_search_db_portal.side_effect = error
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         assert resp.status_code == 502
 
     def test_connect_error_mapped(
@@ -337,7 +441,7 @@ class TestDbPortalCrossSearch:
             make_es_search_response(total=1),
             *[httpx.ConnectError("refused") for _ in range(5)],
         ]
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "cancer"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         assert resp.status_code == 200
         body = resp.json()
         by_db = {e["db"]: e for e in body["databases"]}
@@ -350,7 +454,7 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
         mock_es_search_db_portal.return_value = make_es_search_response(total=5)
-        resp = app_with_db_portal.get("/db-portal/search")
+        resp = app_with_db_portal.get("/db-portal/cross-search")
         assert resp.status_code == 200
         # First call is for sra (first ES-backed DB in order).
         first_call_body = mock_es_search_db_portal.call_args_list[0].args[2]
@@ -531,15 +635,17 @@ class TestDbPortalDbSpecificSearch:
 class TestDbPortalCursor:
     """Cursor-based pagination dispatch and exclusivity."""
 
-    def test_cursor_without_db_returns_400(
+    def test_cursor_without_db_returns_400_missing_db(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
+        """db is required on /db-portal/search; cursor + no db → missing-db."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={"cursor": "some-cursor"},
         )
         assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.missing_db.value
 
     def test_invalid_cursor_returns_400(
         self,
@@ -635,7 +741,7 @@ class TestDbPortalErrorFormat:
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"q": "foo", "adv": "bar"},
         )
         assert resp.status_code == 400
@@ -645,7 +751,7 @@ class TestDbPortalErrorFormat:
         assert body["title"] == "Bad Request"
         assert body["status"] == 400
         assert "detail" in body
-        assert body["instance"] == "/db-portal/search"
+        assert body["instance"] == "/db-portal/cross-search"
         assert "timestamp" in body
         assert "requestId" in body
 
@@ -654,7 +760,7 @@ class TestDbPortalErrorFormat:
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "foo:bar"},
         )
         assert resp.status_code == 400
@@ -682,6 +788,36 @@ class TestDbPortalErrorFormat:
         assert body["status"] == 400
         assert "trad" in body["detail"]
 
+    def test_400_unexpected_parameter_shape(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "x", "db": "sra"},
+        )
+        assert resp.status_code == 400
+        assert resp.headers["content-type"].startswith("application/problem+json")
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.unexpected_parameter.value
+        assert body["title"] == "Bad Request"
+        assert body["status"] == 400
+        assert "db" in body["detail"]
+        assert body["instance"] == "/db-portal/cross-search"
+
+    def test_400_missing_db_shape(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "x"},
+        )
+        assert resp.status_code == 400
+        assert resp.headers["content-type"].startswith("application/problem+json")
+        body = resp.json()
+        assert body["type"] == DbPortalErrorType.missing_db.value
+        assert body["title"] == "Bad Request"
+        assert body["status"] == 400
+        assert body["instance"] == "/db-portal/search"
+
     def test_422_uses_about_blank(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
@@ -693,7 +829,7 @@ class TestDbPortalErrorFormat:
 
     def test_request_id_echoed(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"q": "foo", "adv": "bar"},
             headers={"X-Request-ID": "test-req-123"},
         )
@@ -713,7 +849,7 @@ class TestDbPortalSolrCrossSearchErrors:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.side_effect = httpx.TimeoutException("timeout")
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
         assert by_db["trad"]["count"] is None
@@ -725,7 +861,7 @@ class TestDbPortalSolrCrossSearchErrors:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.side_effect = httpx.ConnectError("refused")
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
         assert by_db["trad"]["error"] == DbPortalCountError.connection_refused.value
 
@@ -743,7 +879,7 @@ class TestDbPortalSolrCrossSearchErrors:
             request=mock_response.request,
             response=mock_response,
         )
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
         assert by_db["trad"]["error"] == DbPortalCountError.upstream_5xx.value
 
@@ -753,7 +889,7 @@ class TestDbPortalSolrCrossSearchErrors:
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
         mock_txsearch_search_db_portal.side_effect = httpx.TimeoutException("timeout")
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
         assert by_db["taxonomy"]["error"] == DbPortalCountError.timeout.value
 
@@ -763,7 +899,7 @@ class TestDbPortalSolrCrossSearchErrors:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.return_value = {"no_response_key": True}
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
         assert by_db["trad"]["error"] == DbPortalCountError.unknown.value
 
@@ -1075,7 +1211,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=42)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=7)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
@@ -1104,7 +1240,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=2.0)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=11)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
@@ -1132,7 +1268,7 @@ class TestDbPortalCrossSearchParallelization:
         )
         mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=0.2)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
@@ -1157,7 +1293,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=5.0)
         mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=5.0)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 502
 
@@ -1183,7 +1319,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=5.0)
         mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=5.0)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -1214,7 +1350,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=0.05, num_found=13)
         mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=0.05, num_found=2)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
@@ -1247,7 +1383,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=0.3, num_found=1)
 
         start = time.perf_counter()
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         elapsed = time.perf_counter() - start
 
         assert resp.status_code == 200
@@ -1271,7 +1407,7 @@ class TestDbPortalCrossSearchParallelization:
         mock_arsa_search_db_portal.side_effect = _delayed_arsa_response(delay=2.0)
         mock_txsearch_search_db_portal.side_effect = _delayed_txsearch_response(delay=2.0)
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
 
@@ -1345,7 +1481,7 @@ class TestDbPortalCrossSearchPBT:
         mock_arsa_search_db_portal.side_effect = _arsa_side_effect
         mock_txsearch_search_db_portal.side_effect = _txsearch_side_effect
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         all_failed = all(o != "success" for o in outcomes)
         if all_failed:
@@ -1397,7 +1533,7 @@ class TestDbPortalCrossSearchPBT:
         mock_arsa_search_db_portal.side_effect = _arsa_side_effect
         mock_txsearch_search_db_portal.side_effect = _txsearch_side_effect
 
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
 
         assert resp.status_code == 200
         body = resp.json()
@@ -1426,7 +1562,7 @@ class TestDbPortalAdvValidDispatch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "title:cancer"},
         )
         assert resp.status_code == 200
@@ -1445,7 +1581,7 @@ class TestDbPortalAdvValidDispatch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=3)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "date:[2020-01-01 TO 2024-12-31]"},
         )
         assert resp.status_code == 200
@@ -1574,7 +1710,7 @@ class TestDbPortalAdvValidDispatch:
         dsl = "title:a"
         for i in range(6):
             dsl = f"({dsl} AND title:v{i})"
-        resp = app_with_db_portal.get("/db-portal/search", params={"adv": dsl})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"adv": dsl})
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.nest_depth_exceeded.value
 
@@ -1583,7 +1719,7 @@ class TestDbPortalAdvValidDispatch:
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": 'title:""'},
         )
         assert resp.status_code == 400
@@ -1594,7 +1730,7 @@ class TestDbPortalAdvValidDispatch:
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "date_published:2024-99-99"},
         )
         assert resp.status_code == 400
@@ -1605,7 +1741,7 @@ class TestDbPortalAdvValidDispatch:
         app_with_db_portal: TestClient,
     ) -> None:
         dsl = "title:" + ("x" * 5000)
-        resp = app_with_db_portal.get("/db-portal/search", params={"adv": dsl})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"adv": dsl})
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
 
@@ -1635,7 +1771,7 @@ class TestDbPortalAdvTier2Tier3:
     ) -> None:
         """Tier 3 x cross mode は field-not-available-in-cross-db で 400."""
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "library_strategy:WGS"},
         )
         assert resp.status_code == 400
@@ -1648,7 +1784,7 @@ class TestDbPortalAdvTier2Tier3:
     ) -> None:
         """detail 文字列に候補 DB 列挙 (use db=sra)。"""
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "library_strategy:WGS"},
         )
         body = resp.json()
@@ -1660,7 +1796,7 @@ class TestDbPortalAdvTier2Tier3:
     ) -> None:
         """grant_agency は BioProject + JGA 共通 → 両方列挙."""
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": 'grant_agency:"NIH"'},
         )
         assert resp.status_code == 400
@@ -1672,7 +1808,7 @@ class TestDbPortalAdvTier2Tier3:
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": "rank:species"},
         )
         assert resp.status_code == 400
@@ -1753,7 +1889,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
-            "/db-portal/search",
+            "/db-portal/cross-search",
             params={"adv": 'submitter:"DDBJ"'},
         )
         assert resp.status_code == 200

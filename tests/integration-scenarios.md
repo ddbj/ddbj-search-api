@@ -100,7 +100,7 @@
 
 ### IT-DSL-*: ES DSL コンパイル動作
 
-`/db-portal/search` および `/db-portal/parse` の DSL 関連。
+`/db-portal/cross-search`、`/db-portal/search`、`/db-portal/parse` の DSL 関連。
 
 - ES wildcard が `case_insensitive: true` で大文字小文字を吸収
 - cursor + adv 同時指定で `cursor-not-supported` slug を 400 で返す (ES / Solr で同一 slug)
@@ -110,7 +110,7 @@
 
 ### IT-DBPORTAL-*: db-portal 横断
 
-`/db-portal/search` の Solr 経由 (ARSA / TXSearch) シナリオ。`@pytest.mark.staging_only` で分離する想定。
+`/db-portal/cross-search` (横断 fan-out) と `/db-portal/search?db=trad|taxonomy` (DB 指定) の Solr 経由 (ARSA / TXSearch) シナリオ。`@pytest.mark.staging_only` で分離する想定。
 
 - ARSA (trad) `MolecularType` / `SequenceLength` が response に含まれる
 - ARSA `organism.identifier` が Feature の `db_xref="taxon:..."` から抽出される

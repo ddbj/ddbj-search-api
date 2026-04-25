@@ -1,6 +1,7 @@
 """DB Portal API schemas.
 
-Request/response types for ``GET /db-portal/search`` and ``GET /db-portal/parse``.
+Request/response types for ``GET /db-portal/cross-search``, ``GET /db-portal/search``
+and ``GET /db-portal/parse``.
 
 - ``DbPortalHit`` は ``type`` discriminator を持つ Pydantic v2 discriminated union
   の 8 variant に分割して明示型化。``extra="ignore"`` で converter 側の将来新 field は
@@ -57,6 +58,8 @@ class DbPortalErrorType(str, Enum):
     invalid_query_combination = "https://ddbj.nig.ac.jp/problems/invalid-query-combination"
     advanced_search_not_implemented = "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
+    unexpected_parameter = "https://ddbj.nig.ac.jp/problems/unexpected-parameter"
+    missing_db = "https://ddbj.nig.ac.jp/problems/missing-db"
     # DSL parser error types.
     unexpected_token = "https://ddbj.nig.ac.jp/problems/unexpected-token"
     unknown_field = "https://ddbj.nig.ac.jp/problems/unknown-field"
@@ -71,47 +74,68 @@ ALLOWED_DB_PORTAL_SORTS: frozenset[str] = frozenset({"datePublished:desc", "date
 ALLOWED_DB_PORTAL_PER_PAGE: frozenset[int] = frozenset({20, 50, 100})
 
 
-class DbPortalQuery:
-    """Query parameters for ``GET /db-portal/search``.
+_Q_DESC = (
+    "Simple search keyword(s).  Comma-separated for multiple values; "
+    "double quotes for explicit phrase match; symbols (-, /, ., +, :) "
+    "trigger automatic phrase match."
+)
 
-    FastAPI ``Depends()``-injectable class (same pattern as
-    ``schemas/queries.py``).  ``q``/``adv`` exclusivity is checked in
-    the router so the proper Problem Details ``type`` URI can be
-    attached to the 400 response.
+_ADV_DESC = (
+    "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with "
+    "field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, "
+    '``organism:"Homo sapiens"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` '
+    "(case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, "
+    "``description``, ``organism``, ``date_published``, ``date_modified``, "
+    "``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  "
+    "Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / "
+    "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / "
+    "MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  "
+    "Errors surface as RFC 7807 problem details with a dedicated ``type`` URI "
+    "(``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+)
+
+
+class DbPortalCrossSearchQuery:
+    """Query parameters for ``GET /db-portal/cross-search``.
+
+    Cross-database count-only search.  Only ``q`` / ``adv`` are accepted;
+    any other query parameter (``db`` / ``cursor`` / ``page`` / ``perPage``
+    / ``sort``) is rejected by the router with 400 ``unexpected-parameter``
+    so user typos surface early.  ``q`` / ``adv`` exclusivity is checked
+    in the router with the ``invalid-query-combination`` type URI.
     """
 
     def __init__(
         self,
-        q: str | None = Query(
-            default=None,
-            description=(
-                "Simple search keyword(s).  Comma-separated for multiple values; "
-                "double quotes for explicit phrase match; symbols (-, /, ., +, :) "
-                "trigger automatic phrase match."
-            ),
-        ),
-        adv: str | None = Query(
-            default=None,
-            description=(
-                "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with "
-                "field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, "
-                '``organism:"Homo sapiens"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` '
-                "(case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, "
-                "``description``, ``organism``, ``date_published``, ``date_modified``, "
-                "``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  "
-                "Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / "
-                "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / "
-                "MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  "
-                "Errors surface as RFC 7807 problem details with a dedicated ``type`` URI "
-                "(``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
-            ),
-        ),
+        q: str | None = Query(default=None, description=_Q_DESC),
+        adv: str | None = Query(default=None, description=_ADV_DESC),
+    ) -> None:
+        self.q = q
+        self.adv = adv
+
+
+class DbPortalSearchQuery:
+    """Query parameters for ``GET /db-portal/search``.
+
+    Single-database hits search.  ``db`` is required; the router returns
+    400 ``missing-db`` when omitted (instead of FastAPI's default 422)
+    so the response contract aligns with the cross-search endpoint's
+    ``unexpected-parameter`` slug.  ``q`` / ``adv`` exclusivity is checked
+    in the router with the ``invalid-query-combination`` type URI.
+    """
+
+    def __init__(
+        self,
+        q: str | None = Query(default=None, description=_Q_DESC),
+        adv: str | None = Query(default=None, description=_ADV_DESC),
         db: DbPortalDb | None = Query(
             default=None,
             description=(
-                "Target database.  Omit for cross-db count-only.  "
-                "``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch "
-                "(Solr); the other six DBs use Elasticsearch."
+                "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, "
+                "``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  "
+                "``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); "
+                "the other six DBs use Elasticsearch.  Omitting returns 400 "
+                "``missing-db``; for cross-database count, use ``/db-portal/cross-search``."
             ),
         ),
         page: int = Query(

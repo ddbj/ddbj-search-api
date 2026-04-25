@@ -1,9 +1,10 @@
 """Solr response mappers for ARSA (Trad) and TXSearch (NCBI Taxonomy).
 
 Convert raw Solr ``/select`` JSON to the unified ``DbPortalHit`` discriminated
-union and ``DbPortalHitsResponse`` envelope consumed by ``/db-portal/search``.
-Mappers are pure; missing fields map to ``None`` rather than raising so
-that ARSA / TXSearch schema drift does not propagate to 500 responses.
+union and ``DbPortalHitsResponse`` envelope consumed by
+``/db-portal/search?db=trad|taxonomy``.  Mappers are pure; missing fields
+map to ``None`` rather than raising so that ARSA / TXSearch schema drift
+does not propagate to 500 responses.
 """
 
 from __future__ import annotations

@@ -180,8 +180,9 @@ def build_search_query(
     A status filter (derived from ``status_mode``) is prepended to
     ``bool.filter`` by default so that ``withdrawn`` / ``private``
     entries never leak into search results. Pass ``status_mode=None`` to
-    opt out of the status filter entirely (used by ``/db-portal/search``
-    where status filtering is intentionally Future work — see
+    opt out of the status filter entirely (used by
+    ``/db-portal/cross-search`` and ``/db-portal/search`` where status
+    filtering is intentionally Future work — see
     docs/api-spec.md § データ可視性).
     """
     keyword_list = _parse_keywords(keywords)

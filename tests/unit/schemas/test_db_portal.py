@@ -1,8 +1,8 @@
 """Tests for ddbj_search_api.schemas.db_portal.
 
-Covers enum shape, DbPortalQuery attribute storage & sort allowlist,
-Pydantic alias handling, and cursor round-trip with db-portal payload
-shape.
+Covers enum shape, DbPortalCrossSearchQuery / DbPortalSearchQuery attribute
+storage & sort allowlist, Pydantic alias handling, and cursor round-trip
+with db-portal payload shape.
 """
 
 from __future__ import annotations
@@ -20,13 +20,14 @@ from ddbj_search_api.schemas.db_portal import (
     ALLOWED_DB_PORTAL_SORTS,
     DbPortalCount,
     DbPortalCountError,
+    DbPortalCrossSearchQuery,
     DbPortalCrossSearchResponse,
     DbPortalDb,
     DbPortalErrorType,
     DbPortalHitBase,
     DbPortalHitBioProject,
     DbPortalHitsResponse,
-    DbPortalQuery,
+    DbPortalSearchQuery,
     _DbPortalHitAdapter,
 )
 
@@ -81,12 +82,14 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: base 3 + DSL 7 = 10 problem type URIs."""
+    """DbPortalErrorType: base 5 + DSL 7 = 12 problem type URIs."""
 
     def test_has_all_members(self) -> None:
-        # base 3 + DSL 7 = 10.  advanced_search_not_implemented stays for
-        # backward compatibility until a later cleanup PR but is never emitted.
-        assert len(DbPortalErrorType) == 10
+        # base 5 (invalid-query-combination, advanced-search-not-implemented,
+        # cursor-not-supported, unexpected-parameter, missing-db) + DSL 7 = 12.
+        # advanced_search_not_implemented stays for backward compatibility
+        # until a later cleanup PR but is never emitted.
+        assert len(DbPortalErrorType) == 12
 
     def test_prefix_is_ddbj_problems(self) -> None:
         prefix = "https://ddbj.nig.ac.jp/problems/"
@@ -108,6 +111,12 @@ class TestDbPortalErrorType:
     def test_cursor_not_supported_uri(self) -> None:
         assert DbPortalErrorType.cursor_not_supported.value == "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
 
+    def test_unexpected_parameter_uri(self) -> None:
+        assert DbPortalErrorType.unexpected_parameter.value == "https://ddbj.nig.ac.jp/problems/unexpected-parameter"
+
+    def test_missing_db_uri(self) -> None:
+        assert DbPortalErrorType.missing_db.value == "https://ddbj.nig.ac.jp/problems/missing-db"
+
     def test_dsl_slugs_present(self) -> None:
         """DSL 関連 7 slug の URI."""
         expected_slugs = {
@@ -123,11 +132,11 @@ class TestDbPortalErrorType:
         assert expected_slugs <= actual_slugs
 
 
-# === DbPortalQuery ===
+# === DbPortalCrossSearchQuery / DbPortalSearchQuery ===
 
 
-def _query(**overrides: Any) -> DbPortalQuery:
-    """Shorthand for DbPortalQuery with sensible defaults."""
+def _search_query(**overrides: Any) -> DbPortalSearchQuery:
+    """Shorthand for DbPortalSearchQuery with sensible defaults."""
     defaults: dict[str, Any] = {
         "q": None,
         "adv": None,
@@ -138,14 +147,59 @@ def _query(**overrides: Any) -> DbPortalQuery:
         "sort": None,
     }
     defaults.update(overrides)
-    return DbPortalQuery(**defaults)
+    return DbPortalSearchQuery(**defaults)
 
 
-class TestDbPortalQuery:
-    """DbPortalQuery: attribute storage."""
+def _cross_query(**overrides: Any) -> DbPortalCrossSearchQuery:
+    """Shorthand for DbPortalCrossSearchQuery with sensible defaults."""
+    defaults: dict[str, Any] = {
+        "q": None,
+        "adv": None,
+    }
+    defaults.update(overrides)
+    return DbPortalCrossSearchQuery(**defaults)
+
+
+class TestDbPortalCrossSearchQuery:
+    """DbPortalCrossSearchQuery: only q / adv accepted at the schema layer.
+
+    Other parameters (db / cursor / page / perPage / sort) are not part of
+    the constructor; the router rejects them at runtime via
+    ``_reject_unexpected_cross_params`` with 400 ``unexpected-parameter``.
+    """
 
     def test_stores_defaults(self) -> None:
-        q = _query()
+        q = _cross_query()
+        assert q.q is None
+        assert q.adv is None
+
+    def test_stores_q(self) -> None:
+        q = _cross_query(q="cancer")
+        assert q.q == "cancer"
+
+    def test_stores_adv(self) -> None:
+        q = _cross_query(adv="title:cancer")
+        assert q.adv == "title:cancer"
+
+    def test_constructor_rejects_db(self) -> None:
+        with pytest.raises(TypeError):
+            DbPortalCrossSearchQuery(q=None, adv=None, db=DbPortalDb.bioproject)  # type: ignore[call-arg]
+
+    def test_constructor_rejects_cursor(self) -> None:
+        with pytest.raises(TypeError):
+            DbPortalCrossSearchQuery(q=None, adv=None, cursor="abc")  # type: ignore[call-arg]
+
+    @pytest.mark.parametrize("kwarg, value", [("page", 5), ("per_page", 50), ("sort", "datePublished:desc")])
+    def test_constructor_rejects_paging_and_sort(self, kwarg: str, value: Any) -> None:
+        with pytest.raises(TypeError):
+            DbPortalCrossSearchQuery(q=None, adv=None, **{kwarg: value})
+
+
+class TestDbPortalSearchQuery:
+    """DbPortalSearchQuery: attribute storage."""
+
+    def test_stores_defaults(self) -> None:
+        q = _search_query()
         assert q.q is None
         assert q.adv is None
         assert q.db is None
@@ -155,69 +209,69 @@ class TestDbPortalQuery:
         assert q.sort is None
 
     def test_stores_q(self) -> None:
-        q = _query(q="cancer")
+        q = _search_query(q="cancer")
         assert q.q == "cancer"
 
     def test_stores_adv(self) -> None:
-        q = _query(adv="type=bioproject")
+        q = _search_query(adv="type=bioproject")
         assert q.adv == "type=bioproject"
 
     def test_stores_db(self) -> None:
-        q = _query(db=DbPortalDb.bioproject)
+        q = _search_query(db=DbPortalDb.bioproject)
         assert q.db == DbPortalDb.bioproject
 
     def test_stores_cursor(self) -> None:
-        q = _query(cursor="abc.def")
+        q = _search_query(cursor="abc.def")
         assert q.cursor == "abc.def"
 
     def test_stores_custom_page_and_per_page(self) -> None:
-        q = _query(page=5, per_page=50)
+        q = _search_query(page=5, per_page=50)
         assert q.page == 5
         assert q.per_page == 50
 
 
-class TestDbPortalQuerySort:
-    """DbPortalQuery.sort allowlist validation."""
+class TestDbPortalSearchQuerySort:
+    """DbPortalSearchQuery.sort allowlist validation."""
 
     def test_accepts_none(self) -> None:
-        q = _query(sort=None)
+        q = _search_query(sort=None)
         assert q.sort is None
 
     def test_accepts_date_published_desc(self) -> None:
-        q = _query(sort="datePublished:desc")
+        q = _search_query(sort="datePublished:desc")
         assert q.sort == "datePublished:desc"
 
     def test_accepts_date_published_asc(self) -> None:
-        q = _query(sort="datePublished:asc")
+        q = _search_query(sort="datePublished:asc")
         assert q.sort == "datePublished:asc"
 
     def test_rejects_date_modified(self) -> None:
         with pytest.raises(HTTPException) as exc_info:
-            _query(sort="dateModified:desc")
+            _search_query(sort="dateModified:desc")
         assert exc_info.value.status_code == 422
 
     def test_rejects_identifier_sort(self) -> None:
         with pytest.raises(HTTPException) as exc_info:
-            _query(sort="identifier:asc")
+            _search_query(sort="identifier:asc")
         assert exc_info.value.status_code == 422
 
     def test_rejects_random_string(self) -> None:
         with pytest.raises(HTTPException) as exc_info:
-            _query(sort="bogus")
+            _search_query(sort="bogus")
         assert exc_info.value.status_code == 422
 
     def test_rejects_empty_string(self) -> None:
         with pytest.raises(HTTPException) as exc_info:
-            _query(sort="")
+            _search_query(sort="")
         assert exc_info.value.status_code == 422
 
 
-class TestDbPortalQueryPBT:
-    """DbPortalQuery PBT: sort allowlist."""
+class TestDbPortalSearchQueryPBT:
+    """DbPortalSearchQuery PBT: sort allowlist."""
 
     @given(sort=st.sampled_from(sorted(ALLOWED_DB_PORTAL_SORTS)))
     def test_accepts_allowlisted_sort(self, sort: str) -> None:
-        q = _query(sort=sort)
+        q = _search_query(sort=sort)
         assert q.sort == sort
 
     @given(
@@ -227,7 +281,7 @@ class TestDbPortalQueryPBT:
     )
     def test_rejects_non_allowlisted_sort(self, sort: str) -> None:
         with pytest.raises(HTTPException) as exc_info:
-            _query(sort=sort)
+            _search_query(sort=sort)
         assert exc_info.value.status_code == 422
 
 

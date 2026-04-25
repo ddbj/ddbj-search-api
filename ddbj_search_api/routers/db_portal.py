@@ -1,19 +1,19 @@
-"""Search endpoint for db-portal frontend: GET /db-portal/search.
+"""Search endpoints for db-portal frontend: split into two operations.
 
-Five request patterns dispatched by a single handler:
+* ``GET /db-portal/cross-search`` — cross-database count-only (8 entries,
+  ES + Solr fan-out).  Accepts only ``q`` or ``adv``; any other query
+  parameter returns 400 ``unexpected-parameter``.  Tier 1/2 fields only.
+* ``GET /db-portal/search`` — db-specific hits envelope.  ``db`` is
+  required; omitting it returns 400 ``missing-db``.  Accepts ``q`` /
+  ``adv`` (mutually exclusive) plus pagination (``page`` / ``perPage`` /
+  ``cursor``) and ``sort``.  ES for 6 DBs, Solr for ``trad`` /
+  ``taxonomy`` (offset-only; ``cursor`` returns 400 ``cursor-not-supported``).
 
-1. ``q`` only            → cross-database count-only (8 entries, ES + Solr)
-2. ``q`` + ``db``        → db-specific hits envelope
-                           (ES for 6 DBs, Solr for ``trad`` / ``taxonomy``)
-3. ``adv`` only          → cross-database count-only via the DSL compiler
-4. ``adv`` + ``db``      → db-specific hits envelope via the DSL compiler
-5. ``cursor`` + ``db=trad/taxonomy`` → 400 ``cursor-not-supported``
-                           (Solr is offset-only; no PIT equivalent in 4.4.0)
-
-Mutually exclusive ``q`` + ``adv`` returns 400.  Cross-search count-only
-fans out in parallel with per-backend ``asyncio.wait_for`` bounds and an
-overall ``asyncio.wait`` deadline.  DSL errors (unknown-field,
-invalid-date-format, etc.) surface as 400 + RFC 7807 + dedicated type URI.
+Both endpoints share the DSL pipeline: parse → validate → compile to
+ES/Solr.  DSL errors (unknown-field, invalid-date-format, etc.) surface
+as 400 + RFC 7807 + dedicated type URI.  Cross-search fan-out uses
+per-backend ``asyncio.wait_for`` bounds and an overall ``asyncio.wait``
+deadline.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ddbj_search_api.config import AppConfig, get_config
@@ -39,13 +39,14 @@ from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCount,
     DbPortalCountError,
+    DbPortalCrossSearchQuery,
     DbPortalCrossSearchResponse,
     DbPortalDb,
     DbPortalErrorType,
     DbPortalHit,
     DbPortalHitsResponse,
     DbPortalParseResponse,
-    DbPortalQuery,
+    DbPortalSearchQuery,
     _DbPortalHitAdapter,
 )
 from ddbj_search_api.search.dsl import (
@@ -145,7 +146,7 @@ def _validate_deep_paging(page: int, per_page: int) -> None:
         )
 
 
-def _validate_cursor_exclusivity(query: DbPortalQuery) -> None:
+def _validate_cursor_exclusivity(query: DbPortalSearchQuery) -> None:
     """Raise 400 when cursor is used with incompatible params.
 
     Cursor mode encodes search state (query, sort, PIT) in the token;
@@ -192,6 +193,68 @@ def _map_httpx_error(exc: Exception) -> DbPortalCountError:
         if 500 <= status < 600:
             return DbPortalCountError.upstream_5xx
     return DbPortalCountError.unknown
+
+
+def _validate_q_adv_exclusivity(q: str | None, adv: str | None) -> None:
+    """Raise 400 ``invalid-query-combination`` when both ``q`` and ``adv`` are set."""
+    if q is not None and adv is not None:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType.invalid_query_combination,
+            detail="'q' and 'adv' are mutually exclusive; specify exactly one.",
+        )
+
+
+_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "adv"})
+
+
+def _reject_unexpected_cross_params(request: Request) -> None:
+    """Raise 400 ``unexpected-parameter`` for forbidden params on /db-portal/cross-search.
+
+    cross-search is count-only across 8 DBs; ``db`` / ``cursor`` / ``page`` /
+    ``perPage`` / ``sort`` have no meaning here.  Silently ignoring would
+    hide user typos, so the first unexpected key is reported by name.
+    """
+    extra = [k for k in request.query_params if k not in _CROSS_SEARCH_ALLOWED_PARAMS]
+    if not extra:
+        return
+    name = extra[0]
+    raise DbPortalHTTPException(
+        status_code=400,
+        type_uri=DbPortalErrorType.unexpected_parameter,
+        detail=(
+            f"Parameter '{name}' is not allowed on /db-portal/cross-search. "
+            "Use /db-portal/search?db=<id> for db-specific paginated hits."
+        ),
+    )
+
+
+def _parse_and_validate_dsl(
+    adv: str,
+    db: DbPortalDb | None,
+    config: AppConfig,
+) -> DslNode:
+    """Parse and validate Advanced Search DSL.
+
+    ``mode`` is ``"cross"`` when ``db`` is None and ``"single"`` otherwise.
+    DSL errors are translated to ``DbPortalHTTPException`` (400 + dedicated
+    type URI) so the caller can return RFC 7807 problem details.
+    """
+    try:
+        ast = parse(adv, max_length=config.dsl_max_length)
+        validate(
+            ast,
+            mode="cross" if db is None else "single",
+            db=db,
+            max_depth=config.dsl_max_depth,
+        )
+    except DslError as exc:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType[exc.type.name],
+            detail=exc.detail,
+        ) from exc
+    return ast
 
 
 # === Cross-database count-only ===
@@ -586,7 +649,7 @@ async def _adv_cross_search_count_only(
 async def _search_arsa_adv(
     client: httpx.AsyncClient,
     config: AppConfig,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
     q_string: str,
 ) -> DbPortalHitsResponse:
     if not config.solr_arsa_base_url:
@@ -630,7 +693,7 @@ async def _search_arsa_adv(
 async def _search_txsearch_adv(
     client: httpx.AsyncClient,
     config: AppConfig,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
     q_string: str,
 ) -> DbPortalHitsResponse:
     if not config.solr_txsearch_url:
@@ -671,7 +734,7 @@ async def _search_txsearch_adv(
 
 async def _db_specific_search_es_adv(
     client: httpx.AsyncClient,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
     es_query_body: dict[str, Any],
 ) -> DbPortalHitsResponse:
     """ES hits envelope for adv + db (offset-only; cursor + adv is blocked upstream)."""
@@ -713,7 +776,7 @@ async def _adv_db_specific_search(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
     ast: DslNode,
 ) -> DbPortalHitsResponse:
     assert query.db is not None
@@ -752,7 +815,7 @@ async def _db_specific_search(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
 ) -> DbPortalHitsResponse:
     if query.db in _SOLR_DBS:
         if query.cursor is not None:
@@ -777,7 +840,7 @@ async def _db_specific_search(
 async def _search_arsa(
     client: httpx.AsyncClient,
     config: AppConfig,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
 ) -> DbPortalHitsResponse:
     if not config.solr_arsa_base_url:
         raise HTTPException(
@@ -820,7 +883,7 @@ async def _search_arsa(
 async def _search_txsearch(
     client: httpx.AsyncClient,
     config: AppConfig,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
 ) -> DbPortalHitsResponse:
     if not config.solr_txsearch_url:
         raise HTTPException(
@@ -860,7 +923,7 @@ async def _search_txsearch(
 
 async def _db_specific_search_offset(
     client: httpx.AsyncClient,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
 ) -> DbPortalHitsResponse:
     assert query.db is not None
     _validate_deep_paging(query.page, query.per_page)
@@ -900,7 +963,7 @@ async def _db_specific_search_offset(
 
 async def _db_specific_search_cursor(
     client: httpx.AsyncClient,
-    query: DbPortalQuery,
+    query: DbPortalSearchQuery,
 ) -> DbPortalHitsResponse:
     assert query.db is not None
     assert query.cursor is not None
@@ -967,23 +1030,43 @@ def _get_config_dep() -> AppConfig:
     return get_config()
 
 
-async def _search_db_portal(
-    query: DbPortalQuery = Depends(),
+async def _cross_search_handler(
+    request: Request,
+    query: DbPortalCrossSearchQuery = Depends(),
     es_client: httpx.AsyncClient = Depends(get_es_client),
     solr_client: httpx.AsyncClient = Depends(get_solr_client),
     config: AppConfig = Depends(_get_config_dep),
-) -> DbPortalCrossSearchResponse | DbPortalHitsResponse:
-    """Unified db-portal search: dispatch by (q/adv) x (db)."""
-    if query.q is not None and query.adv is not None:
+) -> DbPortalCrossSearchResponse:
+    """``GET /db-portal/cross-search``: cross-database count-only search."""
+    _reject_unexpected_cross_params(request)
+    _validate_q_adv_exclusivity(query.q, query.adv)
+    if query.adv is not None:
+        ast = _parse_and_validate_dsl(query.adv, db=None, config=config)
+        return await _adv_cross_search_count_only(es_client, solr_client, config, ast)
+    return await _cross_search_count_only(es_client, solr_client, config, query.q)
+
+
+async def _db_search_handler(
+    query: DbPortalSearchQuery = Depends(),
+    es_client: httpx.AsyncClient = Depends(get_es_client),
+    solr_client: httpx.AsyncClient = Depends(get_solr_client),
+    config: AppConfig = Depends(_get_config_dep),
+) -> DbPortalHitsResponse:
+    """``GET /db-portal/search``: db-specific hits search."""
+    if query.db is None:
         raise DbPortalHTTPException(
             status_code=400,
-            type_uri=DbPortalErrorType.invalid_query_combination,
-            detail="'q' and 'adv' are mutually exclusive; specify exactly one.",
+            type_uri=DbPortalErrorType.missing_db,
+            detail=(
+                "Parameter 'db' is required on /db-portal/search. "
+                "Allowed: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy. "
+                "For cross-database count, use /db-portal/cross-search."
+            ),
         )
+    _validate_q_adv_exclusivity(query.q, query.adv)
     if query.adv is not None:
         if query.cursor is not None:
             if query.db in _SOLR_DBS:
-                assert query.db is not None
                 raise DbPortalHTTPException(
                     status_code=400,
                     type_uri=DbPortalErrorType.cursor_not_supported,
@@ -1000,42 +1083,46 @@ async def _search_db_portal(
                     "Advanced Search uses offset pagination; omit 'cursor' to paginate."
                 ),
             )
-        try:
-            ast = parse(query.adv, max_length=config.dsl_max_length)
-            validate(
-                ast,
-                mode="cross" if query.db is None else "single",
-                db=query.db,
-                max_depth=config.dsl_max_depth,
-            )
-        except DslError as exc:
-            raise DbPortalHTTPException(
-                status_code=400,
-                type_uri=DbPortalErrorType[exc.type.name],
-                detail=exc.detail,
-            ) from exc
-        if query.db is None:
-            return await _adv_cross_search_count_only(es_client, solr_client, config, ast)
+        ast = _parse_and_validate_dsl(query.adv, db=query.db, config=config)
         return await _adv_db_specific_search(es_client, solr_client, config, query, ast)
-    if query.cursor is not None and query.db is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Cursor-based pagination requires a 'db' parameter.",
-        )
-    if query.db is None:
-        return await _cross_search_count_only(es_client, solr_client, config, query.q)
     return await _db_specific_search(es_client, solr_client, config, query)
 
 
 router.add_api_route(
-    "/db-portal/search",
-    _search_db_portal,
+    "/db-portal/cross-search",
+    _cross_search_handler,
     methods=["GET"],
-    response_model=DbPortalCrossSearchResponse | DbPortalHitsResponse,
+    response_model=DbPortalCrossSearchResponse,
+    responses={
+        400: {
+            "description": ("Bad Request (q/adv exclusivity, unexpected parameter, DSL parse/validate error)."),
+            "model": ProblemDetails,
+        },
+        422: {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "model": ProblemDetails,
+        },
+        502: {
+            "description": "Bad Gateway (all databases failed)",
+            "model": ProblemDetails,
+        },
+    },
+    summary="DB Portal cross-database count-only search",
+    operation_id="crossSearchDbPortal",
+    tags=["db-portal"],
+)
+
+
+router.add_api_route(
+    "/db-portal/search",
+    _db_search_handler,
+    methods=["GET"],
+    response_model=DbPortalHitsResponse,
     responses={
         400: {
             "description": (
-                "Bad Request (q/adv exclusivity, cursor exclusivity, DSL parse/validate error, deep paging limit)."
+                "Bad Request (missing-db, q/adv exclusivity, cursor exclusivity, "
+                "DSL parse/validate error, deep paging limit)."
             ),
             "model": ProblemDetails,
         },
@@ -1044,11 +1131,11 @@ router.add_api_route(
             "model": ProblemDetails,
         },
         502: {
-            "description": "Bad Gateway (all databases failed, or Solr upstream error)",
+            "description": "Bad Gateway (Solr upstream error)",
             "model": ProblemDetails,
         },
     },
-    summary="DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
+    summary="DB Portal db-specific hits search",
     operation_id="searchDbPortal",
     tags=["db-portal"],
 )
@@ -1062,7 +1149,8 @@ async def _parse_db_portal(
         ...,
         description=(
             "Advanced Search DSL to parse into AST.  Same grammar as "
-            "``GET /db-portal/search?adv=...``.  Returned JSON tree "
+            "``GET /db-portal/cross-search?adv=...`` / "
+            "``GET /db-portal/search?adv=...&db=<id>``.  Returned JSON tree "
             "follows SSOT search-backends.md §L363-381 and is intended for "
             "GUI state restoration from shared URLs."
         ),

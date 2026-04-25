@@ -1,15 +1,17 @@
-"""Integration tests for GET /db-portal/search (real ES; Solr is unset).
+"""Integration tests for /db-portal/cross-search and /db-portal/search (real ES; Solr is unset).
 
 Verifies the dispatcher shape against a real ES cluster.  Solr-backed
-DBs (``trad`` / ``taxonomy``) surface ``error=unknown`` on the count
-path and 502 on the db-specific path when ``solr_arsa_base_url`` and
-``solr_txsearch_url`` are unset, which is the default for integration
-runs.  Advanced Search DSL (``adv``) is parsed by the Lark grammar and
-surfaces DSL errors as RFC 7807 400s with dedicated ``type`` URIs.
+DBs (``trad`` / ``taxonomy``) surface ``error=unknown`` on the
+cross-search count path and 502 on the db-specific path when
+``solr_arsa_base_url`` and ``solr_txsearch_url`` are unset, which is
+the default for integration runs.  Advanced Search DSL (``adv``) is
+parsed by the Lark grammar and surfaces DSL errors as RFC 7807 400s
+with dedicated ``type`` URIs.
 """
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ddbj_search_api.schemas.db_portal import DbPortalCountError, DbPortalErrorType
@@ -24,7 +26,7 @@ _DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank
 
 def test_cross_search_returns_eight_databases(app: TestClient) -> None:
     """`q` alone dispatches to cross-search and returns 8 DB entries in order."""
-    resp = app.get("/db-portal/search", params={"q": "human"})
+    resp = app.get("/db-portal/cross-search", params={"q": "human"})
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["databases"]) == 8
@@ -33,7 +35,7 @@ def test_cross_search_returns_eight_databases(app: TestClient) -> None:
 
 def test_cross_search_solr_dbs_error_when_solr_unset(app: TestClient) -> None:
     """`trad` / `taxonomy` report `error=unknown` when Solr URLs are unset."""
-    resp = app.get("/db-portal/search", params={"q": "human"})
+    resp = app.get("/db-portal/cross-search", params={"q": "human"})
     body = resp.json()
     by_db = {e["db"]: e for e in body["databases"]}
     for db in _SOLR_DBS:
@@ -43,7 +45,7 @@ def test_cross_search_solr_dbs_error_when_solr_unset(app: TestClient) -> None:
 
 def test_cross_search_es_backed_dbs_return_numeric_count(app: TestClient) -> None:
     """ES-backed DBs return integer counts when ES is up."""
-    resp = app.get("/db-portal/search", params={"q": "human"})
+    resp = app.get("/db-portal/cross-search", params={"q": "human"})
     body = resp.json()
     by_db = {e["db"]: e for e in body["databases"]}
     for db in _ES_DBS:
@@ -54,10 +56,19 @@ def test_cross_search_es_backed_dbs_return_numeric_count(app: TestClient) -> Non
 
 def test_cross_search_without_q(app: TestClient) -> None:
     """`q` is optional; cross-search without it runs match_all."""
-    resp = app.get("/db-portal/search")
+    resp = app.get("/db-portal/cross-search")
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["databases"]) == 8
+
+
+def test_cross_search_unexpected_db_returns_400(app: TestClient) -> None:
+    """`/db-portal/cross-search` rejects ``db`` (and other db-specific params) with 400 unexpected-parameter."""
+    resp = app.get("/db-portal/cross-search", params={"q": "x", "db": "sra"})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["type"] == DbPortalErrorType.unexpected_parameter.value
+    assert "db" in body["detail"]
 
 
 # === DB-specific hits search ===
@@ -85,19 +96,28 @@ def test_db_specific_per_page_50(app: TestClient) -> None:
     assert resp.json()["perPage"] == 50
 
 
+def test_search_missing_db_returns_400(app: TestClient) -> None:
+    """`/db-portal/search` requires ``db``; omitting it returns 400 missing-db."""
+    resp = app.get("/db-portal/search", params={"q": "x"})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["type"] == DbPortalErrorType.missing_db.value
+    assert "/db-portal/cross-search" in body["detail"]
+
+
 # === Dispatch: Solr unconfigured / 400 / 422 ===
 
 
 def test_adv_syntax_error_returns_400_unexpected_token(app: TestClient) -> None:
     """DSL syntax errors (e.g. ``field=value``) surface as 400 unexpected-token."""
-    resp = app.get("/db-portal/search", params={"adv": "type=bioproject"})
+    resp = app.get("/db-portal/cross-search", params={"adv": "type=bioproject"})
     assert resp.status_code == 400
     assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
 
 
 def test_adv_valid_tier1_runs_against_es(app: TestClient) -> None:
     """A well-formed Tier 1 DSL dispatches through the cross-db count path."""
-    resp = app.get("/db-portal/search", params={"adv": "title:human"})
+    resp = app.get("/db-portal/cross-search", params={"adv": "title:human"})
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["databases"]) == 8
@@ -122,9 +142,20 @@ def test_cursor_with_trad_returns_400_cursor_not_supported(app: TestClient) -> N
     assert resp.json()["type"] == DbPortalErrorType.cursor_not_supported.value
 
 
-def test_q_and_adv_returns_400(app: TestClient) -> None:
-    """`q` and `adv` together returns 400 invalid-query-combination."""
-    resp = app.get("/db-portal/search", params={"q": "foo", "adv": "bar"})
+@pytest.mark.parametrize(
+    "endpoint, extra",
+    [
+        ("/db-portal/cross-search", {}),
+        ("/db-portal/search", {"db": "bioproject"}),
+    ],
+)
+def test_q_and_adv_returns_400(
+    app: TestClient,
+    endpoint: str,
+    extra: dict[str, str],
+) -> None:
+    """`q` and `adv` together returns 400 invalid-query-combination on both endpoints."""
+    resp = app.get(endpoint, params={"q": "foo", "adv": "title:cancer", **extra})
     assert resp.status_code == 400
     assert resp.json()["type"] == DbPortalErrorType.invalid_query_combination.value
 
