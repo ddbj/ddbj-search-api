@@ -51,7 +51,7 @@ class TestFacetsRouting:
 
 
 class TestFacetsTypeRouting:
-    """GET /facets/{type}: all 12 types are routed."""
+    """GET /facets/{type}: every DbType is routed."""
 
     @pytest.mark.parametrize("db_type", db_type_values)
     def test_route_exists(
@@ -540,9 +540,7 @@ class TestFacetsBioProjectExtra:
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
-        app_with_facets.get(
-            "/facets/bioproject?objectTypes=UmbrellaBioProject,BioProject"
-        )
+        app_with_facets.get("/facets/bioproject?objectTypes=UmbrellaBioProject,BioProject")
         body = mock_es_search_facets.call_args[0][2]
         query = body["query"]
         filters = query["bool"]["filter"]

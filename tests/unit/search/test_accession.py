@@ -14,7 +14,7 @@ from ddbj_search_api.search.accession import (
     is_accession_like,
 )
 
-# DbType (12) の値は AccessionType (21) のサブセットなので、enum value を
+# DbType の値は AccessionType (21) のサブセットなので、enum value を
 # そのまま AccessionType 型として扱える。
 _DB_TYPE_VALUES: list[AccessionType] = [e.value for e in DbType]
 
@@ -40,15 +40,15 @@ _DB_TYPE_SAMPLE_ACCESSIONS: list[str] = [
     "JGAD000001",
     "JGAC000001",
     "JGAP000001",
+    "E-GEAD-1",  # gea
+    "MTBKS1",  # metabobank
 ]
 
 # DbType に含まれない AccessionType の例 (NG になるべき)
 _NON_DB_TYPE_ACCESSIONS: list[str] = [
     "GSE12345",  # geo
     "hum0014",  # humandbs
-    "E-GEAD-1",  # gea
     "GCA_000001405",  # insdc-assembly
-    "MTBKS1",  # metabobank
     "1234567",  # pubmed/taxonomy (数字のみ、意図的に除外)
 ]
 
@@ -114,8 +114,7 @@ class TestDetectAccessionExactMatch:
             "PRJDB*",
             "DRA000?",
             "PRJDB*1234",
-            "GSE12345",  # DbType に無い
-            "E-GEAD-1",  # DbType に無い
+            "GSE12345",  # geo: DbType に無い
             "1234567",  # pubmed/taxonomy 数字のみパターンは DbType に無い
             '""',
             "''",
@@ -137,7 +136,7 @@ class TestDetectAccessionExactMatch:
 
 @st.composite
 def _valid_accession_for_db_type(draw: st.DrawFn) -> str:
-    """12 DbType のパターンから fullmatch する accession ID を生成。"""
+    """DbType のパターンから fullmatch する accession ID を生成。"""
     db_type_value = draw(st.sampled_from(_DB_TYPE_VALUES))
     pattern = ID_PATTERN_MAP[db_type_value]
     return draw(st.from_regex(pattern, fullmatch=True))
@@ -172,6 +171,6 @@ class TestAccessionPBT:
 
     @given(st.from_regex(r"[a-z]+", fullmatch=True))
     def test_lowercase_never_matches(self, text: str) -> None:
-        # 12 DbType のパターンはすべて大文字で始まるので、
+        # DbType のパターンはすべて大文字で始まるので、
         # 全小文字のトークンは絶対にマッチしない
         assert detect_accession_exact_match(text) is None

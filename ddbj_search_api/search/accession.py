@@ -18,7 +18,7 @@ _ACCESSION_PATTERNS: list[Pattern[str]] = [ID_PATTERN_MAP[db_type.value] for db_
 
 
 def is_accession_like(token: str) -> bool:
-    """指定トークンが 12 DbType のいずれかの ID パターンに完全一致するか判定する。
+    """指定トークンが DbType のいずれかの ID パターンに完全一致するか判定する。
 
     呼び出し側は前後空白と外側クオートを事前に除去しておく必要がある。
     """

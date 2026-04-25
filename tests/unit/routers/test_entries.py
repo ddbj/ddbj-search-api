@@ -174,9 +174,7 @@ class TestEntriesBioProjectObjectTypesValidation:
         )
         assert resp.status_code == 200
 
-    def test_legacy_umbrella_param_ignored_or_rejected(
-        self, app_with_es: TestClient
-    ) -> None:
+    def test_legacy_umbrella_param_ignored_or_rejected(self, app_with_es: TestClient) -> None:
         """旧 umbrella=TRUE は新仕様では未定義パラメータ。FastAPI のデフォルトでは
         未定義 query param は 200 で素通りするため、ここでは「200 になり、新パラメータ
         が無効化されていない」ことを確認する (破壊的変更の確認はドキュメントのみ)。"""

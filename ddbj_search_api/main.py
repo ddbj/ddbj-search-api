@@ -270,6 +270,8 @@ _DETAIL_DISCRIMINATOR_TARGETS: dict[str, dict[str, str]] = {
         "jga-dataset": "JgaDetailResponse",
         "jga-dac": "JgaDetailResponse",
         "jga-policy": "JgaDetailResponse",
+        "gea": "GeaDetailResponse",
+        "metabobank": "MetaboBankDetailResponse",
     },
     "/entries/{type}/{id}.json": {
         "bioproject": "BioProject",
@@ -284,6 +286,8 @@ _DETAIL_DISCRIMINATOR_TARGETS: dict[str, dict[str, str]] = {
         "jga-dataset": "JGA",
         "jga-dac": "JGA",
         "jga-policy": "JGA",
+        "gea": "GEA",
+        "metabobank": "MetaboBank",
     },
     "/entries/{type}/{id}.jsonld": {
         "bioproject": "BioProjectEntryJsonLdResponse",
@@ -298,6 +302,8 @@ _DETAIL_DISCRIMINATOR_TARGETS: dict[str, dict[str, str]] = {
         "jga-dataset": "JgaEntryJsonLdResponse",
         "jga-dac": "JgaEntryJsonLdResponse",
         "jga-policy": "JgaEntryJsonLdResponse",
+        "gea": "GeaEntryJsonLdResponse",
+        "metabobank": "MetaboBankEntryJsonLdResponse",
     },
 }
 
@@ -360,7 +366,7 @@ def _convert_anyof_to_oneof_with_discriminator(
     success = operation.get("responses", {}).get("200")
     if not success:
         return
-    for media_type, body in (success.get("content") or {}).items():
+    for body in (success.get("content") or {}).values():
         schema = body.get("schema") or {}
         variants = schema.pop("anyOf", None)
         if not variants:
@@ -384,7 +390,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.\n\n"
             "See [docs/api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/api-spec.md) "
             "for behaviour-level specifications (status visibility, sameAs resolution, pagination semantics) "
-            "and [docs/db-portal-api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) "
+            "and [docs/db-portal-api-spec.md]("
+            "https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) "
             "for the ``/db-portal/*`` endpoints (unified search, Advanced Search DSL)."
         ),
         version=importlib.metadata.version("ddbj-search-api"),

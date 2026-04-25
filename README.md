@@ -1,6 +1,6 @@
 # ddbj-search-api
 
-[DDBJ Search](https://ddbj.nig.ac.jp/search) の RESTful API サーバー実装。BioProject / BioSample / SRA / JGA など全 12 タイプのデータを横断検索・取得する。
+[DDBJ Search](https://ddbj.nig.ac.jp/search) の RESTful API サーバー実装。BioProject / BioSample / SRA / JGA / GEA / MetaboBank の各タイプのデータを横断検索・取得する。
 
 ddbj-search-converter が管理する Elasticsearch を読み、関連 ID の逆引きには DuckDB を併用する。詳しい設計判断は [docs/overview.md](docs/overview.md)、API の振る舞いは [docs/api-spec.md](docs/api-spec.md) を参照。
 

@@ -27,6 +27,8 @@ JSONLD_CONTEXT_URLS: dict[str, str] = {
     "jga-dataset": f"{_CONTEXT_BASE}/jga.jsonld",
     "jga-dac": f"{_CONTEXT_BASE}/jga.jsonld",
     "jga-policy": f"{_CONTEXT_BASE}/jga.jsonld",
+    "gea": f"{_CONTEXT_BASE}/gea.jsonld",
+    "metabobank": f"{_CONTEXT_BASE}/metabobank.jsonld",
 }
 
 

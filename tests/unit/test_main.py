@@ -19,7 +19,9 @@ from ddbj_search_api.main import create_app
 from tests._required_list_fields import (
     REQUIRED_LIST_FIELDS_BIOPROJECT,
     REQUIRED_LIST_FIELDS_BIOSAMPLE,
+    REQUIRED_LIST_FIELDS_GEA,
     REQUIRED_LIST_FIELDS_JGA,
+    REQUIRED_LIST_FIELDS_METABOBANK,
     REQUIRED_LIST_FIELDS_SRA,
 )
 
@@ -219,7 +221,7 @@ class TestOpenAPICustomisation:
 #
 # converter で list[X] 必須化された項目は、子クラスの *DetailResponse / *EntryJsonLdResponse で
 # 再宣言しなくても継承で required になる。SDK 利用者が見るのは OpenAPI スキーマ生成結果なので、
-# 12 schema (raw 4 + Detail 4 + JsonLd 4) すべてで `required` に含まれることを end-to-end 確認する。
+# raw / Detail / JsonLd すべての schema で `required` に含まれることを end-to-end 確認する。
 
 _OPENAPI_REQUIRED_LIST_FIELDS: dict[str, list[str]] = {
     "BioProject": REQUIRED_LIST_FIELDS_BIOPROJECT,
@@ -234,6 +236,12 @@ _OPENAPI_REQUIRED_LIST_FIELDS: dict[str, list[str]] = {
     "JGA": REQUIRED_LIST_FIELDS_JGA,
     "JgaDetailResponse": REQUIRED_LIST_FIELDS_JGA,
     "JgaEntryJsonLdResponse": REQUIRED_LIST_FIELDS_JGA,
+    "GEA": REQUIRED_LIST_FIELDS_GEA,
+    "GeaDetailResponse": REQUIRED_LIST_FIELDS_GEA,
+    "GeaEntryJsonLdResponse": REQUIRED_LIST_FIELDS_GEA,
+    "MetaboBank": REQUIRED_LIST_FIELDS_METABOBANK,
+    "MetaboBankDetailResponse": REQUIRED_LIST_FIELDS_METABOBANK,
+    "MetaboBankEntryJsonLdResponse": REQUIRED_LIST_FIELDS_METABOBANK,
 }
 
 

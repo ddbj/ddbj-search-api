@@ -13,7 +13,7 @@ from tests.unit.strategies import valid_facet_count, valid_facet_value, valid_pa
 
 
 class TestDbType:
-    """DbType enum: 12 database types."""
+    """DbType enum members."""
 
     EXPECTED_VALUES = [
         "bioproject",
@@ -28,10 +28,12 @@ class TestDbType:
         "jga-dataset",
         "jga-dac",
         "jga-policy",
+        "gea",
+        "metabobank",
     ]
 
-    def test_enum_has_exactly_12_members(self) -> None:
-        assert len(DbType) == 12
+    def test_enum_member_count_matches_expected(self) -> None:
+        assert len(DbType) == len(self.EXPECTED_VALUES)
 
     @pytest.mark.parametrize("value", EXPECTED_VALUES)
     def test_enum_contains_expected_value(self, value: str) -> None:

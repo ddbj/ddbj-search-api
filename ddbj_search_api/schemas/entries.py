@@ -6,7 +6,7 @@ Covers search results (EntryListResponse) and entry detail responses
 
 from __future__ import annotations
 
-from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
+from ddbj_search_converter.schema import GEA, JGA, SRA, BioProject, BioSample, MetaboBank
 from pydantic import BaseModel, ConfigDict, Field
 
 from ddbj_search_api.schemas.common import DbXrefsCount, EntryListItem, Facets, Pagination
@@ -64,7 +64,30 @@ class JgaDetailResponse(JGA):
     db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
 
 
-DetailResponse = BioProjectDetailResponse | BioSampleDetailResponse | SraDetailResponse | JgaDetailResponse
+class GeaDetailResponse(GEA):
+    """GEA entry detail with truncated dbXrefs and dbXrefsCount."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+
+
+class MetaboBankDetailResponse(MetaboBank):
+    """MetaboBank entry detail with truncated dbXrefs and dbXrefsCount."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+
+
+DetailResponse = (
+    BioProjectDetailResponse
+    | BioSampleDetailResponse
+    | SraDetailResponse
+    | JgaDetailResponse
+    | GeaDetailResponse
+    | MetaboBankDetailResponse
+)
 
 # === Raw entry responses (data-access: ES document as-is) ===
 
@@ -72,8 +95,10 @@ BioProjectEntryResponse = BioProject
 BioSampleEntryResponse = BioSample
 SraEntryResponse = SRA
 JgaEntryResponse = JGA
+GeaEntryResponse = GEA
+MetaboBankEntryResponse = MetaboBank
 
-EntryResponse = BioProject | BioSample | SRA | JGA
+EntryResponse = BioProject | BioSample | SRA | JGA | GEA | MetaboBank
 
 # === JSON-LD responses ===
 
@@ -114,8 +139,31 @@ class JgaEntryJsonLdResponse(JGA):
     at_id: str = Field(alias="@id")
 
 
+class GeaEntryJsonLdResponse(GEA):
+    """GEA entry in JSON-LD format."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    at_context: str = Field(alias="@context")
+    at_id: str = Field(alias="@id")
+
+
+class MetaboBankEntryJsonLdResponse(MetaboBank):
+    """MetaboBank entry in JSON-LD format."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    at_context: str = Field(alias="@context")
+    at_id: str = Field(alias="@id")
+
+
 EntryJsonLdResponse = (
-    BioProjectEntryJsonLdResponse | BioSampleEntryJsonLdResponse | SraEntryJsonLdResponse | JgaEntryJsonLdResponse
+    BioProjectEntryJsonLdResponse
+    | BioSampleEntryJsonLdResponse
+    | SraEntryJsonLdResponse
+    | JgaEntryJsonLdResponse
+    | GeaEntryJsonLdResponse
+    | MetaboBankEntryJsonLdResponse
 )
 
 # === Mapping from DbType to converter model ===
@@ -133,4 +181,6 @@ DB_TYPE_TO_ENTRY_MODEL: dict[str, type] = {
     "jga-dataset": JGA,
     "jga-dac": JGA,
     "jga-policy": JGA,
+    "gea": GEA,
+    "metabobank": MetaboBank,
 }

@@ -20,9 +20,9 @@ from ddbj_search_api.schemas.common import DbType
 _KEYWORD_FIELDS_PATTERN = r"^(identifier|title|name|description)(,(identifier|title|name|description))*$"
 _DB_TYPES_PATTERN = (
     r"^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|"
-    r"jga-study|jga-dataset|jga-dac|jga-policy)"
+    r"jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank)"
     r"(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|"
-    r"jga-study|jga-dataset|jga-dac|jga-policy))*$"
+    r"jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank))*$"
 )
 _SORT_PATTERN = r"^(datePublished|dateModified):(asc|desc)$"
 _OBJECT_TYPES_PATTERN = r"^(BioProject|UmbrellaBioProject)(,(BioProject|UmbrellaBioProject))*$"

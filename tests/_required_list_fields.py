@@ -54,3 +54,23 @@ REQUIRED_LIST_FIELDS_JGA: list[str] = [
     "dbXrefs",
     "sameAs",
 ]
+
+REQUIRED_LIST_FIELDS_GEA: list[str] = [
+    "distribution",
+    "organization",
+    "publication",
+    "experimentType",
+    "dbXrefs",
+    "sameAs",
+]
+
+REQUIRED_LIST_FIELDS_METABOBANK: list[str] = [
+    "distribution",
+    "organization",
+    "publication",
+    "studyType",
+    "experimentType",
+    "submissionType",
+    "dbXrefs",
+    "sameAs",
+]

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DbType(str, Enum):
-    """Database types supported by the API (12 types)."""
+    """Database types supported by the API."""
 
     bioproject = "bioproject"
     biosample = "biosample"
@@ -23,6 +23,8 @@ class DbType(str, Enum):
     jga_dataset = "jga-dataset"
     jga_dac = "jga-dac"
     jga_policy = "jga-policy"
+    gea = "gea"
+    metabobank = "metabobank"
 
 
 # CamelCase form per DbType, used to build stable operationIds
@@ -40,6 +42,8 @@ DB_TYPE_DISPLAY: dict[DbType, str] = {
     DbType.jga_dataset: "JgaDataset",
     DbType.jga_dac: "JgaDac",
     DbType.jga_policy: "JgaPolicy",
+    DbType.gea: "Gea",
+    DbType.metabobank: "MetaboBank",
 }
 
 

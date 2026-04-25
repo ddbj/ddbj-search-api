@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
+from ddbj_search_converter.schema import GEA, JGA, SRA, BioProject, BioSample, MetaboBank
 from pydantic import ValidationError
 
 from ddbj_search_api.schemas.common import EntryListItem, FacetBucket, Facets, Pagination
@@ -18,9 +18,15 @@ from ddbj_search_api.schemas.entries import (
     BioSampleEntryJsonLdResponse,
     BioSampleEntryResponse,
     EntryListResponse,
+    GeaDetailResponse,
+    GeaEntryJsonLdResponse,
+    GeaEntryResponse,
     JgaDetailResponse,
     JgaEntryJsonLdResponse,
     JgaEntryResponse,
+    MetaboBankDetailResponse,
+    MetaboBankEntryJsonLdResponse,
+    MetaboBankEntryResponse,
     SraDetailResponse,
     SraEntryJsonLdResponse,
     SraEntryResponse,
@@ -124,6 +130,42 @@ _JGA_BASE: dict[str, Any] = {
     **_COMMON_OPTIONAL,
 }
 
+_GEA_BASE: dict[str, Any] = {
+    "identifier": "E-GEAD-1",
+    "properties": {},
+    "distribution": [],
+    "organization": [],
+    "publication": [],
+    "experimentType": [],
+    "isPartOf": "gea",
+    "type": "gea",
+    "url": "https://example.com/E-GEAD-1",
+    "dbXrefs": [],
+    "sameAs": [],
+    "status": "public",
+    "accessibility": "public-access",
+    **_COMMON_OPTIONAL,
+}
+
+_METABOBANK_BASE: dict[str, Any] = {
+    "identifier": "MTBKS1",
+    "properties": {},
+    "distribution": [],
+    "organization": [],
+    "publication": [],
+    "studyType": [],
+    "experimentType": [],
+    "submissionType": [],
+    "isPartOf": "metabobank",
+    "type": "metabobank",
+    "url": "https://example.com/MTBKS1",
+    "dbXrefs": [],
+    "sameAs": [],
+    "status": "public",
+    "accessibility": "public-access",
+    **_COMMON_OPTIONAL,
+}
+
 
 # === EntryListResponse ===
 
@@ -188,12 +230,15 @@ class TestDetailResponse:
         (BioSampleDetailResponse, _BIOSAMPLE_BASE),
         (SraDetailResponse, _SRA_BASE),
         (JgaDetailResponse, _JGA_BASE),
+        (GeaDetailResponse, _GEA_BASE),
+        (MetaboBankDetailResponse, _METABOBANK_BASE),
     ]
+    DETAIL_IDS = ["BioProject", "BioSample", "SRA", "JGA", "GEA", "MetaboBank"]
 
     @pytest.mark.parametrize(
         "cls,base",
         DETAIL_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=DETAIL_IDS,
     )
     def test_basic_construction(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(**base, dbXrefsCount={"biosample": 10})
@@ -207,8 +252,10 @@ class TestDetailResponse:
             (BioSampleDetailResponse, BioSample),
             (SraDetailResponse, SRA),
             (JgaDetailResponse, JGA),
+            (GeaDetailResponse, GEA),
+            (MetaboBankDetailResponse, MetaboBank),
         ],
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=DETAIL_IDS,
     )
     def test_inherits_from_converter_type(
         self,
@@ -220,7 +267,7 @@ class TestDetailResponse:
     @pytest.mark.parametrize(
         "cls,base",
         DETAIL_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=DETAIL_IDS,
     )
     def test_converter_fields_are_real_fields(
         self,
@@ -235,7 +282,7 @@ class TestDetailResponse:
     @pytest.mark.parametrize(
         "cls,base",
         DETAIL_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=DETAIL_IDS,
     )
     def test_alias_serialization(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(**base, dbXrefsCount={"biosample": 5})
@@ -247,7 +294,7 @@ class TestDetailResponse:
     @pytest.mark.parametrize(
         "cls,base",
         DETAIL_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=DETAIL_IDS,
     )
     def test_missing_db_xrefs_count_raises_error(
         self,
@@ -284,6 +331,12 @@ class TestEntryResponse:
     def test_jga_entry_response_is_jga(self) -> None:
         assert JgaEntryResponse is JGA
 
+    def test_gea_entry_response_is_gea(self) -> None:
+        assert GeaEntryResponse is GEA
+
+    def test_metabobank_entry_response_is_metabobank(self) -> None:
+        assert MetaboBankEntryResponse is MetaboBank
+
 
 # === JSON-LD Response ===
 
@@ -296,12 +349,15 @@ class TestJsonLdResponse:
         (BioSampleEntryJsonLdResponse, _BIOSAMPLE_BASE),
         (SraEntryJsonLdResponse, _SRA_BASE),
         (JgaEntryJsonLdResponse, _JGA_BASE),
+        (GeaEntryJsonLdResponse, _GEA_BASE),
+        (MetaboBankEntryJsonLdResponse, _METABOBANK_BASE),
     ]
+    JSON_LD_IDS = ["BioProject", "BioSample", "SRA", "JGA", "GEA", "MetaboBank"]
 
     @pytest.mark.parametrize(
         "cls,base",
         JSON_LD_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=JSON_LD_IDS,
     )
     def test_basic_construction(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(
@@ -317,7 +373,7 @@ class TestJsonLdResponse:
     @pytest.mark.parametrize(
         "cls,base",
         JSON_LD_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=JSON_LD_IDS,
     )
     def test_alias_serialization(self, cls: type, base: dict[str, Any]) -> None:
         obj = cls(
@@ -336,7 +392,7 @@ class TestJsonLdResponse:
     @pytest.mark.parametrize(
         "cls,base",
         JSON_LD_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=JSON_LD_IDS,
     )
     def test_converter_fields_are_real_fields(
         self,
@@ -356,7 +412,7 @@ class TestJsonLdResponse:
     @pytest.mark.parametrize(
         "cls,base",
         JSON_LD_CASES,
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=JSON_LD_IDS,
     )
     def test_missing_context_raises_error(
         self,
@@ -378,8 +434,10 @@ class TestJsonLdResponse:
             (BioSampleEntryJsonLdResponse, BioSample),
             (SraEntryJsonLdResponse, SRA),
             (JgaEntryJsonLdResponse, JGA),
+            (GeaEntryJsonLdResponse, GEA),
+            (MetaboBankEntryJsonLdResponse, MetaboBank),
         ],
-        ids=["BioProject", "BioSample", "SRA", "JGA"],
+        ids=JSON_LD_IDS,
     )
     def test_inherits_from_converter_type(
         self,
@@ -393,27 +451,28 @@ class TestJsonLdResponse:
 
 
 class TestDbTypeToEntryModel:
-    """DB_TYPE_TO_ENTRY_MODEL mapping covers all 12 types."""
+    """DB_TYPE_TO_ENTRY_MODEL mapping covers every DbType."""
 
-    def test_has_12_entries(self) -> None:
-        assert len(DB_TYPE_TO_ENTRY_MODEL) == 12
+    EXPECTED_MAPPING: list[tuple[str, type]] = [
+        ("bioproject", BioProject),
+        ("biosample", BioSample),
+        ("sra-submission", SRA),
+        ("sra-study", SRA),
+        ("sra-experiment", SRA),
+        ("sra-run", SRA),
+        ("sra-sample", SRA),
+        ("sra-analysis", SRA),
+        ("jga-study", JGA),
+        ("jga-dataset", JGA),
+        ("jga-dac", JGA),
+        ("jga-policy", JGA),
+        ("gea", GEA),
+        ("metabobank", MetaboBank),
+    ]
 
-    @pytest.mark.parametrize(
-        "db_type,expected_model",
-        [
-            ("bioproject", BioProject),
-            ("biosample", BioSample),
-            ("sra-submission", SRA),
-            ("sra-study", SRA),
-            ("sra-experiment", SRA),
-            ("sra-run", SRA),
-            ("sra-sample", SRA),
-            ("sra-analysis", SRA),
-            ("jga-study", JGA),
-            ("jga-dataset", JGA),
-            ("jga-dac", JGA),
-            ("jga-policy", JGA),
-        ],
-    )
+    def test_entry_count_matches_expected(self) -> None:
+        assert len(DB_TYPE_TO_ENTRY_MODEL) == len(self.EXPECTED_MAPPING)
+
+    @pytest.mark.parametrize("db_type,expected_model", EXPECTED_MAPPING)
     def test_type_maps_to_correct_model(self, db_type: str, expected_model: type) -> None:
         assert DB_TYPE_TO_ENTRY_MODEL[db_type] is expected_model

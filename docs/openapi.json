@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
-    "version": "0.2.1.dev22+gdbff21f92.d20260425"
+    "version": "0.2.1.dev21+g89d03574e.d20260425"
   },
   "paths": {
     "/entries/": {
@@ -280,7 +280,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy)(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy))*$"
+                  "pattern": "^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank)(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank))*$"
                 },
                 {
                   "type": "null"
@@ -4383,6 +4383,664 @@
         }
       }
     },
+    "/entries/gea/": {
+      "get": {
+        "tags": [
+          "Entries"
+        ],
+        "summary": "Search gea entries",
+        "description": "Search gea entries.",
+        "operationId": "listGeaEntries",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-based).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-based)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page (1-100).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Items per page (1-100)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search keywords (comma-separated for multiple).",
+              "title": "Keywords"
+            },
+            "description": "Search keywords (comma-separated for multiple)."
+          },
+          {
+            "name": "keywordFields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "title": "Keywordfields"
+            },
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+          },
+          {
+            "name": "keywordOperator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/KeywordOperator",
+              "description": "Boolean operator for keywords: AND or OR.",
+              "default": "AND"
+            },
+            "description": "Boolean operator for keywords: AND or OR."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
+              "title": "Organism"
+            },
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "datePublishedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range start (YYYY-MM-DD).",
+              "title": "Datepublishedfrom"
+            },
+            "description": "Publication date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "datePublishedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range end (YYYY-MM-DD).",
+              "title": "Datepublishedto"
+            },
+            "description": "Publication date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
+            },
+            "description": "Modification date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
+            },
+            "description": "Modification date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
+              "title": "Sort"
+            },
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit response to specific top-level fields (comma-separated). Example: 'identifier,organism,datePublished'.",
+              "title": "Fields"
+            },
+            "description": "Limit response to specific top-level fields (comma-separated). Example: 'identifier,organism,datePublished'."
+          },
+          {
+            "name": "includeProperties",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include the 'properties' field in the response.",
+              "default": true,
+              "title": "Includeproperties"
+            },
+            "description": "Include the 'properties' field in the response."
+          },
+          {
+            "name": "includeFacets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include facet aggregation alongside search results.",
+              "default": false,
+              "title": "Includefacets"
+            },
+            "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/metabobank/": {
+      "get": {
+        "tags": [
+          "Entries"
+        ],
+        "summary": "Search metabobank entries",
+        "description": "Search metabobank entries.",
+        "operationId": "listMetaboBankEntries",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-based).",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-based)."
+          },
+          {
+            "name": "perPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page (1-100).",
+              "default": 10,
+              "title": "Perpage"
+            },
+            "description": "Items per page (1-100)."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor token for cursor-based pagination.",
+              "title": "Cursor"
+            },
+            "description": "Cursor token for cursor-based pagination."
+          },
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search keywords (comma-separated for multiple).",
+              "title": "Keywords"
+            },
+            "description": "Search keywords (comma-separated for multiple)."
+          },
+          {
+            "name": "keywordFields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "title": "Keywordfields"
+            },
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+          },
+          {
+            "name": "keywordOperator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/KeywordOperator",
+              "description": "Boolean operator for keywords: AND or OR.",
+              "default": "AND"
+            },
+            "description": "Boolean operator for keywords: AND or OR."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
+              "title": "Organism"
+            },
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "datePublishedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range start (YYYY-MM-DD).",
+              "title": "Datepublishedfrom"
+            },
+            "description": "Publication date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "datePublishedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range end (YYYY-MM-DD).",
+              "title": "Datepublishedto"
+            },
+            "description": "Publication date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
+            },
+            "description": "Modification date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
+            },
+            "description": "Modification date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score).",
+              "title": "Sort"
+            },
+            "description": "Sort order as '{field}:{direction}'. Fields: datePublished, dateModified. Direction: asc, desc. Default: relevance (search score)."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit response to specific top-level fields (comma-separated). Example: 'identifier,organism,datePublished'.",
+              "title": "Fields"
+            },
+            "description": "Limit response to specific top-level fields (comma-separated). Example: 'identifier,organism,datePublished'."
+          },
+          {
+            "name": "includeProperties",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include the 'properties' field in the response.",
+              "default": true,
+              "title": "Includeproperties"
+            },
+            "description": "Include the 'properties' field in the response."
+          },
+          {
+            "name": "includeFacets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include facet aggregation alongside search results.",
+              "default": false,
+              "title": "Includefacets"
+            },
+            "description": "Include facet aggregation alongside search results."
+          },
+          {
+            "name": "dbXrefsLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 0,
+              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "default": 100,
+              "title": "Dbxrefslimit"
+            },
+            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+          },
+          {
+            "name": "includeDbXrefs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "default": true,
+              "title": "Includedbxrefs"
+            },
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/entries/{type}/bulk": {
       "post": {
         "tags": [
@@ -4602,6 +5260,12 @@
                     },
                     {
                       "$ref": "#/components/schemas/JGA"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GEA"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MetaboBank"
                     }
                   ],
                   "discriminator": {
@@ -4618,7 +5282,9 @@
                       "jga-study": "#/components/schemas/JGA",
                       "jga-dataset": "#/components/schemas/JGA",
                       "jga-dac": "#/components/schemas/JGA",
-                      "jga-policy": "#/components/schemas/JGA"
+                      "jga-policy": "#/components/schemas/JGA",
+                      "gea": "#/components/schemas/GEA",
+                      "metabobank": "#/components/schemas/MetaboBank"
                     }
                   }
                 }
@@ -4708,6 +5374,12 @@
                     },
                     {
                       "$ref": "#/components/schemas/JgaEntryJsonLdResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GeaEntryJsonLdResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MetaboBankEntryJsonLdResponse"
                     }
                   ],
                   "discriminator": {
@@ -4724,7 +5396,9 @@
                       "jga-study": "#/components/schemas/JgaEntryJsonLdResponse",
                       "jga-dataset": "#/components/schemas/JgaEntryJsonLdResponse",
                       "jga-dac": "#/components/schemas/JgaEntryJsonLdResponse",
-                      "jga-policy": "#/components/schemas/JgaEntryJsonLdResponse"
+                      "jga-policy": "#/components/schemas/JgaEntryJsonLdResponse",
+                      "gea": "#/components/schemas/GeaEntryJsonLdResponse",
+                      "metabobank": "#/components/schemas/MetaboBankEntryJsonLdResponse"
                     }
                   }
                 }
@@ -4915,6 +5589,12 @@
                     },
                     {
                       "$ref": "#/components/schemas/JgaDetailResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GeaDetailResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MetaboBankDetailResponse"
                     }
                   ],
                   "discriminator": {
@@ -4931,7 +5611,9 @@
                       "jga-study": "#/components/schemas/JgaDetailResponse",
                       "jga-dataset": "#/components/schemas/JgaDetailResponse",
                       "jga-dac": "#/components/schemas/JgaDetailResponse",
-                      "jga-policy": "#/components/schemas/JgaDetailResponse"
+                      "jga-policy": "#/components/schemas/JgaDetailResponse",
+                      "gea": "#/components/schemas/GeaDetailResponse",
+                      "metabobank": "#/components/schemas/MetaboBankDetailResponse"
                     }
                   }
                 }
@@ -5131,7 +5813,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy)(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy))*$"
+                  "pattern": "^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank)(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank))*$"
                 },
                 {
                   "type": "null"
@@ -7315,6 +7997,380 @@
         "summary": "Facet aggregation for jga-policy",
         "description": "Get facet counts for jga-policy entries.",
         "operationId": "getJgaPolicyFacets",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search keywords (comma-separated for multiple).",
+              "title": "Keywords"
+            },
+            "description": "Search keywords (comma-separated for multiple)."
+          },
+          {
+            "name": "keywordFields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "title": "Keywordfields"
+            },
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+          },
+          {
+            "name": "keywordOperator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/KeywordOperator",
+              "description": "Boolean operator for keywords: AND or OR.",
+              "default": "AND"
+            },
+            "description": "Boolean operator for keywords: AND or OR."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
+              "title": "Organism"
+            },
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "datePublishedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range start (YYYY-MM-DD).",
+              "title": "Datepublishedfrom"
+            },
+            "description": "Publication date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "datePublishedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range end (YYYY-MM-DD).",
+              "title": "Datepublishedto"
+            },
+            "description": "Publication date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
+            },
+            "description": "Modification date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
+            },
+            "description": "Modification date range end (YYYY-MM-DD)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacetsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/facets/gea": {
+      "get": {
+        "tags": [
+          "Facets"
+        ],
+        "summary": "Facet aggregation for gea",
+        "description": "Get facet counts for gea entries.",
+        "operationId": "getGeaFacets",
+        "parameters": [
+          {
+            "name": "keywords",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search keywords (comma-separated for multiple).",
+              "title": "Keywords"
+            },
+            "description": "Search keywords (comma-separated for multiple)."
+          },
+          {
+            "name": "keywordFields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "title": "Keywordfields"
+            },
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+          },
+          {
+            "name": "keywordOperator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/KeywordOperator",
+              "description": "Boolean operator for keywords: AND or OR.",
+              "default": "AND"
+            },
+            "description": "Boolean operator for keywords: AND or OR."
+          },
+          {
+            "name": "organism",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
+              "title": "Organism"
+            },
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "datePublishedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range start (YYYY-MM-DD).",
+              "title": "Datepublishedfrom"
+            },
+            "description": "Publication date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "datePublishedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Publication date range end (YYYY-MM-DD).",
+              "title": "Datepublishedto"
+            },
+            "description": "Publication date range end (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range start (YYYY-MM-DD).",
+              "title": "Datemodifiedfrom"
+            },
+            "description": "Modification date range start (YYYY-MM-DD)."
+          },
+          {
+            "name": "dateModifiedTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Modification date range end (YYYY-MM-DD).",
+              "title": "Datemodifiedto"
+            },
+            "description": "Modification date range end (YYYY-MM-DD)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacetsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/facets/metabobank": {
+      "get": {
+        "tags": [
+          "Facets"
+        ],
+        "summary": "Facet aggregation for metabobank",
+        "description": "Get facet counts for metabobank entries.",
+        "operationId": "getMetaboBankFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -12107,10 +13163,12 @@
           "jga-study",
           "jga-dataset",
           "jga-dac",
-          "jga-policy"
+          "jga-policy",
+          "gea",
+          "metabobank"
         ],
         "title": "DbType",
-        "description": "Database types supported by the API (12 types)."
+        "description": "Database types supported by the API."
       },
       "DbXrefsFullResponse": {
         "properties": {
@@ -12488,6 +13546,536 @@
         ],
         "title": "FacetsResponse",
         "description": "Response for GET /facets and GET /facets/{type}."
+      },
+      "GEA": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "gea",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "gea",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "experimentType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Experimenttype"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "public",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "public-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "url",
+          "organization",
+          "publication",
+          "experimentType",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility"
+        ],
+        "title": "GEA"
+      },
+      "GeaDetailResponse": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "gea",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "gea",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "experimentType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Experimenttype"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "public",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "public-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
+          "dbXrefsCount": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Dbxrefscount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "url",
+          "organization",
+          "publication",
+          "experimentType",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dbXrefsCount"
+        ],
+        "title": "GeaDetailResponse",
+        "description": "GEA entry detail with truncated dbXrefs and dbXrefsCount."
+      },
+      "GeaEntryJsonLdResponse": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "gea",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "gea",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "experimentType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Experimenttype"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "public",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "public-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
+          "@context": {
+            "type": "string",
+            "title": "@Context"
+          },
+          "@id": {
+            "type": "string",
+            "title": "@Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "url",
+          "organization",
+          "publication",
+          "experimentType",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "@context",
+          "@id"
+        ],
+        "title": "GeaEntryJsonLdResponse",
+        "description": "GEA entry in JSON-LD format."
       },
       "Grant": {
         "properties": {
@@ -13234,6 +14822,584 @@
         ],
         "title": "KeywordOperator",
         "description": "Boolean operator for combining keywords."
+      },
+      "MetaboBank": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "studyType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Studytype"
+          },
+          "experimentType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Experimenttype"
+          },
+          "submissionType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Submissiontype"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "public",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "public-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "url",
+          "organization",
+          "publication",
+          "studyType",
+          "experimentType",
+          "submissionType",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility"
+        ],
+        "title": "MetaboBank"
+      },
+      "MetaboBankDetailResponse": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "studyType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Studytype"
+          },
+          "experimentType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Experimenttype"
+          },
+          "submissionType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Submissiontype"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "public",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "public-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
+          "dbXrefsCount": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Dbxrefscount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "url",
+          "organization",
+          "publication",
+          "studyType",
+          "experimentType",
+          "submissionType",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "dbXrefsCount"
+        ],
+        "title": "MetaboBankDetailResponse",
+        "description": "MetaboBank entry detail with truncated dbXrefs and dbXrefsCount."
+      },
+      "MetaboBankEntryJsonLdResponse": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "properties": {
+            "title": "Properties"
+          },
+          "distribution": {
+            "items": {
+              "$ref": "#/components/schemas/Distribution"
+            },
+            "type": "array",
+            "title": "Distribution"
+          },
+          "isPartOf": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Ispartof"
+          },
+          "type": {
+            "type": "string",
+            "const": "metabobank",
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Organism"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "organization": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "title": "Organization"
+          },
+          "publication": {
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "type": "array",
+            "title": "Publication"
+          },
+          "studyType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Studytype"
+          },
+          "experimentType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Experimenttype"
+          },
+          "submissionType": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Submissiontype"
+          },
+          "dbXrefs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Dbxrefs"
+          },
+          "sameAs": {
+            "items": {
+              "$ref": "#/components/schemas/Xref"
+            },
+            "type": "array",
+            "title": "Sameas"
+          },
+          "status": {
+            "type": "string",
+            "const": "public",
+            "title": "Status"
+          },
+          "accessibility": {
+            "type": "string",
+            "const": "public-access",
+            "title": "Accessibility"
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated"
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified"
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished"
+          },
+          "@context": {
+            "type": "string",
+            "title": "@Context"
+          },
+          "@id": {
+            "type": "string",
+            "title": "@Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "properties",
+          "distribution",
+          "isPartOf",
+          "type",
+          "url",
+          "organization",
+          "publication",
+          "studyType",
+          "experimentType",
+          "submissionType",
+          "dbXrefs",
+          "sameAs",
+          "status",
+          "accessibility",
+          "@context",
+          "@id"
+        ],
+        "title": "MetaboBankEntryJsonLdResponse",
+        "description": "MetaboBank entry in JSON-LD format."
       },
       "Organism": {
         "properties": {
