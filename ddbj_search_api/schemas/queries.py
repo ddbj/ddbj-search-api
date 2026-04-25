@@ -25,7 +25,7 @@ _DB_TYPES_PATTERN = (
     r"jga-study|jga-dataset|jga-dac|jga-policy))*$"
 )
 _SORT_PATTERN = r"^(datePublished|dateModified):(asc|desc)$"
-_UMBRELLA_PATTERN = r"^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
+_OBJECT_TYPES_PATTERN = r"^(BioProject|UmbrellaBioProject)(,(BioProject|UmbrellaBioProject))*$"
 _ORGANISM_PATTERN = r"^\d+$"
 
 # === Enums for query parameters ===
@@ -297,23 +297,21 @@ class BioProjectExtraQuery:
             default=None,
             description="Filter by grant (text search).",
         ),
-        umbrella: str | None = Query(
+        object_types: str | None = Query(
             default=None,
-            pattern=_UMBRELLA_PATTERN,
-            description=("Filter by umbrella status: TRUE or FALSE (case-insensitive)."),
+            alias="objectTypes",
+            pattern=_OBJECT_TYPES_PATTERN,
+            description=(
+                "Filter by BioProject objectType (comma-separated). "
+                "Allowed: BioProject, UmbrellaBioProject. "
+                "Specifying both is equivalent to omitting the filter."
+            ),
         ),
     ):
         self.organization = organization
         self.publication = publication
         self.grant = grant
-        if umbrella is not None:
-            umbrella = umbrella.upper()
-            if umbrella not in ("TRUE", "FALSE"):
-                raise HTTPException(
-                    status_code=422,
-                    detail=("Invalid umbrella value: must be TRUE or FALSE (case-insensitive)."),
-                )
-        self.umbrella = umbrella
+        self.object_types = object_types
 
 
 class EntryDetailQuery:

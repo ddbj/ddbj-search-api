@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
-    "version": "0.2.1.dev21+g89d03574e.d20260425"
+    "version": "0.2.1.dev22+gdbff21f92.d20260425"
   },
   "paths": {
     "/entries/": {
@@ -368,7 +368,7 @@
           "Entries"
         ],
         "summary": "Search bioproject entries",
-        "description": "Search bioproject entries.\n\nSupports BioProject-specific filters: organization, publication, grant, umbrella.",
+        "description": "Search bioproject entries.\n\nSupports BioProject-specific filters: organization, publication, grant, objectTypes.",
         "operationId": "listBioProjectEntries",
         "parameters": [
           {
@@ -675,23 +675,23 @@
             "description": "Filter by grant (text search)."
           },
           {
-            "name": "umbrella",
+            "name": "objectTypes",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
+                  "pattern": "^(BioProject|UmbrellaBioProject)(,(BioProject|UmbrellaBioProject))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by umbrella status: TRUE or FALSE (case-insensitive).",
-              "title": "Umbrella"
+              "description": "Filter by BioProject objectType (comma-separated). Allowed: BioProject, UmbrellaBioProject. Specifying both is equivalent to omitting the filter.",
+              "title": "Objecttypes"
             },
-            "description": "Filter by umbrella status: TRUE or FALSE (case-insensitive)."
+            "description": "Filter by BioProject objectType (comma-separated). Allowed: BioProject, UmbrellaBioProject. Specifying both is equivalent to omitting the filter."
           },
           {
             "name": "dbXrefsLimit",
@@ -5384,23 +5384,23 @@
             "description": "Filter by grant (text search)."
           },
           {
-            "name": "umbrella",
+            "name": "objectTypes",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
+                  "pattern": "^(BioProject|UmbrellaBioProject)(,(BioProject|UmbrellaBioProject))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by umbrella status: TRUE or FALSE (case-insensitive).",
-              "title": "Umbrella"
+              "description": "Filter by BioProject objectType (comma-separated). Allowed: BioProject, UmbrellaBioProject. Specifying both is equivalent to omitting the filter.",
+              "title": "Objecttypes"
             },
-            "description": "Filter by umbrella status: TRUE or FALSE (case-insensitive)."
+            "description": "Filter by BioProject objectType (comma-separated). Allowed: BioProject, UmbrellaBioProject. Specifying both is equivalent to omitting the filter."
           }
         ],
         "responses": {

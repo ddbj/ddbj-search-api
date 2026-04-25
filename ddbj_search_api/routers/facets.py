@@ -45,7 +45,7 @@ async def _do_facets(
     organization: str | None = None,
     publication: str | None = None,
     grant: str | None = None,
-    umbrella: str | None = None,
+    object_types: str | None = None,
 ) -> FacetsResponse:
     """Execute facet aggregation against ES and build the response."""
     try:
@@ -68,7 +68,7 @@ async def _do_facets(
         organization=organization,
         publication=publication,
         grant=grant,
-        umbrella=umbrella,
+        object_types=object_types,
         status_mode="public_only",
     )
 
@@ -151,7 +151,7 @@ def _make_type_facets_handler(db_type: DbType) -> Any:
                 organization=bioproject_extra.organization,
                 publication=bioproject_extra.publication,
                 grant=bioproject_extra.grant,
-                umbrella=bioproject_extra.umbrella,
+                object_types=bioproject_extra.object_types,
             )
 
         _handler.__doc__ = (

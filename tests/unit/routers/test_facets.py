@@ -356,69 +356,96 @@ class TestFacetsEmptyKeywords:
         assert resp.status_code == 200
 
 
-# === Umbrella parameter validation ===
+# === objectTypes parameter validation ===
 
 
-class TestFacetsUmbrellaValidation:
-    """umbrella parameter validation for BioProject facets."""
+class TestFacetsObjectTypesValidation:
+    """objectTypes parameter validation for BioProject facets."""
 
-    def test_umbrella_true_accepted(
+    def test_single_bioproject_accepted(
         self,
         app_with_facets: TestClient,
         mock_es_search_facets: AsyncMock,
     ) -> None:
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(object_type=[]),
+        )
+        resp = app_with_facets.get(
+            "/facets/bioproject",
+            params={"objectTypes": "BioProject"},
+        )
+        assert resp.status_code == 200
+
+    def test_single_umbrella_accepted(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(object_type=[]),
+        )
+        resp = app_with_facets.get(
+            "/facets/bioproject",
+            params={"objectTypes": "UmbrellaBioProject"},
+        )
+        assert resp.status_code == 200
+
+    def test_both_accepted(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(object_type=[]),
+        )
+        resp = app_with_facets.get(
+            "/facets/bioproject",
+            params={"objectTypes": "BioProject,UmbrellaBioProject"},
+        )
+        assert resp.status_code == 200
+
+    def test_unknown_value_rejected(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get(
+            "/facets/bioproject",
+            params={"objectTypes": "Foo"},
+        )
+        assert resp.status_code == 422
+
+    def test_lowercase_rejected(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get(
+            "/facets/bioproject",
+            params={"objectTypes": "bioproject"},
+        )
+        assert resp.status_code == 422
+
+    def test_empty_rejected(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get(
+            "/facets/bioproject",
+            params={"objectTypes": ""},
+        )
+        assert resp.status_code == 422
+
+    def test_legacy_umbrella_ignored(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        """旧 umbrella=TRUE は破壊的変更で廃止された。FastAPI は未定義 query を
+        無視するので 200 + filter なしで素通りする。"""
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
         resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "TRUE"})
         assert resp.status_code == 200
-
-    def test_umbrella_false_accepted(
-        self,
-        app_with_facets: TestClient,
-        mock_es_search_facets: AsyncMock,
-    ) -> None:
-        mock_es_search_facets.return_value = make_es_search_response(
-            aggregations=make_facets_aggregations(object_type=[]),
-        )
-        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "FALSE"})
-        assert resp.status_code == 200
-
-    def test_umbrella_lowercase_accepted(
-        self,
-        app_with_facets: TestClient,
-        mock_es_search_facets: AsyncMock,
-    ) -> None:
-        mock_es_search_facets.return_value = make_es_search_response(
-            aggregations=make_facets_aggregations(object_type=[]),
-        )
-        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "true"})
-        assert resp.status_code == 200
-
-    def test_umbrella_mixed_case_accepted(
-        self,
-        app_with_facets: TestClient,
-        mock_es_search_facets: AsyncMock,
-    ) -> None:
-        mock_es_search_facets.return_value = make_es_search_response(
-            aggregations=make_facets_aggregations(object_type=[]),
-        )
-        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "True"})
-        assert resp.status_code == 200
-
-    def test_umbrella_invalid_returns_422(
-        self,
-        app_with_facets: TestClient,
-    ) -> None:
-        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "invalid"})
-        assert resp.status_code == 422
-
-    def test_umbrella_empty_returns_422(
-        self,
-        app_with_facets: TestClient,
-    ) -> None:
-        resp = app_with_facets.get("/facets/bioproject", params={"umbrella": ""})
-        assert resp.status_code == 422
 
 
 # === Type-specific facets ===
@@ -488,7 +515,7 @@ class TestFacetsTypeResponse:
 class TestFacetsBioProjectExtra:
     """BioProject-specific filter parameters for facets."""
 
-    def test_umbrella_filter_reflected(
+    def test_object_types_single_filter_reflected(
         self,
         app_with_facets: TestClient,
         mock_es_search_facets: AsyncMock,
@@ -496,13 +523,35 @@ class TestFacetsBioProjectExtra:
         mock_es_search_facets.return_value = make_es_search_response(
             aggregations=make_facets_aggregations(object_type=[]),
         )
-        app_with_facets.get("/facets/bioproject?umbrella=TRUE")
+        app_with_facets.get("/facets/bioproject?objectTypes=UmbrellaBioProject")
         body = mock_es_search_facets.call_args[0][2]
         query = body["query"]
         assert "bool" in query
         filters = query["bool"]["filter"]
         object_type_filter = [f for f in filters if "term" in f and "objectType" in f["term"]]
         assert len(object_type_filter) == 1
+        assert object_type_filter[0]["term"]["objectType"] == "UmbrellaBioProject"
+
+    def test_object_types_both_filter_reflected(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(object_type=[]),
+        )
+        app_with_facets.get(
+            "/facets/bioproject?objectTypes=UmbrellaBioProject,BioProject"
+        )
+        body = mock_es_search_facets.call_args[0][2]
+        query = body["query"]
+        filters = query["bool"]["filter"]
+        terms_filter = [f for f in filters if "terms" in f and "objectType" in f["terms"]]
+        assert len(terms_filter) == 1
+        assert terms_filter[0]["terms"]["objectType"] == [
+            "BioProject",
+            "UmbrellaBioProject",
+        ]
 
     def test_organization_filter_reflected(
         self,

@@ -151,7 +151,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 |-----------|------|---------|
 | 400 | Bad Request | Deep paging 制限超過 (`page * perPage > 10000`)、`cursor` と検索条件/`page` の同時指定、不正な cursor トークン、cursor 期限切れ (PIT 失効)、DB Portal API の `q`/`adv` 同時指定 |
 | 404 | Not Found | エントリーが存在しない、withdrawn / private のエントリーへの直接アクセス (存在を秘匿するため存在しないものと同じ応答を返す)、不正な `{type}` |
-| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `umbrella` 値 (`TRUE`/`FALSE` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値など) |
+| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `objectTypes` 値 (`BioProject` / `UmbrellaBioProject` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値など) |
 | 500 | Internal Server Error | ES 接続エラー、DuckDB ファイルが見つからない (Entries 検索/詳細/Bulk/DBLinks API)、その他サーバー内部エラー |
 | 502 | Bad Gateway | DB Portal API の横断 count-only で全 DB への問い合わせが失敗 |
 
@@ -215,7 +215,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 - `keywords`, `keywordFields`, `keywordOperator` (デフォルト値 `AND` 以外)
 - `organism`, `datePublishedFrom`, `datePublishedTo`, `dateModifiedFrom`, `dateModifiedTo`
 - `sort`
-- `types`, `organization`, `publication`, `grant`, `umbrella`
+- `types`, `organization`, `publication`, `grant`, `objectTypes`
 - `includeFacets`, `includeProperties` (デフォルト値以外), `fields`
 
 `perPage`、`dbXrefsLimit`、`includeDbXrefs` は `cursor` と併用可能。
@@ -295,7 +295,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 |------|----------|------|
 | `GET /entries/`, `GET /facets` | `types` | データタイプでフィルタ (カンマ区切り) |
 | `GET /entries/bioproject/`, `GET /facets/bioproject` | `organization`, `publication`, `grant` | テキストフィルタ |
-| | `umbrella` | `TRUE` / `FALSE` (大文字小文字不問) |
+| | `objectTypes` | `BioProject` / `UmbrellaBioProject` のカンマ区切り (1 つまたは 2 つ)。指定された値の OR 検索。未指定または両方指定はフィルタなしと等価。値域は `objectType` ファセットの bucket key と一致する |
 
 ### ファセット
 
@@ -323,7 +323,7 @@ Entries API (`GET /entries/`, `GET /entries/{type}/`) は `SearchFilterQuery` + 
 
 | タイプ | フィールド | 説明 |
 |--------|----------|------|
-| bioproject | `objectType` | Umbrella / 通常の区分 |
+| bioproject | `objectType` | Umbrella / 通常の区分。bucket key は `BioProject` / `UmbrellaBioProject`。同じ key を `objectTypes` filter に渡すと検索を絞り込める |
 
 タイプ固有フィールドは、そのタイプのファセット (`GET /facets/{type}`, `GET /entries/{type}/?includeFacets=true`) でのみ返される。
 

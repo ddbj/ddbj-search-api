@@ -26,11 +26,6 @@ _DEFAULT_KEYWORD_FIELDS = ["identifier", "title", "name", "description"]
 
 _VALID_KEYWORD_FIELDS = set(_DEFAULT_KEYWORD_FIELDS)
 
-_UMBRELLA_MAP: dict[str, str] = {
-    "TRUE": "UmbrellaBioProject",
-    "FALSE": "BioProject",
-}
-
 
 def pagination_to_from_size(
     page: int,
@@ -169,7 +164,7 @@ def build_search_query(
     organization: str | None = None,
     publication: str | None = None,
     grant: str | None = None,
-    umbrella: str | None = None,
+    object_types: str | None = None,
     status_mode: StatusMode | None = "public_only",
 ) -> dict[str, Any]:
     """Build ES query dict from search parameters.
@@ -200,7 +195,7 @@ def build_search_query(
             organization=organization,
             publication=publication,
             grant=grant,
-            umbrella=umbrella,
+            object_types=object_types,
         )
     )
 
@@ -242,7 +237,7 @@ def _build_filter_clauses(
     organization: str | None = None,
     publication: str | None = None,
     grant: str | None = None,
-    umbrella: str | None = None,
+    object_types: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build list of ES filter clauses."""
     clauses: list[dict[str, Any]] = []
@@ -276,10 +271,12 @@ def _build_filter_clauses(
             clauses.append({"terms": {"type": type_list}})
 
     # BioProject-specific filters
-    if umbrella and umbrella in _UMBRELLA_MAP:
-        clauses.append(
-            {"term": {"objectType": _UMBRELLA_MAP[umbrella]}},
-        )
+    if object_types:
+        values = sorted({v.strip() for v in object_types.split(",") if v.strip()})
+        if len(values) == 1:
+            clauses.append({"term": {"objectType": values[0]}})
+        elif len(values) >= 2:
+            clauses.append({"terms": {"objectType": values}})
 
     if organization:
         clauses.append(

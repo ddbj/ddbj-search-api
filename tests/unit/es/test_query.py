@@ -451,17 +451,62 @@ class TestBuildSearchQueryFilters:
 class TestBuildSearchQueryBioProject:
     """BioProject-specific filter parameters."""
 
-    def test_umbrella_true(self) -> None:
-        result = build_search_query(umbrella="TRUE")
+    def test_object_types_none_emits_no_filter(self) -> None:
+        result = build_search_query(object_types=None)
+        # status_mode は public_only がデフォルトなので status filter は残る
+        filters = result["bool"].get("filter", [])
+        assert not any("objectType" in (f.get("term") or {}) for f in filters)
+        assert not any("objectType" in (f.get("terms") or {}) for f in filters)
+
+    def test_object_types_single_bioproject_emits_term(self) -> None:
+        result = build_search_query(object_types="BioProject")
+        filters = result["bool"]["filter"]
+        obj_filter = _find_filter(filters, "term", "objectType")
+        assert obj_filter["term"]["objectType"] == "BioProject"
+
+    def test_object_types_single_umbrella_emits_term(self) -> None:
+        result = build_search_query(object_types="UmbrellaBioProject")
         filters = result["bool"]["filter"]
         obj_filter = _find_filter(filters, "term", "objectType")
         assert obj_filter["term"]["objectType"] == "UmbrellaBioProject"
 
-    def test_umbrella_false(self) -> None:
-        result = build_search_query(umbrella="FALSE")
+    def test_object_types_both_emits_terms_sorted(self) -> None:
+        result = build_search_query(object_types="UmbrellaBioProject,BioProject")
+        filters = result["bool"]["filter"]
+        obj_filter = _find_filter(filters, "terms", "objectType")
+        assert obj_filter["terms"]["objectType"] == [
+            "BioProject",
+            "UmbrellaBioProject",
+        ]
+
+    def test_object_types_duplicates_dedup_to_term(self) -> None:
+        result = build_search_query(object_types="BioProject,BioProject")
         filters = result["bool"]["filter"]
         obj_filter = _find_filter(filters, "term", "objectType")
         assert obj_filter["term"]["objectType"] == "BioProject"
+        # 重複除去後は 1 値なので terms は出さない
+        assert not any("objectType" in (f.get("terms") or {}) for f in filters)
+
+    @given(
+        sample=st.lists(
+            st.sampled_from(["BioProject", "UmbrellaBioProject"]),
+            min_size=1,
+            max_size=4,
+        )
+    )
+    def test_object_types_pbt_deterministic(self, sample: list[str]) -> None:
+        """PBT: 入力の順序・重複に依らず生成 ES query は決定論的に等価になる。"""
+        result = build_search_query(object_types=",".join(sample))
+        filters = result["bool"]["filter"]
+        unique_sorted = sorted(set(sample))
+        if len(unique_sorted) == 1:
+            obj_filter = _find_filter(filters, "term", "objectType")
+            assert obj_filter["term"]["objectType"] == unique_sorted[0]
+            assert not any("objectType" in (f.get("terms") or {}) for f in filters)
+        else:
+            obj_filter = _find_filter(filters, "terms", "objectType")
+            assert obj_filter["terms"]["objectType"] == unique_sorted
+            assert not any("objectType" in (f.get("term") or {}) for f in filters)
 
     def test_organization_nested_query(self) -> None:
         """organization → nested query on organization.name."""

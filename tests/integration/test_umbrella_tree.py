@@ -23,7 +23,10 @@ def _first_bioproject_accession(app: TestClient) -> str:
 
 
 def _first_umbrella_accession(app: TestClient) -> str | None:
-    resp = app.get("/entries/bioproject/", params={"umbrella": "TRUE", "perPage": 1})
+    resp = app.get(
+        "/entries/bioproject/",
+        params={"objectTypes": "UmbrellaBioProject", "perPage": 1},
+    )
     if resp.status_code != 200:
         return None
     items = resp.json().get("items") or []

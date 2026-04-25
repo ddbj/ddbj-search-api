@@ -150,34 +150,59 @@ class TestEntriesDateValidation:
         assert resp.status_code == 422
 
 
-# === Umbrella parameter validation ===
+# === objectTypes parameter validation ===
 
 
-class TestEntriesBioProjectUmbrellaValidation:
-    """umbrella parameter validation for BioProject."""
+class TestEntriesBioProjectObjectTypesValidation:
+    """objectTypes parameter validation for BioProject."""
 
-    def test_umbrella_true_accepted(self, app_with_es: TestClient) -> None:
+    def test_single_bioproject_accepted(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get("/entries/bioproject/", params={"objectTypes": "BioProject"})
+        assert resp.status_code == 200
+
+    def test_single_umbrella_accepted(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/bioproject/",
+            params={"objectTypes": "UmbrellaBioProject"},
+        )
+        assert resp.status_code == 200
+
+    def test_both_accepted(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/bioproject/",
+            params={"objectTypes": "BioProject,UmbrellaBioProject"},
+        )
+        assert resp.status_code == 200
+
+    def test_legacy_umbrella_param_ignored_or_rejected(
+        self, app_with_es: TestClient
+    ) -> None:
+        """旧 umbrella=TRUE は新仕様では未定義パラメータ。FastAPI のデフォルトでは
+        未定義 query param は 200 で素通りするため、ここでは「200 になり、新パラメータ
+        が無効化されていない」ことを確認する (破壊的変更の確認はドキュメントのみ)。"""
         resp = app_with_es.get("/entries/bioproject/", params={"umbrella": "TRUE"})
         assert resp.status_code == 200
 
-    def test_umbrella_false_accepted(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries/bioproject/", params={"umbrella": "FALSE"})
-        assert resp.status_code == 200
-
-    def test_umbrella_lowercase_accepted(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries/bioproject/", params={"umbrella": "true"})
-        assert resp.status_code == 200
-
-    def test_umbrella_mixed_case_accepted(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries/bioproject/", params={"umbrella": "True"})
-        assert resp.status_code == 200
-
-    def test_umbrella_invalid_returns_422(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries/bioproject/", params={"umbrella": "invalid"})
+    def test_lowercase_rejected(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get("/entries/bioproject/", params={"objectTypes": "bioproject"})
         assert resp.status_code == 422
 
-    def test_umbrella_empty_returns_422(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries/bioproject/", params={"umbrella": ""})
+    def test_unknown_value_rejected(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/bioproject/",
+            params={"objectTypes": "BioProject,Foo"},
+        )
+        assert resp.status_code == 422
+
+    def test_empty_rejected(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get("/entries/bioproject/", params={"objectTypes": ""})
+        assert resp.status_code == 422
+
+    def test_trailing_comma_rejected(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/bioproject/",
+            params={"objectTypes": "BioProject,"},
+        )
         assert resp.status_code == 422
 
 
@@ -653,20 +678,40 @@ class TestEntriesTypeSearch:
         index = call_args[1]["index"] if "index" in call_args[1] else call_args[0][1]
         assert index == "sra-study"
 
-    def test_bioproject_extra_params(
+    def test_bioproject_object_types_single_emits_term(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get(
             "/entries/bioproject/",
-            params={"umbrella": "TRUE"},
+            params={"objectTypes": "UmbrellaBioProject"},
         )
         call_args = mock_es_search.call_args
         body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
-        query = body["query"]
-        # umbrella=TRUE → filter has objectType term
-        assert query != {"match_all": {}}
+        filters = body["query"]["bool"]["filter"]
+        obj_filters = [f for f in filters if "term" in f and "objectType" in f["term"]]
+        assert len(obj_filters) == 1
+        assert obj_filters[0]["term"]["objectType"] == "UmbrellaBioProject"
+
+    def test_bioproject_object_types_both_emits_terms(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get(
+            "/entries/bioproject/",
+            params={"objectTypes": "BioProject,UmbrellaBioProject"},
+        )
+        call_args = mock_es_search.call_args
+        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        obj_filters = [f for f in filters if "terms" in f and "objectType" in f["terms"]]
+        assert len(obj_filters) == 1
+        assert obj_filters[0]["terms"]["objectType"] == [
+            "BioProject",
+            "UmbrellaBioProject",
+        ]
 
     def test_bioproject_organization_filter(
         self,
@@ -1212,6 +1257,18 @@ class TestCursorExclusivity:
             params={"cursor": _make_cursor_token(), "perPage": "50"},
         )
         assert resp.status_code == 200
+
+    def test_cursor_with_object_types_returns_400(self, app_with_es: TestClient) -> None:
+        """objectTypes は BioProject 固有なので /entries/bioproject/ で検証する。"""
+        resp = app_with_es.get(
+            "/entries/bioproject/",
+            params={
+                "cursor": _make_cursor_token(),
+                "objectTypes": "BioProject",
+            },
+        )
+        assert resp.status_code == 400
+        assert "objectTypes" in resp.json()["detail"]
 
 
 class TestCursorOffsetMode:

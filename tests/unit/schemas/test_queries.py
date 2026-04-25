@@ -218,24 +218,33 @@ class TestBioProjectExtraQuery:
             organization=None,
             publication=None,
             grant=None,
-            umbrella=None,
+            object_types=None,
         )
         assert q.organization is None
         assert q.publication is None
         assert q.grant is None
-        assert q.umbrella is None
+        assert q.object_types is None
 
-    def test_stores_custom_values(self) -> None:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "BioProject",
+            "UmbrellaBioProject",
+            "BioProject,UmbrellaBioProject",
+            "UmbrellaBioProject,BioProject",
+        ],
+    )
+    def test_stores_object_types(self, value: str) -> None:
         q = BioProjectExtraQuery(
             organization="DDBJ",
             publication="nature",
             grant="JSPS",
-            umbrella="TRUE",
+            object_types=value,
         )
         assert q.organization == "DDBJ"
         assert q.publication == "nature"
         assert q.grant == "JSPS"
-        assert q.umbrella == "TRUE"
+        assert q.object_types == value
 
 
 # === EntryDetailQuery ===

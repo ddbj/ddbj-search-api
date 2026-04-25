@@ -88,7 +88,7 @@ def _validate_cursor_exclusivity(
     organization: str | None = None,
     publication: str | None = None,
     grant: str | None = None,
-    umbrella: str | None = None,
+    object_types: str | None = None,
 ) -> None:
     """Raise 400 if cursor is used alongside page or search params."""
     conflicting: list[str] = []
@@ -130,8 +130,8 @@ def _validate_cursor_exclusivity(
         conflicting.append("publication")
     if grant is not None:
         conflicting.append("grant")
-    if umbrella is not None:
-        conflicting.append("umbrella")
+    if object_types is not None:
+        conflicting.append("objectTypes")
 
     if conflicting:
         raise HTTPException(
@@ -188,7 +188,7 @@ async def _do_search(
     organization: str | None = None,
     publication: str | None = None,
     grant: str | None = None,
-    umbrella: str | None = None,
+    object_types: str | None = None,
     include_db_xrefs: bool = True,
 ) -> Any:
     """Execute search against ES and build the response."""
@@ -218,7 +218,7 @@ async def _do_search(
         organization=organization,
         publication=publication,
         grant=grant,
-        umbrella=umbrella,
+        object_types=object_types,
         include_db_xrefs=include_db_xrefs,
     )
 
@@ -236,7 +236,7 @@ async def _do_search_offset(
     organization: str | None = None,
     publication: str | None = None,
     grant: str | None = None,
-    umbrella: str | None = None,
+    object_types: str | None = None,
     include_db_xrefs: bool = True,
 ) -> Any:
     """Offset-based search (existing behaviour + nextCursor generation)."""
@@ -274,7 +274,7 @@ async def _do_search_offset(
         organization=organization,
         publication=publication,
         grant=grant,
-        umbrella=umbrella,
+        object_types=object_types,
         status_mode=status_mode,
     )
 
@@ -536,7 +536,7 @@ def _make_type_search_handler(db_type: DbType) -> Any:
     """Factory: create a type-specific search handler.
 
     BioProject gets extra filter parameters (organization, publication,
-    grant, umbrella); other types use the common filter set.
+    grant, objectTypes); other types use the common filter set.
     """
     if db_type == DbType.bioproject:
 
@@ -556,7 +556,7 @@ def _make_type_search_handler(db_type: DbType) -> Any:
                     organization=bioproject_extra.organization,
                     publication=bioproject_extra.publication,
                     grant=bioproject_extra.grant,
-                    umbrella=bioproject_extra.umbrella,
+                    object_types=bioproject_extra.object_types,
                 )
 
             return await _do_search(
@@ -571,14 +571,14 @@ def _make_type_search_handler(db_type: DbType) -> Any:
                 organization=bioproject_extra.organization,
                 publication=bioproject_extra.publication,
                 grant=bioproject_extra.grant,
-                umbrella=bioproject_extra.umbrella,
+                object_types=bioproject_extra.object_types,
                 include_db_xrefs=db_xrefs.include_db_xrefs,
             )
 
         _handler.__doc__ = (
             f"Search {db_type.value} entries.\n\n"
             "Supports BioProject-specific filters: organization, "
-            "publication, grant, umbrella."
+            "publication, grant, objectTypes."
         )
     else:
 
