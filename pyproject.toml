@@ -30,6 +30,7 @@ tests = [
     "pytest",
     "pytest-mock",
     "pytest-cov",
+    "pytest-xdist",
     "pytest-asyncio",
     "ruff",
     "mypy",
@@ -41,7 +42,7 @@ ddbj_search_api = "ddbj_search_api.main:main"
 dump_openapi_spec = "ddbj_search_api.main:dump_openapi_spec"
 
 [tool.pytest.ini_options]
-addopts = "--cov=ddbj_search_api --cov-report=html:tests/htmlcov"
+addopts = ["-n", "auto"]
 testpaths = ["tests/unit"]
 asyncio_default_fixture_loop_scope = "function"
 

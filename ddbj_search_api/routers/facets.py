@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_search
 from ddbj_search_api.es.query import build_facet_aggs, build_search_query, validate_keyword_fields
-from ddbj_search_api.schemas.common import DbType
+from ddbj_search_api.schemas.common import DB_TYPE_DISPLAY, DbType, ProblemDetails
 from ddbj_search_api.schemas.facets import FacetsResponse
 from ddbj_search_api.schemas.queries import BioProjectExtraQuery, SearchFilterQuery, TypesFilterQuery
 from ddbj_search_api.utils import parse_facets
@@ -23,6 +23,13 @@ from ddbj_search_api.utils import parse_facets
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Facets"])
+
+_FACETS_ERRORS: dict[int | str, dict[str, Any]] = {
+    422: {
+        "description": "Unprocessable Entity (parameter validation error).",
+        "model": ProblemDetails,
+    },
+}
 
 
 # --- Shared logic ---
@@ -117,6 +124,8 @@ router.add_api_route(
     methods=["GET"],
     response_model=FacetsResponse,
     summary="Cross-type facet aggregation",
+    operation_id="getFacets",
+    responses=_FACETS_ERRORS,
 )
 
 
@@ -180,4 +189,6 @@ for _db_type in DbType:
         methods=["GET"],
         response_model=FacetsResponse,
         summary=f"Facet aggregation for {_db_type.value}",
+        operation_id=f"get{DB_TYPE_DISPLAY[_db_type]}Facets",
+        responses=_FACETS_ERRORS,
     )

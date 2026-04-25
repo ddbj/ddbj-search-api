@@ -1039,12 +1039,17 @@ router.add_api_route(
             ),
             "model": ProblemDetails,
         },
+        422: {
+            "description": "Unprocessable Entity (parameter validation error, e.g. invalid db / sort / perPage).",
+            "model": ProblemDetails,
+        },
         502: {
             "description": "Bad Gateway (all databases failed, or Solr upstream error)",
             "model": ProblemDetails,
         },
     },
     summary="DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
+    operation_id="searchDbPortal",
     tags=["db-portal"],
 )
 
@@ -1099,7 +1104,12 @@ router.add_api_route(
             "description": "Bad Request (DSL parse/validate error).",
             "model": ProblemDetails,
         },
+        422: {
+            "description": "Unprocessable Entity (missing adv, invalid db value).",
+            "model": ProblemDetails,
+        },
     },
     summary="Parse Advanced Search DSL into the SSOT query-tree JSON for GUI state restoration.",
+    operation_id="parseDbPortal",
     tags=["db-portal"],
 )

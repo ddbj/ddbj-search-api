@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
 from ddbj_search_api.dblink.client import count_linked_ids_bulk, iter_linked_ids
+from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.dblink import (
     AccessionType,
     DbLinksCountsRequest,
@@ -34,6 +35,7 @@ router = APIRouter(prefix="/dblink", tags=["dblink"])
     "/",
     response_model=DbLinksTypesResponse,
     summary="List available accession types",
+    operation_id="listDbLinkTypes",
 )
 @router.get(
     "",
@@ -50,6 +52,13 @@ def list_types() -> DbLinksTypesResponse:
     "/{type}/{id}",
     response_model=DbLinksResponse,
     summary="Get linked accessions",
+    operation_id="getDbLinks",
+    responses={
+        422: {
+            "description": "Unprocessable Entity (invalid {type} or target).",
+            "model": ProblemDetails,
+        },
+    },
 )
 async def get_links(
     type: AccessionType = Path(description="Source accession type."),
@@ -118,6 +127,13 @@ async def get_links(
     "/counts",
     response_model=DbLinksCountsResponse,
     summary="Bulk count linked accessions",
+    operation_id="bulkDbLinkCounts",
+    responses={
+        422: {
+            "description": "Unprocessable Entity (empty / oversized items, invalid type).",
+            "model": ProblemDetails,
+        },
+    },
 )
 async def bulk_counts(
     body: DbLinksCountsRequest,

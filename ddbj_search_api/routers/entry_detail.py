@@ -29,13 +29,24 @@ from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_conf
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_get_source, es_get_source_stream, es_resolve_same_as
-from ddbj_search_api.schemas.common import DbType
+from ddbj_search_api.schemas.common import DbType, ProblemDetails
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
 from ddbj_search_api.schemas.entries import DetailResponse, EntryJsonLdResponse, EntryResponse
 from ddbj_search_api.schemas.queries import EntryDetailQuery
 from ddbj_search_api.utils import format_xref
 
 router = APIRouter(tags=["Entry Detail"])
+
+_DETAIL_ERRORS: dict[int | str, dict[str, Any]] = {
+    404: {
+        "description": "Not Found (entry does not exist, or is withdrawn / private).",
+        "model": ProblemDetails,
+    },
+    422: {
+        "description": "Unprocessable Entity (parameter validation error).",
+        "model": ProblemDetails,
+    },
+}
 
 
 # --- Helper: sameAs ID resolution + visibility check ---
@@ -271,6 +282,8 @@ async def _inject_dbxrefs_tail_streaming(
         "The response type varies by database type: "
         "BioProject, BioSample, SRA, or JGA."
     ),
+    operation_id="getEntryRaw",
+    responses=_DETAIL_ERRORS,
 )
 async def get_entry_json(
     type: DbType = Path(description="Database type."),
@@ -310,6 +323,8 @@ async def get_entry_json(
         "``@id`` fields added for RDF compatibility.\n\n"
         "Content-Type: application/ld+json."
     ),
+    operation_id="getEntryJsonLd",
+    responses=_DETAIL_ERRORS,
 )
 async def get_entry_jsonld(
     type: DbType = Path(description="Database type."),
@@ -350,6 +365,8 @@ async def get_entry_jsonld(
     response_model=DbXrefsFullResponse,
     summary="Get all dbXrefs",
     description="Retrieve all cross-references for an entry in one response.",
+    operation_id="getEntryDbxrefs",
+    responses=_DETAIL_ERRORS,
 )
 async def get_dbxrefs_full(
     type: DbType = Path(description="Database type."),
@@ -418,6 +435,8 @@ async def get_dbxrefs_full(
         "BioProjectDetailResponse, BioSampleDetailResponse, "
         "SraDetailResponse, or JgaDetailResponse."
     ),
+    operation_id="getEntryDetail",
+    responses=_DETAIL_ERRORS,
 )
 async def get_entry_detail(
     type: DbType = Path(description="Database type."),

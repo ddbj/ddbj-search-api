@@ -51,23 +51,44 @@ class TestDbType:
 
 
 class TestPagination:
-    """Pagination model: page, perPage, total."""
+    """Pagination model: page, perPage, total, nextCursor, hasNext."""
 
     def test_basic_construction(self) -> None:
-        p = Pagination(page=1, perPage=10, total=100)
+        p = Pagination(page=1, perPage=10, total=100, nextCursor=None, hasNext=False)
         assert p.page == 1
         assert p.per_page == 10
         assert p.total == 100
+        assert p.next_cursor is None
+        assert p.has_next is False
 
     def test_alias_serialization(self) -> None:
-        p = Pagination(page=1, perPage=25, total=50)
+        p = Pagination(page=1, perPage=25, total=50, nextCursor=None, hasNext=False)
         data = p.model_dump(by_alias=True)
         assert data["perPage"] == 25
         assert "per_page" not in data
+        assert data["nextCursor"] is None
+        assert data["hasNext"] is False
 
     def test_populate_by_name(self) -> None:
-        p = Pagination(page=1, per_page=10, total=100)  # type: ignore[call-arg]
+        p = Pagination(  # type: ignore[call-arg]
+            page=1,
+            per_page=10,
+            total=100,
+            next_cursor=None,
+            has_next=False,
+        )
         assert p.per_page == 10
+        assert p.has_next is False
+
+    def test_required_fields_missing_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            Pagination(page=1, perPage=10, total=100)  # type: ignore[call-arg]
+
+    def test_cursor_mode_page_null(self) -> None:
+        p = Pagination(page=None, perPage=10, total=100, nextCursor="opaque", hasNext=True)
+        assert p.page is None
+        assert p.next_cursor == "opaque"
+        assert p.has_next is True
 
 
 class TestPaginationPBT:
@@ -75,14 +96,14 @@ class TestPaginationPBT:
 
     @given(page=valid_page, per_page=valid_per_page, total=valid_total)
     def test_valid_values_accepted(self, page: int, per_page: int, total: int) -> None:
-        p = Pagination(page=page, perPage=per_page, total=total)
+        p = Pagination(page=page, perPage=per_page, total=total, nextCursor=None, hasNext=False)
         assert p.page == page
         assert p.per_page == per_page
         assert p.total == total
 
     @given(page=valid_page, per_page=valid_per_page, total=valid_total)
     def test_roundtrip_serialization(self, page: int, per_page: int, total: int) -> None:
-        p = Pagination(page=page, perPage=per_page, total=total)
+        p = Pagination(page=page, perPage=per_page, total=total, nextCursor=None, hasNext=False)
         data = p.model_dump(by_alias=True)
         restored = Pagination(**data)
         assert restored == p

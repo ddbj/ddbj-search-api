@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import pytest
 from hypothesis import given
-from hypothesis import strategies as st
 
 from ddbj_search_api.schemas.queries import (
     BioProjectExtraQuery,
@@ -30,6 +29,7 @@ from ddbj_search_api.schemas.queries import (
     SearchFilterQuery,
     TypesFilterQuery,
 )
+from tests.unit.strategies import valid_page, valid_per_page
 
 # === Enums ===
 
@@ -88,10 +88,7 @@ class TestPaginationQuery:
 class TestPaginationQueryPBT:
     """Property-based tests for PaginationQuery attribute storage."""
 
-    @given(
-        page=st.integers(min_value=1, max_value=10000),
-        per_page=st.integers(min_value=1, max_value=100),
-    )
+    @given(page=valid_page, per_page=valid_per_page)
     def test_stores_values(self, page: int, per_page: int) -> None:
         q = PaginationQuery(page=page, per_page=per_page)
         assert q.page == page

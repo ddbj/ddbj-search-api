@@ -10,8 +10,9 @@ class BulkRequest(BaseModel):
     """Request body for POST /entries/{type}/bulk."""
 
     ids: list[str] = Field(
+        min_length=1,
         max_length=1000,
-        description="List of entry identifiers to retrieve (max 1000).",
+        description="List of entry identifiers to retrieve (1-1000).",
     )
 
 

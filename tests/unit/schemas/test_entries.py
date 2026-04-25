@@ -115,7 +115,7 @@ class TestEntryListResponse:
 
     def test_basic_construction(self) -> None:
         resp = EntryListResponse(
-            pagination=Pagination(page=1, perPage=10, total=1),
+            pagination=Pagination(page=1, perPage=10, total=1, nextCursor=None, hasNext=False),
             items=[EntryListItem(identifier="PRJDB1", type="bioproject")],
         )
         assert resp.pagination.page == 1
@@ -123,7 +123,7 @@ class TestEntryListResponse:
 
     def test_facets_default_to_none(self) -> None:
         resp = EntryListResponse(
-            pagination=Pagination(page=1, perPage=10, total=0),
+            pagination=Pagination(page=1, perPage=10, total=0, nextCursor=None, hasNext=False),
             items=[],
         )
         assert resp.facets is None
@@ -134,7 +134,7 @@ class TestEntryListResponse:
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
         resp = EntryListResponse(
-            pagination=Pagination(page=1, perPage=10, total=10),
+            pagination=Pagination(page=1, perPage=10, total=10, nextCursor=None, hasNext=False),
             items=[],
             facets=facets,
         )
@@ -143,7 +143,7 @@ class TestEntryListResponse:
 
     def test_empty_items_accepted(self) -> None:
         resp = EntryListResponse(
-            pagination=Pagination(page=1, perPage=10, total=0),
+            pagination=Pagination(page=1, perPage=10, total=0, nextCursor=None, hasNext=False),
             items=[],
         )
         assert resp.items == []
@@ -155,7 +155,7 @@ class TestEntryListResponse:
     def test_missing_items_raises_error(self) -> None:
         with pytest.raises(ValidationError):
             EntryListResponse(  # type: ignore[call-arg]
-                pagination=Pagination(page=1, perPage=10, total=0),
+                pagination=Pagination(page=1, perPage=10, total=0, nextCursor=None, hasNext=False),
             )
 
 

@@ -147,12 +147,12 @@ class TestBulkRequestValidation:
         resp = _bulk_post(app_with_bulk, ids)
         assert resp.status_code == 200
 
-    def test_empty_ids_accepted(
+    def test_empty_ids_rejected(
         self,
         app_with_bulk: TestClient,
     ) -> None:
         resp = _bulk_post(app_with_bulk, [])
-        assert resp.status_code == 200
+        assert resp.status_code == 422
 
 
 # === format query parameter ===
@@ -233,19 +233,18 @@ class TestBulkJsonResponse:
         assert data["entries"] == []
         assert set(data["notFound"]) == set(ids)
 
-    def test_empty_ids_returns_empty_response(
+    def test_empty_ids_returns_422(
         self,
         app_with_bulk: TestClient,
     ) -> None:
         resp = _bulk_post(app_with_bulk, [])
-        data = resp.json()
-        assert data == {"entries": [], "notFound": []}
+        assert resp.status_code == 422
 
     def test_content_type_is_json(
         self,
         app_with_bulk: TestClient,
     ) -> None:
-        resp = _bulk_post(app_with_bulk, [])
+        resp = _bulk_post(app_with_bulk, ["TEST001"])
         assert "application/json" in resp.headers["content-type"]
 
     def test_dbxrefs_from_duckdb(
@@ -376,12 +375,12 @@ class TestBulkNdjsonResponse:
             parsed = json.loads(line)
             assert "identifier" in parsed
 
-    def test_empty_ids_returns_empty_body(
+    def test_empty_ids_returns_422(
         self,
         app_with_bulk: TestClient,
     ) -> None:
         resp = _bulk_post(app_with_bulk, [], format_="ndjson")
-        assert resp.text == ""
+        assert resp.status_code == 422
 
     def test_all_not_found_returns_empty_body(
         self,
@@ -511,6 +510,9 @@ class TestBulkPBT:
         """len(entries) + len(notFound) == len(ids) (JSON format)."""
         # Deduplicate to avoid collisions between found and not_found
         all_ids = list(dict.fromkeys(found + not_found))
+        if not all_ids:
+            # BulkRequest enforces min_length=1; skip the trivially empty draw.
+            return
         found_set = set(found)
         actual_found = [x for x in all_ids if x in found_set]
         actual_not_found = [x for x in all_ids if x not in found_set]

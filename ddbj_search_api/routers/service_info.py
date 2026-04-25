@@ -19,6 +19,7 @@ router = APIRouter(tags=["Service Info"])
     response_model=ServiceInfoResponse,
     summary="Get service information",
     description=("Returns service metadata including name, version, and Elasticsearch connectivity status."),
+    operation_id="getServiceInfo",
 )
 async def get_service_info(
     client: httpx.AsyncClient = Depends(get_es_client),

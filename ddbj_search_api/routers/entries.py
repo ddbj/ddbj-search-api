@@ -30,7 +30,7 @@ from ddbj_search_api.es.query import (
     pagination_to_from_size,
     validate_keyword_fields,
 )
-from ddbj_search_api.schemas.common import DbType, EntryListItem, Pagination
+from ddbj_search_api.schemas.common import DB_TYPE_DISPLAY, DbType, EntryListItem, Pagination, ProblemDetails
 from ddbj_search_api.schemas.entries import EntryListResponse
 from ddbj_search_api.schemas.queries import (
     BioProjectExtraQuery,
@@ -42,6 +42,20 @@ from ddbj_search_api.schemas.queries import (
 )
 from ddbj_search_api.search.accession import detect_accession_exact_match
 from ddbj_search_api.utils import parse_facets
+
+_LIST_ENTRIES_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {
+        "description": (
+            "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, "
+            "invalid cursor token, cursor expired)."
+        ),
+        "model": ProblemDetails,
+    },
+    422: {
+        "description": "Unprocessable Entity (parameter validation error).",
+        "model": ProblemDetails,
+    },
+}
 
 logger = logging.getLogger(__name__)
 
@@ -501,6 +515,8 @@ router.add_api_route(
     methods=["GET"],
     response_model=EntryListResponse,
     summary="Cross-type entry search",
+    operation_id="listEntries",
+    responses=_LIST_ENTRIES_RESPONSES,
     tags=["Entries"],
 )
 router.add_api_route(
@@ -607,6 +623,8 @@ for _db_type in DbType:
         methods=["GET"],
         response_model=EntryListResponse,
         summary=f"Search {_db_type.value} entries",
+        operation_id=f"list{DB_TYPE_DISPLAY[_db_type]}Entries",
+        responses=_LIST_ENTRIES_RESPONSES,
         tags=["Entries"],
     )
     router.add_api_route(

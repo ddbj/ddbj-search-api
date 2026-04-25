@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_get_source, es_mget_source, es_resolve_same_as
+from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.umbrella_tree import UmbrellaTreeEdge, UmbrellaTreeResponse
 
 logger = logging.getLogger(__name__)
@@ -257,6 +258,17 @@ async def _traverse_downward(
     response_model=UmbrellaTreeResponse,
     summary="Get BioProject umbrella tree (flat graph).",
     description="Return the umbrella tree containing the BioProject as a flat graph (query / roots / edges). DAG-safe.",
+    operation_id="getUmbrellaTree",
+    responses={
+        404: {
+            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "model": ProblemDetails,
+        },
+        422: {
+            "description": "Unprocessable Entity (path validation error).",
+            "model": ProblemDetails,
+        },
+    },
 )
 async def get_umbrella_tree(
     accession: str = Path(

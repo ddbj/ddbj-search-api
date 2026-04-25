@@ -217,6 +217,161 @@ def _make_lifespan(config: AppConfig) -> Any:
 # === App factory ===
 
 
+_OPENAPI_TAGS: list[dict[str, str]] = [
+    {
+        "name": "Entries",
+        "description": "List / search entries (cross-type and per-database-type).",
+    },
+    {
+        "name": "Entry Detail",
+        "description": (
+            "Single-entry retrieval (frontend-oriented detail, raw ES document, "
+            "JSON-LD, and the umbrella tree for BioProject)."
+        ),
+    },
+    {
+        "name": "Bulk",
+        "description": "Multi-entry retrieval (JSON array or NDJSON streaming).",
+    },
+    {
+        "name": "Facets",
+        "description": "Facet aggregation (cross-type and per-database-type).",
+    },
+    {
+        "name": "dblink",
+        "description": "DBLinks API: cross-reference lookup via DuckDB.",
+    },
+    {
+        "name": "db-portal",
+        "description": (
+            "DB Portal frontend API: unified search across ES (6 DBs) "
+            "and Solr (ARSA / TXSearch), plus the Advanced Search DSL parser."
+        ),
+    },
+    {
+        "name": "Service Info",
+        "description": "Service metadata + Elasticsearch health probe.",
+    },
+]
+
+_DETAIL_DISCRIMINATOR_TARGETS: dict[str, dict[str, str]] = {
+    # path -> {variant_const: schema_name}
+    "/entries/{type}/{id}": {
+        "bioproject": "BioProjectDetailResponse",
+        "biosample": "BioSampleDetailResponse",
+        "sra-submission": "SraDetailResponse",
+        "sra-study": "SraDetailResponse",
+        "sra-experiment": "SraDetailResponse",
+        "sra-run": "SraDetailResponse",
+        "sra-sample": "SraDetailResponse",
+        "sra-analysis": "SraDetailResponse",
+        "jga-study": "JgaDetailResponse",
+        "jga-dataset": "JgaDetailResponse",
+        "jga-dac": "JgaDetailResponse",
+        "jga-policy": "JgaDetailResponse",
+    },
+    "/entries/{type}/{id}.json": {
+        "bioproject": "BioProject",
+        "biosample": "BioSample",
+        "sra-submission": "SRA",
+        "sra-study": "SRA",
+        "sra-experiment": "SRA",
+        "sra-run": "SRA",
+        "sra-sample": "SRA",
+        "sra-analysis": "SRA",
+        "jga-study": "JGA",
+        "jga-dataset": "JGA",
+        "jga-dac": "JGA",
+        "jga-policy": "JGA",
+    },
+    "/entries/{type}/{id}.jsonld": {
+        "bioproject": "BioProjectEntryJsonLdResponse",
+        "biosample": "BioSampleEntryJsonLdResponse",
+        "sra-submission": "SraEntryJsonLdResponse",
+        "sra-study": "SraEntryJsonLdResponse",
+        "sra-experiment": "SraEntryJsonLdResponse",
+        "sra-run": "SraEntryJsonLdResponse",
+        "sra-sample": "SraEntryJsonLdResponse",
+        "sra-analysis": "SraEntryJsonLdResponse",
+        "jga-study": "JgaEntryJsonLdResponse",
+        "jga-dataset": "JgaEntryJsonLdResponse",
+        "jga-dac": "JgaEntryJsonLdResponse",
+        "jga-policy": "JgaEntryJsonLdResponse",
+    },
+}
+
+_ERROR_STATUS_CODES = frozenset({"400", "404", "422", "500", "501", "502"})
+
+# Schema examples that contain JSON ``null`` values.  Pydantic's
+# ``json_schema_extra`` drops ``None`` literals when merging the dict form,
+# so we attach these examples after the OpenAPI schema is generated to
+# preserve nullable cursor-mode samples.
+_NULL_AWARE_SCHEMA_EXAMPLES: dict[str, list[dict[str, Any]]] = {
+    "Pagination": [
+        {
+            "page": 1,
+            "perPage": 10,
+            "total": 150000,
+            "nextCursor": "eyJwaXRfaWQiOm51bGwsInNlYXJjaF9hZnRlciI6Wy4uLl19",
+            "hasNext": True,
+        },
+        {
+            "page": None,
+            "perPage": 10,
+            "total": 150000,
+            "nextCursor": None,
+            "hasNext": False,
+        },
+    ],
+}
+
+
+def _rewrite_error_content_types(operation: dict[str, Any]) -> None:
+    """Replace JSON content-type with ``application/problem+json`` on error responses."""
+    responses = operation.get("responses", {})
+    for status_code, resp in responses.items():
+        if status_code not in _ERROR_STATUS_CODES:
+            continue
+        content = resp.get("content")
+        if not content:
+            continue
+        for media_type in list(content.keys()):
+            if media_type != "application/problem+json":
+                content["application/problem+json"] = content.pop(media_type)
+
+
+def _convert_anyof_to_oneof_with_discriminator(
+    operation: dict[str, Any],
+    path: str,
+) -> None:
+    """Promote anyOf polymorphic 200 responses to oneOf + discriminator.
+
+    Pydantic emits ``anyOf`` for ``A | B | C`` typed responses; OpenAPI
+    consumers (codegen / Redoc) treat ``anyOf`` as a permissive union.
+    For our entry-detail endpoints the variants are mutually exclusive
+    keyed on a constant ``type`` field — promoting to ``oneOf`` and
+    attaching a ``discriminator`` lets generated clients build a proper
+    tagged union.
+    """
+    mapping = _DETAIL_DISCRIMINATOR_TARGETS.get(path)
+    if mapping is None:
+        return
+    success = operation.get("responses", {}).get("200")
+    if not success:
+        return
+    for media_type, body in (success.get("content") or {}).items():
+        schema = body.get("schema") or {}
+        variants = schema.pop("anyOf", None)
+        if not variants:
+            continue
+        schema["oneOf"] = variants
+        schema["discriminator"] = {
+            "propertyName": "type",
+            "mapping": {const_value: f"#/components/schemas/{name}" for const_value, name in mapping.items()},
+        }
+        body["schema"] = schema
+
+
 def create_app(config: AppConfig | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     if config is None:
@@ -224,7 +379,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app = FastAPI(
         title="DDBJ Search API",
-        description=("RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ."),
+        description=(
+            "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.\n\n"
+            "See [docs/api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/api-spec.md) "
+            "for behaviour-level specifications (status visibility, sameAs resolution, pagination semantics) "
+            "and [docs/db-portal-api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) "
+            "for the ``/db-portal/*`` endpoints (unified search, Advanced Search DSL)."
+        ),
         version=importlib.metadata.version("ddbj-search-api"),
         docs_url="/docs",
         redoc_url="/redoc",
@@ -232,6 +393,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         redirect_slashes=False,
         root_path=config.url_prefix,
         lifespan=_make_lifespan(config),
+        openapi_tags=_OPENAPI_TAGS,
+        contact={
+            "name": "DDBJ Search team",
+            "url": "https://www.ddbj.nig.ac.jp/contact-e.html",
+        },
+        license_info={
+            "name": "Apache-2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        },
     )
 
     # CORS: allow all origins
@@ -251,8 +421,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # Routers
     app.include_router(router)
 
-    # Customize OpenAPI: remove FastAPI's default HTTPValidationError/
-    # ValidationError schemas (we use ProblemDetails for all errors).
+    # Customize OpenAPI:
+    # - drop FastAPI's default HTTPValidationError / ValidationError schemas
+    #   (we serve all errors as ProblemDetails),
+    # - rewrite error response content types to application/problem+json,
+    # - promote entry-detail anyOf unions to oneOf + discriminator so SDKs
+    #   produce discriminated unions instead of permissive any-of types,
+    # - publish servers / contact / license / tags metadata that FastAPI
+    #   does not derive automatically from ``root_path``.
     _original_openapi = app.openapi
 
     def custom_openapi() -> dict[str, Any]:
@@ -261,50 +437,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         schemas.pop("HTTPValidationError", None)
         schemas.pop("ValidationError", None)
 
-        # Add servers (root_path is not reflected in static openapi())
-        schema["servers"] = [{"url": config.url_prefix}]
+        # ``root_path`` does not propagate to ``openapi()`` output.
+        schema["servers"] = [{"url": config.url_prefix, "description": "Current deployment"}]
 
-        _error_codes = {"400", "404", "422", "500", "501", "502"}
+        for schema_name, examples in _NULL_AWARE_SCHEMA_EXAMPLES.items():
+            target = schemas.get(schema_name)
+            if target is not None:
+                target["examples"] = examples
+
         for path, path_item in schema.get("paths", {}).items():
             for operation in path_item.values():
                 if not isinstance(operation, dict):
                     continue
-                responses = operation.get("responses", {})
-
-                # Remove inapplicable error codes per endpoint.
-                # 400: paginated list endpoints (deep paging), /db-portal/search
-                # (q/adv exclusivity, cursor exclusivity, DSL errors, deep paging),
-                # and /db-portal/parse (DSL parse/validate errors).
-                _is_list = path == "/entries/" or (
-                    path.startswith("/entries/") and path.endswith("/") and "{" not in path
-                )
-                if not (_is_list or path in ("/db-portal/search", "/db-portal/parse")):
-                    responses.pop("400", None)
-
-                # 404: only endpoints with {type}/{id} or per-type path.
-                if path in (
-                    "/entries/",
-                    "/facets",
-                    "/service-info",
-                    "/db-portal/search",
-                    "/db-portal/parse",
-                ):
-                    responses.pop("404", None)
-
-                # 422: not needed for /service-info or extension
-                # endpoints that have no query params.
-                if path == "/service-info":
-                    responses.pop("422", None)
-                if path.endswith((".json", ".jsonld")):
-                    responses.pop("422", None)
-
-                # Fix error Content-Type: application/problem+json
-                for status_code, resp in responses.items():
-                    if status_code in _error_codes:
-                        content = resp.get("content", {})
-                        for media_type in list(content.keys()):
-                            if media_type != "application/problem+json":
-                                content["application/problem+json"] = content.pop(media_type)
+                _rewrite_error_content_types(operation)
+                _convert_anyof_to_oneof_with_discriminator(operation, path)
 
         return schema
 

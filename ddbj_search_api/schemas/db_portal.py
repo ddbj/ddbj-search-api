@@ -123,18 +123,24 @@ class DbPortalQuery:
             default=20,
             alias="perPage",
             description="Items per page.  Allowed: 20, 50, 100.",
+            json_schema_extra={"enum": [20, 50, 100]},
         ),
         cursor: str | None = Query(
             default=None,
             description="Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min).",
         ),
-        sort: str | None = Query(
+        sort: Literal["datePublished:asc", "datePublished:desc"] | None = Query(
             default=None,
             description=(
                 "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``."
             ),
         ),
     ) -> None:
+        # Pydantic's Literal[int] does not coerce HTTP query strings to int,
+        # so per_page is typed ``int`` and constrained explicitly here while
+        # ``json_schema_extra={"enum": [...]}`` exposes the allowed set in
+        # the generated OpenAPI document.  ``sort`` uses ``Literal[str]``
+        # which Pydantic accepts directly from query strings.
         if per_page not in ALLOWED_DB_PORTAL_PER_PAGE:
             raise HTTPException(
                 status_code=422,

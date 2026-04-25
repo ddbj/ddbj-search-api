@@ -21,9 +21,9 @@ class TestBulkRequest:
         req = BulkRequest(ids=["PRJDB1"])
         assert req.ids == ["PRJDB1"]
 
-    def test_empty_ids_accepted(self) -> None:
-        req = BulkRequest(ids=[])
-        assert req.ids == []
+    def test_empty_ids_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            BulkRequest(ids=[])
 
     def test_boundary_1000_ids_accepted(self) -> None:
         ids = [f"PRJDB{i}" for i in range(1000)]

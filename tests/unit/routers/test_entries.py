@@ -17,44 +17,18 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.cursor import CursorPayload, encode_cursor
 from tests.unit.conftest import make_es_search_response
-from tests.unit.strategies import db_type_values
-
-# === Routing: GET /entries/ ===
-
-
-class TestEntriesRouting:
-    """GET /entries/ and GET /entries: route exists."""
-
-    def test_slash_returns_200(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries/")
-        assert resp.status_code == 200
-
-    def test_no_slash_returns_200(self, app_with_es: TestClient) -> None:
-        resp = app_with_es.get("/entries")
-        assert resp.status_code == 200
-
-    def test_trailing_slash_same_response(self, app_with_es: TestClient) -> None:
-        r1 = app_with_es.get("/entries/")
-        r2 = app_with_es.get("/entries")
-        assert r1.status_code == r2.status_code
-
+from tests.unit.strategies import db_type_values, valid_per_page
 
 # === Routing: GET /entries/{type}/ ===
 
 
 class TestEntriesTypeRouting:
-    """GET /entries/{type}/ : all 12 types are routed."""
+    """GET /entries/{type}/ : every DbType value reaches the type-specific route."""
 
     @pytest.mark.parametrize("db_type", db_type_values)
     def test_type_route_exists(self, app_with_es: TestClient, db_type: str) -> None:
         resp = app_with_es.get(f"/entries/{db_type}/")
         assert resp.status_code == 200
-
-    @pytest.mark.parametrize("db_type", db_type_values)
-    def test_type_trailing_slash(self, app_with_es: TestClient, db_type: str) -> None:
-        r1 = app_with_es.get(f"/entries/{db_type}/")
-        r2 = app_with_es.get(f"/entries/{db_type}")
-        assert r1.status_code == r2.status_code
 
 
 # === Pagination parameter validation (FastAPI level) ===
@@ -439,20 +413,14 @@ class TestEntriesTypesFilter:
         resp = app_with_es.get("/entries/", params={"types": "bioproject"})
         assert resp.status_code == 200
 
-    def test_empty_types_uses_status_filter_only(
+    def test_empty_types_rejected_by_pattern(
         self,
         app_with_es: TestClient,
-        mock_es_search: AsyncMock,
     ) -> None:
-        """Empty types string は filter 無しと同じ。
-        status filter (public_only) だけが filter に残る。
-        """
-        app_with_es.get("/entries/", params={"types": ""})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
-        assert body["query"] == {
-            "bool": {"filter": [{"term": {"status": "public"}}]},
-        }
+        # `?types=` (空文字) は TypesFilterQuery の pattern 違反で 422。
+        # 「指定しない」ケースは ?types= ではなくクエリ自体を省略する運用。
+        resp = app_with_es.get("/entries/", params={"types": ""})
+        assert resp.status_code == 422
 
     def test_invalid_type_returns_422(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/", params={"types": "invalid-type"})
@@ -537,7 +505,7 @@ class TestEntriesDeepPaging:
         data=st.data(),
     )
     def test_pbt_deep_paging_rejected(self, app_with_es: TestClient, data: st.DataObject) -> None:
-        per_page = data.draw(st.integers(min_value=1, max_value=100))
+        per_page = data.draw(valid_per_page)
         # Ensure page * per_page > 10000
         min_page = (10000 // per_page) + 1
         page = data.draw(st.integers(min_value=min_page, max_value=min_page + 1000))

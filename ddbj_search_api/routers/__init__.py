@@ -15,22 +15,34 @@ from fastapi import APIRouter
 from ddbj_search_api.routers import bulk, db_portal, dblink, entries, entry_detail, facets, service_info, umbrella_tree
 from ddbj_search_api.schemas.common import ProblemDetails
 
-# Common error responses (RFC 7807) applied to all endpoints.
+# Only 500 is shared by every endpoint; status-specific errors (400 / 404 /
+# 422) are declared per route so the OpenAPI document precisely reflects
+# what each endpoint actually returns.  Each error body is application/
+# problem+json (rewritten by ``main.custom_openapi``).
 PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
-    400: {
-        "description": "Bad Request (e.g. deep paging limit exceeded).",
-        "model": ProblemDetails,
-    },
-    404: {
-        "description": "Not Found (entry does not exist or invalid type).",
-        "model": ProblemDetails,
-    },
-    422: {
-        "description": "Unprocessable Entity (parameter validation error).",
-        "model": ProblemDetails,
-    },
     500: {
         "description": "Internal Server Error.",
+        "model": ProblemDetails,
+    },
+}
+
+# Per-status response stanzas reused across routers (see PROBLEM_RESPONSES
+# rationale).  Importing modules pick whichever subset applies.
+PROBLEM_400: dict[int | str, dict[str, Any]] = {
+    400: {
+        "description": "Bad Request (e.g. deep paging limit exceeded, mutually exclusive query params).",
+        "model": ProblemDetails,
+    },
+}
+PROBLEM_404: dict[int | str, dict[str, Any]] = {
+    404: {
+        "description": "Not Found (entry does not exist or invalid {type}).",
+        "model": ProblemDetails,
+    },
+}
+PROBLEM_422: dict[int | str, dict[str, Any]] = {
+    422: {
+        "description": "Unprocessable Entity (parameter validation error).",
         "model": ProblemDetails,
     },
 }

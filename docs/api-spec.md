@@ -153,7 +153,6 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/search`,
 | 404 | Not Found | エントリーが存在しない、withdrawn / private のエントリーへの直接アクセス (存在を秘匿するため存在しないものと同じ応答を返す)、不正な `{type}` |
 | 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `umbrella` 値 (`TRUE`/`FALSE` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値など) |
 | 500 | Internal Server Error | ES 接続エラー、DuckDB ファイルが見つからない (Entries 検索/詳細/Bulk/DBLinks API)、その他サーバー内部エラー |
-| 501 | Not Implemented | DB Portal API の未実装機能 (Advanced Search) |
 | 502 | Bad Gateway | DB Portal API の横断 count-only で全 DB への問い合わせが失敗 |
 
 400 と 422 の使い分け: リクエストのパラメータ型・形式・制約のバリデーションは 422、アプリケーションのビジネスルール違反 (deep paging 制限、`q`/`adv` 排他など) は 400 を返す。

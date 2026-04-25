@@ -1,0 +1,14 @@
+extends:
+  - recommended
+rules:
+  # /entries/ and /dblink/ keep canonical trailing slashes (api-spec.md § Trailing Slash);
+  # the lint preference here conflicts with our public contract.
+  no-path-trailing-slash: off
+
+  # The API is intentionally unauthenticated (public bioscience data); declaring
+  # an empty securityScheme would be more confusing than helpful.
+  security-defined: off
+
+  # /service-info has no business returning 4xx (it answers from process state),
+  # so the rule's blanket requirement does not apply.
+  operation-4xx-response: off

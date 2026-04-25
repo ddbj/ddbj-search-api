@@ -2,8 +2,16 @@
   "openapi": "3.1.0",
   "info": {
     "title": "DDBJ Search API",
-    "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.",
-    "version": "0.2.1.dev8+g242e3b0b3.d20260424"
+    "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.\n\nSee [docs/api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/api-spec.md) for behaviour-level specifications (status visibility, sameAs resolution, pagination semantics) and [docs/db-portal-api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) for the ``/db-portal/*`` endpoints (unified search, Advanced Search DSL).",
+    "contact": {
+      "name": "DDBJ Search team",
+      "url": "https://www.ddbj.nig.ac.jp/contact-e.html"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "version": "0.2.1.dev19+g40196f754.d20260425"
   },
   "paths": {
     "/entries/": {
@@ -13,7 +21,7 @@
         ],
         "summary": "Cross-type entry search",
         "description": "Search entries across all database types.\n\nSupports keyword search, organism/date filtering, pagination,\nsorting, field selection, and facet aggregation.  Use the ``types``\nparameter to narrow the search to specific database types.",
-        "operationId": "_list_all_entries_entries__get",
+        "operationId": "listEntries",
         "parameters": [
           {
             "name": "page",
@@ -85,7 +93,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -114,16 +123,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -208,7 +218,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -268,16 +279,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy)(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by database types (comma-separated).",
+              "description": "Filter by database types (comma-separated). Allowed: any of DbType.",
               "title": "Types"
             },
-            "description": "Filter by database types (comma-separated)."
+            "description": "Filter by database types (comma-separated). Allowed: any of DbType."
           },
           {
             "name": "dbXrefsLimit",
@@ -317,8 +329,18 @@
               }
             }
           },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -329,16 +351,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -357,7 +369,7 @@
         ],
         "summary": "Search bioproject entries",
         "description": "Search bioproject entries.\n\nSupports BioProject-specific filters: organization, publication, grant, umbrella.",
-        "operationId": "list_bioproject_entries_entries_bioproject__get",
+        "operationId": "listBioProjectEntries",
         "parameters": [
           {
             "name": "page",
@@ -429,7 +441,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -458,16 +471,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -552,7 +566,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -666,7 +681,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
                 },
                 {
                   "type": "null"
@@ -715,8 +731,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -725,8 +741,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -737,16 +753,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -765,7 +771,7 @@
         ],
         "summary": "Search biosample entries",
         "description": "Search biosample entries.",
-        "operationId": "list_biosample_entries_entries_biosample__get",
+        "operationId": "listBioSampleEntries",
         "parameters": [
           {
             "name": "page",
@@ -837,7 +843,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -866,16 +873,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -960,7 +968,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -1051,8 +1060,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1061,8 +1070,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1073,16 +1082,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1101,7 +1100,7 @@
         ],
         "summary": "Search sra-submission entries",
         "description": "Search sra-submission entries.",
-        "operationId": "list_sra_submission_entries_entries_sra_submission__get",
+        "operationId": "listSraSubmissionEntries",
         "parameters": [
           {
             "name": "page",
@@ -1173,7 +1172,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -1202,16 +1202,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -1296,7 +1297,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -1387,8 +1389,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1397,8 +1399,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1409,16 +1411,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1437,7 +1429,7 @@
         ],
         "summary": "Search sra-study entries",
         "description": "Search sra-study entries.",
-        "operationId": "list_sra_study_entries_entries_sra_study__get",
+        "operationId": "listSraStudyEntries",
         "parameters": [
           {
             "name": "page",
@@ -1509,7 +1501,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -1538,16 +1531,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -1632,7 +1626,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -1723,8 +1718,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1733,8 +1728,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1745,16 +1740,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1773,7 +1758,7 @@
         ],
         "summary": "Search sra-experiment entries",
         "description": "Search sra-experiment entries.",
-        "operationId": "list_sra_experiment_entries_entries_sra_experiment__get",
+        "operationId": "listSraExperimentEntries",
         "parameters": [
           {
             "name": "page",
@@ -1845,7 +1830,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -1874,16 +1860,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -1968,7 +1955,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -2059,8 +2047,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2069,8 +2057,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2081,16 +2069,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2109,7 +2087,7 @@
         ],
         "summary": "Search sra-run entries",
         "description": "Search sra-run entries.",
-        "operationId": "list_sra_run_entries_entries_sra_run__get",
+        "operationId": "listSraRunEntries",
         "parameters": [
           {
             "name": "page",
@@ -2181,7 +2159,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -2210,16 +2189,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -2304,7 +2284,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -2395,8 +2376,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2405,8 +2386,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2417,16 +2398,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2445,7 +2416,7 @@
         ],
         "summary": "Search sra-sample entries",
         "description": "Search sra-sample entries.",
-        "operationId": "list_sra_sample_entries_entries_sra_sample__get",
+        "operationId": "listSraSampleEntries",
         "parameters": [
           {
             "name": "page",
@@ -2517,7 +2488,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -2546,16 +2518,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -2640,7 +2613,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -2731,8 +2705,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2741,8 +2715,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2753,16 +2727,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2781,7 +2745,7 @@
         ],
         "summary": "Search sra-analysis entries",
         "description": "Search sra-analysis entries.",
-        "operationId": "list_sra_analysis_entries_entries_sra_analysis__get",
+        "operationId": "listSraAnalysisEntries",
         "parameters": [
           {
             "name": "page",
@@ -2853,7 +2817,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -2882,16 +2847,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -2976,7 +2942,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -3067,8 +3034,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3077,8 +3044,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3089,16 +3056,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3117,7 +3074,7 @@
         ],
         "summary": "Search jga-study entries",
         "description": "Search jga-study entries.",
-        "operationId": "list_jga_study_entries_entries_jga_study__get",
+        "operationId": "listJgaStudyEntries",
         "parameters": [
           {
             "name": "page",
@@ -3189,7 +3146,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -3218,16 +3176,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -3312,7 +3271,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -3403,8 +3363,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3413,8 +3373,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3425,16 +3385,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3453,7 +3403,7 @@
         ],
         "summary": "Search jga-dataset entries",
         "description": "Search jga-dataset entries.",
-        "operationId": "list_jga_dataset_entries_entries_jga_dataset__get",
+        "operationId": "listJgaDatasetEntries",
         "parameters": [
           {
             "name": "page",
@@ -3525,7 +3475,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -3554,16 +3505,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -3648,7 +3600,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -3739,8 +3692,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3749,8 +3702,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3761,16 +3714,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3789,7 +3732,7 @@
         ],
         "summary": "Search jga-dac entries",
         "description": "Search jga-dac entries.",
-        "operationId": "list_jga_dac_entries_entries_jga_dac__get",
+        "operationId": "listJgaDacEntries",
         "parameters": [
           {
             "name": "page",
@@ -3861,7 +3804,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -3890,16 +3834,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -3984,7 +3929,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -4075,8 +4021,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4085,8 +4031,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4097,16 +4043,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4125,7 +4061,7 @@
         ],
         "summary": "Search jga-policy entries",
         "description": "Search jga-policy entries.",
-        "operationId": "list_jga_policy_entries_entries_jga_policy__get",
+        "operationId": "listJgaPolicyEntries",
         "parameters": [
           {
             "name": "page",
@@ -4197,7 +4133,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -4226,16 +4163,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -4320,7 +4258,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(datePublished|dateModified):(asc|desc)$"
                 },
                 {
                   "type": "null"
@@ -4411,8 +4350,8 @@
               }
             }
           },
-          "400": {
-            "description": "Bad Request (e.g. deep paging limit exceeded).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4421,8 +4360,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "400": {
+            "description": "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, invalid cursor token, cursor expired).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4433,16 +4372,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4461,7 +4390,7 @@
         ],
         "summary": "Bulk entry retrieval",
         "description": "Retrieve multiple entries by their IDs.  Up to 1000 IDs can be specified per request.\n\n**format=json** (default): returns ``{entries: [...], notFound: [...]}``.\n\n**format=ndjson**: returns one entry per line in NDJSON format (Content-Type: application/x-ndjson).  IDs not found are not included in the NDJSON output.",
-        "operationId": "bulk_entries_entries__type__bulk_post",
+        "operationId": "bulkEntries",
         "parameters": [
           {
             "name": "type",
@@ -4524,8 +4453,18 @@
               }
             }
           },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+            "description": "Not Found (invalid {type}).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4536,16 +4475,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4564,7 +4493,7 @@
         ],
         "summary": "Get BioProject umbrella tree (flat graph).",
         "description": "Return the umbrella tree containing the BioProject as a flat graph (query / roots / edges). DAG-safe.",
-        "operationId": "get_umbrella_tree_entries_bioproject__accession__umbrella_tree_get",
+        "operationId": "getUmbrellaTree",
         "parameters": [
           {
             "name": "accession",
@@ -4590,8 +4519,18 @@
               }
             }
           },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4601,17 +4540,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
+            "description": "Unprocessable Entity (path validation error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4630,7 +4559,7 @@
         ],
         "summary": "Get raw entry (ES document)",
         "description": "Retrieve the raw Elasticsearch document for an entry.  All fields including the full ``dbXrefs`` are returned as-is.\n\nThe response type varies by database type: BioProject, BioSample, SRA, or JGA.",
-        "operationId": "get_entry_json_entries__type___id__json_get",
+        "operationId": "getEntryRaw",
         "parameters": [
           {
             "name": "type",
@@ -4660,7 +4589,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
+                  "title": "Response Getentryraw",
+                  "oneOf": [
                     {
                       "$ref": "#/components/schemas/BioProject"
                     },
@@ -4674,13 +4604,29 @@
                       "$ref": "#/components/schemas/JGA"
                     }
                   ],
-                  "title": "Response Get Entry Json Entries  Type   Id  Json Get"
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "bioproject": "#/components/schemas/BioProject",
+                      "biosample": "#/components/schemas/BioSample",
+                      "sra-submission": "#/components/schemas/SRA",
+                      "sra-study": "#/components/schemas/SRA",
+                      "sra-experiment": "#/components/schemas/SRA",
+                      "sra-run": "#/components/schemas/SRA",
+                      "sra-sample": "#/components/schemas/SRA",
+                      "sra-analysis": "#/components/schemas/SRA",
+                      "jga-study": "#/components/schemas/JGA",
+                      "jga-dataset": "#/components/schemas/JGA",
+                      "jga-dac": "#/components/schemas/JGA",
+                      "jga-policy": "#/components/schemas/JGA"
+                    }
+                  }
                 }
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4689,8 +4635,18 @@
               }
             }
           },
-          "500": {
-            "description": "Internal Server Error.",
+          "404": {
+            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4709,7 +4665,7 @@
         ],
         "summary": "Get entry in JSON-LD format",
         "description": "Retrieve an entry in JSON-LD format with ``@context`` and ``@id`` fields added for RDF compatibility.\n\nContent-Type: application/ld+json.",
-        "operationId": "get_entry_jsonld_entries__type___id__jsonld_get",
+        "operationId": "getEntryJsonLd",
         "parameters": [
           {
             "name": "type",
@@ -4739,7 +4695,8 @@
             "content": {
               "application/ld+json": {
                 "schema": {
-                  "anyOf": [
+                  "title": "Response Getentryjsonld",
+                  "oneOf": [
                     {
                       "$ref": "#/components/schemas/BioProjectEntryJsonLdResponse"
                     },
@@ -4753,13 +4710,29 @@
                       "$ref": "#/components/schemas/JgaEntryJsonLdResponse"
                     }
                   ],
-                  "title": "Response Get Entry Jsonld Entries  Type   Id  Jsonld Get"
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "bioproject": "#/components/schemas/BioProjectEntryJsonLdResponse",
+                      "biosample": "#/components/schemas/BioSampleEntryJsonLdResponse",
+                      "sra-submission": "#/components/schemas/SraEntryJsonLdResponse",
+                      "sra-study": "#/components/schemas/SraEntryJsonLdResponse",
+                      "sra-experiment": "#/components/schemas/SraEntryJsonLdResponse",
+                      "sra-run": "#/components/schemas/SraEntryJsonLdResponse",
+                      "sra-sample": "#/components/schemas/SraEntryJsonLdResponse",
+                      "sra-analysis": "#/components/schemas/SraEntryJsonLdResponse",
+                      "jga-study": "#/components/schemas/JgaEntryJsonLdResponse",
+                      "jga-dataset": "#/components/schemas/JgaEntryJsonLdResponse",
+                      "jga-dac": "#/components/schemas/JgaEntryJsonLdResponse",
+                      "jga-policy": "#/components/schemas/JgaEntryJsonLdResponse"
+                    }
+                  }
                 }
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4768,8 +4741,18 @@
               }
             }
           },
-          "500": {
-            "description": "Internal Server Error.",
+          "404": {
+            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4788,7 +4771,7 @@
         ],
         "summary": "Get all dbXrefs",
         "description": "Retrieve all cross-references for an entry in one response.",
-        "operationId": "get_dbxrefs_full_entries__type___id__dbxrefs_json_get",
+        "operationId": "getEntryDbxrefs",
         "parameters": [
           {
             "name": "type",
@@ -4823,8 +4806,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4833,8 +4816,18 @@
               }
             }
           },
-          "500": {
-            "description": "Internal Server Error.",
+          "404": {
+            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4853,7 +4846,7 @@
         ],
         "summary": "Get entry detail (frontend-oriented)",
         "description": "Retrieve a single entry with dbXrefs truncated by ``dbXrefsLimit`` and ``dbXrefsCount`` added.  Use this endpoint for frontend display.  For the raw ES document, use the ``.json`` variant.\n\nThe response type varies by database type: BioProjectDetailResponse, BioSampleDetailResponse, SraDetailResponse, or JgaDetailResponse.",
-        "operationId": "get_entry_detail_entries__type___id__get",
+        "operationId": "getEntryDetail",
         "parameters": [
           {
             "name": "type",
@@ -4909,7 +4902,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
+                  "title": "Response Getentrydetail",
+                  "oneOf": [
                     {
                       "$ref": "#/components/schemas/BioProjectDetailResponse"
                     },
@@ -4923,13 +4917,39 @@
                       "$ref": "#/components/schemas/JgaDetailResponse"
                     }
                   ],
-                  "title": "Response Get Entry Detail Entries  Type   Id  Get"
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "bioproject": "#/components/schemas/BioProjectDetailResponse",
+                      "biosample": "#/components/schemas/BioSampleDetailResponse",
+                      "sra-submission": "#/components/schemas/SraDetailResponse",
+                      "sra-study": "#/components/schemas/SraDetailResponse",
+                      "sra-experiment": "#/components/schemas/SraDetailResponse",
+                      "sra-run": "#/components/schemas/SraDetailResponse",
+                      "sra-sample": "#/components/schemas/SraDetailResponse",
+                      "sra-analysis": "#/components/schemas/SraDetailResponse",
+                      "jga-study": "#/components/schemas/JgaDetailResponse",
+                      "jga-dataset": "#/components/schemas/JgaDetailResponse",
+                      "jga-dac": "#/components/schemas/JgaDetailResponse",
+                      "jga-policy": "#/components/schemas/JgaDetailResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
           },
           "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4940,16 +4960,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4968,7 +4978,7 @@
         ],
         "summary": "Cross-type facet aggregation",
         "description": "Get facet counts across all database types.\n\nReturns aggregated counts for organism, accessibility, and type.\nSearch filter parameters narrow the set of entries that facets are\ncomputed over.",
-        "operationId": "_get_facets_facets_get",
+        "operationId": "getFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -4995,7 +5005,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -5024,16 +5035,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -5118,16 +5130,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy)(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|jga-study|jga-dataset|jga-dac|jga-policy))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by database types (comma-separated).",
+              "description": "Filter by database types (comma-separated). Allowed: any of DbType.",
               "title": "Types"
             },
-            "description": "Filter by database types (comma-separated)."
+            "description": "Filter by database types (comma-separated). Allowed: any of DbType."
           }
         ],
         "responses": {
@@ -5141,8 +5154,8 @@
               }
             }
           },
-          "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5151,8 +5164,8 @@
               }
             }
           },
-          "500": {
-            "description": "Internal Server Error.",
+          "422": {
+            "description": "Unprocessable Entity (parameter validation error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5171,7 +5184,7 @@
         ],
         "summary": "Facet aggregation for bioproject",
         "description": "Get facet counts for bioproject entries.\n\nIncludes the bioproject-specific ``objectType`` facet and supports additional BioProject filter parameters.",
-        "operationId": "get_bioproject_facets_facets_bioproject_get",
+        "operationId": "getBioProjectFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -5198,7 +5211,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -5227,16 +5241,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -5375,7 +5390,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
                 },
                 {
                   "type": "null"
@@ -5398,8 +5414,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5410,16 +5426,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5438,7 +5444,7 @@
         ],
         "summary": "Facet aggregation for biosample",
         "description": "Get facet counts for biosample entries.",
-        "operationId": "get_biosample_facets_facets_biosample_get",
+        "operationId": "getBioSampleFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -5465,7 +5471,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -5494,16 +5501,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -5593,8 +5601,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5605,16 +5613,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5633,7 +5631,7 @@
         ],
         "summary": "Facet aggregation for sra-submission",
         "description": "Get facet counts for sra-submission entries.",
-        "operationId": "get_sra_submission_facets_facets_sra_submission_get",
+        "operationId": "getSraSubmissionFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -5660,7 +5658,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -5689,16 +5688,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -5788,8 +5788,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5800,16 +5800,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5828,7 +5818,7 @@
         ],
         "summary": "Facet aggregation for sra-study",
         "description": "Get facet counts for sra-study entries.",
-        "operationId": "get_sra_study_facets_facets_sra_study_get",
+        "operationId": "getSraStudyFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -5855,7 +5845,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -5884,16 +5875,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -5983,8 +5975,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5995,16 +5987,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6023,7 +6005,7 @@
         ],
         "summary": "Facet aggregation for sra-experiment",
         "description": "Get facet counts for sra-experiment entries.",
-        "operationId": "get_sra_experiment_facets_facets_sra_experiment_get",
+        "operationId": "getSraExperimentFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -6050,7 +6032,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -6079,16 +6062,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -6178,8 +6162,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6190,16 +6174,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6218,7 +6192,7 @@
         ],
         "summary": "Facet aggregation for sra-run",
         "description": "Get facet counts for sra-run entries.",
-        "operationId": "get_sra_run_facets_facets_sra_run_get",
+        "operationId": "getSraRunFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -6245,7 +6219,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -6274,16 +6249,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -6373,8 +6349,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6385,16 +6361,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6413,7 +6379,7 @@
         ],
         "summary": "Facet aggregation for sra-sample",
         "description": "Get facet counts for sra-sample entries.",
-        "operationId": "get_sra_sample_facets_facets_sra_sample_get",
+        "operationId": "getSraSampleFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -6440,7 +6406,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -6469,16 +6436,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -6568,8 +6536,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6580,16 +6548,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6608,7 +6566,7 @@
         ],
         "summary": "Facet aggregation for sra-analysis",
         "description": "Get facet counts for sra-analysis entries.",
-        "operationId": "get_sra_analysis_facets_facets_sra_analysis_get",
+        "operationId": "getSraAnalysisFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -6635,7 +6593,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -6664,16 +6623,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -6763,8 +6723,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6775,16 +6735,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6803,7 +6753,7 @@
         ],
         "summary": "Facet aggregation for jga-study",
         "description": "Get facet counts for jga-study entries.",
-        "operationId": "get_jga_study_facets_facets_jga_study_get",
+        "operationId": "getJgaStudyFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -6830,7 +6780,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -6859,16 +6810,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -6958,8 +6910,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6970,16 +6922,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6998,7 +6940,7 @@
         ],
         "summary": "Facet aggregation for jga-dataset",
         "description": "Get facet counts for jga-dataset entries.",
-        "operationId": "get_jga_dataset_facets_facets_jga_dataset_get",
+        "operationId": "getJgaDatasetFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -7025,7 +6967,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -7054,16 +6997,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -7153,8 +7097,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7165,16 +7109,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7193,7 +7127,7 @@
         ],
         "summary": "Facet aggregation for jga-dac",
         "description": "Get facet counts for jga-dac entries.",
-        "operationId": "get_jga_dac_facets_facets_jga_dac_get",
+        "operationId": "getJgaDacFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -7220,7 +7154,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -7249,16 +7184,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -7348,8 +7284,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7360,16 +7296,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7388,7 +7314,7 @@
         ],
         "summary": "Facet aggregation for jga-policy",
         "description": "Get facet counts for jga-policy entries.",
-        "operationId": "get_jga_policy_facets_facets_jga_policy_get",
+        "operationId": "getJgaPolicyFacets",
         "parameters": [
           {
             "name": "keywords",
@@ -7415,7 +7341,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
                 },
                 {
                   "type": "null"
@@ -7444,16 +7371,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "pattern": "^\\d+$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "NCBI Taxonomy ID (e.g. '9606').",
+              "description": "NCBI Taxonomy ID, digits only (e.g. '9606').",
               "title": "Organism"
             },
-            "description": "NCBI Taxonomy ID (e.g. '9606')."
+            "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
             "name": "datePublishedFrom",
@@ -7543,8 +7471,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7555,16 +7483,6 @@
           },
           "422": {
             "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7583,7 +7501,7 @@
         ],
         "summary": "List available accession types",
         "description": "Return all available AccessionType values (static, no DB required).",
-        "operationId": "list_types_dblink__get",
+        "operationId": "listDbLinkTypes",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7591,26 +7509,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DbLinksTypesResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -7635,7 +7533,7 @@
         ],
         "summary": "Get linked accessions",
         "description": "Look up related accessions for the given type/id pair (streaming).",
-        "operationId": "get_links_dblink__type___id__get",
+        "operationId": "getDbLinks",
         "parameters": [
           {
             "name": "type",
@@ -7688,8 +7586,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7699,17 +7597,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
+            "description": "Unprocessable Entity (invalid {type} or target).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7728,7 +7616,7 @@
         ],
         "summary": "Bulk count linked accessions",
         "description": "Return per-type counts for multiple accessions in one request.",
-        "operationId": "bulk_counts_dblink_counts_post",
+        "operationId": "bulkDbLinkCounts",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7750,8 +7638,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found (entry does not exist or invalid type).",
+          "500": {
+            "description": "Internal Server Error.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7761,17 +7649,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
+            "description": "Unprocessable Entity (empty / oversized items, invalid type).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7790,7 +7668,7 @@
         ],
         "summary": "DB Portal unified search (cross-db count / db-specific hits / advanced DSL)",
         "description": "Unified db-portal search: dispatch by (q/adv) x (db).",
-        "operationId": "_search_db_portal_db_portal_search_get",
+        "operationId": "searchDbPortal",
         "parameters": [
           {
             "name": "q",
@@ -7866,6 +7744,11 @@
             "schema": {
               "type": "integer",
               "description": "Items per page.  Allowed: 20, 50, 100.",
+              "enum": [
+                20,
+                50,
+                100
+              ],
               "default": 20,
               "title": "Perpage"
             },
@@ -7896,6 +7779,10 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "datePublished:asc",
+                    "datePublished:desc"
+                  ],
                   "type": "string"
                 },
                 {
@@ -7922,7 +7809,17 @@
                       "$ref": "#/components/schemas/DbPortalHitsResponse"
                     }
                   ],
-                  "title": "Response  Search Db Portal Db Portal Search Get"
+                  "title": "Response Searchdbportal"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -7938,17 +7835,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
+            "description": "Unprocessable Entity (parameter validation error, e.g. invalid db / sort / perPage).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7977,7 +7864,7 @@
         ],
         "summary": "Parse Advanced Search DSL into the SSOT query-tree JSON for GUI state restoration.",
         "description": "Parse ``adv`` DSL and return the SSOT query-tree JSON for GUI restoration.",
-        "operationId": "_parse_db_portal_db_portal_parse_get",
+        "operationId": "parseDbPortal",
         "parameters": [
           {
             "name": "adv",
@@ -8020,6 +7907,16 @@
               }
             }
           },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Bad Request (DSL parse/validate error).",
             "content": {
@@ -8031,17 +7928,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity (parameter validation error).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error.",
+            "description": "Unprocessable Entity (missing adv, invalid db value).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8060,7 +7947,7 @@
         ],
         "summary": "Get service information",
         "description": "Returns service metadata including name, version, and Elasticsearch connectivity status.",
-        "operationId": "get_service_info_service_info_get",
+        "operationId": "getServiceInfo",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9403,8 +9290,9 @@
             },
             "type": "array",
             "maxItems": 1000,
+            "minItems": 1,
             "title": "Ids",
-            "description": "List of entry identifiers to retrieve (max 1000)."
+            "description": "List of entry identifiers to retrieve (1-1000)."
           }
         },
         "type": "object",
@@ -9568,7 +9456,25 @@
           "dbXrefs"
         ],
         "title": "DbLinksResponse",
-        "description": "Response for GET /dblink/{type}/{id}."
+        "description": "Response for GET /dblink/{type}/{id}.",
+        "examples": [
+          {
+            "dbXrefs": [
+              {
+                "identifier": "JGAS000101",
+                "type": "jga-study",
+                "url": "https://ddbj.nig.ac.jp/search/entry/jga-study/JGAS000101"
+              },
+              {
+                "identifier": "JGAS000381",
+                "type": "jga-study",
+                "url": "https://ddbj.nig.ac.jp/search/entry/jga-study/JGAS000381"
+              }
+            ],
+            "identifier": "hum0014",
+            "type": "humandbs"
+          }
+        ]
       },
       "DbLinksTypesResponse": {
         "properties": {
@@ -13214,17 +13120,35 @@
           "hasNext": {
             "type": "boolean",
             "title": "Hasnext",
-            "description": "Whether more pages are available.",
-            "default": false
+            "description": "Whether more pages are available."
           }
         },
         "type": "object",
         "required": [
+          "page",
           "perPage",
-          "total"
+          "total",
+          "nextCursor",
+          "hasNext"
         ],
         "title": "Pagination",
-        "description": "Pagination metadata (supports both offset and cursor modes)."
+        "description": "Pagination metadata (supports both offset and cursor modes).",
+        "examples": [
+          {
+            "page": 1,
+            "perPage": 10,
+            "total": 150000,
+            "nextCursor": "eyJwaXRfaWQiOm51bGwsInNlYXJjaF9hZnRlciI6Wy4uLl19",
+            "hasNext": true
+          },
+          {
+            "page": null,
+            "perPage": 10,
+            "total": 150000,
+            "nextCursor": null,
+            "hasNext": false
+          }
+        ]
       },
       "ProblemDetails": {
         "properties": {
@@ -13293,7 +13217,18 @@
           "detail"
         ],
         "title": "ProblemDetails",
-        "description": "RFC 7807 Problem Details error response."
+        "description": "RFC 7807 Problem Details error response.",
+        "examples": [
+          {
+            "detail": "The requested bioproject 'PRJDB_INVALID' was not found.",
+            "instance": "/entries/bioproject/PRJDB_INVALID",
+            "requestId": "req-abc123",
+            "status": 404,
+            "timestamp": "2024-01-15T10:30:00Z",
+            "title": "Not Found",
+            "type": "about:blank"
+          }
+        ]
       },
       "Publication": {
         "properties": {
@@ -13732,7 +13667,15 @@
           "elasticsearch"
         ],
         "title": "ServiceInfoResponse",
-        "description": "Response for GET /service-info."
+        "description": "Response for GET /service-info.",
+        "examples": [
+          {
+            "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries.",
+            "elasticsearch": "ok",
+            "name": "DDBJ Search API",
+            "version": "0.2.1"
+          }
+        ]
       },
       "SraDetailResponse": {
         "properties": {
@@ -14382,9 +14325,40 @@
       }
     }
   },
+  "tags": [
+    {
+      "name": "Entries",
+      "description": "List / search entries (cross-type and per-database-type)."
+    },
+    {
+      "name": "Entry Detail",
+      "description": "Single-entry retrieval (frontend-oriented detail, raw ES document, JSON-LD, and the umbrella tree for BioProject)."
+    },
+    {
+      "name": "Bulk",
+      "description": "Multi-entry retrieval (JSON array or NDJSON streaming)."
+    },
+    {
+      "name": "Facets",
+      "description": "Facet aggregation (cross-type and per-database-type)."
+    },
+    {
+      "name": "dblink",
+      "description": "DBLinks API: cross-reference lookup via DuckDB."
+    },
+    {
+      "name": "db-portal",
+      "description": "DB Portal frontend API: unified search across ES (6 DBs) and Solr (ARSA / TXSearch), plus the Advanced Search DSL parser."
+    },
+    {
+      "name": "Service Info",
+      "description": "Service metadata + Elasticsearch health probe."
+    }
+  ],
   "servers": [
     {
-      "url": "/search/api"
+      "url": "/search/api",
+      "description": "Current deployment"
     }
   ]
 }

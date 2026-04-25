@@ -14,6 +14,20 @@ from fastapi import HTTPException, Query
 
 from ddbj_search_api.schemas.common import DbType
 
+# Patterns expressed in OpenAPI for client codegen / docs.  Server-side
+# semantic validation is still performed below (e.g. unknown-type lookup
+# in TypesFilterQuery) so that legacy detail messages are preserved.
+_KEYWORD_FIELDS_PATTERN = r"^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+_DB_TYPES_PATTERN = (
+    r"^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|"
+    r"jga-study|jga-dataset|jga-dac|jga-policy)"
+    r"(,(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|"
+    r"jga-study|jga-dataset|jga-dac|jga-policy))*$"
+)
+_SORT_PATTERN = r"^(datePublished|dateModified):(asc|desc)$"
+_UMBRELLA_PATTERN = r"^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
+_ORGANISM_PATTERN = r"^\d+$"
+
 # === Enums for query parameters ===
 
 
@@ -100,6 +114,7 @@ class SearchFilterQuery:
         keyword_fields: str | None = Query(
             default=None,
             alias="keywordFields",
+            pattern=_KEYWORD_FIELDS_PATTERN,
             description=(
                 "Limit keyword search to specific fields "
                 "(comma-separated). "
@@ -113,7 +128,8 @@ class SearchFilterQuery:
         ),
         organism: str | None = Query(
             default=None,
-            description="NCBI Taxonomy ID (e.g. '9606').",
+            pattern=_ORGANISM_PATTERN,
+            description="NCBI Taxonomy ID, digits only (e.g. '9606').",
         ),
         date_published_from: str | None = Query(
             default=None,
@@ -165,6 +181,7 @@ class ResponseControlQuery:
         self,
         sort: str | None = Query(
             default=None,
+            pattern=_SORT_PATTERN,
             description=(
                 "Sort order as '{field}:{direction}'. "
                 "Fields: datePublished, dateModified. "
@@ -210,7 +227,8 @@ class TypesFilterQuery:
         self,
         types: str | None = Query(
             default=None,
-            description="Filter by database types (comma-separated).",
+            pattern=_DB_TYPES_PATTERN,
+            description="Filter by database types (comma-separated). Allowed: any of DbType.",
         ),
     ):
         if types is not None:
@@ -281,6 +299,7 @@ class BioProjectExtraQuery:
         ),
         umbrella: str | None = Query(
             default=None,
+            pattern=_UMBRELLA_PATTERN,
             description=("Filter by umbrella status: TRUE or FALSE (case-insensitive)."),
         ),
     ):

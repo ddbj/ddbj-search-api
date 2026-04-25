@@ -25,24 +25,43 @@ class DbType(str, Enum):
     jga_policy = "jga-policy"
 
 
+# CamelCase form per DbType, used to build stable operationIds
+# (e.g. ``listBioProjectEntries``) so generated SDKs get readable names.
+DB_TYPE_DISPLAY: dict[DbType, str] = {
+    DbType.bioproject: "BioProject",
+    DbType.biosample: "BioSample",
+    DbType.sra_submission: "SraSubmission",
+    DbType.sra_study: "SraStudy",
+    DbType.sra_experiment: "SraExperiment",
+    DbType.sra_run: "SraRun",
+    DbType.sra_sample: "SraSample",
+    DbType.sra_analysis: "SraAnalysis",
+    DbType.jga_study: "JgaStudy",
+    DbType.jga_dataset: "JgaDataset",
+    DbType.jga_dac: "JgaDac",
+    DbType.jga_policy: "JgaPolicy",
+}
+
+
 class Pagination(BaseModel):
     """Pagination metadata (supports both offset and cursor modes)."""
 
+    # Examples are attached to the schema in ``main.custom_openapi`` because
+    # Pydantic strips ``None`` values from ``json_schema_extra`` examples,
+    # which would make a cursor-mode example (``"page": null`` / ``"nextCursor": null``)
+    # invalid against the now-required + nullable schema fields.
     model_config = ConfigDict(populate_by_name=True)
 
     page: int | None = Field(
-        default=None,
         description="Current page number (1-based). Null in cursor mode.",
     )
     per_page: int = Field(alias="perPage", description="Items per page.")
     total: int = Field(description="Total number of matching items.")
     next_cursor: str | None = Field(
-        default=None,
         alias="nextCursor",
         description="Cursor token for the next page. Null on the last page.",
     )
     has_next: bool = Field(
-        default=False,
         alias="hasNext",
         description="Whether more pages are available.",
     )
@@ -150,6 +169,23 @@ class EntryListItem(BaseModel):
 
 class ProblemDetails(BaseModel):
     """RFC 7807 Problem Details error response."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "type": "about:blank",
+                    "title": "Not Found",
+                    "status": 404,
+                    "detail": "The requested bioproject 'PRJDB_INVALID' was not found.",
+                    "instance": "/entries/bioproject/PRJDB_INVALID",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "requestId": "req-abc123",
+                },
+            ],
+        },
+    )
 
     type: str = Field(
         default="about:blank",

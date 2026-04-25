@@ -8,7 +8,7 @@ from typing import get_args
 from ddbj_search_converter.dblink.db import AccessionType as _AccessionTypeLiteral
 from ddbj_search_converter.schema import Xref
 from fastapi import HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 AccessionType = Enum(  # type: ignore[misc]
     "AccessionType",
@@ -22,6 +22,29 @@ _VALID_ACCESSION_TYPES: frozenset[str] = frozenset(e.value for e in AccessionTyp
 
 class DbLinksResponse(BaseModel):
     """Response for GET /dblink/{type}/{id}."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "identifier": "hum0014",
+                    "type": "humandbs",
+                    "dbXrefs": [
+                        {
+                            "identifier": "JGAS000101",
+                            "type": "jga-study",
+                            "url": "https://ddbj.nig.ac.jp/search/entry/jga-study/JGAS000101",
+                        },
+                        {
+                            "identifier": "JGAS000381",
+                            "type": "jga-study",
+                            "url": "https://ddbj.nig.ac.jp/search/entry/jga-study/JGAS000381",
+                        },
+                    ],
+                },
+            ],
+        },
+    )
 
     identifier: str = Field(description="Source accession identifier.")
     type: AccessionType = Field(description="Source accession type.")

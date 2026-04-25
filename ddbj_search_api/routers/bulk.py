@@ -25,7 +25,7 @@ from ddbj_search_api.dblink.client import iter_linked_ids
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_get_source_stream, es_mget_source
 from ddbj_search_api.schemas.bulk import BulkRequest, BulkResponse
-from ddbj_search_api.schemas.common import DbType
+from ddbj_search_api.schemas.common import DbType, ProblemDetails
 from ddbj_search_api.schemas.queries import BulkFormat, BulkQuery
 from ddbj_search_api.utils import format_xref
 
@@ -196,6 +196,7 @@ async def _generate_bulk_ndjson(
         "(Content-Type: application/x-ndjson).  IDs not found are not "
         "included in the NDJSON output."
     ),
+    operation_id="bulkEntries",
     responses={
         200: {
             "content": {
@@ -206,6 +207,14 @@ async def _generate_bulk_ndjson(
                     },
                 },
             },
+        },
+        404: {
+            "description": "Not Found (invalid {type}).",
+            "model": ProblemDetails,
+        },
+        422: {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "model": ProblemDetails,
         },
     },
 )

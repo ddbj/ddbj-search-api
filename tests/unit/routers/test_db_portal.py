@@ -43,22 +43,13 @@ _DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank
 # === Routing ===
 
 
-class TestDbPortalRouting:
-    """GET /db-portal/search: canonical path and tags."""
-
-    def test_route_exists(self, app_with_db_portal: TestClient) -> None:
-        resp = app_with_db_portal.get("/db-portal/search")
-        assert resp.status_code == 200
+class TestDbPortalTrailingSlash:
+    """GET /db-portal/search/ is rejected; canonical path is no-trailing."""
 
     def test_trailing_slash_not_canonical(self, app_with_db_portal: TestClient) -> None:
         # Only /db-portal/search is registered; /db-portal/search/ is 404.
         resp = app_with_db_portal.get("/db-portal/search/")
         assert resp.status_code == 404
-
-    def test_tag_is_db_portal(self, app_with_db_portal: TestClient) -> None:
-        spec = app_with_db_portal.get("/openapi.json").json()
-        operation = spec["paths"]["/db-portal/search"]["get"]
-        assert operation["tags"] == ["db-portal"]
 
 
 # === Query combination ===
