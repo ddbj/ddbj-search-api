@@ -93,11 +93,7 @@ class TestSearchSortAllowlist:
             },
         )
         assert resp.status_code == 200
-        dates = [
-            hit.get("datePublished")
-            for hit in resp.json()["hits"]
-            if hit.get("datePublished")
-        ]
+        dates = [hit.get("datePublished") for hit in resp.json()["hits"] if hit.get("datePublished")]
         for left, right in itertools.pairwise(dates):
             assert left >= right, f"sort broken: {left} < {right}"
 
@@ -118,17 +114,17 @@ class TestHardLimitReachedFlag:
     """IT-DBPORTAL-17: ``hardLimitReached`` flips at the 10000-hit boundary."""
 
     def test_large_total_sets_flag_true(self, app: TestClient) -> None:
-        """IT-DBPORTAL-17: ``q=*`` (~all docs) yields hardLimitReached=true."""
+        """IT-DBPORTAL-17: a broad keyword (``cancer``) breaches 10000 hits."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "*", "perPage": 20},
+            params={"db": "bioproject", "q": "cancer", "perPage": 20},
         )
         assert resp.status_code == 200
         body = resp.json()
-        if body["total"] >= 10000:
-            assert body["hardLimitReached"] is True
-        else:
-            pytest.skip(f"total={body['total']} < 10000; cannot probe true branch")
+        # ``cancer`` covers tens of thousands of bioproject docs; the flag
+        # must be true once total >= 10000 (api-spec.md / spec L201).
+        assert body["total"] >= 10000
+        assert body["hardLimitReached"] is True
 
     def test_small_total_sets_flag_false(self, app: TestClient) -> None:
         """IT-DBPORTAL-17: a narrow query stays below 10000."""
@@ -154,13 +150,13 @@ class TestSearchEsCursor:
         """IT-DBPORTAL-18: page 1 ``nextCursor`` drives a disjoint page 2."""
         first = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "*", "perPage": 20},
+            params={"db": "bioproject", "q": "cancer", "perPage": 20},
         )
         assert first.status_code == 200
         first_body = first.json()
-        cursor = first_body.get("nextCursor")
-        if not cursor:
-            pytest.skip("nextCursor missing; dataset may be smaller than perPage")
+        cursor = first_body["nextCursor"]
+        # Broad keyword guarantees > 1 page so a cursor is always issued.
+        assert cursor
 
         second = app.get(
             "/db-portal/search",
@@ -177,21 +173,19 @@ class TestSearchEsCursor:
 
     def test_cursor_with_search_condition_returns_400(self, app: TestClient) -> None:
         """IT-DBPORTAL-18: cursor + q on the same request is mutually exclusive."""
-        # Generate a cursor first.
         first = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "*", "perPage": 20},
+            params={"db": "bioproject", "q": "cancer", "perPage": 20},
         ).json()
-        cursor = first.get("nextCursor")
-        if not cursor:
-            pytest.skip("nextCursor missing; dataset may be smaller than perPage")
+        cursor = first["nextCursor"]
+        assert cursor
 
         resp = app.get(
             "/db-portal/search",
             params={
                 "db": "bioproject",
                 "cursor": cursor,
-                "q": "cancer",
+                "q": "brain",
                 "perPage": 20,
             },
         )
