@@ -355,5 +355,3 @@ class TestIncludeDbXrefs:
         body = resp.json()
         assert "dbXrefs" not in body
         assert "dbXrefsCount" not in body
-
-

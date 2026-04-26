@@ -33,5 +33,6 @@ class UmbrellaTreeResponse(BaseModel):
         examples=[["PRJDB0001"]],
     )
     edges: list[UmbrellaTreeEdge] = Field(
+        examples=[[{"parent": "PRJDB0001", "child": "PRJDB1234"}]],
         description="Unique (parent, child) pairs covering the reachable subgraph.",
     )

@@ -12,6 +12,7 @@ from typing import Any
 
 import pydantic
 import pytest
+from ddbj_search_converter.schema import Organism, Organization, Publication
 
 from ddbj_search_api.schemas.db_portal import (
     DbPortalHitBase,
@@ -23,9 +24,6 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalHitSra,
     DbPortalHitTaxonomy,
     DbPortalHitTrad,
-    OrganismOut,
-    OrganizationOut,
-    PublicationOut,
     _DbPortalHitAdapter,
 )
 
@@ -96,7 +94,7 @@ class TestBioProjectVariant:
         assert h.organization[0].role == "submitter"
         assert h.publication is not None
         assert h.publication[0].id_ == "12345678"
-        assert h.publication[0].db_type == "pubmed"
+        assert h.publication[0].dbType == "pubmed"
         assert h.grant is not None
         assert h.grant[0].agency[0].name == "JSPS"
 
@@ -126,7 +124,7 @@ class TestBioSampleVariant:
         assert isinstance(h, DbPortalHitBioSample)
         assert h.package is not None
         assert h.package.name == "MIGS.ba"
-        assert h.package.display_name == "MIGS Bacteria"
+        assert h.package.displayName == "MIGS Bacteria"
         assert h.model == ["model-a", "model-b"]
 
 
@@ -279,7 +277,7 @@ class TestAliasRoundTrip:
                 "dateCreated": "2024-01-01",
                 "organization": [{"name": "DDBJ", "organizationType": "institute"}],
                 "publication": [{"id": "12345", "dbType": "pubmed"}],
-                "grant": [{"id": "G1", "agency": []}],
+                "grant": [{"id": "G1", "title": None, "agency": []}],
                 "externalLink": [{"url": "https://example.com/", "label": "Home"}],
             },
         )
@@ -333,19 +331,19 @@ class TestExtraIgnore:
 
 
 class TestHelperDTOs:
-    def test_organism_out(self) -> None:
-        o = OrganismOut(name="Homo sapiens", identifier="9606")
+    def test_organism(self) -> None:
+        o = Organism(name="Homo sapiens", identifier="9606")
         assert o.name == "Homo sapiens"
         assert o.identifier == "9606"
 
-    def test_organization_out_literal_role(self) -> None:
+    def test_organization_literal_role(self) -> None:
         with pytest.raises(pydantic.ValidationError):
-            OrganizationOut(role="unknown-role")  # type: ignore[arg-type]
+            Organization(role="unknown-role")  # type: ignore[arg-type]
 
-    def test_publication_out_alias_id(self) -> None:
-        p = PublicationOut.model_validate({"id": "12345", "dbType": "pubmed"})
+    def test_publication_alias_id(self) -> None:
+        p = Publication.model_validate({"id": "12345", "dbType": "pubmed"})
         assert p.id_ == "12345"
-        assert p.db_type == "pubmed"
+        assert p.dbType == "pubmed"
         dumped = p.model_dump(by_alias=True, exclude_none=True)
         assert dumped["id"] == "12345"
         assert dumped["dbType"] == "pubmed"

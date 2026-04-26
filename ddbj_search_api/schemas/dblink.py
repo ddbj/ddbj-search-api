@@ -46,15 +46,29 @@ class DbLinksResponse(BaseModel):
         },
     )
 
-    identifier: str = Field(description="Source accession identifier.")
-    type: AccessionType = Field(description="Source accession type.")
-    dbXrefs: list[Xref] = Field(description="Related entries (sorted by type, then identifier).")
+    identifier: str = Field(examples=["hum0014"], description="Source accession identifier.")
+    type: AccessionType = Field(examples=["humandbs"], description="Source accession type.")
+    dbXrefs: list[Xref] = Field(
+        examples=[
+            [
+                {
+                    "identifier": "JGAS000101",
+                    "type": "jga-study",
+                    "url": "https://ddbj.nig.ac.jp/search/entry/jga-study/JGAS000101",
+                },
+            ],
+        ],
+        description="Related entries (sorted by type, then identifier).",
+    )
 
 
 class DbLinksTypesResponse(BaseModel):
     """Response for GET /dblink/."""
 
-    types: list[AccessionType] = Field(description="Available accession types.")
+    types: list[AccessionType] = Field(
+        examples=[["biosample", "bioproject", "sra-experiment"]],
+        description="Available accession types.",
+    )
 
 
 class DbLinksQuery:
@@ -64,6 +78,7 @@ class DbLinksQuery:
         self,
         target: str | None = Query(
             default=None,
+            examples=["biosample,sra-experiment"],
             description="Filter by target accession type(s), comma-separated.",
         ),
     ) -> None:
@@ -86,14 +101,15 @@ class DbLinksQuery:
 class DbLinksCountsRequestItem(BaseModel):
     """A single item in the bulk counts request."""
 
-    type: AccessionType = Field(description="Accession type.")
-    id: str = Field(description="Accession identifier.")
+    type: AccessionType = Field(examples=["biosample"], description="Accession type.")
+    id: str = Field(examples=["SAMD00012345"], description="Accession identifier.")
 
 
 class DbLinksCountsRequest(BaseModel):
     """Request body for POST /dblink/counts."""
 
     items: list[DbLinksCountsRequestItem] = Field(
+        examples=[[{"type": "biosample", "id": "SAMD00012345"}]],
         description="Accessions to count linked entries for.",
         min_length=1,
         max_length=100,
@@ -103,12 +119,26 @@ class DbLinksCountsRequest(BaseModel):
 class DbLinksCountsResponseItem(BaseModel):
     """A single item in the bulk counts response."""
 
-    identifier: str = Field(description="Accession identifier.")
-    type: AccessionType = Field(description="Accession type.")
-    counts: dict[str, int] = Field(description="Per-type linked accession counts.")
+    identifier: str = Field(examples=["SAMD00012345"], description="Accession identifier.")
+    type: AccessionType = Field(examples=["biosample"], description="Accession type.")
+    counts: dict[str, int] = Field(
+        examples=[{"sra-experiment": 3, "bioproject": 1}],
+        description="Per-type linked accession counts.",
+    )
 
 
 class DbLinksCountsResponse(BaseModel):
     """Response for POST /dblink/counts."""
 
-    items: list[DbLinksCountsResponseItem] = Field(description="Counts per requested accession.")
+    items: list[DbLinksCountsResponseItem] = Field(
+        examples=[
+            [
+                {
+                    "identifier": "SAMD00012345",
+                    "type": "biosample",
+                    "counts": {"sra-experiment": 3, "bioproject": 1},
+                },
+            ],
+        ],
+        description="Counts per requested accession.",
+    )

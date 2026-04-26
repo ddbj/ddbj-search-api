@@ -6,9 +6,10 @@ and ``GET /db-portal/parse``.
 - ``DbPortalHit`` は ``type`` discriminator を持つ Pydantic v2 discriminated union
   の 8 variant に分割して明示型化。``extra="ignore"`` で converter 側の将来新 field は
   silently drop する。
-- helper DTO (`OrganismOut` / `OrganizationOut` / `PublicationOut` / `GrantOut` /
-  `XrefOut` / `ExternalLinkOut` / `BioSamplePackageOut`) は converter 側 model を
-  import せずに API 側で再定義 (Pin drift 回避)。
+- ネスト DTO (``Organism`` / ``Organization`` / ``Publication`` / ``Grant`` /
+  ``Xref`` / ``ExternalLink`` / ``BioSamplePackage``) は converter 側 ``schema.py``
+  を直接 import して entry-detail 系応答と型を共有する。converter 側の Pydantic v2
+  default ``extra="ignore"`` が Pin drift を吸収する。
 - ``_DbPortalHitAdapter`` は discriminated union の TypeAdapter。ES ``_source`` /
   Solr doc の dict → 正しい variant への dispatch を担う。
 """
@@ -18,6 +19,15 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, Any, Literal, TypeAlias
 
+from ddbj_search_converter.schema import (
+    BioSamplePackage,
+    ExternalLink,
+    Grant,
+    Organism,
+    Organization,
+    Publication,
+    Xref,
+)
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -109,8 +119,8 @@ class DbPortalCrossSearchQuery:
 
     def __init__(
         self,
-        q: str | None = Query(default=None, description=_Q_DESC),
-        adv: str | None = Query(default=None, description=_ADV_DESC),
+        q: str | None = Query(default=None, examples=["cancer"], description=_Q_DESC),
+        adv: str | None = Query(default=None, examples=["title:cancer"], description=_ADV_DESC),
         top_hits: int = Query(
             default=10,
             alias="topHits",
@@ -144,10 +154,11 @@ class DbPortalSearchQuery:
 
     def __init__(
         self,
-        q: str | None = Query(default=None, description=_Q_DESC),
-        adv: str | None = Query(default=None, description=_ADV_DESC),
+        q: str | None = Query(default=None, examples=["cancer"], description=_Q_DESC),
+        adv: str | None = Query(default=None, examples=["title:cancer"], description=_ADV_DESC),
         db: DbPortalDb | None = Query(
             default=None,
+            examples=["bioproject"],
             description=(
                 "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, "
                 "``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  "
@@ -169,10 +180,12 @@ class DbPortalSearchQuery:
         ),
         cursor: str | None = Query(
             default=None,
+            examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
             description="Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min).",
         ),
         sort: Literal["datePublished:asc", "datePublished:desc"] | None = Query(
             default=None,
+            examples=["datePublished:desc"],
             description=(
                 "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``."
             ),
@@ -214,13 +227,15 @@ class DbPortalCount(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db: DbPortalDb = Field(description="Database identifier.")
-    count: int | None = Field(description="Hit count (null when error is set).")
+    db: DbPortalDb = Field(examples=["bioproject"], description="Database identifier.")
+    count: int | None = Field(examples=[1234], description="Hit count (null when error is set).")
     error: DbPortalCountError | None = Field(
+        examples=[None],
         description="Failure reason (null on success).",
     )
     hits: list[DbPortalLightweightHit] | None = Field(
         default=None,
+        examples=[[{"identifier": "PRJDB1234", "type": "bioproject", "title": "Example BioProject"}]],
         description=(
             "Lightweight top hits for this DB (up to topHits items, "
             "relevance order).  ``null`` when ``topHits=0``; ``[]`` "
@@ -238,6 +253,12 @@ class DbPortalCrossSearchResponse(BaseModel):
     """
 
     databases: list[DbPortalCount] = Field(
+        examples=[
+            [
+                {"db": "trad", "count": 100, "error": None, "hits": None},
+                {"db": "bioproject", "count": 50, "error": None, "hits": None},
+            ],
+        ],
         description=("Per-database count and (when topHits>=1) lightweight hits.  Fixed length 8, fixed order."),
     )
 
@@ -249,88 +270,6 @@ class DbPortalCrossSearchResponse(BaseModel):
 # Accessibility の値域: public-access / controlled-access
 HitStatus: TypeAlias = Literal["public", "private", "suppressed", "withdrawn"]
 HitAccessibility: TypeAlias = Literal["public-access", "controlled-access"]
-OrganizationRole: TypeAlias = Literal["owner", "participant", "submitter", "broker"]
-OrganizationKind: TypeAlias = Literal["institute", "center", "consortium", "lab"]
-PublicationDbType: TypeAlias = Literal["pubmed", "doi", "pmc", "other"]
-
-
-class OrganismOut(BaseModel):
-    """Organism information (common across all DB variants)."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    identifier: str | None = Field(default=None, description="NCBI Taxonomy ID.")
-    name: str | None = Field(default=None, description="Scientific / common organism name.")
-
-
-class OrganizationOut(BaseModel):
-    """Submitting organization (nested in BioProject / BioSample / SRA / JGA / GEA / MetaboBank)."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    name: str | None = None
-    abbreviation: str | None = None
-    role: OrganizationRole | None = None
-    organization_type: OrganizationKind | None = Field(default=None, alias="organizationType")
-    department: str | None = None
-    url: str | None = None
-
-
-class PublicationOut(BaseModel):
-    """Related publication (nested)."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    # converter: `id_: str | None = Field(alias="id")` — API 側も同じ alias パターン
-    id_: str | None = Field(default=None, alias="id", description="Publication ID (PubMed / DOI / PMC).")
-    title: str | None = None
-    date: str | None = None
-    reference: str | None = None
-    url: str | None = None
-    db_type: PublicationDbType | None = Field(default=None, alias="dbType")
-
-
-class GrantOut(BaseModel):
-    """Grant information (nested, agency is nested-of-nested)."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    id_: str | None = Field(default=None, alias="id")
-    title: str | None = None
-    agency: list[OrganizationOut] = Field(default_factory=list)
-
-
-class ExternalLinkOut(BaseModel):
-    """External link (BioProject / JGA)."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    url: str
-    label: str
-
-
-class XrefOut(BaseModel):
-    """Cross-reference entry (``dbXrefs`` / ``sameAs``).
-
-    The upstream cross-reference type is a closed enumeration, but this
-    response model accepts ``type`` as a plain string so adding a new
-    cross-reference type upstream does not break clients.
-    """
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    identifier: str
-    type: str
-    url: str
-
-
-class BioSamplePackageOut(BaseModel):
-    """BioSample package metadata."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    name: str
-    display_name: str | None = Field(default=None, alias="displayName")
 
 
 # === DbPortalHit discriminated union (8 variant) ===
@@ -345,44 +284,64 @@ class DbPortalHitBase(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    identifier: str = Field(description="Entry identifier.")
-    title: str | None = Field(default=None, description="Entry title.")
-    description: str | None = Field(default=None, description="Entry description.")
-    organism: OrganismOut | None = Field(default=None, description="Organism information.")
+    identifier: str = Field(examples=["PRJDB1234"], description="Entry identifier.")
+    title: str | None = Field(default=None, examples=["Sample BioProject title"], description="Entry title.")
+    description: str | None = Field(
+        default=None,
+        examples=["Whole-genome sequencing of sample organism."],
+        description="Entry description.",
+    )
+    organism: Organism | None = Field(
+        default=None,
+        examples=[{"identifier": "9606", "name": "Homo sapiens"}],
+        description="Organism information.",
+    )
     date_published: str | None = Field(
         default=None,
         alias="datePublished",
+        examples=["2024-01-15"],
         description="Publication date (ISO 8601).",
     )
     date_modified: str | None = Field(
         default=None,
         alias="dateModified",
+        examples=["2024-06-01"],
         description="Modification date (ISO 8601).",
     )
     date_created: str | None = Field(
         default=None,
         alias="dateCreated",
+        examples=["2024-01-01"],
         description="Creation date (ISO 8601).",
     )
-    url: str | None = Field(default=None, description="Canonical URL.")
-    same_as: list[XrefOut] | None = Field(
+    url: str | None = Field(
+        default=None,
+        examples=["https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1234"],
+        json_schema_extra={"format": "uri"},
+        description="Canonical URL.",
+    )
+    same_as: list[Xref] | None = Field(
         default=None,
         alias="sameAs",
+        examples=[[{"identifier": "PRJNA0001", "type": "bioproject", "url": "https://example.com/PRJNA0001"}]],
         description="Equivalent identifiers.",
     )
-    db_xrefs: list[XrefOut] | None = Field(
+    db_xrefs: list[Xref] | None = Field(
         default=None,
         alias="dbXrefs",
+        examples=[[{"identifier": "SAMD00012345", "type": "biosample", "url": "https://example.com/SAMD00012345"}]],
         description="Cross-references.",
     )
-    status: HitStatus | None = Field(default=None, description="INSDC status.")
+    status: HitStatus | None = Field(default=None, examples=["public"], description="INSDC status.")
     accessibility: HitAccessibility | None = Field(
         default=None,
+        examples=["public-access"],
         description="Accessibility level (public-access / controlled-access).",
     )
     is_part_of: str | None = Field(
         default=None,
         alias="isPartOf",
+        examples=["bioproject"],
         description=(
             "Parent collection identifier.  ES-backed hits carry the "
             'index-level value (e.g. ``"bioproject"`` / ``"sra"``); '
@@ -395,25 +354,45 @@ class DbPortalHitBase(BaseModel):
 class DbPortalHitBioProject(DbPortalHitBase):
     """BioProject hit."""
 
-    type: Literal["bioproject"] = Field(description="Hit type discriminator.")
+    type: Literal["bioproject"] = Field(examples=["bioproject"], description="Hit type discriminator.")
     project_type: Literal["BioProject", "UmbrellaBioProject"] | None = Field(
         default=None,
         alias="objectType",
+        examples=["BioProject"],
         description="Umbrella vs regular BioProject.",
     )
-    organization: list[OrganizationOut] | None = None
-    publication: list[PublicationOut] | None = None
-    grant: list[GrantOut] | None = None
-    external_link: list[ExternalLinkOut] | None = Field(default=None, alias="externalLink")
+    organization: list[Organization] | None = Field(
+        default=None,
+        examples=[[{"name": "DDBJ", "role": "submitter"}]],
+    )
+    publication: list[Publication] | None = Field(
+        default=None,
+        examples=[[{"id": "12345678", "title": "Sample paper", "dbType": "pubmed"}]],
+    )
+    grant: list[Grant] | None = Field(
+        default=None,
+        examples=[[{"id": "G1", "title": "Grant title", "agency": [{"name": "JSPS"}]}]],
+    )
+    external_link: list[ExternalLink] | None = Field(
+        default=None,
+        alias="externalLink",
+        examples=[[{"url": "https://example.com/", "label": "External"}]],
+    )
 
 
 class DbPortalHitBioSample(DbPortalHitBase):
     """BioSample hit."""
 
-    type: Literal["biosample"] = Field(description="Hit type discriminator.")
-    organization: list[OrganizationOut] | None = None
-    package: BioSamplePackageOut | None = None
-    model: list[str] | None = None
+    type: Literal["biosample"] = Field(examples=["biosample"], description="Hit type discriminator.")
+    organization: list[Organization] | None = Field(
+        default=None,
+        examples=[[{"name": "DDBJ", "role": "submitter"}]],
+    )
+    package: BioSamplePackage | None = Field(
+        default=None,
+        examples=[{"name": "MIGS.ba", "displayName": "MIGS Bacteria"}],
+    )
+    model: list[str] | None = Field(default=None, examples=[["model-a"]])
 
 
 class DbPortalHitSra(DbPortalHitBase):
@@ -434,16 +413,22 @@ class DbPortalHitSra(DbPortalHitBase):
         "sra-run",
         "sra-sample",
         "sra-analysis",
-    ] = Field(description="Hit type discriminator (6 SRA entity types).")
-    organization: list[OrganizationOut] | None = None
-    publication: list[PublicationOut] | None = None
-    library_strategy: list[str] | None = Field(default=None, alias="libraryStrategy")
-    library_source: list[str] | None = Field(default=None, alias="librarySource")
-    library_selection: list[str] | None = Field(default=None, alias="librarySelection")
-    library_layout: str | None = Field(default=None, alias="libraryLayout")
-    platform: str | None = None
-    instrument_model: list[str] | None = Field(default=None, alias="instrumentModel")
-    analysis_type: str | None = Field(default=None, alias="analysisType")
+    ] = Field(examples=["sra-experiment"], description="Hit type discriminator (6 SRA entity types).")
+    organization: list[Organization] | None = Field(
+        default=None,
+        examples=[[{"name": "DDBJ", "role": "submitter"}]],
+    )
+    publication: list[Publication] | None = Field(
+        default=None,
+        examples=[[{"id": "12345678", "title": "Sample paper", "dbType": "pubmed"}]],
+    )
+    library_strategy: list[str] | None = Field(default=None, alias="libraryStrategy", examples=[["WGS"]])
+    library_source: list[str] | None = Field(default=None, alias="librarySource", examples=[["GENOMIC"]])
+    library_selection: list[str] | None = Field(default=None, alias="librarySelection", examples=[["RANDOM"]])
+    library_layout: str | None = Field(default=None, alias="libraryLayout", examples=["PAIRED"])
+    platform: str | None = Field(default=None, examples=["ILLUMINA"])
+    instrument_model: list[str] | None = Field(default=None, alias="instrumentModel", examples=[["HiSeq X Ten"]])
+    analysis_type: str | None = Field(default=None, alias="analysisType", examples=["ALIGNMENT"])
 
 
 class DbPortalHitJga(DbPortalHitBase):
@@ -460,43 +445,72 @@ class DbPortalHitJga(DbPortalHitBase):
         "jga-dataset",
         "jga-dac",
         "jga-policy",
-    ] = Field(description="Hit type discriminator (4 JGA entity types).")
-    organization: list[OrganizationOut] | None = None
-    publication: list[PublicationOut] | None = None
-    grant: list[GrantOut] | None = None
-    external_link: list[ExternalLinkOut] | None = Field(default=None, alias="externalLink")
-    study_type: list[str] | None = Field(default=None, alias="studyType")
-    dataset_type: list[str] | None = Field(default=None, alias="datasetType")
-    vendor: list[str] | None = None
+    ] = Field(examples=["jga-study"], description="Hit type discriminator (4 JGA entity types).")
+    organization: list[Organization] | None = Field(
+        default=None,
+        examples=[[{"name": "DDBJ", "role": "submitter"}]],
+    )
+    publication: list[Publication] | None = Field(
+        default=None,
+        examples=[[{"id": "12345678", "title": "Sample paper", "dbType": "pubmed"}]],
+    )
+    grant: list[Grant] | None = Field(
+        default=None,
+        examples=[[{"id": "G1", "title": "Grant title", "agency": [{"name": "JSPS"}]}]],
+    )
+    external_link: list[ExternalLink] | None = Field(
+        default=None,
+        alias="externalLink",
+        examples=[[{"url": "https://example.com/", "label": "dbGaP"}]],
+    )
+    study_type: list[str] | None = Field(default=None, alias="studyType", examples=[["Case-Control"]])
+    dataset_type: list[str] | None = Field(default=None, alias="datasetType", examples=[["Whole-genome sequencing"]])
+    vendor: list[str] | None = Field(default=None, examples=[["Illumina"]])
 
 
 class DbPortalHitGea(DbPortalHitBase):
     """GEA hit."""
 
-    type: Literal["gea"] = Field(description="Hit type discriminator.")
-    organization: list[OrganizationOut] | None = None
-    publication: list[PublicationOut] | None = None
-    experiment_type: list[str] | None = Field(default=None, alias="experimentType")
+    type: Literal["gea"] = Field(examples=["gea"], description="Hit type discriminator.")
+    organization: list[Organization] | None = Field(
+        default=None,
+        examples=[[{"name": "DDBJ", "role": "submitter"}]],
+    )
+    publication: list[Publication] | None = Field(
+        default=None,
+        examples=[[{"id": "12345678", "title": "Sample paper", "dbType": "pubmed"}]],
+    )
+    experiment_type: list[str] | None = Field(
+        default=None,
+        alias="experimentType",
+        examples=[["RNA-Seq of coding RNA"]],
+    )
 
 
 class DbPortalHitMetabobank(DbPortalHitBase):
     """MetaboBank hit."""
 
-    type: Literal["metabobank"] = Field(description="Hit type discriminator.")
-    organization: list[OrganizationOut] | None = None
-    publication: list[PublicationOut] | None = None
-    study_type: list[str] | None = Field(default=None, alias="studyType")
-    experiment_type: list[str] | None = Field(default=None, alias="experimentType")
-    submission_type: list[str] | None = Field(default=None, alias="submissionType")
+    type: Literal["metabobank"] = Field(examples=["metabobank"], description="Hit type discriminator.")
+    organization: list[Organization] | None = Field(
+        default=None,
+        examples=[[{"name": "DDBJ", "role": "submitter"}]],
+    )
+    publication: list[Publication] | None = Field(
+        default=None,
+        examples=[[{"id": "12345678", "title": "Sample paper", "dbType": "pubmed"}]],
+    )
+    study_type: list[str] | None = Field(default=None, alias="studyType", examples=[["Lipidomics"]])
+    experiment_type: list[str] | None = Field(default=None, alias="experimentType", examples=[["LC-MS"]])
+    submission_type: list[str] | None = Field(default=None, alias="submissionType", examples=[["open"]])
 
 
 class DbPortalHitTrad(DbPortalHitBase):
     """Trad (ARSA-backed) hit."""
 
-    type: Literal["trad"] = Field(description="Hit type discriminator.")
-    division: str | None = None
-    molecular_type: str | None = Field(default=None, alias="molecularType")
-    sequence_length: int | None = Field(default=None, alias="sequenceLength")
+    type: Literal["trad"] = Field(examples=["trad"], description="Hit type discriminator.")
+    division: str | None = Field(default=None, examples=["SYN"])
+    molecular_type: str | None = Field(default=None, alias="molecularType", examples=["DNA"])
+    sequence_length: int | None = Field(default=None, alias="sequenceLength", examples=[5000])
 
 
 class DbPortalHitTaxonomy(DbPortalHitBase):
@@ -506,11 +520,11 @@ class DbPortalHitTaxonomy(DbPortalHitBase):
     used as a search field.
     """
 
-    type: Literal["taxonomy"] = Field(description="Hit type discriminator.")
-    rank: str | None = None
-    common_name: str | None = Field(default=None, alias="commonName")
-    japanese_name: str | None = Field(default=None, alias="japaneseName")
-    lineage: list[str] | str | None = None
+    type: Literal["taxonomy"] = Field(examples=["taxonomy"], description="Hit type discriminator.")
+    rank: str | None = Field(default=None, examples=["species"])
+    common_name: str | None = Field(default=None, alias="commonName", examples=["human"])
+    japanese_name: str | None = Field(default=None, alias="japaneseName", examples=["ヒト"])
+    lineage: list[str] | str | None = Field(default=None, examples=[["Homo sapiens", "Homo", "Hominidae"]])
 
 
 DbPortalHit = Annotated[
@@ -544,7 +558,7 @@ class DbPortalLightweightHit(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    identifier: str = Field(description="Entry identifier.")
+    identifier: str = Field(examples=["PRJDB1234"], description="Entry identifier.")
     type: Literal[
         "bioproject",
         "biosample",
@@ -562,34 +576,52 @@ class DbPortalLightweightHit(BaseModel):
         "metabobank",
         "trad",
         "taxonomy",
-    ] = Field(description="Entry type.  16 possible values.")
-    title: str | None = Field(default=None, description="Entry title.")
-    description: str | None = Field(default=None, description="Entry description.")
-    organism: OrganismOut | None = Field(default=None, description="Organism information.")
-    status: HitStatus | None = Field(default=None, description="INSDC status.")
+    ] = Field(examples=["bioproject"], description="Entry type.  16 possible values.")
+    title: str | None = Field(default=None, examples=["Sample BioProject title"], description="Entry title.")
+    description: str | None = Field(
+        default=None,
+        examples=["Whole-genome sequencing of sample organism."],
+        description="Entry description.",
+    )
+    organism: Organism | None = Field(
+        default=None,
+        examples=[{"identifier": "9606", "name": "Homo sapiens"}],
+        description="Organism information.",
+    )
+    status: HitStatus | None = Field(default=None, examples=["public"], description="INSDC status.")
     accessibility: HitAccessibility | None = Field(
         default=None,
+        examples=["public-access"],
         description="Accessibility level (public-access / controlled-access).",
     )
     date_created: str | None = Field(
         default=None,
         alias="dateCreated",
+        examples=["2024-01-01"],
         description="Creation date (ISO 8601).",
     )
     date_modified: str | None = Field(
         default=None,
         alias="dateModified",
+        examples=["2024-06-01"],
         description="Modification date (ISO 8601).",
     )
     date_published: str | None = Field(
         default=None,
         alias="datePublished",
+        examples=["2024-01-15"],
         description="Publication date (ISO 8601).",
     )
-    url: str | None = Field(default=None, description="Canonical URL.")
+    url: str | None = Field(
+        default=None,
+        examples=["https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1234"],
+        json_schema_extra={"format": "uri"},
+        description="Canonical URL.",
+    )
     is_part_of: str | None = Field(
         default=None,
         alias="isPartOf",
+        examples=["bioproject"],
         description=(
             "Parent collection identifier.  ES-backed hits carry the "
             'index-level value (e.g. ``"bioproject"`` / ``"sra"``); '
@@ -611,27 +643,35 @@ class DbPortalHitsResponse(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    total: int = Field(description="Total matching hits (track_total_hits=true).")
-    hits: list[DbPortalHit] = Field(description="Search hits (oneOf 8 DB variants).")
+    total: int = Field(examples=[1234], description="Total matching hits (track_total_hits=true).")
+    hits: list[DbPortalHit] = Field(
+        examples=[[{"identifier": "PRJDB1234", "type": "bioproject", "title": "Example BioProject"}]],
+        description="Search hits (oneOf 8 DB variants).",
+    )
     hard_limit_reached: bool = Field(
         alias="hardLimitReached",
+        examples=[False],
         description="True when total >= 10000 (aligned with Solr hard limit).",
     )
     page: int | None = Field(
+        examples=[1],
         description="Current page (null in cursor mode).",
     )
     per_page: int = Field(
         alias="perPage",
+        examples=[20],
         description="Items per page (20, 50, or 100).",
     )
     next_cursor: str | None = Field(
         default=None,
         alias="nextCursor",
+        examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
         description="Cursor token for the next page (null on last page).",
     )
     has_next: bool = Field(
         default=False,
         alias="hasNext",
+        examples=[True],
         description="Whether more pages are available.",
     )
 
@@ -649,9 +689,12 @@ class DbPortalParseLeafValue(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    field: str = Field(description="Allowlist field name (identifier, title, ...).")
-    op: Literal["eq", "contains", "wildcard"] = Field(description="Operator derived from (field_type, value_kind).")
-    value: str = Field(description="Operand value.")
+    field: str = Field(examples=["title"], description="Allowlist field name (identifier, title, ...).")
+    op: Literal["eq", "contains", "wildcard"] = Field(
+        examples=["contains"],
+        description="Operator derived from (field_type, value_kind).",
+    )
+    value: str = Field(examples=["cancer"], description="Operand value.")
 
 
 class DbPortalParseLeafRange(BaseModel):
@@ -659,10 +702,13 @@ class DbPortalParseLeafRange(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    field: str = Field(description="Date field (date_published, date_modified, date_created, or alias 'date').")
-    op: Literal["between"] = Field(description="Always 'between' for range clauses.")
-    from_: str = Field(alias="from", description="Range start (YYYY-MM-DD).")
-    to: str = Field(description="Range end (YYYY-MM-DD).")
+    field: str = Field(
+        examples=["date_published"],
+        description="Date field (date_published, date_modified, date_created, or alias 'date').",
+    )
+    op: Literal["between"] = Field(examples=["between"], description="Always 'between' for range clauses.")
+    from_: str = Field(alias="from", examples=["2020-01-01"], description="Range start (YYYY-MM-DD).")
+    to: str = Field(examples=["2024-12-31"], description="Range end (YYYY-MM-DD).")
 
 
 class DbPortalParseBoolOp(BaseModel):
@@ -670,10 +716,13 @@ class DbPortalParseBoolOp(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    op: Literal["AND", "OR", "NOT"] = Field(description="Boolean operator.")
+    op: Literal["AND", "OR", "NOT"] = Field(examples=["AND"], description="Boolean operator.")
     # forward ref: ``DbPortalParseNode`` は本クラス定義後に evaluate されるので
     # ``from __future__ import annotations`` + ``model_rebuild()`` で解決する。
-    rules: list[DbPortalParseNode] = Field(description="Child nodes (NOT has exactly one).")
+    rules: list[DbPortalParseNode] = Field(
+        examples=[[{"field": "title", "op": "contains", "value": "cancer"}]],
+        description="Child nodes (NOT has exactly one).",
+    )
 
 
 DbPortalParseNode = Annotated[
@@ -690,5 +739,6 @@ class DbPortalParseResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     ast: DbPortalParseNode = Field(
+        examples=[{"field": "title", "op": "contains", "value": "cancer"}],
         description="Parsed AST as SSOT query-tree JSON (search-backends.md §L363-381).",
     )

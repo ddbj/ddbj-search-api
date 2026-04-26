@@ -101,6 +101,7 @@ class PaginationQuery:
         ),
         cursor: str | None = Query(
             default=None,
+            examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
             description="Cursor token for cursor-based pagination.",
         ),
     ):
@@ -119,12 +120,14 @@ class SearchFilterQuery:
         self,
         keywords: str | None = Query(
             default=None,
+            examples=["cancer"],
             description="Search keywords (comma-separated for multiple).",
         ),
         keyword_fields: str | None = Query(
             default=None,
             alias="keywordFields",
             pattern=_KEYWORD_FIELDS_PATTERN,
+            examples=["title,description"],
             description=(
                 "Limit keyword search to specific fields "
                 "(comma-separated). "
@@ -139,6 +142,7 @@ class SearchFilterQuery:
         organism: str | None = Query(
             default=None,
             pattern=_ORGANISM_PATTERN,
+            examples=["9606"],
             description="NCBI Taxonomy ID, digits only (e.g. '9606').",
         ),
         organization: str | None = Query(
@@ -165,24 +169,28 @@ class SearchFilterQuery:
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="datePublishedFrom",
+            examples=["2020-01-01"],
             description="Publication date range start (YYYY-MM-DD).",
         ),
         date_published_to: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="datePublishedTo",
+            examples=["2024-12-31"],
             description="Publication date range end (YYYY-MM-DD).",
         ),
         date_modified_from: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="dateModifiedFrom",
+            examples=["2024-01-01"],
             description="Modification date range start (YYYY-MM-DD).",
         ),
         date_modified_to: str | None = Query(
             default=None,
             pattern=r"^\d{4}-\d{2}-\d{2}$",
             alias="dateModifiedTo",
+            examples=["2024-12-31"],
             description="Modification date range end (YYYY-MM-DD).",
         ),
     ):
@@ -215,6 +223,7 @@ class ResponseControlQuery:
         sort: str | None = Query(
             default=None,
             pattern=_SORT_PATTERN,
+            examples=["datePublished:desc"],
             description=(
                 "Sort order as '{field}:{direction}'. "
                 "Fields: datePublished, dateModified. "
@@ -224,6 +233,7 @@ class ResponseControlQuery:
         ),
         fields: str | None = Query(
             default=None,
+            examples=["identifier,organism,datePublished"],
             description=(
                 "Limit response to specific top-level fields "
                 "(comma-separated). "
@@ -261,6 +271,7 @@ class TypesFilterQuery:
         types: str | None = Query(
             default=None,
             pattern=_DB_TYPES_PATTERN,
+            examples=["bioproject,sra-study"],
             description="Filter by database types (comma-separated). Allowed: any of DbType.",
         ),
     ):

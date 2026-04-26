@@ -1321,6 +1321,7 @@ router.add_api_route(
 async def _parse_db_portal(
     adv: str = Query(
         ...,
+        examples=["title:cancer"],
         description=(
             "Advanced Search DSL to parse into AST.  Same grammar as "
             "``GET /db-portal/cross-search?adv=...`` / "
@@ -1331,6 +1332,7 @@ async def _parse_db_portal(
     ),
     db: DbPortalDb | None = Query(
         default=None,
+        examples=["bioproject"],
         description=(
             "Validator mode target.  Omit for cross-db mode (Tier 1 only); "
             "specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist)."

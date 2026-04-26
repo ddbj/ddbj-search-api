@@ -509,9 +509,7 @@ class TestTypeSpecificTermFilters:
         combined = app.get(
             "/entries/bioproject/",
             params={
-                "objectTypes": (
-                    f"{BIOPROJECT_OBJECT_TYPE_PRIMARY},{BIOPROJECT_OBJECT_TYPE_UMBRELLA}"
-                ),
+                "objectTypes": (f"{BIOPROJECT_OBJECT_TYPE_PRIMARY},{BIOPROJECT_OBJECT_TYPE_UMBRELLA}"),
                 "perPage": 1,
             },
         ).json()["pagination"]["total"]

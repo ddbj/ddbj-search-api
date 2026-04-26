@@ -11,5 +11,14 @@ class DbXrefsFullResponse(BaseModel):
 
     db_xrefs: list[Xref] = Field(
         alias="dbXrefs",
+        examples=[
+            [
+                {
+                    "identifier": "SAMD00012345",
+                    "type": "biosample",
+                    "url": "https://ddbj.nig.ac.jp/search/entry/biosample/SAMD00012345",
+                },
+            ],
+        ],
         description="All cross-references for the entry.",
     )

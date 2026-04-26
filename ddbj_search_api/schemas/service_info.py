@@ -27,9 +27,13 @@ class ServiceInfoResponse(BaseModel):
         },
     )
 
-    name: str = Field(description="Service name.")
-    version: str = Field(description="Service version.")
-    description: str = Field(description="Service description.")
+    name: str = Field(examples=["DDBJ Search API"], description="Service name.")
+    version: str = Field(examples=["0.2.1"], description="Service version.")
+    description: str = Field(
+        examples=["RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries."],
+        description="Service description.",
+    )
     elasticsearch: ElasticsearchStatus = Field(
+        examples=["ok"],
         description="Elasticsearch status: 'ok' or 'unavailable'.",
     )

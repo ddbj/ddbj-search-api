@@ -21,6 +21,7 @@ class EntryListResponse(BaseModel):
         description="Pagination metadata.",
     )
     items: list[EntryListItem] = Field(
+        examples=[[{"identifier": "PRJDB1234", "type": "bioproject", "title": "Example BioProject"}]],
         description="Matching entries (summary representation).",
     )
     facets: Facets | None = Field(

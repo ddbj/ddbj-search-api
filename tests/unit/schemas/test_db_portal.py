@@ -488,10 +488,10 @@ class TestDbPortalHit:
         )
         assert h.same_as is not None
         assert h.same_as[0].identifier == "Y"
-        assert h.same_as[0].type == "bioproject"
+        assert h.same_as[0].type_ == "bioproject"
         assert h.db_xrefs is not None
         assert h.db_xrefs[0].identifier == "Z"
-        assert h.db_xrefs[0].type == "biosample"
+        assert h.db_xrefs[0].type_ == "biosample"
         # serialize 時は alias "type" に戻る
         dumped = h.model_dump(by_alias=True)
         assert dumped["sameAs"][0]["type"] == "bioproject"

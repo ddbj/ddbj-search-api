@@ -495,9 +495,7 @@ async def _do_search_cursor(
         return JSONResponse(
             content={
                 "pagination": response.pagination.model_dump(by_alias=True),
-                "items": [
-                    item.model_dump(by_alias=True, exclude_unset=True) for item in response.items
-                ],
+                "items": [item.model_dump(by_alias=True, exclude_unset=True) for item in response.items],
                 "facets": None,
             }
         )

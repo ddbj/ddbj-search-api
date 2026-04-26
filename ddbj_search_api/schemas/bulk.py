@@ -12,6 +12,7 @@ class BulkRequest(BaseModel):
     ids: list[str] = Field(
         min_length=1,
         max_length=1000,
+        examples=[["PRJDB1", "PRJDB2"]],
         description="List of entry identifiers to retrieve (1-1000).",
     )
 
@@ -24,9 +25,11 @@ class BulkResponse(BaseModel):
     """
 
     entries: list[BioProject | BioSample | SRA | JGA] = Field(
+        examples=[[{"identifier": "PRJDB1", "type": "bioproject", "title": "Example BioProject"}]],
         description="Found entries (raw ES documents).",
     )
     not_found: list[str] = Field(
         alias="notFound",
+        examples=[["PRJDB_INVALID"]],
         description="IDs that were not found.",
     )
