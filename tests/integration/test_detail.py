@@ -27,7 +27,7 @@ from tests.integration.conftest import (
     PUBLIC_SRA_SAMPLE_ID,
     PUBLIC_SRA_STUDY_ID,
     PUBLIC_SRA_SUBMISSION_ID,
-    SECONDARY_BIOPROJECT_ID,
+    SECONDARY_JGA_STUDY_ID,
     require_accession,
 )
 
@@ -98,15 +98,23 @@ class TestDetailVariantContent:
 
 
 class TestSameAsFallback:
-    """IT-DETAIL-03: Secondary ID resolves via sameAs nested query."""
+    """IT-DETAIL-03: Secondary ID resolves via sameAs nested query.
+
+    JGA-study carries a long-form sameAs (e.g. ``JGAS000001`` ↔
+    ``JGAS00000000001``); the long form is the documented Secondary
+    that should resolve back to the short-form Primary. BioProject
+    sameAs entries point to external DBs (GEO etc.) and are not in
+    the API fallback path on staging — see the coverage note in
+    tests/integration-note.md.
+    """
 
     def test_secondary_id_resolves_to_primary(self, app: TestClient) -> None:
         """IT-DETAIL-03: Secondary returns 200 with the Primary identifier."""
         secondary = require_accession(
-            "SECONDARY_BIOPROJECT_ID",
-            SECONDARY_BIOPROJECT_ID,
+            "SECONDARY_JGA_STUDY_ID",
+            SECONDARY_JGA_STUDY_ID,
         )
-        resp = app.get(f"/entries/bioproject/{secondary}")
+        resp = app.get(f"/entries/jga-study/{secondary}")
         assert resp.status_code == 200
         assert resp.json()["identifier"] != secondary
 

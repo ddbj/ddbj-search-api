@@ -1024,11 +1024,12 @@
 
 ### IT-DBPORTAL-06: adv Tier 3 field の uf allowlist 完全性
 
-**endpoint**: `GET /db-portal/search?db=trad&adv=molecularType:DNA` (compile_to_solr で edismax を経由)
+**endpoint**: `GET /db-portal/search?db=trad&adv=division:BCT` (compile_to_solr で edismax を経由)
 
 **不変条件**:
-- compile_to_solr が emit する全 field が edismax の `uf` allowlist を通る (`molecularType` 等の小文字始まり field 名)
+- compile_to_solr が emit する全 field が edismax の `uf` allowlist を通る (`division` などの trad-only Tier 3 field、`search/dsl/allowlist.py` 参照)
 - silent wrong-field match や dropped value が起きない (`total > 0` を別経路で確認可能なクエリで成立)
+- 注: `molecularType` / `sequenceLength` は response field のみで DSL allowlist には含まれない (検索フィールドとしては未公開)
 
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3` / `11dace7`
 

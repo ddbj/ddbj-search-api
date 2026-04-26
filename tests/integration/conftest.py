@@ -123,6 +123,12 @@ PUBLIC_JGA_DATASET_ID: str = "JGAD000001"
 PUBLIC_JGA_DAC_ID: str = "JGAC000001"
 PUBLIC_JGA_POLICY_ID: str = "JGAP000001"
 
+# JGA Secondary (sameAs long form). Each public JGA-study / JGA-dataset /
+# JGA-dac entry carries a long-form alias (e.g. ``JGAS000001`` ↔
+# ``JGAS00000000001``); hitting the long form must resolve back to the
+# short Primary via sameAs fallback.
+SECONDARY_JGA_STUDY_ID: str = "JGAS00000000001"
+
 # GEA / MetaboBank (public only on staging)
 PUBLIC_GEA_ID: str = "E-GEAD-282"
 PUBLIC_METABOBANK_ID: str = "MTBKS102"

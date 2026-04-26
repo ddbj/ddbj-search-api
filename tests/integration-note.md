@@ -39,7 +39,9 @@ ddbj-search-converter リポジトリ側に compose があり、`ddbj-search-net
 - **`withdrawn` 全 type で 0 件**: `WITHDRAWN_*_ID` は全 type で空。IT-STATUS-03/06/07、IT-DETAIL-05 の withdrawn 系 assertion は skip。
 - **`private` は SRA 系のみ存在**: BioProject / BioSample / JGA / GEA / MetaboBank には 0 件。`PRIVATE_BIOPROJECT_ID` 等は空、`PRIVATE_SRA_*_ID` のみ値が入る。
 - **`suppressed` は BioProject / BioSample / SRA-{submission, study, experiment, sample} のみ**: JGA / GEA / MetaboBank には 0 件。
-- **`sameAs.identifier` を持つ entry 0 件**: `SECONDARY_*_ID` 全空、IT-DETAIL-03/10、IT-UMBRELLA-08 の sameAs フォールバック系は skip。
+- **`sameAs` field は nested mapping**: `_source.sameAs` は `[]` に見えても、ES の nested doc には実 entries が存在する場合あり (`{"nested": {"path": "sameAs"}}` で probe して確認)。
+- **JGA の sameAs パターン 2 種**: ① long form 表記揺れ (`JGAS000001` ↔ `JGAS00000000001` 等、jga-study 392 件 / jga-dataset 585 件 / jga-dac 2 件) と、② 純粋な cross-ref (別 entry 同士、jga-study `JGAS000561` ↔ `JGAS000556`、jga-dataset `JGAD000683` ↔ `JGAD000677` の 1 ペアずつのみ)。`SECONDARY_JGA_STUDY_ID` は ① の long form を使う (件数が多く drift にも強い)。② は本数が少なく converter 更新で消える可能性があるため、現状は SSOT 注記のみ。
+- **BioProject の `sameAs` は外部 DB ref (GEO 等)**: 実 nested doc は 10000+ 件あるが `sameAs.identifier` が `GSE...` 等の外部 accession で、API の sameAs フォールバックは BioProject 内部 ID 解決のみを想定しているため、Secondary 経由の Primary 解決テストには使えない (`SECONDARY_BIOPROJECT_ID` 空のまま skip)。
 - **`parentBioProjects` / `childBioProjects` の link 0 件**: BioProject に親子関係データが投入されていない (UmbrellaBioProject の `objectType` は付いているが children link は無し)。`UMBRELLA_BIOPROJECT_ID` (`PRJDB42131`) は応答するが `edges == []`。`MULTI_PARENT_BIOPROJECT_ID` / `DANGLING_CHILD_BIOPROJECT_ID` は空のまま。IT-UMBRELLA-02/03/05/06 はそれぞれ「edges 構造の parseability」レベルに緩和済または skip。
 - **`DEEP_CHAIN_BIOPROJECT_ID` は採取せず Future work**: MAX_DEPTH=10 超えチェーンを意図的に作る必要があり、staging で再現不能。
 

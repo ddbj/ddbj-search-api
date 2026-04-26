@@ -113,10 +113,13 @@ class TestSolrUfAllowlistCompleteness:
     """IT-DBPORTAL-06: Tier 3 fields are accepted by edismax (uf allowlist)."""
 
     def test_tier3_field_query_accepted(self, app: TestClient) -> None:
-        """IT-DBPORTAL-06: ``adv=molecularType:DNA`` is accepted by Solr."""
+        """IT-DBPORTAL-06: ``adv=division:BCT`` (trad Tier 3 field) is accepted."""
+        # ``division`` is an enum-typed trad-only DSL field per
+        # ``search/dsl/allowlist.py``. ``molecularType`` / ``sequenceLength``
+        # surface in the response shape but are not search-allowlisted.
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "adv": "molecularType:DNA", "perPage": 5},
+            params={"db": "trad", "adv": "division:BCT", "perPage": 5},
         )
         assert resp.status_code == 200
 
