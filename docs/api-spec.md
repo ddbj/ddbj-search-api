@@ -153,7 +153,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 | 404 | Not Found | エントリーが存在しない、withdrawn / private のエントリーへの直接アクセス (存在を秘匿するため存在しないものと同じ応答を返す)、不正な `{type}` |
 | 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `objectTypes` 値 (`BioProject` / `UmbrellaBioProject` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値、不正な `facets` 値 (allowlist 外のフィールド名 typo)、cross-type endpoint (`GET /entries/`, `GET /facets`) に type-specific filter / 型グループ限定 nested 検索パラメータ (`externalLinkLabel` / `derivedFromId`) / text match パラメータが渡された場合 (`organization` / `publication` / `grant` は cross-type endpoint でも受け付け)、type-specific endpoint に対応する型グループ外のパラメータが渡された場合 (例: `GET /entries/biosample/?libraryStrategy=WGS` や `GET /entries/bioproject/?host=Homo+sapiens`) など) |
 | 500 | Internal Server Error | ES 接続エラー、DuckDB ファイルが見つからない (Entries 検索/詳細/Bulk/DBLinks API)、その他サーバー内部エラー |
-| 502 | Bad Gateway | DB Portal API の横断 count-only で全 DB への問い合わせが失敗 |
+| 502 | Bad Gateway | DB Portal API の横断 fan-out で全 DB への問い合わせが失敗 |
 
 400 と 422 の使い分け: リクエストのパラメータ型・形式・制約のバリデーションは 422、アプリケーションのビジネスルール違反 (deep paging 制限、`q`/`adv` 排他など) は 400 を返す。
 

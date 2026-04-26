@@ -65,10 +65,11 @@ class AppConfig(BaseSettings):
     solr_arsa_core: str = "collection1"
     solr_txsearch_url: str | None = None
 
-    # Cross-search (``/db-portal/cross-search`` count-only) per-backend
-    # and overall timeouts. ``es_timeout`` above stays as the client-level
-    # default for /entries/* and other routers; these four apply only inside
-    # ``routers.db_portal._cross_search_count_only`` via ``asyncio.wait_for``.
+    # Cross-search (``/db-portal/cross-search``) per-backend and overall
+    # timeouts. ``es_timeout`` above stays as the client-level default for
+    # /entries/* and other routers; these four apply only inside
+    # ``routers.db_portal._cross_search`` / ``_adv_cross_search`` via
+    # ``asyncio.wait_for``.
     es_search_timeout: float = 10.0
     arsa_timeout: float = 15.0
     txsearch_timeout: float = 5.0

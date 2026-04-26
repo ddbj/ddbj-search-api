@@ -98,20 +98,38 @@ _ADV_DESC = (
 class DbPortalCrossSearchQuery:
     """Query parameters for ``GET /db-portal/cross-search``.
 
-    Cross-database count-only search.  Only ``q`` / ``adv`` are accepted;
-    any other query parameter (``db`` / ``cursor`` / ``page`` / ``perPage``
-    / ``sort``) is rejected by the router with 400 ``unexpected-parameter``
-    so user typos surface early.  ``q`` / ``adv`` exclusivity is checked
-    in the router with the ``invalid-query-combination`` type URI.
+    Cross-database search returning per-DB count and (when ``topHits>=1``)
+    a lightweight hits array.  Only ``q`` / ``adv`` / ``topHits`` are
+    accepted; any other query parameter (``db`` / ``cursor`` / ``page`` /
+    ``perPage`` / ``sort``) is rejected by the router with 400
+    ``unexpected-parameter`` so user typos surface early.  ``q`` / ``adv``
+    exclusivity is checked in the router with the ``invalid-query-combination``
+    type URI.
     """
 
     def __init__(
         self,
         q: str | None = Query(default=None, description=_Q_DESC),
         adv: str | None = Query(default=None, description=_ADV_DESC),
+        top_hits: int = Query(
+            default=10,
+            alias="topHits",
+            ge=0,
+            le=50,
+            description=(
+                "Per-DB top hits count.  ``0`` returns count-only "
+                "(``databases[i].hits`` is ``null``); ``1``-``50`` returns "
+                "up to N hits per DB.  Hits are ordered by relevance "
+                "(``_score`` desc) with ``identifier`` ascending as the "
+                "tiebreaker; when ``q`` is omitted (``match_all``) all "
+                "scores tie, so ``identifier`` ascending becomes the "
+                "effective order.  Out of range (>50 or negative) returns 422."
+            ),
+        ),
     ) -> None:
         self.q = q
         self.adv = adv
+        self.top_hits = top_hits
 
 
 class DbPortalSearchQuery:
@@ -187,7 +205,12 @@ class DbPortalSearchQuery:
 
 
 class DbPortalCount(BaseModel):
-    """A single DB entry in the cross-search count-only response."""
+    """A single DB entry in the cross-search response.
+
+    Carries the per-DB count and, when ``topHits>=1``, up to ``topHits``
+    lightweight hits.  ``hits`` is ``null`` when ``topHits=0`` and an
+    empty list when the per-DB call failed (``error`` set).
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -196,16 +219,26 @@ class DbPortalCount(BaseModel):
     error: DbPortalCountError | None = Field(
         description="Failure reason (null on success).",
     )
+    hits: list[DbPortalLightweightHit] | None = Field(
+        default=None,
+        description=(
+            "Lightweight top hits for this DB (up to topHits items, "
+            "relevance order).  ``null`` when ``topHits=0``; ``[]`` "
+            "when ``error`` is set; otherwise 0..topHits items."
+        ),
+    )
 
 
 class DbPortalCrossSearchResponse(BaseModel):
-    """Cross-database count-only response (8 entries, fixed order).
+    """Cross-database response (8 entries, fixed order, count + top hits).
 
     Order: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy.
+    Each entry carries count and (when ``topHits>=1``) up to ``topHits``
+    lightweight hits per DB.
     """
 
     databases: list[DbPortalCount] = Field(
-        description="Count per database.  Fixed length 8, fixed order.",
+        description=("Per-database count and (when topHits>=1) lightweight hits.  Fixed length 8, fixed order."),
     )
 
 
@@ -277,10 +310,11 @@ class ExternalLinkOut(BaseModel):
 
 
 class XrefOut(BaseModel):
-    """Cross-reference entry (dbXrefs / sameAs).
+    """Cross-reference entry (``dbXrefs`` / ``sameAs``).
 
-    converter 側 XrefType は 22 値 Literal だが、API 側は str で緩く受ける
-    (converter の XrefType 拡張時に API を同期せずとも動くようにする)。
+    The upstream cross-reference type is a closed enumeration, but this
+    response model accepts ``type`` as a plain string so adding a new
+    cross-reference type upstream does not break clients.
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
@@ -346,6 +380,16 @@ class DbPortalHitBase(BaseModel):
         default=None,
         description="Accessibility level (public-access / controlled-access).",
     )
+    is_part_of: str | None = Field(
+        default=None,
+        alias="isPartOf",
+        description=(
+            "Parent collection identifier.  ES-backed hits carry the "
+            'index-level value (e.g. ``"bioproject"`` / ``"sra"``); '
+            'Solr-backed hits use a fixed literal (``"trad"`` / '
+            '``"taxonomy"``).'
+        ),
+    )
 
 
 class DbPortalHitBioProject(DbPortalHitBase):
@@ -373,12 +417,14 @@ class DbPortalHitBioSample(DbPortalHitBase):
 
 
 class DbPortalHitSra(DbPortalHitBase):
-    """SRA hit. 6 subtype in a single variant; subtype-specific fields are optional.
+    """SRA hit (6 subtypes share one variant; subtype-specific fields are optional).
 
     ``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /
-    ``sra-run`` / ``sra-sample`` / ``sra-analysis``. library_* / platform /
-    instrument_model は sra-experiment のみ、analysis_type は sra-analysis のみ
-    実値が入る。他 subtype では ``None``。
+    ``sra-run`` / ``sra-sample`` / ``sra-analysis``.  ``library_*`` /
+    ``platform`` / ``instrumentModel`` are populated only on
+    ``sra-experiment`` hits, and ``analysisType`` only on
+    ``sra-analysis`` hits; the remaining subtypes leave them as
+    ``null``.
     """
 
     type: Literal[
@@ -401,10 +447,12 @@ class DbPortalHitSra(DbPortalHitBase):
 
 
 class DbPortalHitJga(DbPortalHitBase):
-    """JGA hit. 4 subtype; subtype-specific fields are optional.
+    """JGA hit (4 subtypes share one variant; subtype-specific fields are optional).
 
-    ``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` / ``jga-policy``.
-    study_type / grant / publication は jga-study のみ、dataset_type は jga-dataset のみ。
+    ``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` /
+    ``jga-policy``.  ``studyType`` / ``grant`` / ``publication`` are
+    populated only on ``jga-study`` hits, and ``datasetType`` only on
+    ``jga-dataset`` hits.
     """
 
     type: Literal[
@@ -454,8 +502,8 @@ class DbPortalHitTrad(DbPortalHitBase):
 class DbPortalHitTaxonomy(DbPortalHitBase):
     """Taxonomy (TXSearch-backed) hit.
 
-    ``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist へは追加しない
-    (staging TXSearch の schema luke で field 不在を確認済のため)。
+    ``japaneseName`` is exposed in the response shape but cannot be
+    used as a search field.
     """
 
     type: Literal["taxonomy"] = Field(description="Hit type discriminator.")
@@ -478,6 +526,84 @@ DbPortalHit = Annotated[
 ]
 
 _DbPortalHitAdapter: TypeAdapter[Any] = TypeAdapter(DbPortalHit)
+
+
+class DbPortalLightweightHit(BaseModel):
+    """12-field hit envelope returned by ``/db-portal/cross-search``.
+
+    Carries only the common fields shared across all 8 db-portal DBs.
+    DB-specific extras present in ``DbPortalHit`` (used by
+    ``/db-portal/search``) — ``projectType``, ``libraryStrategy``,
+    ``division``, ``rank``, ``commonName`` etc. — are not part of this
+    envelope.
+
+    ``type`` covers all 16 possible hit values: the 8 db-portal DBs with
+    sub-types where applicable (``sra-*``, ``jga-*``) plus the
+    Solr-backed fixed literals ``trad`` and ``taxonomy``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    identifier: str = Field(description="Entry identifier.")
+    type: Literal[
+        "bioproject",
+        "biosample",
+        "sra-submission",
+        "sra-study",
+        "sra-experiment",
+        "sra-run",
+        "sra-sample",
+        "sra-analysis",
+        "jga-study",
+        "jga-dataset",
+        "jga-dac",
+        "jga-policy",
+        "gea",
+        "metabobank",
+        "trad",
+        "taxonomy",
+    ] = Field(description="Entry type.  16 possible values.")
+    title: str | None = Field(default=None, description="Entry title.")
+    description: str | None = Field(default=None, description="Entry description.")
+    organism: OrganismOut | None = Field(default=None, description="Organism information.")
+    status: HitStatus | None = Field(default=None, description="INSDC status.")
+    accessibility: HitAccessibility | None = Field(
+        default=None,
+        description="Accessibility level (public-access / controlled-access).",
+    )
+    date_created: str | None = Field(
+        default=None,
+        alias="dateCreated",
+        description="Creation date (ISO 8601).",
+    )
+    date_modified: str | None = Field(
+        default=None,
+        alias="dateModified",
+        description="Modification date (ISO 8601).",
+    )
+    date_published: str | None = Field(
+        default=None,
+        alias="datePublished",
+        description="Publication date (ISO 8601).",
+    )
+    url: str | None = Field(default=None, description="Canonical URL.")
+    is_part_of: str | None = Field(
+        default=None,
+        alias="isPartOf",
+        description=(
+            "Parent collection identifier.  ES-backed hits carry the "
+            'index-level value (e.g. ``"bioproject"`` / ``"sra"``); '
+            'Solr-backed hits use a fixed literal (``"trad"`` / '
+            '``"taxonomy"``).'
+        ),
+    )
+
+
+_DbPortalLightweightHitAdapter: TypeAdapter[Any] = TypeAdapter(DbPortalLightweightHit)
+
+# DbPortalCount.hits forward-references DbPortalLightweightHit defined above;
+# resolve now so subsequent imports get a fully-built model.
+DbPortalCount.model_rebuild()
 
 
 class DbPortalHitsResponse(BaseModel):

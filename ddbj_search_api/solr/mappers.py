@@ -15,7 +15,9 @@ from typing import Any
 from ddbj_search_api.schemas.db_portal import (
     DbPortalHit,
     DbPortalHitsResponse,
+    DbPortalLightweightHit,
     _DbPortalHitAdapter,
+    _DbPortalLightweightHitAdapter,
 )
 
 # GenBank Feature qualifier ``/db_xref="taxon:NNNN"`` — NCBI TaxID embedded in
@@ -162,6 +164,90 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "lineage": _drop_self_from_lineage(doc.get("lineage"), scientific),
         }
         hits.append(_DbPortalHitAdapter.validate_python(payload))
+    return hits
+
+
+def arsa_docs_to_lightweight_hits(
+    docs: list[dict[str, Any]],
+) -> list[DbPortalLightweightHit]:
+    """ARSA Solr docs → 12-field lightweight hit list (cross-search).
+
+    Same source mapping as :func:`arsa_docs_to_hits` but produces
+    :class:`DbPortalLightweightHit` (12-field schema with ``extra="ignore"``)
+    so Trad-specific extras (``division`` / ``molecularType`` /
+    ``sequenceLength``) never appear in the response.  ARSA has no
+    ``status`` / ``accessibility`` / ``isPartOf`` source field, so
+    cross-search fills them with fixed values (``public`` /
+    ``public-access`` / ``trad``) consistent with the "Solr 側は public 前提"
+    contract.
+    """
+    hits: list[DbPortalLightweightHit] = []
+    for doc in docs:
+        acc = doc.get("PrimaryAccessionNumber")
+        organism_raw = doc.get("Organism")
+        organism: dict[str, Any] | None = None
+        if organism_raw:
+            organism = {"name": organism_raw}
+            tax_id = _extract_taxon_id(doc.get("Feature"))
+            if tax_id is not None:
+                organism["identifier"] = tax_id
+        payload: dict[str, Any] = {
+            "identifier": str(acc) if acc is not None else None,
+            "type": "trad",
+            "title": doc.get("Definition"),
+            "description": None,
+            "organism": organism,
+            "datePublished": _parse_arsa_date(doc.get("Date")),
+            "url": f"{_ARSA_URL_PREFIX}{acc}/" if acc else None,
+            "status": "public",
+            "accessibility": "public-access",
+            "dateCreated": None,
+            "dateModified": None,
+            "isPartOf": "trad",
+        }
+        hits.append(_DbPortalLightweightHitAdapter.validate_python(payload))
+    return hits
+
+
+def txsearch_docs_to_lightweight_hits(
+    docs: list[dict[str, Any]],
+) -> list[DbPortalLightweightHit]:
+    """TXSearch Solr docs → 12-field lightweight hit list (cross-search).
+
+    Same source mapping as :func:`txsearch_docs_to_hits` but produces
+    :class:`DbPortalLightweightHit` so Taxonomy extras (``rank`` /
+    ``commonName`` / ``japaneseName`` / ``lineage``) never appear in the
+    response.  TXSearch has no ``status`` / ``accessibility`` / dates /
+    ``isPartOf`` source field; cross-search fills them with fixed values
+    (``public`` / ``public-access`` / ``taxonomy``) and ``None`` for dates.
+    """
+    hits: list[DbPortalLightweightHit] = []
+    for doc in docs:
+        tax_id_raw = doc.get("tax_id")
+        tax_id = str(tax_id_raw) if tax_id_raw is not None else None
+        scientific = doc.get("scientific_name")
+        organism: dict[str, Any] | None = None
+        if scientific or tax_id:
+            organism = {}
+            if scientific:
+                organism["name"] = scientific
+            if tax_id:
+                organism["identifier"] = tax_id
+        payload: dict[str, Any] = {
+            "identifier": tax_id,
+            "type": "taxonomy",
+            "title": scientific,
+            "description": None,
+            "organism": organism,
+            "datePublished": None,
+            "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}" if tax_id else None,
+            "status": "public",
+            "accessibility": "public-access",
+            "dateCreated": None,
+            "dateModified": None,
+            "isPartOf": "taxonomy",
+        }
+        hits.append(_DbPortalLightweightHitAdapter.validate_python(payload))
     return hits
 
 

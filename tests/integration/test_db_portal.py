@@ -21,7 +21,7 @@ _ES_DBS = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
 _DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
 
 
-# === Cross-database count-only ===
+# === Cross-database fan-out ===
 
 
 def test_cross_search_returns_eight_databases(app: TestClient) -> None:

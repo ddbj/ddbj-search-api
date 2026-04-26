@@ -4,7 +4,7 @@ Covers:
 - endpoint registration (trailing slash policy, tags)
 - (q, adv) x (db) dispatch matrix
 - FastAPI-level enum/Literal validation (422)
-- cross-database count-only flow (8 DBs, success/error mix, all-failed 502)
+- cross-database fan-out flow (8 DBs, count + top hits, success/error mix, all-failed 502)
 - DB-specific hits flow (offset + cursor, hardLimitReached boundary,
   deep paging, ES body shape)
 - RFC 7807 + type URI error format
@@ -325,11 +325,11 @@ class TestDbPortalEnumValidation:
         assert resp.status_code == 422
 
 
-# === Cross-database count-only ===
+# === Cross-database fan-out ===
 
 
 class TestDbPortalCrossSearch:
-    """Cross-DB count-only via /db-portal/cross-search."""
+    """Cross-DB fan-out via /db-portal/cross-search."""
 
     def test_eight_databases_returned_in_order(
         self,
@@ -456,10 +456,376 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal.return_value = make_es_search_response(total=5)
         resp = app_with_db_portal.get("/db-portal/cross-search")
         assert resp.status_code == 200
-        # First call is for sra (first ES-backed DB in order).
+        # First call is for sra (first ES-backed DB in order).  Default
+        # ``topHits=10`` so size is 10 (count-only mode requires explicit
+        # ``topHits=0``).
         first_call_body = mock_es_search_db_portal.call_args_list[0].args[2]
         assert first_call_body["query"] == {"match_all": {}}
-        assert first_call_body["size"] == 0
+        assert first_call_body["size"] == 10
+
+
+class TestDbPortalCrossSearchTopHits:
+    """Cross-DB ``topHits`` parameter and per-DB ``hits`` envelope."""
+
+    _LIGHTWEIGHT_FIELDS = {
+        "identifier",
+        "type",
+        "url",
+        "title",
+        "description",
+        "organism",
+        "status",
+        "accessibility",
+        "dateCreated",
+        "dateModified",
+        "datePublished",
+        "isPartOf",
+    }
+
+    @staticmethod
+    def _es_hit(identifier: str, type_: str, **overrides: Any) -> dict[str, Any]:
+        source: dict[str, Any] = {
+            "identifier": identifier,
+            "type": type_,
+            "url": f"https://ddbj.example/{identifier}",
+            "title": f"title-{identifier}",
+            "description": None,
+            "organism": None,
+            "status": "public",
+            "accessibility": "public-access",
+            "dateCreated": None,
+            "dateModified": None,
+            "datePublished": None,
+            "isPartOf": type_,
+        }
+        source.update(overrides)
+        return {"_index": f"{type_}-test", "_id": identifier, "_source": source}
+
+    def test_default_top_hits_is_ten(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=5)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        assert body["size"] == 10
+        # Source allowlist is the 12-field lightweight contract.
+        assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
+        assert body["track_total_hits"] is True
+        assert "sort" in body
+
+    def test_top_hits_zero_returns_count_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=5)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 0})
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        assert body["size"] == 0
+        # No source filter / no sort / no track_total_hits in count-only path.
+        assert "_source" not in body
+        assert "sort" not in body
+        assert "track_total_hits" not in body
+        # Each DbPortalCount.hits is null in count-only mode.
+        for entry in resp.json()["databases"]:
+            assert entry["hits"] is None
+
+    def test_top_hits_explicit_size_propagated(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=5)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 25})
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        assert body["size"] == 25
+
+    def test_top_hits_max_50_accepted(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 50})
+        assert resp.status_code == 200
+
+    def test_top_hits_above_50_returns_422(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 51})
+        assert resp.status_code == 422
+
+    def test_top_hits_negative_returns_422(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": -1})
+        assert resp.status_code == 422
+
+    def test_top_hits_non_int_returns_422(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": "many"})
+        assert resp.status_code == 422
+
+    def test_top_hits_param_in_allowlist(self, app_with_db_portal: TestClient) -> None:
+        # ``topHits`` is on the allowlist; only forbidden params trigger
+        # 400 ``unexpected-parameter``.
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 5})
+        assert resp.status_code == 200
+
+    def test_es_hits_returned_in_dbportalhit_shape(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # Build per-DB ES responses keyed to call order:
+        # sra → bioproject → biosample → jga → gea → metabobank.
+        sra_hit = self._es_hit("DRR1", "sra-run")
+        bp_hit = self._es_hit("PRJDB1", "bioproject")
+        mock_es_search_db_portal.side_effect = [
+            make_es_search_response(total=1, hits=[sra_hit]),
+            make_es_search_response(total=1, hits=[bp_hit]),
+            make_es_search_response(total=0),
+            make_es_search_response(total=0),
+            make_es_search_response(total=0),
+            make_es_search_response(total=0),
+        ]
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 5})
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["sra"]["count"] == 1
+        assert len(by_db["sra"]["hits"]) == 1
+        assert by_db["sra"]["hits"][0]["identifier"] == "DRR1"
+        assert by_db["sra"]["hits"][0]["type"] == "sra-run"
+        assert by_db["bioproject"]["hits"][0]["identifier"] == "PRJDB1"
+        # Empty-hit ES DB still gets [] (not None) when topHits>=1.
+        assert by_db["biosample"]["hits"] == []
+
+    def test_arsa_lightweight_fixed_values(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(
+            num_found=2,
+            docs=[
+                {
+                    "PrimaryAccessionNumber": "GL589895",
+                    "Definition": "Mus musculus scaffold",
+                    "Organism": "Mus musculus",
+                    "Date": "20150313",
+                    "Feature": ['source 1..1000\n/db_xref="taxon:10090"'],
+                    # Trad-only extras to verify they get dropped.
+                    "Division": "CON",
+                    "MolecularType": "DNA",
+                    "SequenceLength": 635881,
+                },
+            ],
+        )
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 3})
+        assert resp.status_code == 200
+        trad = next(e for e in resp.json()["databases"] if e["db"] == "trad")
+        assert trad["count"] == 2
+        assert len(trad["hits"]) == 1
+        h = trad["hits"][0]
+        assert h["identifier"] == "GL589895"
+        assert h["type"] == "trad"
+        assert h["url"].endswith("/GL589895/")
+        assert h["title"] == "Mus musculus scaffold"
+        assert h["organism"] == {"identifier": "10090", "name": "Mus musculus"}
+        assert h["datePublished"] == "2015-03-13"
+        # Fixed values per the Solr-side public-only contract.
+        assert h["status"] == "public"
+        assert h["accessibility"] == "public-access"
+        assert h["isPartOf"] == "trad"
+        # Date fields not in ARSA → null.
+        assert h["dateCreated"] is None
+        assert h["dateModified"] is None
+        assert h["description"] is None
+        # Trad-only extras must NOT leak into the lightweight schema.
+        assert "division" not in h
+        assert "molecularType" not in h
+        assert "sequenceLength" not in h
+
+    def test_txsearch_lightweight_fixed_values(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            num_found=1,
+            docs=[
+                {
+                    "tax_id": 9606,
+                    "scientific_name": "Homo sapiens",
+                    # Taxonomy-only extras to verify they get dropped.
+                    "rank": "species",
+                    "common_name": ["human"],
+                    "japanese_name": ["ヒト"],
+                    "lineage": ["Homo sapiens", "Homo", "Hominidae"],
+                },
+            ],
+        )
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 3})
+        assert resp.status_code == 200
+        tax = next(e for e in resp.json()["databases"] if e["db"] == "taxonomy")
+        assert tax["count"] == 1
+        assert len(tax["hits"]) == 1
+        h = tax["hits"][0]
+        assert h["identifier"] == "9606"
+        assert h["type"] == "taxonomy"
+        assert h["url"].endswith("/9606")
+        assert h["title"] == "Homo sapiens"
+        assert h["organism"] == {"identifier": "9606", "name": "Homo sapiens"}
+        # Fixed values + nulls.
+        assert h["status"] == "public"
+        assert h["accessibility"] == "public-access"
+        assert h["isPartOf"] == "taxonomy"
+        assert h["datePublished"] is None
+        assert h["dateCreated"] is None
+        assert h["dateModified"] is None
+        # Taxonomy-only extras must NOT leak into the lightweight schema.
+        assert "rank" not in h
+        assert "commonName" not in h
+        assert "japaneseName" not in h
+        assert "lineage" not in h
+
+    def test_per_db_error_returns_empty_hits(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # All ES calls timeout; ES DB entries should have hits=[] (not None)
+        # because topHits>=1.
+        mock_es_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 5})
+        # Solr mocks default to empty success → 200 (not 502 unless all 8 fail).
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        for db in _ES_DBS:
+            assert by_db[db]["error"] == DbPortalCountError.timeout.value
+            assert by_db[db]["hits"] == []
+
+    def test_per_db_error_with_top_hits_zero_keeps_hits_null(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.side_effect = httpx.TimeoutException("timeout")
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 0})
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        for db in _ES_DBS:
+            assert by_db[db]["error"] == DbPortalCountError.timeout.value
+            assert by_db[db]["hits"] is None
+
+
+class TestDbPortalAdvCrossSearchTopHits:
+    """``topHits`` propagates through the adv (DSL) cross-search path."""
+
+    _LIGHTWEIGHT_FIELDS = {
+        "identifier",
+        "type",
+        "url",
+        "title",
+        "description",
+        "organism",
+        "status",
+        "accessibility",
+        "dateCreated",
+        "dateModified",
+        "datePublished",
+        "isPartOf",
+    }
+
+    def test_adv_es_body_uses_top_hits_size_and_lightweight_source(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=1)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "title:cancer", "topHits": 7},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        assert body["size"] == 7
+        assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
+        assert body["track_total_hits"] is True
+        assert "sort" in body
+
+    def test_adv_arsa_rows_match_top_hits_and_emit_lightweight_hits(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(
+            num_found=1,
+            docs=[
+                {
+                    "PrimaryAccessionNumber": "GL589895",
+                    "Definition": "Mus musculus scaffold",
+                    "Organism": "Mus musculus",
+                    "Date": "20150313",
+                },
+            ],
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "title:cancer", "topHits": 4},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert params["rows"] == "4"
+        trad = next(e for e in resp.json()["databases"] if e["db"] == "trad")
+        assert len(trad["hits"]) == 1
+        h = trad["hits"][0]
+        assert h["status"] == "public"
+        assert h["isPartOf"] == "trad"
+
+    def test_adv_txsearch_rows_match_top_hits_and_emit_lightweight_hits(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            num_found=1,
+            docs=[{"tax_id": 9606, "scientific_name": "Homo sapiens"}],
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "title:human", "topHits": 6},
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert params["rows"] == "6"
+        tax = next(e for e in resp.json()["databases"] if e["db"] == "taxonomy")
+        assert len(tax["hits"]) == 1
+        h = tax["hits"][0]
+        assert h["status"] == "public"
+        assert h["isPartOf"] == "taxonomy"
+
+    def test_adv_top_hits_zero_uses_count_only_path(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "title:cancer", "topHits": 0},
+        )
+        assert resp.status_code == 200
+        es_body = mock_es_search_db_portal.call_args_list[0].args[2]
+        assert es_body["size"] == 0
+        assert "_source" not in es_body
+        assert "sort" not in es_body
+        assert "track_total_hits" not in es_body
+        arsa_params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert arsa_params["rows"] == "0"
+        tx_params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert tx_params["rows"] == "0"
+        for entry in resp.json()["databases"]:
+            assert entry["hits"] is None
 
 
 # === DB-specific hits search ===

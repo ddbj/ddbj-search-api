@@ -15490,8 +15490,8 @@
         "tags": [
           "db-portal"
         ],
-        "summary": "DB Portal cross-database count-only search",
-        "description": "``GET /db-portal/cross-search``: cross-database count-only search.",
+        "summary": "DB Portal cross-database fan-out (count + top hits)",
+        "description": "``GET /db-portal/cross-search``: cross-database count + top hits search.",
         "operationId": "crossSearchDbPortal",
         "parameters": [
           {
@@ -15529,6 +15529,20 @@
               "title": "Adv"
             },
             "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+          },
+          {
+            "name": "topHits",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 0,
+              "description": "Per-DB top hits count.  ``0`` returns count-only (``databases[i].hits`` is ``null``); ``1``-``50`` returns up to N hits per DB.  Hits are ordered by relevance (``_score`` desc) with ``identifier`` ascending as the tiebreaker; when ``q`` is omitted (``match_all``) all scores tie, so ``identifier`` ascending becomes the effective order.  Out of range (>50 or negative) returns 422.",
+              "default": 10,
+              "title": "Tophits"
+            },
+            "description": "Per-DB top hits count.  ``0`` returns count-only (``databases[i].hits`` is ``null``); ``1``-``50`` returns up to N hits per DB.  Hits are ordered by relevance (``_score`` desc) with ``identifier`` ascending as the tiebreaker; when ``q`` is omitted (``match_all``) all scores tie, so ``identifier`` ascending becomes the effective order.  Out of range (>50 or negative) returns 422."
           }
         ],
         "responses": {
@@ -17711,6 +17725,21 @@
               }
             ],
             "description": "Failure reason (null on success)."
+          },
+          "hits": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DbPortalLightweightHit"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hits",
+            "description": "Lightweight top hits for this DB (up to topHits items, relevance order).  ``null`` when ``topHits=0``; ``[]`` when ``error`` is set; otherwise 0..topHits items."
           }
         },
         "type": "object",
@@ -17720,7 +17749,7 @@
           "error"
         ],
         "title": "DbPortalCount",
-        "description": "A single DB entry in the cross-search count-only response."
+        "description": "A single DB entry in the cross-search response.\n\nCarries the per-DB count and, when ``topHits>=1``, up to ``topHits``\nlightweight hits.  ``hits`` is ``null`` when ``topHits=0`` and an\nempty list when the per-DB call failed (``error`` set)."
       },
       "DbPortalCountError": {
         "type": "string",
@@ -17741,7 +17770,7 @@
             },
             "type": "array",
             "title": "Databases",
-            "description": "Count per database.  Fixed length 8, fixed order."
+            "description": "Per-database count and (when topHits>=1) lightweight hits.  Fixed length 8, fixed order."
           }
         },
         "type": "object",
@@ -17749,7 +17778,7 @@
           "databases"
         ],
         "title": "DbPortalCrossSearchResponse",
-        "description": "Cross-database count-only response (8 entries, fixed order).\n\nOrder: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy."
+        "description": "Cross-database response (8 entries, fixed order, count + top hits).\n\nOrder: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy.\nEach entry carries count and (when ``topHits>=1``) up to ``topHits``\nlightweight hits per DB."
       },
       "DbPortalDb": {
         "type": "string",
@@ -17919,6 +17948,18 @@
             ],
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
           },
           "type": {
             "type": "string",
@@ -18161,6 +18202,18 @@
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
           },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
+          },
           "type": {
             "type": "string",
             "const": "biosample",
@@ -18367,6 +18420,18 @@
             ],
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
           },
           "type": {
             "type": "string",
@@ -18579,6 +18644,18 @@
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
           },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -18695,7 +18772,7 @@
           "type"
         ],
         "title": "DbPortalHitJga",
-        "description": "JGA hit. 4 subtype; subtype-specific fields are optional.\n\n``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` / ``jga-policy``.\nstudy_type / grant / publication は jga-study のみ、dataset_type は jga-dataset のみ。"
+        "description": "JGA hit (4 subtypes share one variant; subtype-specific fields are optional).\n\n``type`` values: ``jga-study`` / ``jga-dataset`` / ``jga-dac`` /\n``jga-policy``.  ``studyType`` / ``grant`` / ``publication`` are\npopulated only on ``jga-study`` hits, and ``datasetType`` only on\n``jga-dataset`` hits."
       },
       "DbPortalHitMetabobank": {
         "properties": {
@@ -18850,6 +18927,18 @@
             ],
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
           },
           "type": {
             "type": "string",
@@ -19090,6 +19179,18 @@
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
           },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -19227,7 +19328,7 @@
           "type"
         ],
         "title": "DbPortalHitSra",
-        "description": "SRA hit. 6 subtype in a single variant; subtype-specific fields are optional.\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``. library_* / platform /\ninstrument_model は sra-experiment のみ、analysis_type は sra-analysis のみ\n実値が入る。他 subtype では ``None``。"
+        "description": "SRA hit (6 subtypes share one variant; subtype-specific fields are optional).\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``.  ``library_*`` /\n``platform`` / ``instrumentModel`` are populated only on\n``sra-experiment`` hits, and ``analysisType`` only on\n``sra-analysis`` hits; the remaining subtypes leave them as\n``null``."
       },
       "DbPortalHitTaxonomy": {
         "properties": {
@@ -19383,6 +19484,18 @@
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
           },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
+          },
           "type": {
             "type": "string",
             "const": "taxonomy",
@@ -19446,7 +19559,7 @@
           "type"
         ],
         "title": "DbPortalHitTaxonomy",
-        "description": "Taxonomy (TXSearch-backed) hit.\n\n``japanese_name`` は hit 表示スキーマとしては残すが、検索 allowlist へは追加しない\n(staging TXSearch の schema luke で field 不在を確認済のため)。"
+        "description": "Taxonomy (TXSearch-backed) hit.\n\n``japaneseName`` is exposed in the response shape but cannot be\nused as a search field."
       },
       "DbPortalHitTrad": {
         "properties": {
@@ -19601,6 +19714,18 @@
             ],
             "title": "Accessibility",
             "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
           },
           "type": {
             "type": "string",
@@ -19762,6 +19887,174 @@
         ],
         "title": "DbPortalHitsResponse",
         "description": "DB-specific search response (hits envelope + pagination)."
+      },
+      "DbPortalLightweightHit": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "Entry identifier."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bioproject",
+              "biosample",
+              "sra-submission",
+              "sra-study",
+              "sra-experiment",
+              "sra-run",
+              "sra-sample",
+              "sra-analysis",
+              "jga-study",
+              "jga-dataset",
+              "jga-dac",
+              "jga-policy",
+              "gea",
+              "metabobank",
+              "trad",
+              "taxonomy"
+            ],
+            "title": "Type",
+            "description": "Entry type.  16 possible values."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Entry title."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Entry description."
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganismOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Organism information."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "private",
+                  "suppressed",
+                  "withdrawn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "INSDC status."
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "public-access",
+                  "controlled-access"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Accessibility level (public-access / controlled-access)."
+          },
+          "dateCreated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datecreated",
+            "description": "Creation date (ISO 8601)."
+          },
+          "dateModified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datemodified",
+            "description": "Modification date (ISO 8601)."
+          },
+          "datePublished": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datepublished",
+            "description": "Publication date (ISO 8601)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Canonical URL."
+          },
+          "isPartOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartof",
+            "description": "Parent collection identifier.  ES-backed hits carry the index-level value (e.g. ``\"bioproject\"`` / ``\"sra\"``); Solr-backed hits use a fixed literal (``\"trad\"`` / ``\"taxonomy\"``)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "type"
+        ],
+        "title": "DbPortalLightweightHit",
+        "description": "12-field hit envelope returned by ``/db-portal/cross-search``.\n\nCarries only the common fields shared across all 8 db-portal DBs.\nDB-specific extras present in ``DbPortalHit`` (used by\n``/db-portal/search``) — ``projectType``, ``libraryStrategy``,\n``division``, ``rank``, ``commonName`` etc. — are not part of this\nenvelope.\n\n``type`` covers all 16 possible hit values: the 8 db-portal DBs with\nsub-types where applicable (``sra-*``, ``jga-*``) plus the\nSolr-backed fixed literals ``trad`` and ``taxonomy``."
       },
       "DbPortalParseBoolOp": {
         "properties": {
@@ -20429,7 +20722,7 @@
         },
         "type": "object",
         "title": "Facets",
-        "description": "Facet aggregation results.\n\nEvery field is optional (nullable). The ``facets`` query parameter\non the request side selects which aggregations to compute, and only\nselected fields are returned as a list; the rest are ``null``.\nThis means callers can distinguish \"aggregated but no buckets\"\n(empty list ``[]``) from \"not aggregated\" (``null``).\n\nDefault behaviour (no ``facets`` parameter): ``organism`` and\n``accessibility`` are populated; ``type`` is also populated on\ncross-type endpoints. All other fields default to ``null``.\n\nExplicit ``facets=...`` selection fully replaces the default\n(no auto-merge), so passing ``facets=objectType`` returns\n``organism`` / ``accessibility`` as ``null``.\n\nThe ``status`` facet is intentionally omitted: aggregations are\nalways constrained to ``status:public`` upstream, so the bucket\nwould be degenerate. See ``docs/api-spec.md`` § データ可視性."
+        "description": "Facet aggregation results.\n\nEvery field is optional (nullable). The ``facets`` query parameter\non the request side selects which aggregations to compute, and only\nselected fields are returned as a list; the rest are ``null``.\nThis means callers can distinguish \"aggregated but no buckets\"\n(empty list ``[]``) from \"not aggregated\" (``null``).\n\nDefault behaviour (no ``facets`` parameter): ``organism`` and\n``accessibility`` are populated; ``type`` is also populated on\ncross-type endpoints. All other fields default to ``null``.\n\nExplicit ``facets=...`` selection fully replaces the default\n(no auto-merge), so passing ``facets=objectType`` returns\n``organism`` / ``accessibility`` as ``null``.\n\nThe ``status`` facet is intentionally omitted: aggregations are\nalways constrained to ``status:public`` upstream, so the bucket\nwould be degenerate.  See ``docs/api-spec.md`` for the data\nvisibility policy."
       },
       "FacetsResponse": {
         "properties": {
@@ -23951,7 +24244,7 @@
           "url"
         ],
         "title": "XrefOut",
-        "description": "Cross-reference entry (dbXrefs / sameAs).\n\nconverter 側 XrefType は 22 値 Literal だが、API 側は str で緩く受ける\n(converter の XrefType 拡張時に API を同期せずとも動くようにする)。"
+        "description": "Cross-reference entry (``dbXrefs`` / ``sameAs``).\n\nThe upstream cross-reference type is a closed enumeration, but this\nresponse model accepts ``type`` as a plain string so adding a new\ncross-reference type upstream does not break clients."
       }
     }
   },

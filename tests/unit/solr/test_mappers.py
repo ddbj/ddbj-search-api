@@ -18,8 +18,10 @@ from ddbj_search_api.schemas.db_portal import DbPortalHitBase, DbPortalHitsRespo
 from ddbj_search_api.solr.mappers import (
     _parse_arsa_date,
     arsa_docs_to_hits,
+    arsa_docs_to_lightweight_hits,
     arsa_response_to_envelope,
     txsearch_docs_to_hits,
+    txsearch_docs_to_lightweight_hits,
     txsearch_response_to_envelope,
 )
 
@@ -349,6 +351,139 @@ class TestTxsearchDocsToHits:
 
 
 # === ARSA envelope ===
+
+
+class TestArsaDocsToLightweightHits:
+    """ARSA → 12-field lightweight DbPortalHit (cross-search)."""
+
+    _LIGHTWEIGHT_FIELDS = {
+        "identifier",
+        "type",
+        "url",
+        "title",
+        "description",
+        "organism",
+        "status",
+        "accessibility",
+        "dateCreated",
+        "dateModified",
+        "datePublished",
+        "isPartOf",
+    }
+
+    def test_empty_input_returns_empty_list(self) -> None:
+        assert arsa_docs_to_lightweight_hits([]) == []
+
+    def test_full_doc_maps_12_fields(self) -> None:
+        hits = arsa_docs_to_lightweight_hits(
+            [
+                {
+                    "PrimaryAccessionNumber": "GL589895",
+                    "Definition": "Mus musculus scaffold",
+                    "Organism": "Mus musculus",
+                    "Date": "20150313",
+                    "Feature": ['source 1..1000\n/db_xref="taxon:10090"'],
+                    # Trad-only extras to verify they get dropped.
+                    "Division": "CON",
+                    "MolecularType": "DNA",
+                    "SequenceLength": 635881,
+                },
+            ],
+        )
+        assert len(hits) == 1
+        h = hits[0]
+        dumped = h.model_dump(by_alias=True)
+        assert set(dumped.keys()) == self._LIGHTWEIGHT_FIELDS
+        assert dumped["identifier"] == "GL589895"
+        assert dumped["type"] == "trad"
+        assert dumped["url"] == "https://getentry.ddbj.nig.ac.jp/getentry/na/GL589895/"
+        assert dumped["title"] == "Mus musculus scaffold"
+        assert dumped["description"] is None
+        assert dumped["organism"] == {"identifier": "10090", "name": "Mus musculus"}
+        assert dumped["datePublished"] == "2015-03-13"
+        assert dumped["status"] == "public"
+        assert dumped["accessibility"] == "public-access"
+        assert dumped["isPartOf"] == "trad"
+        assert dumped["dateCreated"] is None
+        assert dumped["dateModified"] is None
+
+    def test_missing_organism_yields_none(self) -> None:
+        hits = arsa_docs_to_lightweight_hits(
+            [{"PrimaryAccessionNumber": "X1", "Definition": "title"}],
+        )
+        assert hits[0].organism is None
+
+    def test_missing_date_yields_none(self) -> None:
+        hits = arsa_docs_to_lightweight_hits(
+            [{"PrimaryAccessionNumber": "X1", "Definition": "title"}],
+        )
+        assert hits[0].date_published is None
+
+    def test_invalid_date_yields_none(self) -> None:
+        hits = arsa_docs_to_lightweight_hits(
+            [{"PrimaryAccessionNumber": "X1", "Date": "not a date"}],
+        )
+        assert hits[0].date_published is None
+
+
+class TestTxsearchDocsToLightweightHits:
+    """TXSearch → 12-field lightweight DbPortalHit (cross-search)."""
+
+    _LIGHTWEIGHT_FIELDS = {
+        "identifier",
+        "type",
+        "url",
+        "title",
+        "description",
+        "organism",
+        "status",
+        "accessibility",
+        "dateCreated",
+        "dateModified",
+        "datePublished",
+        "isPartOf",
+    }
+
+    def test_empty_input_returns_empty_list(self) -> None:
+        assert txsearch_docs_to_lightweight_hits([]) == []
+
+    def test_full_doc_maps_12_fields(self) -> None:
+        hits = txsearch_docs_to_lightweight_hits(
+            [
+                {
+                    "tax_id": 9606,
+                    "scientific_name": "Homo sapiens",
+                    # Taxonomy-only extras to verify they get dropped.
+                    "rank": "species",
+                    "common_name": ["human"],
+                    "japanese_name": ["ヒト"],
+                    "lineage": ["Homo sapiens", "Homo", "Hominidae"],
+                },
+            ],
+        )
+        assert len(hits) == 1
+        h = hits[0]
+        dumped = h.model_dump(by_alias=True)
+        assert set(dumped.keys()) == self._LIGHTWEIGHT_FIELDS
+        assert dumped["identifier"] == "9606"
+        assert dumped["type"] == "taxonomy"
+        assert dumped["url"] == "https://ddbj.nig.ac.jp/resource/taxonomy/9606"
+        assert dumped["title"] == "Homo sapiens"
+        assert dumped["description"] is None
+        assert dumped["organism"] == {"identifier": "9606", "name": "Homo sapiens"}
+        assert dumped["status"] == "public"
+        assert dumped["accessibility"] == "public-access"
+        assert dumped["isPartOf"] == "taxonomy"
+        # TXSearch has no published date concept.
+        assert dumped["datePublished"] is None
+        assert dumped["dateCreated"] is None
+        assert dumped["dateModified"] is None
+
+    def test_only_tax_id_organism_kept(self) -> None:
+        hits = txsearch_docs_to_lightweight_hits([{"tax_id": 1}])
+        assert hits[0].organism is not None
+        assert hits[0].organism.identifier == "1"
+        assert hits[0].organism.name is None
 
 
 class TestArsaResponseToEnvelope:

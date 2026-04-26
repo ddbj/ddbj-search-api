@@ -1,8 +1,10 @@
 """Search endpoints for db-portal frontend: split into two operations.
 
-* ``GET /db-portal/cross-search`` — cross-database count-only (8 entries,
-  ES + Solr fan-out).  Accepts only ``q`` or ``adv``; any other query
-  parameter returns 400 ``unexpected-parameter``.  Tier 1/2 fields only.
+* ``GET /db-portal/cross-search`` — cross-database fan-out across 8 DBs
+  (ES 6 + Solr 2) returning per-DB count and (when ``topHits>=1``) up
+  to ``topHits`` lightweight hits.  Accepts only ``q`` / ``adv`` /
+  ``topHits``; any other query parameter returns 400
+  ``unexpected-parameter``.  Tier 1/2 fields only.
 * ``GET /db-portal/search`` — db-specific hits envelope.  ``db`` is
   required; omitting it returns 400 ``missing-db``.  Accepts ``q`` /
   ``adv`` (mutually exclusive) plus pagination (``page`` / ``perPage`` /
@@ -45,9 +47,11 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalErrorType,
     DbPortalHit,
     DbPortalHitsResponse,
+    DbPortalLightweightHit,
     DbPortalParseResponse,
     DbPortalSearchQuery,
     _DbPortalHitAdapter,
+    _DbPortalLightweightHitAdapter,
 )
 from ddbj_search_api.search.dsl import (
     DslError,
@@ -61,7 +65,9 @@ from ddbj_search_api.search.dsl.ast import Node as DslNode
 from ddbj_search_api.solr import get_solr_client
 from ddbj_search_api.solr.client import arsa_search, txsearch_search
 from ddbj_search_api.solr.mappers import (
+    arsa_docs_to_lightweight_hits,
     arsa_response_to_envelope,
+    txsearch_docs_to_lightweight_hits,
     txsearch_response_to_envelope,
 )
 from ddbj_search_api.solr.query import (
@@ -103,6 +109,25 @@ _DB_TO_INDEX: dict[DbPortalDb, str] = {
 }
 
 _SOLR_DBS: frozenset[DbPortalDb] = frozenset({DbPortalDb.trad, DbPortalDb.taxonomy})
+
+# Cross-search lightweight hit `_source` allowlist (12 fields shared with the
+# DbPortalHitBase contract).  Db-specific extras (`projectType`, `division`,
+# `rank` etc.) are intentionally excluded; the cross-search UI only renders the
+# common base fields per DB.
+_CROSS_SEARCH_LIGHTWEIGHT_FIELDS: tuple[str, ...] = (
+    "identifier",
+    "type",
+    "url",
+    "title",
+    "description",
+    "organism",
+    "status",
+    "accessibility",
+    "dateCreated",
+    "dateModified",
+    "datePublished",
+    "isPartOf",
+)
 
 
 # === Exception ===
@@ -205,15 +230,16 @@ def _validate_q_adv_exclusivity(q: str | None, adv: str | None) -> None:
         )
 
 
-_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "adv"})
+_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "adv", "topHits"})
 
 
 def _reject_unexpected_cross_params(request: Request) -> None:
     """Raise 400 ``unexpected-parameter`` for forbidden params on /db-portal/cross-search.
 
-    cross-search is count-only across 8 DBs; ``db`` / ``cursor`` / ``page`` /
-    ``perPage`` / ``sort`` have no meaning here.  Silently ignoring would
-    hide user typos, so the first unexpected key is reported by name.
+    cross-search is a fixed 8-DB fan-out without pagination; ``db`` /
+    ``cursor`` / ``page`` / ``perPage`` / ``sort`` have no meaning here.
+    Silently ignoring would hide user typos, so the first unexpected key
+    is reported by name.
     """
     extra = [k for k in request.query_params if k not in _CROSS_SEARCH_ALLOWED_PARAMS]
     if not extra:
@@ -257,7 +283,12 @@ def _parse_and_validate_dsl(
     return ast
 
 
-# === Cross-database count-only ===
+# === Cross-database fan-out (count + optional top hits) ===
+
+
+def _empty_hits_or_none(top_hits: int) -> list[DbPortalLightweightHit] | None:
+    """`DbPortalCount.hits` の空値: `top_hits=0` で `None`、`top_hits>=1` で `[]`。"""
+    return [] if top_hits > 0 else None
 
 
 async def _count_one_db_es(
@@ -265,14 +296,18 @@ async def _count_one_db_es(
     config: AppConfig,
     db: DbPortalDb,
     query_body: dict[str, Any],
+    top_hits: int,
 ) -> DbPortalCount:
+    body: dict[str, Any] = {"query": query_body, "size": top_hits}
+    if top_hits > 0:
+        body["_source"] = list(_CROSS_SEARCH_LIGHTWEIGHT_FIELDS)
+        body["sort"] = build_sort_with_tiebreaker(None)
+        # ES truncates total at 10000 when size>=1 unless ``track_total_hits`` is
+        # set; force exact count so per-DB ``count`` stays accurate alongside hits.
+        body["track_total_hits"] = True
     try:
         resp = await asyncio.wait_for(
-            es_search(
-                client,
-                _db_to_index(db),
-                {"query": query_body, "size": 0},
-            ),
+            es_search(client, _db_to_index(db), body),
             timeout=config.es_search_timeout,
         )
     except asyncio.TimeoutError:
@@ -281,7 +316,12 @@ async def _count_one_db_es(
             db.value,
             config.es_search_timeout,
         )
-        return DbPortalCount(db=db, count=None, error=DbPortalCountError.timeout)
+        return DbPortalCount(
+            db=db,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -290,7 +330,12 @@ async def _count_one_db_es(
             type(exc).__name__,
             error.value,
         )
-        return DbPortalCount(db=db, count=None, error=error)
+        return DbPortalCount(
+            db=db,
+            count=None,
+            error=error,
+            hits=_empty_hits_or_none(top_hits),
+        )
     try:
         count = int(resp["hits"]["total"]["value"])
     except (KeyError, TypeError, ValueError):
@@ -298,25 +343,36 @@ async def _count_one_db_es(
             "db-portal cross-search: unexpected ES response shape for db=%s",
             db.value,
         )
-        return DbPortalCount(db=db, count=None, error=DbPortalCountError.unknown)
-    return DbPortalCount(db=db, count=count, error=None)
+        return DbPortalCount(
+            db=db,
+            count=None,
+            error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    hits: list[DbPortalLightweightHit] | None = None
+    if top_hits > 0:
+        raw_hits = resp.get("hits", {}).get("hits", [])
+        hits = [_DbPortalLightweightHitAdapter.validate_python(h.get("_source", {})) for h in raw_hits]
+    return DbPortalCount(db=db, count=count, error=None, hits=hits)
 
 
 async def _count_arsa(
     client: httpx.AsyncClient,
     config: AppConfig,
     q: str | None,
+    top_hits: int,
 ) -> DbPortalCount:
     if not config.solr_arsa_base_url:
         return DbPortalCount(
             db=DbPortalDb.trad,
             count=None,
             error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
         )
     params = build_arsa_params(
         keywords=q,
         page=1,
-        per_page=0,
+        per_page=top_hits,
         sort=None,
         shards=config.solr_arsa_shards,
     )
@@ -335,7 +391,12 @@ async def _count_arsa(
             "db-portal cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
             config.arsa_timeout,
         )
-        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.timeout)
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -343,30 +404,46 @@ async def _count_arsa(
             type(exc).__name__,
             error.value,
         )
-        return DbPortalCount(db=DbPortalDb.trad, count=None, error=error)
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=error,
+            hits=_empty_hits_or_none(top_hits),
+        )
     try:
         count = int(resp["response"]["numFound"])
     except (KeyError, TypeError, ValueError):
         logger.warning("db-portal cross-search: unexpected ARSA response shape")
-        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.unknown)
-    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None)
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    hits: list[DbPortalLightweightHit] | None = None
+    if top_hits > 0:
+        docs = (resp.get("response") or {}).get("docs") or []
+        hits = arsa_docs_to_lightweight_hits(docs)
+    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
 
 
 async def _count_txsearch(
     client: httpx.AsyncClient,
     config: AppConfig,
     q: str | None,
+    top_hits: int,
 ) -> DbPortalCount:
     if not config.solr_txsearch_url:
         return DbPortalCount(
             db=DbPortalDb.taxonomy,
             count=None,
             error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
         )
     params = build_txsearch_params(
         keywords=q,
         page=1,
-        per_page=0,
+        per_page=top_hits,
         sort=None,
     )
     try:
@@ -383,7 +460,12 @@ async def _count_txsearch(
             "db-portal cross-search timed out for db=taxonomy (TXSearch, txsearch_timeout=%.2fs)",
             config.txsearch_timeout,
         )
-        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.timeout)
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -391,13 +473,27 @@ async def _count_txsearch(
             type(exc).__name__,
             error.value,
         )
-        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=error)
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=error,
+            hits=_empty_hits_or_none(top_hits),
+        )
     try:
         count = int(resp["response"]["numFound"])
     except (KeyError, TypeError, ValueError):
         logger.warning("db-portal cross-search: unexpected TXSearch response shape")
-        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.unknown)
-    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None)
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    hits: list[DbPortalLightweightHit] | None = None
+    if top_hits > 0:
+        docs = (resp.get("response") or {}).get("docs") or []
+        hits = txsearch_docs_to_lightweight_hits(docs)
+    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None, hits=hits)
 
 
 async def _count_one_db(
@@ -407,22 +503,24 @@ async def _count_one_db(
     db: DbPortalDb,
     es_query_body: dict[str, Any],
     q: str | None,
+    top_hits: int,
 ) -> DbPortalCount:
-    """Run one count-only search and map errors to a DbPortalCount."""
+    """Run one search (count + optional top hits) and map errors to a DbPortalCount."""
     if db == DbPortalDb.trad:
-        return await _count_arsa(solr_client, config, q)
+        return await _count_arsa(solr_client, config, q, top_hits)
     if db == DbPortalDb.taxonomy:
-        return await _count_txsearch(solr_client, config, q)
-    return await _count_one_db_es(es_client, config, db, es_query_body)
+        return await _count_txsearch(solr_client, config, q, top_hits)
+    return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
 
 
-async def _cross_search_count_only(
+async def _cross_search(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
     q: str | None,
+    top_hits: int,
 ) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database count-only search.
+    """Parallel cross-database search (count + optional top hits).
 
     All 8 DBs fan out via ``asyncio.create_task``; ``asyncio.wait`` with
     ``ALL_COMPLETED`` + ``cross_search_total_timeout`` collects them.
@@ -431,14 +529,17 @@ async def _cross_search_count_only(
     are cancelled and surfaced as ``error=timeout`` in the response,
     preserving the partial-success policy (200 as long as any DB
     returned a count; 502 only when every DB failed).
+
+    ``top_hits=0`` returns count-only (each ``DbPortalCount.hits=None``);
+    ``top_hits>=1`` returns up to ``top_hits`` lightweight hits per DB.
     """
     # db-portal の status filter は Future work (docs/api-spec.md § データ可視性)。
-    # ES 6 DB / Solr 2 DB の対称性を保つため、本 PR では status filter を適用しない。
+    # ES 6 DB / Solr 2 DB の対称性を保つため status filter は適用しない。
     query_body = build_search_query(keywords=q, keyword_operator="AND", status_mode=None)
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
         task = asyncio.create_task(
-            _count_one_db(es_client, solr_client, config, db, query_body, q),
+            _count_one_db(es_client, solr_client, config, db, query_body, q, top_hits),
         )
         task_map[task] = db
     done, pending = await asyncio.wait(
@@ -461,6 +562,7 @@ async def _cross_search_count_only(
             db=db,
             count=None,
             error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
         )
     databases = [results[db] for db in _DB_ORDER]
     if all(item.error is not None for item in databases):
@@ -478,17 +580,19 @@ async def _count_arsa_adv(
     client: httpx.AsyncClient,
     config: AppConfig,
     q_string: str,
+    top_hits: int,
 ) -> DbPortalCount:
     if not config.solr_arsa_base_url:
         return DbPortalCount(
             db=DbPortalDb.trad,
             count=None,
             error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
         )
     params = build_arsa_adv_params(
         q=q_string,
         page=1,
-        per_page=0,
+        per_page=top_hits,
         sort=None,
         shards=config.solr_arsa_shards,
     )
@@ -507,7 +611,12 @@ async def _count_arsa_adv(
             "db-portal adv cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
             config.arsa_timeout,
         )
-        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.timeout)
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -515,30 +624,46 @@ async def _count_arsa_adv(
             type(exc).__name__,
             error.value,
         )
-        return DbPortalCount(db=DbPortalDb.trad, count=None, error=error)
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=error,
+            hits=_empty_hits_or_none(top_hits),
+        )
     try:
         count = int(resp["response"]["numFound"])
     except (KeyError, TypeError, ValueError):
         logger.warning("db-portal adv cross-search: unexpected ARSA response shape")
-        return DbPortalCount(db=DbPortalDb.trad, count=None, error=DbPortalCountError.unknown)
-    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None)
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    hits: list[DbPortalLightweightHit] | None = None
+    if top_hits > 0:
+        docs = (resp.get("response") or {}).get("docs") or []
+        hits = arsa_docs_to_lightweight_hits(docs)
+    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
 
 
 async def _count_txsearch_adv(
     client: httpx.AsyncClient,
     config: AppConfig,
     q_string: str,
+    top_hits: int,
 ) -> DbPortalCount:
     if not config.solr_txsearch_url:
         return DbPortalCount(
             db=DbPortalDb.taxonomy,
             count=None,
             error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
         )
     params = build_txsearch_adv_params(
         q=q_string,
         page=1,
-        per_page=0,
+        per_page=top_hits,
         sort=None,
     )
     try:
@@ -555,7 +680,12 @@ async def _count_txsearch_adv(
             "db-portal adv cross-search timed out for db=taxonomy (TXSearch, txsearch_timeout=%.2fs)",
             config.txsearch_timeout,
         )
-        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.timeout)
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
@@ -563,13 +693,27 @@ async def _count_txsearch_adv(
             type(exc).__name__,
             error.value,
         )
-        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=error)
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=error,
+            hits=_empty_hits_or_none(top_hits),
+        )
     try:
         count = int(resp["response"]["numFound"])
     except (KeyError, TypeError, ValueError):
         logger.warning("db-portal adv cross-search: unexpected TXSearch response shape")
-        return DbPortalCount(db=DbPortalDb.taxonomy, count=None, error=DbPortalCountError.unknown)
-    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None)
+        return DbPortalCount(
+            db=DbPortalDb.taxonomy,
+            count=None,
+            error=DbPortalCountError.unknown,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    hits: list[DbPortalLightweightHit] | None = None
+    if top_hits > 0:
+        docs = (resp.get("response") or {}).get("docs") or []
+        hits = txsearch_docs_to_lightweight_hits(docs)
+    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None, hits=hits)
 
 
 async def _count_one_db_adv(
@@ -580,21 +724,23 @@ async def _count_one_db_adv(
     es_query_body: dict[str, Any],
     arsa_q: str,
     txsearch_q: str,
+    top_hits: int,
 ) -> DbPortalCount:
     if db == DbPortalDb.trad:
-        return await _count_arsa_adv(solr_client, config, arsa_q)
+        return await _count_arsa_adv(solr_client, config, arsa_q, top_hits)
     if db == DbPortalDb.taxonomy:
-        return await _count_txsearch_adv(solr_client, config, txsearch_q)
-    return await _count_one_db_es(es_client, config, db, es_query_body)
+        return await _count_txsearch_adv(solr_client, config, txsearch_q, top_hits)
+    return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
 
 
-async def _adv_cross_search_count_only(
+async def _adv_cross_search(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
     ast: DslNode,
+    top_hits: int,
 ) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database adv count-only.
+    """Parallel cross-database adv search (count + optional top hits).
 
     Compiles the AST once per backend dialect, then fans out 8 DBs via
     ``asyncio.create_task`` with ``ALL_COMPLETED`` + ``cross_search_total_timeout``.
@@ -614,6 +760,7 @@ async def _adv_cross_search_count_only(
                 es_query_body,
                 arsa_q,
                 txsearch_q,
+                top_hits,
             ),
         )
         task_map[task] = db
@@ -633,7 +780,12 @@ async def _adv_cross_search_count_only(
             db.value,
             config.cross_search_total_timeout,
         )
-        results[db] = DbPortalCount(db=db, count=None, error=DbPortalCountError.timeout)
+        results[db] = DbPortalCount(
+            db=db,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
     databases = [results[db] for db in _DB_ORDER]
     if all(item.error is not None for item in databases):
         raise HTTPException(
@@ -1037,13 +1189,13 @@ async def _cross_search_handler(
     solr_client: httpx.AsyncClient = Depends(get_solr_client),
     config: AppConfig = Depends(_get_config_dep),
 ) -> DbPortalCrossSearchResponse:
-    """``GET /db-portal/cross-search``: cross-database count-only search."""
+    """``GET /db-portal/cross-search``: cross-database count + top hits search."""
     _reject_unexpected_cross_params(request)
     _validate_q_adv_exclusivity(query.q, query.adv)
     if query.adv is not None:
         ast = _parse_and_validate_dsl(query.adv, db=None, config=config)
-        return await _adv_cross_search_count_only(es_client, solr_client, config, ast)
-    return await _cross_search_count_only(es_client, solr_client, config, query.q)
+        return await _adv_cross_search(es_client, solr_client, config, ast, query.top_hits)
+    return await _cross_search(es_client, solr_client, config, query.q, query.top_hits)
 
 
 async def _db_search_handler(
@@ -1107,7 +1259,7 @@ router.add_api_route(
             "model": ProblemDetails,
         },
     },
-    summary="DB Portal cross-database count-only search",
+    summary="DB Portal cross-database fan-out (count + top hits)",
     operation_id="crossSearchDbPortal",
     tags=["db-portal"],
 )

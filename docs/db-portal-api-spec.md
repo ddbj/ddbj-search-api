@@ -6,9 +6,9 @@
 
 ## 主要機能
 
-- **2 endpoint 構成**: `/db-portal/cross-search` (横断 count-only) と `/db-portal/search` (DB 指定 hits) の 2 系統に分離。両者は operation セマンティクスが別物 (横断は 8 DB fan-out + 部分失敗許容 + 全体タイムアウト 20s、DB 指定は単一 backend + 5xx でフェイル + ページネーション可) のため endpoint も分けた。NCBI EUtils の `eGquery` / `esearch?db=...` と同型
+- **2 endpoint 構成**: `/db-portal/cross-search` (横断 fan-out、count + 上位ヒット) と `/db-portal/search` (DB 指定 hits) の 2 系統に分離。両者は operation セマンティクスが別物 (横断は 8 DB fan-out + 部分失敗許容 + 全体タイムアウト 20s、DB 指定は単一 backend + 5xx でフェイル + ページネーション可) のため endpoint も分けた。NCBI EUtils の `eGquery` / `esearch?db=...` と同型
 - ES 6 DB + Solr 2 DB (`trad` = ARSA 8-shard fan-out、`taxonomy` = TXSearch) に対応
-- 横断 count-only は `asyncio.create_task` + `asyncio.wait(ALL_COMPLETED)` で並列 fan-out、per-backend timeout (ES 10s / ARSA 15s / TXSearch 5s) + 全体 20s で早期打切り (部分完了許容)
+- 横断 fan-out は `asyncio.create_task` + `asyncio.wait(ALL_COMPLETED)` で並列実行、per-backend timeout (ES 10s / ARSA 15s / TXSearch 5s) + 全体 20s で早期打切り (部分完了許容)
 - Advanced Search DSL (`ddbj_search_api/search/dsl/*`): Lark LALR(1) パーサ → allowlist validator → ES/Solr compiler の pipeline。`grammar` / `ast` / `allowlist` / `errors` / `parser` / `validator` / `compiler_es` / `compiler_solr` / `serde` の 9 module 構成
 - フィールド allowlist は 3 段構造: Tier 1 (横断可、8 field) / Tier 2 (横断可、converter 側正規化済の共通 field、2 field) / Tier 3 (単一 DB 指定必須、25 unique / per-DB 集計 28 field)
 - `FieldType` は `identifier` / `text` / `organism` / `date` / `enum` / `number` の 6 種、ES 側は `_ES_FIELD_STRATEGY` で `flat` / `or_flat` / `nested` / `nested2` の 4 pattern に分岐
@@ -19,7 +19,7 @@
 
 ## `GET /db-portal/cross-search`
 
-8 DB を横断した count-only 検索。レスポンスは `DbPortalCrossSearchResponse` (常に 8 件、固定順序の `databases` 配列) のみ。ページネーション概念は持たない。
+8 DB を横断したカウント + 上位ヒット検索。レスポンスは `DbPortalCrossSearchResponse` (常に 8 件、固定順序の `databases` 配列。各要素に count と上位ヒット (`hits`) を nested) のみ。ページネーション概念は持たない (DB 指定の本格検索は `/db-portal/search`)。
 
 | クエリ | 処理 |
 |-------|-----|
@@ -29,7 +29,7 @@
 排他ルール:
 
 - `q` / `adv` のいずれか必須、両方指定で 400 `invalid-query-combination`
-- `db` / `cursor` / `page` / `perPage` / `sort` は受け付けない (指定すると 400 `unexpected-parameter`)。横断は count-only でページネーションも DB 指定も持たないため、利用者の typo を早期に表面化させる
+- `db` / `cursor` / `page` / `perPage` / `sort` は受け付けない (指定すると 400 `unexpected-parameter`)。横断はページネーションも DB 指定も持たないため、利用者の typo を早期に表面化させる
 - 横断モードで Tier 3 field を `adv` に含めると 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)
 
 Trailing slash なし (`/db-portal/cross-search`) が canonical。
@@ -40,35 +40,97 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
 |----------|-----|-----------|------|
 | `q` | string | — | シンプル検索キーワード。既存 `/entries/` と同じ auto-phrase (記号 `-` `/` `.` `+` `:` 含むと phrase match) が適用される |
 | `adv` | string | — | Advanced Search DSL。Tier 1/2 フィールドのみ許容 (Tier 3 は 400 `field-not-available-in-cross-db`)。文法詳細は本ページ「Advanced Search DSL」節 |
+| `topHits` | integer | `10` | 各 DB の上位ヒット件数。値域 `0`-`50` (51 以上 / 負数で 422)。`topHits=0` で count-only モード (各 `databases[i].hits=null`)。`topHits=N` (1-50) で各 DB から最大 N 件返却 |
 
 ### レスポンス (`DbPortalCrossSearchResponse`)
 
 ```json
 {
   "databases": [
-    { "db": "trad",       "count": 15050, "error": null },
-    { "db": "sra",        "count": 1234,  "error": null },
-    { "db": "bioproject", "count": 567,   "error": null },
-    { "db": "biosample",  "count": 890,   "error": null },
-    { "db": "jga",        "count": 12,    "error": null },
-    { "db": "gea",        "count": 34,    "error": null },
-    { "db": "metabobank", "count": 5,     "error": null },
-    { "db": "taxonomy",   "count": 12,    "error": null }
+    {
+      "db": "trad",
+      "count": 295259692,
+      "error": null,
+      "hits": [
+        {
+          "identifier": "GL589895",
+          "type": "trad",
+          "url": "https://getentry.ddbj.nig.ac.jp/getentry/na/GL589895/",
+          "title": "Mus musculus strain C57BL/6J unplaced genomic scaffold scaffold_765, whole genome shotgun sequence.",
+          "description": null,
+          "organism": {"identifier": null, "name": "Mus musculus"},
+          "status": "public",
+          "accessibility": "public-access",
+          "dateCreated": null,
+          "dateModified": null,
+          "datePublished": "2015-03-13",
+          "isPartOf": "trad"
+        }
+      ]
+    },
+    { "db": "sra",        "count": 1234, "error": null, "hits": [/* ... */] },
+    { "db": "bioproject", "count": 567,  "error": null, "hits": [/* ... */] },
+    { "db": "biosample",  "count": 890,  "error": null, "hits": [/* ... */] },
+    { "db": "jga",        "count": 12,   "error": null, "hits": [/* ... */] },
+    { "db": "gea",        "count": 34,   "error": null, "hits": [/* ... */] },
+    { "db": "metabobank", "count": 5,    "error": null, "hits": [/* ... */] },
+    { "db": "taxonomy",   "count": 12,   "error": null, "hits": [/* ... */] }
   ]
 }
 ```
 
 - `databases` は常に 8 件、順序は固定 (`trad → sra → bioproject → biosample → jga → gea → metabobank → taxonomy`)
-- 各要素は `DbPortalCount`: `db` (enum 8 値)、`count` (int | null)、`error` (enum | null)
+- 各要素は `DbPortalCount`: `db` (enum 8 値)、`count` (int | null)、`error` (enum | null)、`hits` (`DbPortalHit[]` | null)
 - `count` は `track_total_hits=true` (ES) または Solr の `numFound` (Solr-backed DB) に基づく正確値
 - `error` 値: `timeout`, `upstream_5xx`, `connection_refused`, `unknown`
+- `hits` 仕様:
+  - `topHits=0` のとき `null` (count-only モード)
+  - `topHits>=1` で per-DB に最大 `topHits` 件 (relevance 順、`_score` desc + `identifier` asc tiebreaker)
+  - `q` を省略した場合 (`match_all`) はすべての `_score` が同点になり、tiebreaker により実質 `identifier` 昇順の最初の N 件になる
+  - per-DB error 時は `[]` (空配列、`error` と整合)
 - 1 つ以上の DB で成功: HTTP 200 (部分失敗許容)
 - 全 DB 失敗: HTTP 502 (`about:blank`)
+
+### `hits` lightweight schema
+
+cross-search の `hits` は `DbPortalLightweightHit` (12 field 固定) で返す。`/db-portal/search` の `DbPortalHit` (8 variant、DB 別追加 field を含む) とは別 schema。横断 UI は「DB 別の上位例」だけを並べる前提なので、`projectType` / `libraryStrategy` / `division` / `rank` 等の DB 別追加 field は cross-search 側のレスポンスには含めない。
+
+| 12 field | 内容 |
+|---|---|
+| `identifier` | エントリ識別子 |
+| `type` | hit 種別 16 値 (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank` / `trad` / `taxonomy`) |
+| `url` | エントリ canonical URL |
+| `title` | タイトル |
+| `description` | 説明 |
+| `organism` | `{identifier, name}` |
+| `status` | `public` / `private` / `suppressed` / `withdrawn` |
+| `accessibility` | `public-access` / `controlled-access` |
+| `dateCreated`, `dateModified`, `datePublished` | ISO 8601 日付 |
+| `isPartOf` | 所属識別子 (例: BioProject なら `"bioproject"`、SRA なら `"sra"`) |
+
+ES 6 DB (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank`) は ES index に格納された 12 field をそのまま返す (`/entries/*` と同じ source)。
+
+Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、status / accessibility / 一部日付 / `isPartOf` 相当の field を持たない。下表のとおり実 source を持たない field は固定値 (Solr 側は public 前提) または `null` で埋める。
+
+| field | `trad` (ARSA) | `taxonomy` (TXSearch) |
+|---|---|---|
+| `identifier` | `PrimaryAccessionNumber` | `tax_id` |
+| `type` | 固定 `"trad"` | 固定 `"taxonomy"` |
+| `url` | `https://getentry.ddbj.nig.ac.jp/getentry/na/{accession}/` | `https://ddbj.nig.ac.jp/resource/taxonomy/{tax_id}` |
+| `title` | `Definition` | `scientific_name` |
+| `description` | `null` | `null` |
+| `organism` | `Organism` (name) + `Feature` の `db_xref="taxon:..."` (identifier) | `scientific_name` (name) + `tax_id` (identifier) |
+| `status` | 固定 `"public"` | 固定 `"public"` |
+| `accessibility` | 固定 `"public-access"` | 固定 `"public-access"` |
+| `dateCreated` | `null` | `null` |
+| `dateModified` | `null` | `null` |
+| `datePublished` | `Date` (`YYYYMMDD` → ISO) | `null` |
+| `isPartOf` | 固定 `"trad"` | 固定 `"taxonomy"` |
 
 ### タイムアウト挙動
 
 - 8 DB は `asyncio.create_task` で並列 fan-out、`asyncio.wait(return_when=ALL_COMPLETED, timeout=20s)` で集約。順序は task 完了順に依存せず常に上記固定順
-- 個別 timeout (ES 10s / ARSA 15s / TXSearch 5s) は各 DB 関数内の `asyncio.wait_for` で適用。超過した DB は `error=timeout` でレスポンスに含まれる
+- 個別 timeout (ES 10s / ARSA 15s / TXSearch 5s) は各 DB 関数内の `asyncio.wait_for` で適用。超過した DB は `error=timeout` (`hits=[]`) でレスポンスに含まれる。`topHits>=1` でも同じ deadline で運用 (`_source` 絞りで delta 数百 ms 程度に収まる前提)
 - 全体 timeout (20s) 超過時、未完了の task は cancel され、対象 DB は `error=timeout` で補完される (部分完了分は維持、C2 パターン)
 - 呼び出し側は個別/全体どちらで切れたかを区別しない (内訳は X-Request-ID + サーバログで追える)
 - 初期値は `AppConfig` の `es_search_timeout` / `arsa_timeout` / `txsearch_timeout` / `cross_search_total_timeout` で env 経由に上書き可能
@@ -244,7 +306,7 @@ organism:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (title
 | `missing-value` | 400 | `field:""` 等の空値 | 両 | DSL |
 | `about:blank` | 400 | Deep paging 超過、cursor 排他違反 (adv/q/sort/page と同時)、不正な cursor、cursor 期限切れ | search | — |
 | `about:blank` | 422 | `db` / `sort` / `perPage` 等の enum・Literal 違反、型不一致 | search | — |
-| `about:blank` | 502 | 横断 count-only で全 DB 失敗、Solr DB 指定検索で upstream エラー | 両 | — |
+| `about:blank` | 502 | 横断 fan-out で全 DB 失敗、Solr DB 指定検索で upstream エラー | 両 | — |
 
 URI prefix `https://ddbj.nig.ac.jp/problems/` は dereferenceable である必要はなく、識別子として機能する (RFC 7807 §3.1)。DSL 関連 7 slug は DSL 実装時に enum へ追加済。`advanced-search-not-implemented` は router からは emit されなくなったが、OpenAPI 契約の互換性のため enum に残置している (将来の cleanup PR で物理削除予定)。
 

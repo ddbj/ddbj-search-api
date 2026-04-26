@@ -97,7 +97,8 @@ class Facets(BaseModel):
 
     The ``status`` facet is intentionally omitted: aggregations are
     always constrained to ``status:public`` upstream, so the bucket
-    would be degenerate. See ``docs/api-spec.md`` § データ可視性.
+    would be degenerate.  See ``docs/api-spec.md`` for the data
+    visibility policy.
     """
 
     model_config = ConfigDict(populate_by_name=True)

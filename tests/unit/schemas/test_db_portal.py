@@ -27,8 +27,10 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalHitBase,
     DbPortalHitBioProject,
     DbPortalHitsResponse,
+    DbPortalLightweightHit,
     DbPortalSearchQuery,
     _DbPortalHitAdapter,
+    _DbPortalLightweightHitAdapter,
 )
 
 # === Enum tests ===
@@ -155,13 +157,14 @@ def _cross_query(**overrides: Any) -> DbPortalCrossSearchQuery:
     defaults: dict[str, Any] = {
         "q": None,
         "adv": None,
+        "top_hits": 10,
     }
     defaults.update(overrides)
     return DbPortalCrossSearchQuery(**defaults)
 
 
 class TestDbPortalCrossSearchQuery:
-    """DbPortalCrossSearchQuery: only q / adv accepted at the schema layer.
+    """DbPortalCrossSearchQuery: only q / adv / topHits accepted at the schema layer.
 
     Other parameters (db / cursor / page / perPage / sort) are not part of
     the constructor; the router rejects them at runtime via
@@ -172,6 +175,7 @@ class TestDbPortalCrossSearchQuery:
         q = _cross_query()
         assert q.q is None
         assert q.adv is None
+        assert q.top_hits == 10
 
     def test_stores_q(self) -> None:
         q = _cross_query(q="cancer")
@@ -181,18 +185,26 @@ class TestDbPortalCrossSearchQuery:
         q = _cross_query(adv="title:cancer")
         assert q.adv == "title:cancer"
 
+    def test_stores_top_hits(self) -> None:
+        q = _cross_query(top_hits=25)
+        assert q.top_hits == 25
+
+    def test_top_hits_zero_allowed(self) -> None:
+        q = _cross_query(top_hits=0)
+        assert q.top_hits == 0
+
     def test_constructor_rejects_db(self) -> None:
         with pytest.raises(TypeError):
-            DbPortalCrossSearchQuery(q=None, adv=None, db=DbPortalDb.bioproject)  # type: ignore[call-arg]
+            DbPortalCrossSearchQuery(q=None, adv=None, top_hits=10, db=DbPortalDb.bioproject)  # type: ignore[call-arg]
 
     def test_constructor_rejects_cursor(self) -> None:
         with pytest.raises(TypeError):
-            DbPortalCrossSearchQuery(q=None, adv=None, cursor="abc")  # type: ignore[call-arg]
+            DbPortalCrossSearchQuery(q=None, adv=None, top_hits=10, cursor="abc")  # type: ignore[call-arg]
 
     @pytest.mark.parametrize("kwarg, value", [("page", 5), ("per_page", 50), ("sort", "datePublished:desc")])
     def test_constructor_rejects_paging_and_sort(self, kwarg: str, value: Any) -> None:
         with pytest.raises(TypeError):
-            DbPortalCrossSearchQuery(q=None, adv=None, **{kwarg: value})
+            DbPortalCrossSearchQuery(q=None, adv=None, top_hits=10, **{kwarg: value})
 
 
 class TestDbPortalSearchQuery:
@@ -304,6 +316,63 @@ class TestDbPortalCount:
         )
         assert c.error == DbPortalCountError.timeout
 
+    def test_hits_default_is_none(self) -> None:
+        """count-only モードでは ``hits`` は ``None``。"""
+        c = DbPortalCount(db=DbPortalDb.bioproject, count=10, error=None)
+        assert c.hits is None
+
+    def test_hits_can_be_empty_list(self) -> None:
+        """per-DB error 時は ``hits=[]`` (topHits>=1 のとき)。"""
+        c = DbPortalCount(
+            db=DbPortalDb.sra,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=[],
+        )
+        assert c.hits == []
+
+    def test_hits_can_carry_lightweight_hit(self) -> None:
+        """通常時は ``hits`` に DbPortalLightweightHit を入れられる。"""
+        hit = DbPortalLightweightHit(identifier="PRJDB1", type="bioproject")
+        c = DbPortalCount(
+            db=DbPortalDb.bioproject,
+            count=1,
+            error=None,
+            hits=[hit],
+        )
+        assert c.hits is not None
+        assert len(c.hits) == 1
+        assert c.hits[0].identifier == "PRJDB1"
+
+    def test_hits_serialize_with_alias_keys(self) -> None:
+        """``hits`` 内の DbPortalLightweightHit は alias (camelCase) で serialize される。"""
+        hit = _DbPortalLightweightHitAdapter.validate_python(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+                "datePublished": "2024-01-15",
+                "isPartOf": "bioproject",
+            },
+        )
+        c = DbPortalCount(db=DbPortalDb.bioproject, count=1, error=None, hits=[hit])
+        dumped = c.model_dump(by_alias=True)
+        assert dumped["hits"][0]["datePublished"] == "2024-01-15"
+        assert dumped["hits"][0]["isPartOf"] == "bioproject"
+
+    def test_hits_drop_db_specific_extras(self) -> None:
+        """``DbPortalLightweightHit`` は ``extra="ignore"`` で db 拡張を drop する。"""
+        hit = _DbPortalLightweightHitAdapter.validate_python(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+                "projectType": "BioProject",
+                "objectType": "BioProject",
+            },
+        )
+        dumped = hit.model_dump(by_alias=True)
+        assert "projectType" not in dumped
+        assert "objectType" not in dumped
+
 
 # === DbPortalCrossSearchResponse ===
 
@@ -392,6 +461,21 @@ class TestDbPortalHit:
         assert h.date_published == "2024-01-15"
         dumped = h.model_dump(by_alias=True)
         assert dumped["datePublished"] == "2024-01-15"
+
+    def test_is_part_of_alias_round_trip(self) -> None:
+        """``isPartOf`` (camelCase) ⇄ ``is_part_of`` (snake)。"""
+        h = _DbPortalHitAdapter.validate_python(
+            {"identifier": "X", "type": "bioproject", "isPartOf": "bioproject"},
+        )
+        assert h.is_part_of == "bioproject"
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["isPartOf"] == "bioproject"
+
+    def test_is_part_of_default_none(self) -> None:
+        h = _DbPortalHitAdapter.validate_python(
+            {"identifier": "X", "type": "bioproject"},
+        )
+        assert h.is_part_of is None
 
     def test_same_as_and_db_xrefs_aliases(self) -> None:
         h = _DbPortalHitAdapter.validate_python(

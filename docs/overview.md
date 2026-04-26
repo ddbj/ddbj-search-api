@@ -9,8 +9,9 @@ ddbj-search-api は [DDBJ Search](https://ddbj.nig.ac.jp/search) の RESTful API
 DDBJ の 4 つのリポジトリで役割が分かれている。
 
 - [ddbj-search-converter](https://github.com/ddbj/ddbj-search-converter): ES へのデータ投入パイプライン (XML → Pydantic モデル → ES ドキュメント、dbXrefs DuckDB 構築)。スキーマ定義の SSOT
-- **ddbj-search-api (本リポジトリ)**: ES と DuckDB を読む REST API サーバー。converter のスキーマを import して使う
+- **ddbj-search-api (本リポジトリ)**: ES と DuckDB を読む REST API サーバー。converter のスキーマを import して使う。`/entries/*` 系 (詳細は [api-spec.md](api-spec.md)) と、横断検索専用 UI 向けの `/db-portal/*` 系 (詳細は [db-portal-api-spec.md](db-portal-api-spec.md)) の 2 系統を serve
 - [ddbj-search-front](https://github.com/ddbj/ddbj-search-front): API を叩いて UI を出す
+- [db-portal](https://github.com/ddbj/db-portal): 横断検索専用 UI。`/db-portal/*` 系 endpoint を消費する
 - [ddbj-search](https://github.com/ddbj/ddbj-search): nginx reverse proxy。`/search/api/*` を本 API に、`/search/*` を front に振り分ける
 
 API リポジトリと converter リポジトリを分けているのは、データ投入バッチと API サーバーのライフサイクル・依存関係が大きく違うため (converter は重いライブラリを抱える、API は軽量な FastAPI)。
