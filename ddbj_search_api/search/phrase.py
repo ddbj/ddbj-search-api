@@ -27,12 +27,15 @@ def _split_raw_tokens(keywords: str) -> list[str]:
     # 引用符内のカンマは split 対象外、トリム済みの raw token (引用符そのまま) を返す
     tokens: list[str] = []
     current: list[str] = []
-    in_quotes = False
+    quote_ch: str | None = None
     for ch in keywords:
-        if ch == '"':
-            in_quotes = not in_quotes
+        if ch in ('"', "'"):
+            if quote_ch is None:
+                quote_ch = ch
+            elif quote_ch == ch:
+                quote_ch = None
             current.append(ch)
-        elif ch == "," and not in_quotes:
+        elif ch == "," and quote_ch is None:
             tokens.append("".join(current).strip())
             current = []
         else:
@@ -41,12 +44,24 @@ def _split_raw_tokens(keywords: str) -> list[str]:
     return tokens
 
 
+def _strip_outer_quotes(token: str) -> tuple[str, bool]:
+    """Strip a matching pair of outer ``"`` or ``'`` quotes.
+
+    Returns ``(inner, was_quoted)``. ``was_quoted`` is True only when an
+    outer quote pair was actually removed; the ES query builder uses it
+    to force phrase mode.
+    """
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in ('"', "'"):
+        return token[1:-1], True
+    return token, False
+
+
 def tokenize_keywords(keywords: str | None) -> list[str]:
     """Split comma-separated keywords, preserving quoted content.
 
-    Returns cleaned token strings: surrounding quotes stripped, stray
-    quotes removed, whitespace trimmed.  Empty / all-whitespace input
-    yields ``[]``.
+    Returns cleaned token strings: surrounding quotes (``"..."`` /
+    ``'...'``) stripped, stray double quotes removed, whitespace trimmed.
+    Empty / all-whitespace input yields ``[]``.
     """
     if not keywords:
         return []
@@ -55,8 +70,8 @@ def tokenize_keywords(keywords: str | None) -> list[str]:
     for token in _split_raw_tokens(keywords):
         if not token:
             continue
-        if token.startswith('"') and token.endswith('"') and len(token) > 1:
-            inner = token[1:-1]
+        inner, was_quoted = _strip_outer_quotes(token)
+        if was_quoted:
             if inner:
                 result.append(inner)
         else:
@@ -72,9 +87,10 @@ def parse_keywords_with_autophrase(
 ) -> list[tuple[str, bool]]:
     """Tokenize ``keywords`` and tag each token with a phrase flag.
 
-    A token is flagged as phrase when it was originally quoted *or* when
-    it contains any character in ``trigger_chars``.  Used by the ES query
-    builder; Solr quotes everything unconditionally so it should call
+    A token is flagged as phrase when it was originally quoted (either
+    ``"..."`` or ``'...'``) *or* when it contains any character in
+    ``trigger_chars``.  Used by the ES query builder; Solr quotes
+    everything unconditionally so it should call
     :func:`tokenize_keywords` instead.
     """
     if not keywords:
@@ -84,8 +100,8 @@ def parse_keywords_with_autophrase(
     for token in _split_raw_tokens(keywords):
         if not token:
             continue
-        if token.startswith('"') and token.endswith('"') and len(token) > 1:
-            inner = token[1:-1]
+        inner, was_quoted = _strip_outer_quotes(token)
+        if was_quoted:
             if inner:
                 result.append((inner, True))
         else:

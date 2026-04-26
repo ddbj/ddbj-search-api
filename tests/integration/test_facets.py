@@ -193,7 +193,8 @@ class TestTypeSpecificFacetBuckets:
         assert isinstance(bucket, list)
         assert bucket, f"{type_}/{facet}: bucket empty"
         for entry in bucket:
-            assert "key" in entry
+            # Buckets surface as ``{value, count}`` (api-spec.md § ファセット).
+            assert "value" in entry
             assert isinstance(entry.get("count"), int)
             assert entry["count"] >= 0
 

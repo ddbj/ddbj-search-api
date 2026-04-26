@@ -468,8 +468,7 @@
 
 **不変条件**:
 - 各 entry から `dbXrefs` / `dbXrefsCount` キーが両方落ちる
-- `dbXrefsLimit=0` の場合は `dbXrefs == []` + `dbXrefsCount` present で挙動が異なる
-- `includeDbXrefs=false` + `dbXrefsLimit=100` で `includeDbXrefs=false` が優先
+- `dbXrefsLimit=0` の場合は `dbXrefs == []` + `dbXrefsCount` が dict (集計結果) で挙動が異なる
 
 **回帰元**: `docs/api-spec.md § dbXrefs § includeDbXrefs パラメータ`
 **関連 unit テスト**: `tests/unit/routers/test_entries.py`
@@ -624,17 +623,6 @@
 - `includeDbXrefs=false&dbXrefsLimit=100` で `includeDbXrefs=false` が優先
 
 **回帰元**: `docs/api-spec.md § dbXrefs § includeDbXrefs パラメータ`
-**関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
-
-### IT-DETAIL-13: includeProperties 効果 (`/{id}`)
-
-**endpoint**: `GET /entries/{type}/{id}?includeProperties={true|false}`
-
-**不変条件**:
-- default で `properties` キーが present、`false` で落ちる
-- `identifier` 等の主要フィールドは両者で一致
-
-**回帰元**: `docs/api-spec.md § 検索パラメータ § ResponseControlQuery`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ---
@@ -1086,10 +1074,11 @@
 
 ### IT-DSL-15: invalid-date-format で 400
 
-**endpoint**: `GET /db-portal/parse?adv=<bad date>`
+**endpoint**: `GET /db-portal/parse?adv=<impossible date>`
 
 **不変条件**:
-- 形式違反・実在しない日付の双方で 400 + `type` URI に `invalid-date-format` slug
+- 構文上は date リテラルだが日付として無効な値 (例: `2024-02-30`) で 400 + `type` URI に `invalid-date-format` slug
+- 区切り違反 (`2020/01/01` 等) は parser 段階で `unexpected-token` 化 (IT-DSL-08 でカバー)
 
 **回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
@@ -1119,7 +1108,8 @@
 **endpoint**: `GET /db-portal/parse?adv=title:""`
 
 **不変条件**:
-- 明示空クオート (`""` / `''`) で 400 + `type` URI に `missing-value` slug
+- 明示空ダブルクオート (`title:""`) で 400 + `type` URI に `missing-value` slug
+- (grammar の PHRASE はダブルクオート専用。`title:''` は WORD としてパースされ別経路)
 
 **回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_validator.py`

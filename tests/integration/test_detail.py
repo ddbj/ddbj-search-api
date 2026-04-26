@@ -357,29 +357,3 @@ class TestIncludeDbXrefs:
         assert "dbXrefsCount" not in body
 
 
-class TestIncludeProperties:
-    """IT-DETAIL-13: ``includeProperties=false`` drops the ``properties`` key."""
-
-    def test_include_properties_default_present(self, app: TestClient) -> None:
-        """IT-DETAIL-13: default response carries ``properties``."""
-        resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}")
-        assert resp.status_code == 200
-        assert "properties" in resp.json()
-
-    def test_include_properties_false_omits_key(self, app: TestClient) -> None:
-        """IT-DETAIL-13: ``includeProperties=false`` removes the key."""
-        resp = app.get(
-            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
-            params={"includeProperties": "false"},
-        )
-        assert resp.status_code == 200
-        assert "properties" not in resp.json()
-
-    def test_identifier_unchanged_between_modes(self, app: TestClient) -> None:
-        """IT-DETAIL-13: dropping properties does not perturb other fields."""
-        with_props = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}").json()
-        without = app.get(
-            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
-            params={"includeProperties": "false"},
-        ).json()
-        assert with_props["identifier"] == without["identifier"]

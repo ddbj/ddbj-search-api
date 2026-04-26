@@ -743,7 +743,8 @@ class TestIncludeDbXrefsOnList:
         assert resp.status_code == 200
         for item in resp.json()["items"]:
             assert item.get("dbXrefs") == []
-            assert "dbXrefsCount" in item
+            # ``dbXrefsCount`` is the per-type aggregate dict (possibly empty).
+            assert isinstance(item.get("dbXrefsCount"), dict)
 
     def test_include_false_overrides_limit(self, app: TestClient) -> None:
         """IT-SEARCH-26: ``includeDbXrefs=false`` wins over ``dbXrefsLimit``."""

@@ -390,9 +390,10 @@ async def _do_search_offset(
         facets=facets,
     )
 
-    # When includeProperties=false, use exclude_unset to drop Pydantic
-    # default fields (like properties=None) that ES correctly excluded.
-    if not response_control.include_properties:
+    # When includeProperties=false or includeDbXrefs=false, drop the
+    # corresponding Pydantic default fields so the JSON omits the keys
+    # entirely (api-spec.md § dbXrefs § includeDbXrefs パラメータ).
+    if not response_control.include_properties or not include_db_xrefs:
         pagination_dict = response.pagination.model_dump(
             by_alias=True,
         )
@@ -475,7 +476,7 @@ async def _do_search_cursor(
         pit_id=updated_pit_id,
     )
 
-    return EntryListResponse(
+    response = EntryListResponse(
         pagination=Pagination(
             page=None,
             per_page=per_page,  # type: ignore[call-arg]
@@ -486,6 +487,22 @@ async def _do_search_cursor(
         items=items,
         facets=None,
     )
+
+    # Mirror the offset-path treatment for ``includeDbXrefs=false``: drop
+    # ``dbXrefs`` / ``dbXrefsCount`` keys from the JSON entirely
+    # (api-spec.md § dbXrefs § includeDbXrefs パラメータ).
+    if not include_db_xrefs:
+        return JSONResponse(
+            content={
+                "pagination": response.pagination.model_dump(by_alias=True),
+                "items": [
+                    item.model_dump(by_alias=True, exclude_unset=True) for item in response.items
+                ],
+                "facets": None,
+            }
+        )
+
+    return response
 
 
 async def _enrich_hits(
