@@ -126,7 +126,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
   "type": "about:blank",
   "title": "Not Found",
   "status": 404,
-  "detail": "The requested BioProject 'INVALID' was not found.",
+  "detail": "The requested bioproject entry was not found.",
   "instance": "/entries/bioproject/INVALID",
   "timestamp": "2024-01-15T10:30:00Z",
   "requestId": "req-abc123"
@@ -470,7 +470,7 @@ ES ドキュメントの `status` フィールドは INSDC の公開状態を示
 
 **404 による存在秘匿**:
 
-`withdrawn` および `private` のエントリーへの直接アクセス (`/entries/{type}/{id}` 系・umbrella-tree seed) は、存在しない ID と同一のレスポンス (`404 Not Found` + `The requested {type} '{id}' was not found.`) を返す。これは status の有無を外部から推測できないようにするため。
+`withdrawn` および `private` のエントリーへの直接アクセス (`/entries/{type}/{id}` 系・umbrella-tree seed) は、存在しない ID と同一のレスポンス (`404 Not Found` + `The requested {type} entry was not found.` (アクセッション ID を含めない固定文字列)) を返す。これは status の有無を外部から推測できないようにするため。
 
 **`status` ファセットの廃止**:
 

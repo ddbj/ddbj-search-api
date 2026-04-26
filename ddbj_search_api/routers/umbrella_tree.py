@@ -67,9 +67,12 @@ async def _fetch_seed(
     entry is missing, or its status is ``withdrawn`` / ``private``
     (hidden; see docs/api-spec.md § データ可視性).
     """
+    # The detail string deliberately omits ``accession`` so missing,
+    # withdrawn, and private seeds return identical responses
+    # (api-spec.md § データ可視性).
     not_found = HTTPException(
         status_code=404,
-        detail=f"The requested bioproject '{accession}' was not found.",
+        detail="The requested bioproject entry was not found.",
     )
 
     source = await es_get_source(client, _INDEX, accession, source_includes=_SOURCE_FIELDS_CSV)

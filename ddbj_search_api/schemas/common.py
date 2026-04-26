@@ -236,7 +236,7 @@ class ProblemDetails(BaseModel):
                     "type": "about:blank",
                     "title": "Not Found",
                     "status": 404,
-                    "detail": "The requested bioproject 'PRJDB_INVALID' was not found.",
+                    "detail": "The requested bioproject entry was not found.",
                     "instance": "/entries/bioproject/PRJDB_INVALID",
                     "timestamp": "2024-01-15T10:30:00Z",
                     "requestId": "req-abc123",

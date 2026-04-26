@@ -37,6 +37,25 @@ class TestCrossTypeFacets:
             assert facets.get(name) is not None, f"missing default facet: {name}"
             assert isinstance(facets[name], list)
 
+    def test_type_specific_facets_omitted_by_default(self, app: TestClient) -> None:
+        """IT-FACETS-01: cross-type defaults do NOT include type-specific facets.
+
+        Per api-spec.md § ファセット集計対象の選択, the default selection is
+        ``organism`` / ``accessibility`` / ``type`` only; ``objectType`` is
+        bioproject-specific and must be opt-in via ``facets=``.
+        """
+        facets = app.get("/facets").json()["facets"]
+        # Schema may expose the field as ``None`` (Facets pydantic model
+        # has it optional); the explicit assertion is "not aggregated".
+        for type_specific in (
+            "objectType",
+            "libraryStrategy",
+            "experimentType",
+            "studyType",
+            "submissionType",
+        ):
+            assert facets.get(type_specific) is None, f"{type_specific} should not be returned by default"
+
 
 class TestTypeSpecificFacets:
     """IT-FACETS-02: GET /facets/{type} surfaces type-specific aggregations."""
@@ -128,15 +147,29 @@ class TestOpenAPIFacetsSchema:
 
 
 class TestFacetsAllowlistRejection:
-    """IT-FACETS-07: unknown facet names are rejected (400 or 422)."""
+    """IT-FACETS-07: unknown facet names are rejected with 422.
+
+    Per api-spec.md § ファセット集計対象の選択, allowlist typos must be
+    422 (Pydantic-level) and type-mismatch (valid name on the wrong
+    endpoint) must be 400. The two error classes encode different
+    failure modes for callers, so the test enforces them strictly.
+    """
 
     def test_unknown_facet_on_entries(self, app: TestClient) -> None:
-        """IT-FACETS-07: /entries/ rejects an unknown facet name."""
+        """IT-FACETS-07: /entries/ rejects an unknown facet name with 422."""
         resp = app.get("/entries/", params={"facets": _UNKNOWN_FACET})
-        # Pydantic-level: 422; query-time guard: 400. Either is acceptable.
-        assert resp.status_code in {400, 422}
+        assert resp.status_code == 422
 
     def test_unknown_facet_on_facets_endpoint(self, app: TestClient) -> None:
-        """IT-FACETS-07: /facets rejects an unknown facet name."""
+        """IT-FACETS-07: /facets rejects an unknown facet name with 422."""
         resp = app.get("/facets", params={"facets": _UNKNOWN_FACET})
-        assert resp.status_code in {400, 422}
+        assert resp.status_code == 422
+
+    def test_type_mismatch_facet_returns_400(self, app: TestClient) -> None:
+        """IT-FACETS-07: valid name on the wrong endpoint returns 400.
+
+        ``libraryStrategy`` is allowlisted but only available for
+        sra-experiment; on /facets/bioproject it is a type-mismatch.
+        """
+        resp = app.get("/facets/bioproject", params={"facets": "libraryStrategy"})
+        assert resp.status_code == 400

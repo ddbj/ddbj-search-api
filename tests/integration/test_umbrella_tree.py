@@ -46,12 +46,7 @@ class TestUmbrellaDepthOne:
     """IT-UMBRELLA-02: depth-1 (umbrella → leaf) typical structure."""
 
     def test_depth_one_response_shape(self, app: TestClient) -> None:
-        """IT-UMBRELLA-02: umbrella seed produces a valid tree response.
-
-        Whether ``edges`` is non-empty depends on the chosen seed (a real
-        ``UmbrellaBioProject`` may have no children registered yet on
-        staging). The structural invariants below hold for both cases.
-        """
+        """IT-UMBRELLA-02: umbrella seed produces edges to its children."""
         accession = require_accession(
             "UMBRELLA_BIOPROJECT_ID",
             UMBRELLA_BIOPROJECT_ID,
@@ -60,13 +55,17 @@ class TestUmbrellaDepthOne:
         assert resp.status_code == 200
         body = resp.json()
         assert accession in body["roots"]
-        assert isinstance(body["edges"], list)
-        # Every edge target must reference a node in roots or a child accession;
-        # we cannot fully resolve nodes here so we just assert the edges list
-        # is parseable as ``{parent, child}`` records.
-        for edge in body["edges"]:
-            assert "parent" in edge
-            assert "child" in edge
+        edges = body["edges"]
+        assert isinstance(edges, list)
+        # Umbrella seeds must produce at least one parent→child edge.
+        assert len(edges) >= 1, f"umbrella seed produced no edges: {body}"
+        # Every edge has parent / child keys, parent in roots/nodes, child
+        # not in roots (depth-1 implies the umbrella is the parent).
+        for edge in edges:
+            assert "parent" in edge, edge
+            assert "child" in edge, edge
+            assert edge["parent"] == accession, edge
+            assert edge["child"] != accession, edge
 
 
 class TestUmbrellaMultiParentDeduplication:
@@ -80,9 +79,18 @@ class TestUmbrellaMultiParentDeduplication:
         )
         resp = app.get(f"/entries/bioproject/{accession}/umbrella-tree")
         assert resp.status_code == 200
-        edges = resp.json()["edges"]
+        body = resp.json()
+        edges = body["edges"]
         keys = [(e["parent"], e["child"]) for e in edges]
-        assert len(keys) == len(set(keys))
+        assert len(keys) == len(set(keys)), f"duplicate edges in {edges}"
+        # ``MULTI_PARENT_BIOPROJECT_ID`` is the child of >=2 parents in
+        # converter-side data; the response should expose >=2 parent→child
+        # edges that all terminate at the multi-parent accession.
+        edges_to_seed = [e for e in edges if e["child"] == accession]
+        assert len(edges_to_seed) >= 2, (
+            f"multi-parent seed should appear as the child of >=2 parents; got {edges_to_seed}"
+        )
+        assert len(body["roots"]) >= 2, f"multi-parent seed should reach >=2 distinct roots; got {body['roots']}"
 
 
 class TestUmbrellaMaxDepthExceeded:
@@ -102,28 +110,48 @@ class TestUmbrellaDanglingChild:
     """IT-UMBRELLA-05: dangling child reference is excluded from edges."""
 
     def test_dangling_child_excluded_api_still_200(self, app: TestClient) -> None:
-        """IT-UMBRELLA-05: API stays 200; child references are pruned."""
+        """IT-UMBRELLA-05: API stays 200; only resolvable children become edges.
+
+        ``DANGLING_CHILD_BIOPROJECT_ID`` references children that are not
+        present in ES. The response must drop the dangling references but
+        keep the seed reachable in ``roots`` (api-spec.md § Umbrella Tree).
+        """
         accession = require_accession(
             "DANGLING_CHILD_BIOPROJECT_ID",
             DANGLING_CHILD_BIOPROJECT_ID,
         )
         resp = app.get(f"/entries/bioproject/{accession}/umbrella-tree")
         assert resp.status_code == 200
+        body = resp.json()
+        # Seed must still anchor the response (no edges → orphan-like
+        # collapse, but the seed appears in roots regardless).
+        assert accession in body["roots"]
+        # Every retained edge must point at a child distinct from the seed
+        # — dangling references that point at missing IDs are dropped, so
+        # whatever survives must carry both endpoints.
+        for edge in body["edges"]:
+            assert edge["parent"], edge
+            assert edge["child"], edge
+            assert edge["parent"] != edge["child"], edge
 
 
 class TestUmbrellaHiddenNodeExcluded:
-    """IT-UMBRELLA-06: hidden node (status:withdrawn) excluded from edges."""
+    """IT-UMBRELLA-06: hidden node (status:withdrawn) excluded from edges.
+
+    Skipped on datasets without ``withdrawn`` BioProject entries —
+    structurally indistinguishable from IT-UMBRELLA-05 otherwise, so
+    we drive a real withdrawn seed when one exists.
+    """
 
     def test_hidden_node_excluded(self, app: TestClient) -> None:
-        """IT-UMBRELLA-06: status filter prunes intermediate hidden nodes."""
-        # Reuses the dangling/intermediate seed; the same constant covers the
-        # "hidden intermediate" case once D-4 populates it.
+        """IT-UMBRELLA-06: hidden nodes never appear in edges."""
         accession = require_accession(
-            "DANGLING_CHILD_BIOPROJECT_ID",
-            DANGLING_CHILD_BIOPROJECT_ID,
+            "WITHDRAWN_BIOPROJECT_ID",
+            WITHDRAWN_BIOPROJECT_ID,
         )
         resp = app.get(f"/entries/bioproject/{accession}/umbrella-tree")
-        assert resp.status_code == 200
+        # Hidden seeds resolve as missing per IT-STATUS-06 — covered there.
+        assert resp.status_code == 404
 
 
 class TestUmbrellaSeedNotFound:

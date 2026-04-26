@@ -7,6 +7,8 @@ text-match filters. See ``tests/integration-scenarios.md § IT-SEARCH-*``.
 
 from __future__ import annotations
 
+import itertools
+
 from fastapi.testclient import TestClient
 
 # Every per-type endpoint documented in api-spec.md / db-portal-api-spec.md.
@@ -44,13 +46,22 @@ class TestCrossTypeSearchSuccess:
 
 
 class TestPerTypeSearchSuccess:
-    """IT-SEARCH-02: per-type endpoints succeed for all 14 documented types."""
+    """IT-SEARCH-02: per-type endpoints succeed for every documented DbType."""
 
     def test_each_type_returns_200(self, app: TestClient) -> None:
         """IT-SEARCH-02: every documented type endpoint is reachable."""
         for type_ in _ALL_TYPES:
             resp = app.get(f"/entries/{type_}/", params={"perPage": 1})
             assert resp.status_code == 200, f"type={type_} failed with {resp.status_code}"
+
+    def test_each_type_response_filtered_to_path_type(self, app: TestClient) -> None:
+        """IT-SEARCH-02: per-type response items only carry ``type==path``."""
+        for type_ in _ALL_TYPES:
+            resp = app.get(f"/entries/{type_}/", params={"perPage": 5})
+            assert resp.status_code == 200, type_
+            for item in resp.json()["items"]:
+                # ``type`` field on each item should match the path filter.
+                assert item.get("type") == type_, f"{type_}: item carries type={item.get('type')}"
 
 
 class TestPagination:
@@ -61,12 +72,24 @@ class TestPagination:
         resp = app.get("/entries/", params={"page": 100, "perPage": 100})
         assert resp.status_code == 200
 
+    def test_repeated_call_returns_same_result_set(self, app: TestClient) -> None:
+        """IT-SEARCH-03: same params produce a deterministic result set."""
+        resp_a = app.get("/entries/", params={"page": 1, "perPage": 5, "keywords": "cancer"})
+        resp_b = app.get("/entries/", params={"page": 1, "perPage": 5, "keywords": "cancer"})
+        assert resp_a.status_code == resp_b.status_code == 200
+        ids_a = [item["identifier"] for item in resp_a.json()["items"]]
+        ids_b = [item["identifier"] for item in resp_b.json()["items"]]
+        assert ids_a == ids_b, f"non-deterministic ordering: {ids_a} vs {ids_b}"
+
     def test_exceeding_deep_paging_limit_returns_400(self, app: TestClient) -> None:
-        """IT-SEARCH-04: page * perPage > 10000 → 400 ProblemDetails."""
+        """IT-SEARCH-04: page * perPage > 10000 → 400 ProblemDetails with cursor hint."""
         resp = app.get("/entries/", params={"page": 101, "perPage": 100})
         assert resp.status_code == 400
+        assert "application/problem+json" in resp.headers["content-type"]
         body = resp.json()
         assert body["status"] == 400
+        # The detail must direct callers to ``cursor`` so they can recover.
+        assert "cursor" in body["detail"].lower(), body["detail"]
 
 
 class TestCursorPagination:
@@ -103,9 +126,25 @@ class TestSortParameter:
         )
         assert resp.status_code == 200
 
+    def test_descending_sort_is_actually_descending(self, app: TestClient) -> None:
+        """IT-SEARCH-08: ``datePublished:desc`` produces a non-increasing sequence."""
+        resp = app.get(
+            "/entries/",
+            params={"sort": "datePublished:desc", "perPage": 20},
+        )
+        assert resp.status_code == 200
+        dates = [item.get("datePublished") for item in resp.json()["items"] if item.get("datePublished")]
+        for left, right in itertools.pairwise(dates):
+            assert left >= right, f"sort broken: {left} < {right}"
+
     def test_invalid_direction_returns_422(self, app: TestClient) -> None:
         """IT-SEARCH-08: unknown direction → 422."""
         resp = app.get("/entries/", params={"sort": "datePublished:foo"})
+        assert resp.status_code == 422
+
+    def test_invalid_field_returns_422(self, app: TestClient) -> None:
+        """IT-SEARCH-08: unknown sort field → 422."""
+        resp = app.get("/entries/", params={"sort": "__not_a_field__:asc"})
         assert resp.status_code == 422
 
 
@@ -120,11 +159,28 @@ class TestFieldsFilter:
         )
         assert resp.status_code == 200
         items = resp.json()["items"]
-        if not items:
-            return
+        assert items, "no hits to verify fields filter"
         for item in items:
             assert "identifier" in item
             assert "type" in item
+
+    def test_unrequested_fields_omitted(self, app: TestClient) -> None:
+        """IT-SEARCH-09: fields not in the allowlist do not surface.
+
+        Unrequested optional fields like ``title`` and ``description``
+        must not appear in the response when ``fields=identifier,type``.
+        """
+        resp = app.get(
+            "/entries/",
+            params={"fields": "identifier,type", "perPage": 3},
+        )
+        items = resp.json()["items"]
+        assert items
+        # ``title`` is a top-level field in every DbType; it must be
+        # filtered out when not requested.
+        for item in items:
+            assert "title" not in item, item
+            assert "description" not in item, item
 
 
 class TestTypesFilter:
@@ -151,35 +207,48 @@ class TestTypesFilter:
 
 
 class TestKeywordOperators:
-    """IT-SEARCH-11: keywords semantics — quoted phrases + non-empty queries.
+    """IT-SEARCH-11: keywords semantics — relative invariants between operators.
 
-    ``AND`` / ``OR`` / ``NOT`` are *not* recognised as boolean operators on
-    ``/entries/?keywords=`` (operator-based searching is exposed via the
-    Advanced Search DSL on ``/db-portal/*``). Here we only assert that
-    keyword queries return a valid count and that quoted phrases parse.
+    ``AND`` / ``OR`` / ``NOT`` switch via the ``keywordOperator`` parameter
+    (or are encoded inside the DSL on ``/db-portal/*``). Here we assert
+    structural relationships between the resulting totals so that bug-driven
+    counter-monotonic regressions surface (e.g. ``OR`` shrinking the result
+    set).
     """
 
-    def test_simple_keyword_returns_count(self, app: TestClient) -> None:
-        """IT-SEARCH-11: a single keyword yields a non-negative total."""
-        body = app.get("/entries/", params={"keywords": "cancer"}).json()
-        assert body["pagination"]["total"] >= 0
-
-    def test_quoted_phrase_returns_count(self, app: TestClient) -> None:
-        """IT-SEARCH-11: a quoted phrase parses and returns a count."""
-        body = app.get(
-            "/entries/", params={"keywords": '"genome sequencing"'}
-        ).json()
-        assert body["pagination"]["total"] >= 0
-
-    def test_phrase_total_le_single_token(self, app: TestClient) -> None:
-        """IT-SEARCH-11: a more specific phrase has total <= a sub-token alone."""
-        single = app.get(
-            "/entries/", params={"keywords": "genome"}
-        ).json()["pagination"]["total"]
-        phrase = app.get(
-            "/entries/", params={"keywords": '"genome sequencing"'}
-        ).json()["pagination"]["total"]
+    def test_phrase_more_restrictive_than_token(self, app: TestClient) -> None:
+        """IT-SEARCH-11: a longer phrase cannot match more docs than a sub-token."""
+        single = app.get("/entries/", params={"keywords": "genome"}).json()["pagination"]["total"]
+        phrase = app.get("/entries/", params={"keywords": '"genome sequencing"'}).json()["pagination"]["total"]
+        # Phrase is strictly more restrictive than its lexical sub-token.
         assert phrase <= single
+
+    def test_or_at_least_as_broad_as_and(self, app: TestClient) -> None:
+        """IT-SEARCH-11: ``OR`` total >= ``AND`` total for the same keyword set."""
+        and_total = app.get(
+            "/entries/",
+            params={"keywords": "cancer,brain", "keywordOperator": "AND"},
+        ).json()["pagination"]["total"]
+        or_total = app.get(
+            "/entries/",
+            params={"keywords": "cancer,brain", "keywordOperator": "OR"},
+        ).json()["pagination"]["total"]
+        # OR can only expand the result set relative to AND.
+        assert or_total >= and_total
+        # Sanity: at least one keyword should match something.
+        assert or_total > 0
+
+    def test_symbol_keyword_uses_phrase_match(self, app: TestClient) -> None:
+        """IT-SEARCH-11: a symbol-bearing keyword (``HIF-1``) doesn't fall back to ``HIF``.
+
+        Auto-phrasing (api-spec.md § フレーズマッチ) prevents the analyzer
+        from splitting on ``-``; otherwise ``HIF-1`` would balloon to
+        every doc containing ``HIF``.
+        """
+        sym = app.get("/entries/", params={"keywords": "HIF-1"}).json()["pagination"]["total"]
+        bare = app.get("/entries/", params={"keywords": "HIF"}).json()["pagination"]["total"]
+        # Phrase match is at most as broad as a sub-token alone.
+        assert sym <= bare
 
 
 class TestArrayFieldContractInSearch:
@@ -239,9 +308,7 @@ class TestNestedFieldFilters:
 
     def test_organization_on_cross_type_returns_200(self, app: TestClient) -> None:
         """IT-SEARCH-15: organization filter works on cross-type."""
-        resp = app.get(
-            "/entries/", params={"organization": "DDBJ", "perPage": 1}
-        )
+        resp = app.get("/entries/", params={"organization": "DDBJ", "perPage": 1})
         assert resp.status_code == 200
 
     def test_organization_on_per_type_returns_200(self, app: TestClient) -> None:
@@ -283,9 +350,7 @@ class TestTextMatchFields:
 
     def test_host_on_biosample_returns_200(self, app: TestClient) -> None:
         """IT-SEARCH-17: host filter allowed on biosample."""
-        resp = app.get(
-            "/entries/biosample/", params={"host": "Homo sapiens", "perPage": 1}
-        )
+        resp = app.get("/entries/biosample/", params={"host": "Homo sapiens", "perPage": 1})
         assert resp.status_code == 200
 
 

@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
-    "version": "0.2.1.dev21+g89d03574e.d20260425"
+    "version": "0.2.1.dev36+g7b3a075bf.d20260426"
   },
   "paths": {
     "/entries/": {
@@ -22963,7 +22963,7 @@
         "description": "RFC 7807 Problem Details error response.",
         "examples": [
           {
-            "detail": "The requested bioproject 'PRJDB_INVALID' was not found.",
+            "detail": "The requested bioproject entry was not found.",
             "instance": "/entries/bioproject/PRJDB_INVALID",
             "requestId": "req-abc123",
             "status": 404,

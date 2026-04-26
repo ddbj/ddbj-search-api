@@ -295,7 +295,12 @@ class TestNotFound:
         mock_es_resolve_same_as_umbrella.return_value = None
         resp = app_with_umbrella_tree.get("/entries/bioproject/NOTEXIST/umbrella-tree")
         assert resp.status_code == 404
-        assert "NOTEXIST" in resp.json().get("detail", "")
+        # The detail must NOT echo the requested accession back, otherwise
+        # callers can infer existence from a withdrawn / private entry's
+        # 404 vs a missing accession's 404 (api-spec.md § データ可視性).
+        detail = resp.json()["detail"]
+        assert "NOTEXIST" not in detail
+        assert detail == "The requested bioproject entry was not found."
 
     def test_sameas_fallback_resolves(
         self,
@@ -443,7 +448,10 @@ class TestUmbrellaTreeStatusGating:
         resp = app_with_umbrella_tree.get("/entries/bioproject/PRJDB1/umbrella-tree")
         assert resp.status_code == 404
         body = resp.json()
-        assert body["detail"] == "The requested bioproject 'PRJDB1' was not found."
+        # Hidden seeds must produce the same detail as missing seeds —
+        # accession must not leak through (api-spec.md § データ可視性).
+        assert body["detail"] == "The requested bioproject entry was not found."
+        assert "PRJDB1" not in body["detail"]
 
     def test_hidden_parent_is_dropped(
         self,

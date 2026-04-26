@@ -1,6 +1,6 @@
 # Integration テスト運用ノート
 
-シナリオ本文 ([integration-scenarios.md](integration-scenarios.md)) からは切り離し、ES の用意・fixture 戦略・件数 drift 対策・CI 戦略といった「どう運用するか」を集める。
+シナリオ列挙は [integration-scenarios.md](integration-scenarios.md)、テスト方針は [testing.md](testing.md)。本書は環境準備・fixture 戦略・件数 drift 対策・Solr 用 marker・CI といった「どう運用するか」をまとめる。
 
 ## 接続切替
 
@@ -10,7 +10,7 @@
 DDBJ_SEARCH_INTEGRATION_ES_URL=http://es-host:9200 uv run pytest tests/integration/
 ```
 
-session-scoped の `ensure_es` fixture が起動時に ES の疎通を確認し、到達できなければ `pytest.skip(allow_module_level=True)` で session 全体を skip する。CI でも開発時でも、ES が立っていなければ自動的に飛ばされる。
+session-scoped の `ensure_es` fixture が起動時に ES の疎通を確認し、到達できなければ `pytest.skip(allow_module_level=True)` で session 全体を skip する。
 
 ## ES の用意
 
@@ -18,36 +18,17 @@ ddbj-search-converter リポジトリ側に compose があり、`ddbj-search-net
 
 別の ES に向けたい場合は `DDBJ_SEARCH_INTEGRATION_ES_URL` で接続先を切り替える。
 
-ローカル用の固定 fixture (専用 mini インデックス) は今は持たない。代表 accession の値が変動するときは converter のリリース取り込みのタイミングで再採取する運用。
-
 ## fixture 戦略
 
-特定の不変条件を assert するためにいくつか「代表 accession」が必要。例: status filter のテストには `public` / `suppressed` / `withdrawn` / `private` の 4 値の代表 ID。3 案を比較する。
+特定の不変条件を assert するために代表 accession が必要 (例: status filter のテストには `public` / `suppressed` / `withdrawn` / `private` の 4 値の代表 ID)。実 ES に登録されている代表 accession を実測し、`tests/integration/conftest.py` の定数として登録する。converter のリリース取り込みのタイミングで再採取する。
 
-| 案 | 内容 | メリット | デメリット |
-|----|------|---------|-----------|
-| A (推奨) | 実 ES の代表 accession を実測 → `tests/integration/conftest.py` に定数登録 | コード追跡可能、レビュー時に値が見える | converter リリースで accession が消えると更新が必要 |
-| B | test 内で `_search` を叩いて動的に seed (例: `term: {status: suppressed}` で 1 件取得) | 値の劣化に強い | テスト失敗時の再現性が悪い、ES クエリの遅延でテストが遅くなる |
-| C | テスト用 doc を POST で投入 → setUp/tearDown | 完全に決定的 | staging を汚染するリスク、teardown 失敗で残留 |
+接続先のデータに対象の status / 形状が存在しない場合 (例: `withdrawn` 全 type で 0 件) は対応する定数を空文字 (`""`) のまま置き、`require_accession` ヘルパー経由で当該テストを skip する。空文字を残すかどうかは converter のデータ供給に依存し、データが揃ったら値を埋めて skip を外す。
 
-**推奨は案 A**。converter のリリース取り込み手順に「代表 accession の更新」を組み込む。案 B は補助的に「条件を満たす ID を 1 件以上見つける」スモークでだけ使う。案 C は禁止 (共有 ES を汚さない)。
-
-### staging データ実態 (採取時に判明したカバー漏れ)
-
-代表 accession を採取するときに、staging ES に以下のデータが存在しないことが判明した。該当する `*_ID` 定数は空のまま (`""`) で `require_accession` 経由で当該シナリオを skip する運用とする。converter 側で対応データが投入されたら値を埋めて skip を外す。
-
-- **`withdrawn` 全 type で 0 件**: `WITHDRAWN_*_ID` は全 type で空。IT-STATUS-03/06/07、IT-DETAIL-05 の withdrawn 系 assertion は skip。
-- **`private` は SRA 系のみ存在**: BioProject / BioSample / JGA / GEA / MetaboBank には 0 件。`PRIVATE_BIOPROJECT_ID` 等は空、`PRIVATE_SRA_*_ID` のみ値が入る。
-- **`suppressed` は BioProject / BioSample / SRA-{submission, study, experiment, sample} のみ**: JGA / GEA / MetaboBank には 0 件。
-- **`sameAs` field は nested mapping**: `_source.sameAs` は `[]` に見えても、ES の nested doc には実 entries が存在する場合あり (`{"nested": {"path": "sameAs"}}` で probe して確認)。
-- **JGA の sameAs パターン 2 種**: ① long form 表記揺れ (`JGAS000001` ↔ `JGAS00000000001` 等、jga-study 392 件 / jga-dataset 585 件 / jga-dac 2 件) と、② 純粋な cross-ref (別 entry 同士、jga-study `JGAS000561` ↔ `JGAS000556`、jga-dataset `JGAD000683` ↔ `JGAD000677` の 1 ペアずつのみ)。`SECONDARY_JGA_STUDY_ID` は ① の long form を使う (件数が多く drift にも強い)。② は本数が少なく converter 更新で消える可能性があるため、現状は SSOT 注記のみ。
-- **BioProject の `sameAs` は外部 DB ref (GEO 等)**: 実 nested doc は 10000+ 件あるが `sameAs.identifier` が `GSE...` 等の外部 accession で、API の sameAs フォールバックは BioProject 内部 ID 解決のみを想定しているため、Secondary 経由の Primary 解決テストには使えない (`SECONDARY_BIOPROJECT_ID` 空のまま skip)。
-- **`parentBioProjects` / `childBioProjects` の link 0 件**: BioProject に親子関係データが投入されていない (UmbrellaBioProject の `objectType` は付いているが children link は無し)。`UMBRELLA_BIOPROJECT_ID` (`PRJDB42131`) は応答するが `edges == []`。`MULTI_PARENT_BIOPROJECT_ID` / `DANGLING_CHILD_BIOPROJECT_ID` は空のまま。IT-UMBRELLA-02/03/05/06 はそれぞれ「edges 構造の parseability」レベルに緩和済または skip。
-- **`DEEP_CHAIN_BIOPROJECT_ID` は採取せず Future work**: MAX_DEPTH=10 超えチェーンを意図的に作る必要があり、staging で再現不能。
+テスト用 doc を共有 ES に POST して setUp/tearDown する運用は禁止 (汚染リスクがあるため)。
 
 ## 件数 drift 対策
 
-ES / Solr のデータは converter の更新で件数が変わる。固定値 assert は壊れる前提で書かない。代わりに **構造的不変条件** で書く。既存テストもこのパターンで揃えてある。
+ES / Solr のデータは converter の更新で件数が変わる。固定値 assert は壊れる前提で書かない。代わりに **構造的不変条件** で書く。
 
 ```python
 # 件数 drift に弱い (NG)
@@ -81,6 +62,8 @@ assert resp_hidden.json()["detail"] == resp_missing.json()["detail"]
 - 相対比較: `total_kw <= total_all`、`total_filtered < total_all / 2`
 - 最小保証: `total > 0`、`len(items) >= 1`
 - 文字列一致: `resp_hidden.json()["detail"] == resp_missing.json()["detail"]`
+
+`docs/api-spec.md` で値の集合自体が SSOT になっているもの (例: AccessionType の列挙) は固定値 assert (set 一致) を使ってよい。
 
 ## Solr 必須シナリオ
 

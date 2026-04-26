@@ -128,27 +128,37 @@ class TestAliasDocument:
 
 
 class TestNotFound:
-    """IT-DETAIL-05: missing accessions return 404 across all variants."""
+    """IT-DETAIL-05: missing accessions return 404 across all variants.
 
-    def test_default_variant_404(self, app: TestClient) -> None:
-        """IT-DETAIL-05: /{id} on missing accession → 404."""
-        resp = app.get(f"/entries/bioproject/{NONEXISTENT_ID}")
-        assert resp.status_code == 404
+    All four variants must yield the same detail string regardless of
+    accession value — leaking the accession through ``detail`` would
+    break the visibility-hiding contract (api-spec.md § データ可視性,
+    cross-checked by IT-STATUS-04).
+    """
 
-    def test_json_variant_404(self, app: TestClient) -> None:
-        """IT-DETAIL-05: ``.json`` on missing accession → 404."""
-        resp = app.get(f"/entries/bioproject/{NONEXISTENT_ID}.json")
-        assert resp.status_code == 404
+    @pytest.mark.parametrize("suffix", ["", ".json", ".jsonld", "/dbxrefs.json"])
+    def test_variant_returns_404_with_problem_details(
+        self,
+        app: TestClient,
+        suffix: str,
+    ) -> None:
+        """IT-DETAIL-05: every variant yields 404 + RFC 7807 detail."""
+        resp = app.get(f"/entries/bioproject/{NONEXISTENT_ID}{suffix}")
+        assert resp.status_code == 404, suffix
+        body = resp.json()
+        assert body["status"] == 404
+        # Accession must not leak into the detail (visibility hiding).
+        assert NONEXISTENT_ID not in body["detail"]
 
-    def test_jsonld_variant_404(self, app: TestClient) -> None:
-        """IT-DETAIL-05: ``.jsonld`` on missing accession → 404."""
-        resp = app.get(f"/entries/bioproject/{NONEXISTENT_ID}.jsonld")
-        assert resp.status_code == 404
-
-    def test_dbxrefs_variant_404(self, app: TestClient) -> None:
-        """IT-DETAIL-05: ``/dbxrefs.json`` on missing accession → 404."""
-        resp = app.get(f"/entries/bioproject/{NONEXISTENT_ID}/dbxrefs.json")
-        assert resp.status_code == 404
+    def test_detail_string_consistent_across_variants(self, app: TestClient) -> None:
+        """IT-DETAIL-05: all four variants share the same detail string."""
+        details = {
+            suffix: app.get(f"/entries/bioproject/{NONEXISTENT_ID}{suffix}").json()["detail"]
+            for suffix in ("", ".json", ".jsonld", "/dbxrefs.json")
+        }
+        # Every variant must produce an identical detail string.
+        unique = set(details.values())
+        assert len(unique) == 1, f"variants disagree: {details}"
 
 
 class TestDbXrefsTruncation:
@@ -197,14 +207,28 @@ class TestArrayFieldContractInDetail:
     """IT-DETAIL-08: required list fields surface as keys (possibly empty).
 
     Schema-level coverage lives in tests/unit/schemas/test_converter_contract.py;
-    here we smoke-check that real public accessions still satisfy the contract.
+    here we drive real ES through every variant for every DbType so that
+    Pydantic-bypassing streaming paths (.json / .jsonld) do not lose the
+    converter required-list-field contract on real data.
     """
 
-    def test_default_variant_has_db_xrefs(self, app: TestClient) -> None:
-        """IT-DETAIL-08: dbXrefs key present on the short variant."""
-        resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}")
-        assert resp.status_code == 200
-        assert "dbXrefs" in resp.json()
+    @pytest.mark.parametrize(("type_", "accession"), _REPS)
+    @pytest.mark.parametrize("suffix", ["", ".json", ".jsonld"])
+    def test_required_list_fields_present(
+        self,
+        app: TestClient,
+        type_: str,
+        accession: str,
+        suffix: str,
+    ) -> None:
+        """IT-DETAIL-08: ``dbXrefs`` is always a key in the response."""
+        resp = app.get(f"/entries/{type_}/{accession}{suffix}")
+        assert resp.status_code == 200, f"{type_}/{accession}{suffix}: {resp.status_code}"
+        body = resp.json()
+        # ``dbXrefs`` is required across all six DbType groups (truncated
+        # on the short variant, full on the streaming variants); the key
+        # must be present even when the value is an empty list.
+        assert "dbXrefs" in body, f"{type_}/{accession}{suffix}: dbXrefs missing"
 
 
 class TestDbXrefsFullStream:
@@ -220,13 +244,23 @@ class TestDbXrefsFullStream:
         assert "dbXrefs" in body
         assert isinstance(body["dbXrefs"], list)
 
-    def test_full_count_ge_short_variant(self, app: TestClient) -> None:
-        """IT-DETAIL-09: full dbXrefs is >= short-variant truncated dbXrefs."""
+    def test_full_count_matches_short_variant_total(self, app: TestClient) -> None:
+        """IT-DETAIL-09: full dbXrefs length equals short variant ``dbXrefsCount`` total.
+
+        ``dbXrefsCount`` is the per-type aggregate that the short variant
+        exposes alongside the truncated dbXrefs; summing it must equal
+        the full streaming variant's array length (api-spec.md § dbXrefs).
+        """
         full = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}/dbxrefs.json").json()
         short = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}").json()
-        full_len = len(full.get("dbXrefs", []))
-        short_len = len(short.get("dbXrefs", []) or [])
-        assert full_len >= short_len
+        full_len = len(full["dbXrefs"])
+        # short variant exposes ``dbXrefsCount`` as ``{type: int}``.
+        counts = short.get("dbXrefsCount") or {}
+        if not isinstance(counts, dict):
+            pytest.skip("dbXrefsCount missing on the short variant")
+        assert full_len == sum(counts.values()), (
+            f"full={full_len} short_total={sum(counts.values())} short_counts={counts}"
+        )
 
 
 class TestSameAsFallthrough:

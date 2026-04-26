@@ -26,7 +26,7 @@
 - 構造的に守るべき条件 1
 - 構造的に守るべき条件 2
 
-**回帰元**: 仕様根拠 (`docs/api-spec.md § ...` / `docs/db-portal-api-spec.md § ...`) と、必要に応じて commit SHA
+**回帰元**: 仕様根拠 (`docs/api-spec.md § ...` / `docs/db-portal-api-spec.md § ...`)
 
 **関連 unit テスト**: SSOT としての unit ファイル。クラス・関数名まで分かれば `path::Class` で記述
 ```
@@ -176,14 +176,13 @@
 
 ### IT-SEARCH-02: type 別検索の正常系
 
-**endpoint**: `GET /entries/{type}/?keywords=<word>` (全 6 type: bioproject / biosample / sra / jga / gea / metabobank)
+**endpoint**: `GET /entries/{type}/?keywords=<word>` (全 DbType)
 
 **不変条件**:
-- 6 type すべてで `status_code == 200`
+- 全 type で `status_code == 200`
 - `items` の各 entry の `type` field が path の type と一致 (横断と異なり単一 type のみ)
 
-**回帰元**: `docs/api-spec.md § 検索パラメータ` / `9595dce` (GEA/MetaboBank 追加)
-
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
 **関連 unit テスト**: `tests/unit/routers/test_entries.py`
 
 ### IT-SEARCH-03: ページネーション正常系 (`page * perPage <= 10000`)
@@ -221,8 +220,7 @@
 - `cursor` を渡した 2 ページ目以降で同条件の検索が継続
 - `total` が 10000 を超えても `items` が連続して取得される
 
-**回帰元**: `docs/api-spec.md § カーソルベースページネーション` / `5a3410f` (HMAC-signed cursor 導入)
-
+**回帰元**: `docs/api-spec.md § カーソルベースページネーション`
 **関連 unit テスト**: `tests/unit/test_cursor.py`
 
 ### IT-SEARCH-06: cursor の HMAC 改ざん検出
@@ -234,8 +232,7 @@
 - RFC 7807 形式、`detail` が cursor invalid を示す
 - 元の検索結果は漏れない (情報量を増やさない)
 
-**回帰元**: `docs/api-spec.md § カーソルベースページネーション` / `5a3410f`
-
+**回帰元**: `docs/api-spec.md § カーソルベースページネーション`
 **関連 unit テスト**: `tests/unit/test_cursor.py`
 
 ### IT-SEARCH-07: cursor 期限切れ (5 分超) で 400
@@ -298,20 +295,18 @@
 - `keywords=cancer NOT brain` の `total` <= `keywords=cancer` の `total`
 - `keywords="exact phrase"` でフレーズ検索 (空白区切り AND と区別)
 
-**回帰元**: `docs/api-spec.md § 検索パラメータ` / `e167480` (Auto-phrase symbol token)
-
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
 **関連 unit テスト**: `tests/unit/search/test_phrase.py`
 
 ### IT-SEARCH-12: 配列フィールド常時 key 返却契約 (検索結果)
 
-**endpoint**: `GET /entries/?perPage=10` (default fields、6 type それぞれ単独でも検証)
+**endpoint**: `GET /entries/?perPage=10` (default fields、全 type で個別にも検証)
 
 **不変条件**:
 - `items` の各 entry が converter 必須 list field (`grantList`, `publicationList`, `dbXrefs` 等) を空配列でも key として持つ (`fields` フィルタを使わない default ケース)
-- 6 type すべてで成立
+- 全 type で成立
 
-**回帰元**: `docs/api-spec.md § 配列フィールド` / `dbff21f` (converter contract sync)
-
+**回帰元**: `docs/api-spec.md § 配列フィールド`
 **関連 unit テスト**: `tests/unit/schemas/test_converter_contract.py`
 
 ### IT-SEARCH-13: type-specific filter (BioProject `objectTypes`)
@@ -322,8 +317,7 @@
 - `objectType` facet bucket key と同じ値で絞り込み可能 (例: `objectTypes=Umbrella,Primary Submission`)
 - 該当しない type 横断 endpoint (`/entries/?objectTypes=...`) では 422
 
-**回帰元**: `docs/api-spec.md § 検索パラメータ` / `b3db3ef` (umbrella → objectTypes 移行) / `4ff1575` (type-specific filter 整備)
-
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
 
 ### IT-SEARCH-14: facets パラメータの allowlist 制御
@@ -335,8 +329,7 @@
 - allowlist 外フィールド (例: `facets=__not_a_facet__`) で 422
 - `facets=` 空指定で集計を完全に無効化 (response の `facets` が空 or null)
 
-**回帰元**: `docs/api-spec.md § ファセット集計対象の選択` / `4ff1575` (opt-in facets)
-
+**回帰元**: `docs/api-spec.md § ファセット集計対象の選択`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`, `tests/unit/routers/test_facets.py`
 
 ### IT-SEARCH-15: nested フィールド検索 (`organization` / `publication` / `grant`)
@@ -349,8 +342,7 @@
 - 同じ token を keywords と組み合わせると、両条件の AND になり `total <= keywords 単独`
 - 対応 nested path を持たない index に渡された場合は 0 件化 (ES 側で no match)
 
-**回帰元**: `docs/api-spec.md § nested フィールド検索` / `4ff1575`
-
+**回帰元**: `docs/api-spec.md § nested フィールド検索`
 **関連 unit テスト**: `tests/unit/es/test_query.py`, `tests/unit/schemas/test_queries.py`
 
 ### IT-SEARCH-16: nested フィールド検索の型グループ限定 (`externalLinkLabel` / `derivedFromId`)
@@ -362,8 +354,7 @@
 - 適用範囲内 endpoint で 200
 - 型グループ外 endpoint で 422
 
-**回帰元**: `docs/api-spec.md § nested フィールド検索` / `4ff1575`
-
+**回帰元**: `docs/api-spec.md § nested フィールド検索`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
 
 ### IT-SEARCH-17: text match フィールド検索 (9 個、type-specific)
@@ -376,8 +367,7 @@
 - 引用符でフレーズ検索 (`host="Homo sapiens"`)
 - 記号含み値で自動 phrase 化 (`host=HIF-1`、`-` `/` `.` `+` `:` の token 分割が抑止される)
 
-**回帰元**: `docs/api-spec.md § text match フィールド検索` / `4ff1575` / `e167480` (auto-phrase symbol token)
-
+**回帰元**: `docs/api-spec.md § text match フィールド検索`
 **関連 unit テスト**: `tests/unit/search/test_phrase.py`, `tests/unit/schemas/test_queries.py`
 
 ### IT-SEARCH-18: text match の cross-type 拒否
@@ -388,8 +378,7 @@
 - cross-type endpoint で 9 個全ての text match パラメータが 422
 - 型グループ外 type endpoint (例: `/entries/jga-study/?host=...` のような無関係 type) でも 422
 
-**回帰元**: `docs/api-spec.md § text match フィールド検索` / `4ff1575`
-
+**回帰元**: `docs/api-spec.md § text match フィールド検索`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
 
 ---
@@ -400,14 +389,13 @@
 
 ### IT-DETAIL-01: 4 variant それぞれの正常系
 
-**endpoint**: `GET /entries/{type}/{id}` (4 variant、6 type)
+**endpoint**: `GET /entries/{type}/{id}` (4 variant、全 DbType)
 
 **不変条件**:
 - 各 variant で `status_code == 200`
 - `/{id}` は Pydantic validated レスポンス、`.json` は streaming raw、`.jsonld` は JSON-LD context 付き、`/dbxrefs.json` は dbXrefs リスト
 
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決` (variant 説明) / `9595dce` (GEA/MetaboBank 詳細)
-
+**回帰元**: `docs/api-spec.md § sameAs による ID 解決` (variant 説明)
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-DETAIL-02: 4 variant の内容差異 (フロント向け vs 全データ)
@@ -419,8 +407,7 @@
 - `.json` は ES の `_source` をそのまま返し、dbXrefs 切り詰めなし
 - 両者の identifier 等の主要フィールドは一致
 
-**回帰元**: `docs/api-spec.md § dbXrefs` / `5a3410f` (`includeDbXrefs` toggle)
-
+**回帰元**: `docs/api-spec.md § dbXrefs`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-DETAIL-03: sameAs Secondary ID フォールバック
@@ -432,8 +419,7 @@
 - response の `identifier` は Primary ID (Secondary でない)
 - sameAs nested query が機能している
 
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決` / `5a3410f` (sameAs error resilience)
-
+**回帰元**: `docs/api-spec.md § sameAs による ID 解決`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-DETAIL-04: alias ドキュメントヒット
@@ -487,16 +473,15 @@
 
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
-### IT-DETAIL-08: 配列フィールド常時 key 返却契約 (詳細 6 type × 3 endpoint)
+### IT-DETAIL-08: 配列フィールド常時 key 返却契約 (詳細 全 DbType × 3 variant)
 
-**endpoint**: `GET /entries/{type}/{id}` (`/{id}`, `.json`, `.jsonld`) × 6 type (BioProject / BioSample / SRA / JGA / GEA / MetaboBank)
+**endpoint**: `GET /entries/{type}/{id}` (`/{id}`, `.json`, `.jsonld`) × 全 DbType
 
 **不変条件**:
 - 各 type の converter 必須 list field (例: BioProject `grantList`, `publicationList`) が空配列でも response の key として present
 - `.json` は streaming で Pydantic を経由しないので独立に検証 (回帰しやすい経路)
 
-**回帰元**: `docs/api-spec.md § 配列フィールド` / `dbff21f` (converter required-list-field contract sync)
-
+**回帰元**: `docs/api-spec.md § 配列フィールド`
 **関連 unit テスト**: `tests/unit/schemas/test_converter_contract.py`, `tests/unit/schemas/test_entries.py`
 
 ### IT-DETAIL-09: `/dbxrefs.json` の全件取得 (DuckDB stream)
@@ -509,8 +494,7 @@
 - `dbXrefs` の長さが切り詰めなし (`/{id}` の `dbXrefsCount` と一致)
 - 大規模 entry (dbXrefs 数千〜数万件) でも streaming で完走
 
-**回帰元**: `docs/api-spec.md § dbXrefs` / `docs/api-spec.md § DBLinks API` / `809d34b` (dbxref half-edge schema)
-
+**回帰元**: `docs/api-spec.md § dbXrefs` / `docs/api-spec.md § DBLinks API`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`, `tests/unit/dblink/test_client.py`
 
 ### IT-DETAIL-10: sameAs 検索失敗時の 404 への安全な fall-through
@@ -521,8 +505,7 @@
 - ES 側の sameAs nested query が失敗しても 500 にならず 404 で帰す
 - IT-DETAIL-05 と detail 文字列が一致
 
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決` / `5a3410f` (sameAs error resilience)
-
+**回帰元**: `docs/api-spec.md § sameAs による ID 解決`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-DETAIL-11: 大文字小文字の正規化 (accession)
@@ -533,8 +516,7 @@
 - 大文字小文字が違っても 200 で同じ entry に解決される
 - もしくは 404 で挙動が一貫している (どちらかは docs に従う)
 
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決` (実装に応じて) / `50c1330` (case_insensitive 思想)
-
+**回帰元**: `docs/api-spec.md § sameAs による ID 解決` (実装に応じて)
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ---
@@ -631,14 +613,13 @@
 
 ### IT-BULK-08: 配列フィールド常時 key 返却契約 (両形式)
 
-**endpoint**: `POST /entries/{type}/bulk` (`format=json` / `format=ndjson`、6 type)
+**endpoint**: `POST /entries/{type}/bulk` (`format=json` / `format=ndjson`、全 DbType)
 
 **不変条件**:
 - entries の各要素が converter 必須 list field を空配列でも key として持つ (両形式とも)
-- 6 type すべてで成立
+- 全 type で成立
 
-**回帰元**: `docs/api-spec.md § 配列フィールド` / `dbff21f`
-
+**回帰元**: `docs/api-spec.md § 配列フィールド`
 **関連 unit テスト**: `tests/unit/schemas/test_converter_contract.py`
 
 ---
@@ -656,8 +637,7 @@
 - 各 facet bucket は `{key, count}` 形式
 - type 固有 facet (`objectType` 等) は **含まれない**
 
-**回帰元**: `docs/api-spec.md § ファセット` / `40196f7` (status facet drop)
-
+**回帰元**: `docs/api-spec.md § ファセット`
 **関連 unit テスト**: `tests/unit/routers/test_facets.py`, `tests/unit/schemas/test_facets.py`
 
 ### IT-FACETS-02: type 別 facet の構造 (`/facets/bioproject`)
@@ -668,8 +648,7 @@
 - response に `objectType` (bioproject 固有) が含まれる
 - bucket key が `b3db3ef` 以降の `objectTypes` パラメータと整合
 
-**回帰元**: `docs/api-spec.md § ファセット` / `b3db3ef`
-
+**回帰元**: `docs/api-spec.md § ファセット`
 **関連 unit テスト**: `tests/unit/routers/test_facets.py`
 
 ### IT-FACETS-03: cross-type で type-specific facet を要求すると除外 or 422
@@ -680,8 +659,7 @@
 - response に `objectType` が含まれない (cross では適用不可) もしくは 422
 - 挙動が docs と一貫している
 
-**回帰元**: `docs/api-spec.md § ファセット集計対象の選択` / `4ff1575`
-
+**回帰元**: `docs/api-spec.md § ファセット集計対象の選択`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
 
 ### IT-FACETS-04: `includeFacets=true` で検索結果 + facet 一括取得
@@ -704,8 +682,7 @@
 - response の facet bucket count に suppressed / withdrawn / private が含まれない
 - `/entries/?keywords=<accession>` で suppressed が見えても、`/facets` の集計には反映されない
 
-**回帰元**: `docs/api-spec.md § データ可視性 (status 制御)` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § データ可視性 (status 制御)`
 **関連 unit テスト**: `tests/unit/es/test_query.py`, `tests/unit/routers/test_facets.py`
 
 ### IT-FACETS-06: OpenAPI Facets schema 整合 (status キー無し、organism / accessibility 必須)
@@ -716,8 +693,7 @@
 - Facets レスポンス schema に `status` キーが**存在しない** (status facet 廃止)
 - `organism`, `accessibility` 等が必須
 
-**回帰元**: `docs/api-spec.md § ファセット` / `40196f7` (status facet drop) / `3bdb8a3` (OpenAPI schema 整備)
-
+**回帰元**: `docs/api-spec.md § ファセット`
 **関連 unit テスト**: `tests/unit/schemas/test_facets.py`
 
 ### IT-FACETS-07: facets allowlist 外で 422
@@ -748,8 +724,7 @@
 - `edges == []`
 - `query == <orphan_accession>`
 
-**回帰元**: `docs/api-spec.md § Umbrella Tree` / `694b219`
-
+**回帰元**: `docs/api-spec.md § Umbrella Tree`
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
 ### IT-UMBRELLA-02: depth 1 (umbrella → leaf) の典型構造
@@ -761,8 +736,7 @@
 - `edges` に少なくとも 1 件 (parent → child) が含まれる
 - 全 edge の `parent` / `child` が `nodes` (もしくは roots) に存在 (整合性)
 
-**回帰元**: `docs/api-spec.md § Umbrella Tree` / `694b219`
-
+**回帰元**: `docs/api-spec.md § Umbrella Tree`
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
 ### IT-UMBRELLA-03: multi-parent DAG で edge 重複排除
@@ -785,8 +759,7 @@
 - depth 10 を超えるチェーンが走査される seed で `status_code == 500`
 - RFC 7807 形式 (`detail` で depth 超過を示す)
 
-**回帰元**: `docs/api-spec.md § Umbrella Tree` (MAX_DEPTH=10) / `694b219`
-
+**回帰元**: `docs/api-spec.md § Umbrella Tree` (MAX_DEPTH=10)
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
 ### IT-UMBRELLA-05: 中間 node 参照切れで edge 除外、API 全体は 200
@@ -810,8 +783,7 @@
 - 中間 / leaf に withdrawn / private な BioProject があっても edge から除外
 - API は 200、構造的整合性は保たれる
 
-**回帰元**: `docs/api-spec.md § Umbrella Tree` / `docs/api-spec.md § データ可視性` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § Umbrella Tree` / `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
 ### IT-UMBRELLA-07: seed 不在で 404
@@ -853,8 +825,7 @@
 - 両クエリの `total` が一致 (case 違いに依存しない)
 - `keyword` 系フィールドでも tokenized text でも対称に動く
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL` / `50c1330`
-
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
 
 ### IT-DSL-02: cursor + adv 同時指定で `cursor-not-supported` 400 (ES DB)
@@ -866,8 +837,7 @@
 - `type` URI が `cursor-not-supported` slug を含む
 - adv は offset-only
 
-**回帰元**: `docs/db-portal-api-spec.md § エラー` / `89d0357`
-
+**回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DSL-03: cursor + adv 同時指定で `cursor-not-supported` 400 (Solr DB) — staging_only
@@ -878,8 +848,7 @@
 - ES と同じ slug `cursor-not-supported`
 - Solr DB は cursor 非対応 (offset-only)
 
-**回帰元**: `docs/db-portal-api-spec.md § エラー` / `aa2f9f3` (Solr backend)
-
+**回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DSL-04: `/db-portal/parse` が DSL を AST JSON に変換
@@ -891,8 +860,7 @@
 - response が `{"queryTree": ...}` 形式の JSON tree
 - AND/OR/NOT/leaf の構造が DSL と一致 (GUI state restore 用 SSOT)
 
-**回帰元**: `docs/db-portal-api-spec.md § /db-portal/parse` / `d79ace0`
-
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/parse`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal_parse.py`, `tests/unit/search/dsl/test_serde.py`
 
 ### IT-DSL-05: `/db-portal/parse` OpenAPI responses は `{200, 400, 422, 500}` (404 不含)
@@ -903,8 +871,7 @@
 - parse の responses key 集合 = `{"200", "400", "422", "500"}`
 - 404 が含まれない (`db` を必須にしないので path resolve には失敗しない)
 
-**回帰元**: `docs/db-portal-api-spec.md § /db-portal/parse § エラー` / `d79ace0`
-
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/parse § エラー`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal_parse.py`
 
 ### IT-DSL-06: grammar が symbol 含み wildcard を受理
@@ -916,8 +883,7 @@
 - `total >= 0` で検索が動く
 - 同じく `?` (single char) も受理
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL` / `5c4916a`
-
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`
 
 ### IT-DSL-07: `/db-portal/parse` cross-mode (db 省略) で Tier 3 拒否
@@ -928,8 +894,7 @@
 - `status_code == 400`
 - `type` URI が `field-not-available-in-cross-db` slug
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier` / `d79ace0`
-
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier`
 **関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
 
 ### IT-DSL-08: DSL syntax error で 400 `unexpected-token`
@@ -971,8 +936,7 @@
 - `hits[*].molecularType` (Pydantic alias `molecularType`、Python attr `molecular_type`) が response に出る
 - 一定割合の hit で値が non-null
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)` / `11dace7` (molecularType / sequenceLength を fl に追加)
-
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-02: ARSA `sequenceLength` field がレスポンスに含まれる
@@ -983,8 +947,7 @@
 - `hits[*].sequenceLength` (Pydantic alias、Python attr `sequence_length`) が response に出る
 - 一定割合の hit で値が non-null
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)` / `11dace7`
-
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-03: ARSA `organism.identifier` が Feature `db_xref="taxon:..."` から抽出
@@ -995,8 +958,7 @@
 - `hits[*].organism.identifier` が `taxon:` 接頭辞無しの数値 ID で埋まる (一定割合の hit で)
 - 元 ARSA Feature の `db_xref="taxon:9606"` が `9606` として正しく抽出されている
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)` / `05e3af3`
-
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-04: trad / taxonomy `description` が常に null
@@ -1006,8 +968,7 @@
 **不変条件**:
 - 全 hit で `description == null` (機械連結廃止)
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit` / `05e3af3` (description blurbs 廃止)
-
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-05: TXSearch lineage の自身除去
@@ -1018,8 +979,7 @@
 - 各 hit で `lineage[0] != scientific_name` (自身重複が除去されている)
 - もし `lineage[0] == scientific_name` のドキュメントが ES から来ても、API レイヤーで除去
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (taxonomy)` / `05e3af3`
-
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (taxonomy)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-06: adv Tier 3 field の uf allowlist 完全性
@@ -1031,8 +991,7 @@
 - silent wrong-field match や dropped value が起きない (`total > 0` を別経路で確認可能なクエリで成立)
 - 注: `molecularType` / `sequenceLength` は response field のみで DSL allowlist には含まれない (検索フィールドとしては未公開)
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3` / `11dace7`
-
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_solr.py`, `tests/unit/solr/test_query.py`
 
 ### IT-DBPORTAL-07: cross-search の 8 DB fan-out (count + topHits)
@@ -1044,8 +1003,7 @@
 - 各 DB に対し `topHits` 個までの hit (12-field shared `DbPortalLightweightHit` schema) が含まれる
 - 全 DB が並列に呼ばれている (個別 timeout 内で完走)
 
-**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search` / `cd9c9e3` (topHits) / `9595dce` (gea/metabobank) / `242e3b0` (parallelize fan-out)
-
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DBPORTAL-08: cross-search `topHits` 境界 (0 / 50 / 51)
@@ -1057,8 +1015,7 @@
 - `topHits=50` で 200、`len(hits) <= 50`
 - `topHits=51` で 422
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalCrossSearchQuery` / `cd9c9e3`
-
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalCrossSearchQuery`
 **関連 unit テスト**: `tests/unit/schemas/test_db_portal.py`
 
 ### IT-DBPORTAL-09: search?db=trad の cursor 不可
@@ -1070,8 +1027,7 @@
 - `type` URI が `cursor-not-supported` slug
 - Solr DB は offset-only
 
-**回帰元**: `docs/db-portal-api-spec.md § ページネーション` / `aa2f9f3`
-
+**回帰元**: `docs/db-portal-api-spec.md § ページネーション`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DBPORTAL-10: search?db=taxonomy の cursor 不可
@@ -1081,8 +1037,7 @@
 **不変条件**:
 - IT-DBPORTAL-09 と同じ挙動 (`cursor-not-supported` 400)
 
-**回帰元**: `docs/db-portal-api-spec.md § ページネーション` / `aa2f9f3`
-
+**回帰元**: `docs/db-portal-api-spec.md § ページネーション`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DBPORTAL-11: search?db=trad/taxonomy の `perPage` allowlist (20/50/100 のみ)
@@ -1093,8 +1048,7 @@
 - `perPage in {20, 50, 100}` で 200
 - それ以外 (例: 30) で 422
 
-**回帰元**: `docs/db-portal-api-spec.md § ページネーション` / `aa2f9f3`
-
+**回帰元**: `docs/db-portal-api-spec.md § ページネーション`
 **関連 unit テスト**: `tests/unit/schemas/test_db_portal_hits.py`
 
 ### IT-DBPORTAL-12: per-backend timeout (個別 DB 失敗で他 DB は返る)
@@ -1106,8 +1060,7 @@
 - 失敗した DB は count / hits が `null` または error 表示
 - 全 DB 失敗で初めて 502
 
-**回帰元**: `docs/db-portal-api-spec.md § タイムアウト挙動` / `242e3b0` (per-backend timeout)
-
+**回帰元**: `docs/db-portal-api-spec.md § タイムアウト挙動`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ---
@@ -1124,8 +1077,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - 全 `items[*].status` が `"public"`
 - `total` に hidden が含まれない
 
-**回帰元**: `docs/api-spec.md § データ可視性` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/es/test_query.py`, `tests/unit/search/test_accession.py`
 
 ### IT-STATUS-02: アクセッション完全一致 keywords で suppressed がヒット (UX 維持)
@@ -1137,8 +1089,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - 該当 entry の `status == "suppressed"`
 - 同 accession + ワイルドカード (`<acc>*`) では suppressed が出ない (完全一致のみ解放)
 
-**回帰元**: `docs/api-spec.md § アクセッション ID 完全一致の判定ルール` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § アクセッション ID 完全一致の判定ルール`
 **関連 unit テスト**: `tests/unit/search/test_accession.py`
 
 ### IT-STATUS-03: detail 4 variant で `withdrawn` / `private` が 404、`suppressed` が 200
@@ -1150,8 +1101,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - private: 4 variant 全てで 404
 - suppressed: 4 variant 全てで 200 (direct access は許可)
 
-**回帰元**: `docs/api-spec.md § データ可視性` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-STATUS-04: 404 detail 文字列が hidden ↔ 不在で完全一致 (status 推測防止)
@@ -1164,8 +1114,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - private / withdrawn / 不在の 3 通り全てで `detail` が同じ
 - 4 variant 全てで成立
 
-**回帰元**: `docs/api-spec.md § データ可視性` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-STATUS-05: bulk で混在 IDs が `entries` (public + suppressed) と `notFound` (withdrawn + private + 不在) に分類
@@ -1177,8 +1126,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - `notFound` に withdrawn + private + 不在が含まれる
 - 不変式 IT-BULK-03 を満たす
 
-**回帰元**: `docs/api-spec.md § データ可視性` / `292ce75`
-
+**回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_bulk.py`
 
 ### IT-STATUS-06: umbrella seed が hidden なら 404 (detail 文字列一致)
@@ -1223,11 +1171,10 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **endpoint**: `GET /db-portal/cross-search?q=<自由文>&topHits=10`
 
 **不変条件**:
-- 6 ES DB (bioproject, biosample, sra, jga, gea, metabobank) の hits 全てで `status == "public"`
+- ES 経由の各 DB (bioproject, biosample, sra, jga, gea, metabobank) の hits 全てで `status == "public"`
 - count にも hidden / suppressed が含まれない
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` / `27e2285`
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`, `tests/unit/search/test_accession.py`
 
 ### IT-STATUS-10: `/db-portal/cross-search?q=<accession>` で対象 ES DB に suppressed が出る
@@ -1239,8 +1186,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - 他の ES DB の count / hits は普通に public のみ
 - アクセッション完全一致判定が `q` でも `adv` でも同じ規則
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` / `27e2285`
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/search/test_accession.py`
 
 ### IT-STATUS-11: `/db-portal/cross-search?adv=identifier:<accession>` (single leaf eq) で suppressed が出る
@@ -1252,8 +1198,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - adv AST のトップが単一 `FieldClause` (`identifier`, `op=eq`) のときのみ解放
 - 他の field (例: `title:`) では解放されない
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` (AST 判定ルール) / `27e2285`
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性` (AST 判定ルール)
 **関連 unit テスト**: `tests/unit/search/dsl/test_accession_exact_match.py`
 
 ### IT-STATUS-12: `/db-portal/cross-search?adv=identifier:<acc> AND title:<word>` (AND ラップ) で suppressed が出ない
@@ -1265,8 +1210,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - OR / NOT も同様
 - ワイルドカード (`identifier:<acc>*`) も対象外
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` / `27e2285`
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/search/dsl/test_accession_exact_match.py`
 
 ### IT-STATUS-13: `/db-portal/search?db=<es_db>&q=<accession>` cursor 2 ページ目で status filter 継承
@@ -1277,8 +1221,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - 2 ページ目でも対象 DB に suppressed が出る (cursor token に accession exact match 状態が継承される)
 - token を別 DB に流し込んでも継承されない (cursor + db の整合性)
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` / `27e2285` / `5a3410f` (HMAC-signed cursor)
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/test_cursor.py`
 
 ### IT-STATUS-14: `/db-portal/search?db=<es_db>&adv=identifier:<accession>` で suppressed (offset 経路、cursor 不可)
@@ -1290,8 +1233,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - cursor + adv 同時指定で 400 (IT-DSL-02)
 - 2 ページ目以降は `page` で取得 (deep paging 制限内)
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` / `27e2285`
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/search/dsl/test_accession_exact_match.py`
 
 ### IT-STATUS-15: `/db-portal/search?db=trad|taxonomy` (Solr proxy) は status filter 影響なし — staging_only
@@ -1303,8 +1245,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - ES と異なり filter 不注入 (Solr query に status 条件が無い)
 - hidden な status (`suppressed` / `withdrawn` / `private`) は決して出ない
 
-**回帰元**: `docs/db-portal-api-spec.md § データ可視性` (Solr no-op) / `27e2285`
-
+**回帰元**: `docs/db-portal-api-spec.md § データ可視性` (Solr no-op)
 **関連 unit テスト**: `tests/unit/solr/test_query.py`
 
 ---
@@ -1313,15 +1254,15 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 
 `/dblink/`、`/dblink/{type}/{id}`、`POST /dblink/counts`。
 
-### IT-DBLINK-01: `/dblink/` で 21 種 AccessionType が網羅返却
+### IT-DBLINK-01: `/dblink/` で AccessionType が網羅返却
 
 **endpoint**: `GET /dblink/`
 
 **不変条件**:
-- response の type 集合 = `docs/api-spec.md § アクセッションタイプ` の 21 種と完全一致 (set 一致)
+- response の type 集合 = `docs/api-spec.md § アクセッションタイプ` で列挙された全 AccessionType と完全一致 (set 一致)
 - 各エントリーが name / description 等の必須キーを持つ
 
-**回帰元**: `docs/api-spec.md § アクセッションタイプ (21 種)`
+**回帰元**: `docs/api-spec.md § アクセッションタイプ`
 
 **関連 unit テスト**: `tests/unit/routers/test_dblink.py`, `tests/unit/schemas/test_dblink.py`
 
@@ -1373,39 +1314,6 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - 上限超過で 422
 - 不在 entry は `count = 0` (404 ではない)
 
-**回帰元**: `docs/api-spec.md § POST /dblink/counts` / `809d34b` (bulk UNNEST)
-
+**回帰元**: `docs/api-spec.md § POST /dblink/counts`
 **関連 unit テスト**: `tests/unit/routers/test_dblink.py`, `tests/unit/dblink/test_client.py`
 
----
-
-## 移植トレーサビリティ
-
-過去のレビューや commit から導かれた検証ケースは、各 IT の **回帰元** フィールドに commit SHA を残してトレースする。「どのバグが背景で生まれたシナリオか」を後から辿れるようにする。
-
-主要な commit SHA → IT 対応:
-
-| commit | 概要 | 関連 IT |
-|--------|------|---------|
-| `27e2285` | `/db-portal/*` ES に status filter | IT-STATUS-09 〜 15 |
-| `cd9c9e3` | cross-search topHits | IT-DBPORTAL-07, IT-DBPORTAL-08 |
-| `4ff1575` | type-specific term/nested/text filter + opt-in facets | IT-SEARCH-13, IT-SEARCH-14, IT-SEARCH-15, IT-SEARCH-16, IT-SEARCH-17, IT-SEARCH-18, IT-FACETS-03 |
-| `e167480` | auto-phrase symbol token | IT-SEARCH-11, IT-SEARCH-17 |
-| `9595dce` | GEA / MetaboBank 追加 | IT-SEARCH-02, IT-DETAIL-01, IT-DETAIL-08, IT-BULK-08 |
-| `b3db3ef` | umbrella → objectTypes | IT-SEARCH-13, IT-FACETS-02 |
-| `dbff21f` | 配列フィールド常時 key 契約 | IT-SEARCH-12, IT-DETAIL-08, IT-BULK-08 |
-| `89d0357` | cross-search / search 分割 | IT-DSL-02, IT-DBPORTAL-07 |
-| `292ce75` | status filter 全面 (`/entries/*`) | IT-STATUS-01 〜 08 |
-| `50c1330` | `case_insensitive: true` | IT-DSL-01, IT-DETAIL-11 |
-| `05e3af3` | ARSA organism / TXSearch lineage / description blurbs 廃止 | IT-DBPORTAL-03, IT-DBPORTAL-04, IT-DBPORTAL-05 |
-| `11dace7` | uf allowlist + MolecularType / SequenceLength | IT-DBPORTAL-01, IT-DBPORTAL-02, IT-DBPORTAL-06 |
-| `5c4916a` | symbol 含み wildcard | IT-DSL-06 |
-| `694b219` | umbrella tree | IT-UMBRELLA-01 〜 04 |
-| `5a3410f` | HMAC cursor / sameAs error resilience | IT-SEARCH-05, IT-SEARCH-06, IT-SEARCH-07, IT-DETAIL-03, IT-DETAIL-10, IT-STATUS-13 |
-| `40196f7` | docs split / status facet drop / dblink alias 廃止 | IT-CORE-04, IT-FACETS-01, IT-FACETS-06 |
-| `242e3b0` | per-backend timeout / parallelize | IT-DBPORTAL-07, IT-DBPORTAL-12 |
-| `e167480` | auto-phrase symbol token | IT-SEARCH-11 |
-| `aa2f9f3` | Solr trad / taxonomy backend | IT-DSL-03, IT-DBPORTAL-09, IT-DBPORTAL-10, IT-DBPORTAL-11 |
-| `d79ace0` | `/db-portal/parse` | IT-DSL-04, IT-DSL-05, IT-DSL-07 |
-| `809d34b` | dblink half-edge schema | IT-DETAIL-09, IT-DBLINK-05 |
-| `3bdb8a3` | OpenAPI metadata (operationId / discriminator) | IT-FACETS-06 |

@@ -88,18 +88,29 @@ class TestDetailWithdrawnAndSuppressed:
 
 
 class TestDetail404DetailStringIndistinguishable:
-    """IT-STATUS-04: 404 detail strings match between hidden and missing IDs."""
+    """IT-STATUS-04: 404 detail strings match between hidden and missing IDs.
+
+    All four variants (``/{id}``, ``.json``, ``.jsonld``, ``/dbxrefs.json``)
+    must produce the same detail string regardless of whether the entry
+    is missing or hidden — leaking the requested accession through the
+    detail breaks the visibility-hiding contract in api-spec.md
+    § データ可視性.
+    """
 
     def test_private_detail_matches_missing(self, app: TestClient) -> None:
-        """IT-STATUS-04: private vs nonexistent return identical detail strings."""
+        """IT-STATUS-04: private vs nonexistent share detail across 4 variants."""
         private = require_accession(
             "PRIVATE_SRA_EXPERIMENT_ID",
             PRIVATE_SRA_EXPERIMENT_ID,
         )
-        priv = app.get(f"/entries/sra-experiment/{private}")
-        miss = app.get(f"/entries/sra-experiment/{NONEXISTENT_ID}")
-        assert priv.status_code == miss.status_code == 404
-        assert priv.json()["detail"] == miss.json()["detail"]
+        for suffix in ("", ".json", ".jsonld", "/dbxrefs.json"):
+            priv = app.get(f"/entries/sra-experiment/{private}{suffix}")
+            miss = app.get(f"/entries/sra-experiment/{NONEXISTENT_ID}{suffix}")
+            assert priv.status_code == miss.status_code == 404, suffix
+            assert priv.json()["detail"] == miss.json()["detail"], suffix
+            # The accession must not leak through the detail string.
+            assert private not in priv.json()["detail"], suffix
+            assert NONEXISTENT_ID not in miss.json()["detail"], suffix
 
 
 class TestBulkSplitsByStatus:
@@ -126,7 +137,13 @@ class TestBulkSplitsByStatus:
 
 
 class TestUmbrellaSeedHidden:
-    """IT-STATUS-06: hidden umbrella seed → 404 (detail matches missing)."""
+    """IT-STATUS-06: hidden umbrella seed → 404 (detail matches missing).
+
+    The detail string must be identical across hidden and missing seeds —
+    if the implementation embeds the requested accession in ``detail``,
+    callers can infer existence from the response, defeating the
+    visibility-hiding contract in api-spec.md § データ可視性.
+    """
 
     def test_hidden_seed_returns_404(self, app: TestClient) -> None:
         """IT-STATUS-06: hidden seed and missing seed share status + detail."""
@@ -137,6 +154,10 @@ class TestUmbrellaSeedHidden:
         hidden = app.get(f"/entries/bioproject/{accession}/umbrella-tree")
         missing = app.get(f"/entries/bioproject/{NONEXISTENT_ID}/umbrella-tree")
         assert hidden.status_code == missing.status_code == 404
+        # Detail must NOT differ — both responses must look indistinguishable.
+        assert hidden.json()["detail"] == missing.json()["detail"]
+        assert accession not in hidden.json()["detail"]
+        assert NONEXISTENT_ID not in missing.json()["detail"]
 
 
 class TestUmbrellaIntermediateHiddenExcluded:
@@ -174,9 +195,7 @@ class TestDbPortalCrossSearchExcludeHidden:
             if entry.get("db") not in es_dbs:
                 continue
             for hit in entry.get("hits") or []:
-                assert hit.get("status") == "public", (
-                    f"{entry['db']} hit has status={hit.get('status')}"
-                )
+                assert hit.get("status") == "public", f"{entry['db']} hit has status={hit.get('status')}"
 
 
 class TestDbPortalCrossSearchAccessionExposesSuppressed:

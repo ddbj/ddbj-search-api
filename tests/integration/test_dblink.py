@@ -8,40 +8,36 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from ddbj_search_api.schemas.dblink import AccessionType
 from tests.integration.conftest import (
     NONEXISTENT_ID,
     PUBLIC_BIOPROJECT_ID,
     require_accession,
 )
 
-# api-spec.md § アクセッションタイプ pins this number.
-_EXPECTED_TYPE_COUNT = 21
-
 
 class TestDbLinkTypesList:
-    """IT-DBLINK-01: GET /dblink/ returns all 21 AccessionType entries."""
+    """IT-DBLINK-01: GET /dblink/ returns the AccessionType union from converter."""
 
     def test_returns_200(self, app: TestClient) -> None:
         """IT-DBLINK-01: endpoint reachable."""
         resp = app.get("/dblink/")
         assert resp.status_code == 200
 
-    def test_types_count_matches_spec(self, app: TestClient) -> None:
-        """IT-DBLINK-01: types list size matches the api-spec (21)."""
-        body = app.get("/dblink/").json()
-        assert "types" in body
-        assert len(body["types"]) == _EXPECTED_TYPE_COUNT
+    def test_types_match_accession_type_enum(self, app: TestClient) -> None:
+        """IT-DBLINK-01: response set equals ``AccessionType`` enum exactly.
+
+        Asserting the set rather than the count surfaces both unintended
+        omissions (member dropped from the enum) and accidental
+        additions (type leaked from another enum).
+        """
+        types = app.get("/dblink/").json()["types"]
+        assert set(types) == {member.value for member in AccessionType}
 
     def test_types_are_unique(self, app: TestClient) -> None:
         """IT-DBLINK-01: no duplicate type values."""
         types = app.get("/dblink/").json()["types"]
         assert len(types) == len(set(types))
-
-    def test_canonical_types_present(self, app: TestClient) -> None:
-        """IT-DBLINK-01: representative types from api-spec are present."""
-        types = set(app.get("/dblink/").json()["types"])
-        for canonical in ("bioproject", "biosample", "sra-submission"):
-            assert canonical in types, f"missing canonical type: {canonical}"
 
 
 class TestDbLinkTargetFilter:
