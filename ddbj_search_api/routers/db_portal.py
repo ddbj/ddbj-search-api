@@ -279,6 +279,7 @@ def _parse_and_validate_dsl(
             mode="cross" if db is None else "single",
             db=db,
             max_depth=config.dsl_max_depth,
+            max_nodes=config.dsl_max_nodes,
         )
     except DslError as exc:
         raise DbPortalHTTPException(
@@ -1348,6 +1349,7 @@ async def _parse_db_portal(
             mode="cross" if db is None else "single",
             db=db,
             max_depth=config.dsl_max_depth,
+            max_nodes=config.dsl_max_nodes,
         )
     except DslError as exc:
         raise DbPortalHTTPException(

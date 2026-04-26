@@ -14,7 +14,7 @@ from hypothesis import strategies as st
 from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import DslError, ErrorType, parse
 from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS
-from ddbj_search_api.search.dsl.validator import validate
+from ddbj_search_api.search.dsl.validator import DEFAULT_MAX_NODES, validate
 
 
 class TestAllowedFields:
@@ -66,7 +66,8 @@ class TestValueKindOperatorCompat:
         [
             "identifier:[a TO b]",  # identifier は range 不可
             "title:2024-01-01",  # text は date 不可
-            "date:cancer*",  # date は wildcard 不可
+            "date:cancer*",  # date alias x wildcard 不可
+            "date_published:2024*",  # date 型 x wildcard 不可 (YYYYMMDD format への暗黙変換は無い)
             "date_published:cancer",  # date は word 不可
             "organism:cancer*",  # organism は wildcard 不可
             "organism:2024-01-01",  # organism は date 不可
@@ -167,6 +168,53 @@ class TestNestDepth:
         with pytest.raises(DslError) as exc_info:
             validate(ast, mode="cross", max_depth=0)
         assert exc_info.value.type == ErrorType.nest_depth_exceeded
+
+
+class TestNestNodes:
+    """AST ノード総数上限 (`max_nodes`) を超えると `nest_depth_exceeded` を返す。
+
+    深さは OK でも横幅 (`a OR b OR ... OR z`) で爆発するケースをガードする。
+    既存の ``nest-depth-exceeded`` slug を流用 (validator.py コメントの方針)。
+    """
+
+    def test_single_clause_accepted(self) -> None:
+        # 単独 leaf = 1 node、max_nodes=1 で境界 OK
+        validate(parse("title:cancer"), mode="cross", max_nodes=1)
+
+    def test_total_count_boundary_accepted(self) -> None:
+        # AND 二項 = root + 2 leaves = 3 nodes、max_nodes=3 で境界 OK
+        validate(parse("title:a AND title:b"), mode="cross", max_nodes=3)
+
+    def test_total_count_exceeded_rejected(self) -> None:
+        # AND 二項 = 3 nodes、max_nodes=2 で reject
+        ast = parse("title:a AND title:b")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross", max_nodes=2)
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+        assert "total node count 3" in exc_info.value.detail
+        assert "exceeds limit 2" in exc_info.value.detail
+
+    def test_wide_or_at_shallow_depth_rejected_by_node_count(self) -> None:
+        # 深さ 1 でも横幅で爆発するケース (depth check では止まらない)
+        # OR 5 leaves = root + 5 = 6 nodes、max_depth=2 (OK) でも max_nodes=5 で reject
+        ast = parse("title:a OR title:b OR title:c OR title:d OR title:e")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross", max_depth=2, max_nodes=5)
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+        assert "total node count" in exc_info.value.detail
+
+    def test_node_count_check_runs_before_depth(self) -> None:
+        # 深さも幅も両方超過 → どちらが先に raise しても slug は同じだが、
+        # detail で「total node count」と「nest depth」を区別できる必要がある
+        ast = parse("title:a OR title:b OR title:c")  # 1 + 3 = 4 nodes
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross", max_depth=10, max_nodes=2)
+        # depth は 2 で OK だが nodes が 4 > 2 で reject
+        assert "total node count" in exc_info.value.detail
+
+    def test_default_max_nodes_is_512(self) -> None:
+        # 引数省略時の default は 512 (DEFAULT_MAX_NODES) を踏襲
+        assert DEFAULT_MAX_NODES == 512
 
 
 class TestMode:

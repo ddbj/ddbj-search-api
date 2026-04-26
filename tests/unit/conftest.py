@@ -257,6 +257,24 @@ def mock_es_get_source_stream_bulk() -> collections.abc.Iterator[AsyncMock]:
 
 
 @pytest.fixture(autouse=True)
+def mock_es_ping() -> collections.abc.Iterator[AsyncMock]:
+    """Autouse-patch es_ping in the service_info router.
+
+    Default: ``return_value=True`` so /service-info reports
+    ``elasticsearch=ok``. Tests that need to simulate ES down should take
+    ``mock_es_ping`` as an argument and override
+    ``mock_es_ping.return_value = False`` (mirroring the
+    ``mock_es_mget_source_bulk`` pattern below).
+    """
+    with patch(
+        "ddbj_search_api.routers.service_info.es_ping",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = True
+        yield mock
+
+
+@pytest.fixture(autouse=True)
 def mock_es_mget_source_bulk() -> collections.abc.Iterator[AsyncMock]:
     """Autouse-patch es_mget_source in the bulk router.
 

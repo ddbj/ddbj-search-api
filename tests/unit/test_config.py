@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from pydantic import ValidationError
 
 from ddbj_search_api.config import AppConfig, Env, logging_config
 
@@ -181,6 +182,101 @@ class TestAppConfigPerBackendTimeouts:
         monkeypatch.setenv("DDBJ_SEARCH_API_CROSS_SEARCH_TOTAL_TIMEOUT", "30.0")
         config = AppConfig()
         assert config.cross_search_total_timeout == 30.0
+
+
+# === Solr URL safe-char validation ===
+
+
+class TestAppConfigSolrUrlSanitize:
+    """Solr URL components are validated against an allowlist at startup.
+
+    Allowed: ``A-Z a-z 0-9 . _ : / , -``. Anything else (``?``, whitespace,
+    pipe, etc.) raises ``ValidationError`` so misconfiguration surfaces
+    immediately rather than producing malformed Solr requests.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in list(os.environ):
+            if var.startswith("DDBJ_SEARCH_API_"):
+                monkeypatch.delenv(var, raising=False)
+
+    def test_safe_core_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_CORE", "collection1")
+        config = AppConfig()
+        assert config.solr_arsa_core == "collection1"
+
+    def test_core_with_query_string_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_CORE", "collection1?q=*:*")
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    def test_core_with_whitespace_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_CORE", "collection 1")
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    def test_safe_shards_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_ARSA_SHARDS",
+            "a012-1:51981/solr/collection1,a012-2:51981/solr/collection1",
+        )
+        config = AppConfig()
+        assert config.solr_arsa_shards is not None
+
+    def test_shards_with_pipe_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Solr の shards 区切りはコンマ; pipe は意図しない区切り
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_ARSA_SHARDS",
+            "a012-1:51981/solr/collection1|other:51981/solr",
+        )
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    def test_shards_with_space_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_ARSA_SHARDS",
+            "a012-1:51981 /solr/collection1",
+        )
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    def test_base_url_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_BASE_URL", "http://a012:51981/solr")
+        config = AppConfig()
+        assert config.solr_arsa_base_url == "http://a012:51981/solr"
+
+    def test_base_url_with_query_string_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_ARSA_BASE_URL",
+            "http://a012:51981/solr?evil=1",
+        )
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    def test_txsearch_url_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_TXSEARCH_URL",
+            "http://localhost:32005/solr-rgm/ncbi_taxonomy/select",
+        )
+        config = AppConfig()
+        assert config.solr_txsearch_url == "http://localhost:32005/solr-rgm/ncbi_taxonomy/select"
+
+    def test_txsearch_url_with_question_mark_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv(
+            "DDBJ_SEARCH_API_SOLR_TXSEARCH_URL",
+            "http://localhost:32005/solr-rgm/x/select?q=*",
+        )
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    def test_empty_string_treated_as_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # 空文字は通す (None と同じ扱い、実運用で env を一時的に空にする操作を許容)
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_SHARDS", "")
+        AppConfig()
 
 
 # === Env enum ===

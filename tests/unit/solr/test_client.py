@@ -88,6 +88,41 @@ class TestArsaSearch:
 
         assert mock_client.get.call_args[1]["params"] == params
 
+    @pytest.mark.asyncio
+    async def test_core_is_url_encoded(self, mock_client: AsyncMock) -> None:
+        """Stray ``?`` / ``/`` in core must be percent-encoded so they cannot
+        escape the path segment (defence-in-depth on top of AppConfig validation).
+        """
+        mock_client.get.return_value = _mock_response({"response": {}})
+
+        await arsa_search(
+            mock_client,
+            base_url="http://a012:51981/solr",
+            core="collection1?q=*:*",
+            params={"q": "*"},
+        )
+
+        # `?` → `%3F`, `:` → `%3A`, `/` → `%2F`, `*` → `%2A`, `=` → `%3D`
+        assert mock_client.get.call_args[0][0] == ("http://a012:51981/solr/collection1%3Fq%3D%2A%3A%2A/select")
+
+    @pytest.mark.asyncio
+    async def test_core_with_slash_does_not_escape_path(self, mock_client: AsyncMock) -> None:
+        mock_client.get.return_value = _mock_response({"response": {}})
+
+        await arsa_search(
+            mock_client,
+            base_url="http://a012:51981/solr",
+            core="../admin/cores",
+            params={"q": "*"},
+        )
+
+        # `/` → `%2F`, `.` → そのまま (RFC 3986 unreserved)
+        url = mock_client.get.call_args[0][0]
+        assert "/select" in url
+        assert "%2F" in url  # `/` がエンコードされている
+        assert url.endswith("/select")
+        assert "/admin/cores/select" not in url
+
 
 class TestArsaSearchErrors:
     @pytest.mark.asyncio

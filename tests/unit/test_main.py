@@ -300,3 +300,51 @@ class TestLifespanSolrClient:
         application = create_app(AppConfig())
         with TestClient(application):
             assert application.state.solr_client is not application.state.es_client
+
+
+# === Lifespan: defensive resource cleanup ===
+
+
+class TestLifespanResourceCleanup:
+    """ES / Solr いずれの ``aclose`` が raise しても他方を必ず close する.
+
+    httpx.AsyncClient.aclose は運用中ほぼ raise しないが、shutdown 経路で
+    transport / connection 層の例外が発生する可能性はゼロではない。片側の
+    raise で他方をリークさせない契約を回帰防御する。
+    """
+
+    def test_es_client_closed_when_solr_close_raises(self) -> None:
+        application = create_app(AppConfig())
+
+        async def _raising_aclose() -> None:
+            raise RuntimeError("simulated solr close failure")
+
+        with TestClient(application):
+            es_client = application.state.es_client
+            # context 内で solr_client.aclose を例外送出に差し替え
+            application.state.solr_client.aclose = _raising_aclose
+
+        # context 終了後: solr の aclose が raise しても es は確実に閉じる
+        assert es_client.is_closed is True
+
+    def test_solr_client_closed_when_es_close_raises(self) -> None:
+        application = create_app(AppConfig())
+
+        async def _raising_aclose() -> None:
+            raise RuntimeError("simulated es close failure")
+
+        with TestClient(application):
+            solr_client = application.state.solr_client
+            application.state.es_client.aclose = _raising_aclose
+
+        # 順序的に solr が先に close されるため、es の aclose が raise しても solr は閉じている
+        assert solr_client.is_closed is True
+
+    def test_normal_shutdown_closes_both_clients(self) -> None:
+        # 例外なしの通常 shutdown で両 client が閉じることを再確認 (回帰防御)
+        application = create_app(AppConfig())
+        with TestClient(application):
+            es_client = application.state.es_client
+            solr_client = application.state.solr_client
+        assert es_client.is_closed is True
+        assert solr_client.is_closed is True

@@ -6,7 +6,8 @@
 3. (field_type, value_kind) が OPERATOR_BY_KIND に含まれるか → invalid-operator-for-field
 4. date 型の値が YYYY-MM-DD 厳密一致 + 実在日付 (閏年含む) → invalid-date-format
 5. phrase 値が empty でないか → missing-value
-6. AND/OR/NOT のネスト深さが max_depth 以下か → nest-depth-exceeded
+6. AND/OR/NOT のネスト深さが max_depth 以下、AST ノード総数が max_nodes 以下か → nest-depth-exceeded
+   (max_depth は深さのみを抑えるため、`a OR b OR ... OR z` のような横幅も同 slug でガードする)
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from ddbj_search_api.search.dsl.errors import DslError, ErrorType
 ValidationMode: TypeAlias = Literal["cross", "single"]
 
 DEFAULT_MAX_DEPTH = 5
+DEFAULT_MAX_NODES = 512
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DIGIT_RE = re.compile(r"^\d+$")
@@ -40,10 +42,29 @@ def validate(
     mode: ValidationMode,
     db: DbPortalDb | None = None,
     max_depth: int = DEFAULT_MAX_DEPTH,
+    max_nodes: int = DEFAULT_MAX_NODES,
 ) -> None:
     """Validate an AST in place. Raises DslError on violation."""
+    _check_total_nodes(ast, max_nodes=max_nodes)
     _check_depth(ast, current=1, max_depth=max_depth)
     _check_nodes(ast, mode=mode)
+
+
+def _count_nodes(node: Node) -> int:
+    if isinstance(node, FieldClause):
+        return 1
+    return 1 + sum(_count_nodes(child) for child in node.children)
+
+
+def _check_total_nodes(node: Node, *, max_nodes: int) -> None:
+    total = _count_nodes(node)
+    if total > max_nodes:
+        raise DslError(
+            type=ErrorType.nest_depth_exceeded,
+            detail=(f"total node count {total} exceeds limit {max_nodes}"),
+            column=node.position.column,
+            length=node.position.length,
+        )
 
 
 def _check_depth(node: Node, *, current: int, max_depth: int) -> None:

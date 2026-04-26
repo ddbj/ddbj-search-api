@@ -190,27 +190,45 @@ def _make_lifespan(config: AppConfig) -> Any:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> collections.abc.AsyncIterator[None]:
-        app.state.es_client = httpx.AsyncClient(
-            base_url=config.es_url,
-            timeout=httpx.Timeout(config.es_timeout),
-            limits=httpx.Limits(max_connections=1000),
-        )
-        # Shared Solr client for ARSA and TXSearch. No ``base_url``: each
-        # call passes a full URL (ARSA ``{base}/{core}/select``, TXSearch
-        # preformed ``/solr-rgm/.../select``). Smaller pool than ES: Solr
-        # traffic comes only from ``/db-portal/cross-search`` fan-out and
-        # ``/db-portal/search?db=trad|taxonomy``.
-        #
-        # Client-level timeout is the hard cap for Solr requests; cross-search
-        # per-call bounds (``arsa_timeout`` / ``txsearch_timeout``) are further
-        # tightened by ``asyncio.wait_for`` inside ``routers.db_portal``.
-        app.state.solr_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(max(config.arsa_timeout, config.txsearch_timeout)),
-            limits=httpx.Limits(max_connections=100),
-        )
-        yield
-        await app.state.solr_client.aclose()
-        await app.state.es_client.aclose()
+        es_client: httpx.AsyncClient | None = None
+        solr_client: httpx.AsyncClient | None = None
+        try:
+            es_client = httpx.AsyncClient(
+                base_url=config.es_url,
+                timeout=httpx.Timeout(config.es_timeout),
+                limits=httpx.Limits(max_connections=1000),
+            )
+            app.state.es_client = es_client
+            # Shared Solr client for ARSA and TXSearch. No ``base_url``: each
+            # call passes a full URL (ARSA ``{base}/{core}/select``, TXSearch
+            # preformed ``/solr-rgm/.../select``). Smaller pool than ES: Solr
+            # traffic comes only from ``/db-portal/cross-search`` fan-out and
+            # ``/db-portal/search?db=trad|taxonomy``.
+            #
+            # Client-level timeout is the hard cap for Solr requests; cross-search
+            # per-call bounds (``arsa_timeout`` / ``txsearch_timeout``) are further
+            # tightened by ``asyncio.wait_for`` inside ``routers.db_portal``.
+            solr_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(max(config.arsa_timeout, config.txsearch_timeout)),
+                limits=httpx.Limits(max_connections=100),
+            )
+            app.state.solr_client = solr_client
+            yield
+        finally:
+            # Each aclose is independently wrapped so a raise in one path does
+            # not skip the other; without this, an aclose exception on
+            # solr_client would leak es_client (httpx.AsyncClient.aclose can
+            # raise from underlying transports during shutdown).
+            if solr_client is not None:
+                try:
+                    await solr_client.aclose()
+                except Exception:
+                    logger.exception("Failed to close solr_client during shutdown")
+            if es_client is not None:
+                try:
+                    await es_client.aclose()
+                except Exception:
+                    logger.exception("Failed to close es_client during shutdown")
 
     return lifespan
 

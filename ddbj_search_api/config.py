@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import re
 from enum import Enum
 from pathlib import Path
 
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings
+
+# Solr URL components (core / shards / base URLs) are interpolated into
+# request URLs and ``shards`` query params. Restrict to the character set
+# expected from production env (`a012-1:51981/solr/collection1,...`) so that
+# misconfiguration with e.g. ``?`` (query separator), whitespace, or pipe
+# (`|`) surfaces at startup rather than producing malformed Solr requests.
+_SOLR_URL_SAFE_RE = re.compile(r"^[A-Za-z0-9._:/,-]+$")
 
 DBLINK_DB_PATH = Path("/home/w3ddbjld/const/dblink/dblink.duckdb")
 
@@ -78,6 +86,7 @@ class AppConfig(BaseSettings):
     # Advanced Search DSL limits (DoS / complexity guard).
     dsl_max_length: int = 4096
     dsl_max_depth: int = 5
+    dsl_max_nodes: int = 512
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -85,6 +94,30 @@ class AppConfig(BaseSettings):
         """Enable debug mode for the dev environment only."""
 
         return self.env == Env.dev
+
+    @field_validator(
+        "solr_arsa_base_url",
+        "solr_arsa_shards",
+        "solr_arsa_core",
+        "solr_txsearch_url",
+    )
+    @classmethod
+    def _validate_solr_url_safe_chars(cls, v: str | None) -> str | None:
+        """Reject Solr URL components containing characters outside the safe allowlist.
+
+        Defence-in-depth at config load time: these values flow into Solr
+        request URLs / ``shards`` params, so anything outside
+        ``[A-Za-z0-9._:/,-]`` (e.g. ``?``, ``..``, whitespace, ``|``) is
+        rejected so a misconfigured env var fails fast instead of producing
+        malformed Solr requests at runtime.
+        """
+        if v is None or v == "":
+            return v
+        if not _SOLR_URL_SAFE_RE.match(v):
+            raise ValueError(
+                f"contains characters outside the safe allowlist [A-Za-z0-9._:/,-]: {v!r}",
+            )
+        return v
 
 
 def parse_args() -> argparse.Namespace:

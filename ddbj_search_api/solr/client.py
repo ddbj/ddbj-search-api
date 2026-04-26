@@ -12,6 +12,7 @@ of truth.
 
 from __future__ import annotations
 
+import urllib.parse
 from typing import Any
 
 import httpx
@@ -27,11 +28,14 @@ async def arsa_search(
     """Execute ``GET {base_url}/{core}/select`` against ARSA.
 
     ``base_url`` is expected to omit a trailing slash
-    (e.g. ``http://a012:51981/solr``).  Raises
-    ``httpx.HTTPStatusError`` on non-2xx responses so callers can map
-    failures uniformly with other backends.
+    (e.g. ``http://a012:51981/solr``). ``core`` is URL-encoded as a defence
+    in depth: AppConfig already validates the env value, but encoding here
+    means a stray ``?`` / ``/`` in a runtime override cannot escape the
+    intended path segment. Raises ``httpx.HTTPStatusError`` on non-2xx so
+    callers can map failures uniformly with other backends.
     """
-    response = await client.get(f"{base_url}/{core}/select", params=params)
+    encoded_core = urllib.parse.quote(core, safe="")
+    response = await client.get(f"{base_url}/{encoded_core}/select", params=params)
     response.raise_for_status()
     result: dict[str, Any] = response.json()
     return result

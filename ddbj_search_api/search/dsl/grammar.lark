@@ -23,7 +23,7 @@ AND: "AND"
 OR: "OR"
 NOT: "NOT"
 
-PHRASE.5: /"(?:[^"\\]|\\.)*"/
+PHRASE.5: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/
 RANGE.5: /\[[^\s\]]+\s+TO\s+[^\s\]]+\]/
 DATE.4: /\d{4}-\d{2}-\d{2}/
 // WILDCARD uses the same character class as WORD but requires at least one

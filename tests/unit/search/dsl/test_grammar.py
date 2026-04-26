@@ -36,12 +36,40 @@ class TestFieldClauseValueKinds:
         assert ast.value_kind == "phrase"
         assert ast.value == "Homo sapiens"
 
+    def test_phrase_simple_single_quote(self) -> None:
+        ast = parse("organism:'Homo sapiens'")
+        assert isinstance(ast, FieldClause)
+        assert ast.field == "organism"
+        assert ast.value_kind == "phrase"
+        assert ast.value == "Homo sapiens"
+
     def test_phrase_empty(self) -> None:
         # field:"" は phrase として parse される (validator が missing-value で弾く)
         ast = parse('title:""')
         assert isinstance(ast, FieldClause)
         assert ast.value_kind == "phrase"
         assert ast.value == ""
+
+    def test_phrase_empty_single_quote(self) -> None:
+        # field:'' も同様 phrase として parse される
+        ast = parse("title:''")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "phrase"
+        assert ast.value == ""
+
+    def test_phrase_single_quote_can_contain_double_quote(self) -> None:
+        # single-quoted phrase 内では `"` を escape なしで埋め込める
+        ast = parse("""title:'foo"bar'""")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "phrase"
+        assert ast.value == 'foo"bar'
+
+    def test_phrase_double_quote_can_contain_single_quote(self) -> None:
+        # double-quoted phrase 内では `'` を escape なしで埋め込める (対称性)
+        ast = parse('title:"foo\'bar"')
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "phrase"
+        assert ast.value == "foo'bar"
 
     def test_wildcard_asterisk_trailing(self) -> None:
         ast = parse("title:cancer*")
@@ -283,8 +311,21 @@ class TestPhraseEscaping:
         # escape は解除されて \" → "
         assert ast.value == 'foo"bar'
 
+    def test_phrase_with_escaped_single_quote(self) -> None:
+        ast = parse(r"title:'foo\'bar'")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "phrase"
+        # escape は解除されて \' → '
+        assert ast.value == "foo'bar"
+
     def test_phrase_with_escaped_backslash(self) -> None:
         ast = parse(r'title:"foo\\bar"')
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "phrase"
+        assert ast.value == r"foo\bar"
+
+    def test_phrase_with_escaped_backslash_single_quote(self) -> None:
+        ast = parse(r"title:'foo\\bar'")
         assert isinstance(ast, FieldClause)
         assert ast.value_kind == "phrase"
         assert ast.value == r"foo\bar"
@@ -326,6 +367,27 @@ class TestDslParserPBT:
         assert ast.field == field
         assert ast.value_kind == "word"
         assert ast.value == word
+
+    @given(
+        field=st.sampled_from(["identifier", "title", "description", "organism"]),
+        quote=st.sampled_from(['"', "'"]),
+        inner=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters=" _-"),
+            min_size=1,
+            max_size=20,
+        ),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_phrase_roundtrip(self, field: str, quote: str, inner: str) -> None:
+        """phrase は double / single 両 quote で対称に parse される。
+
+        inner には quote / backslash を含めない (escape は別 case で確認済み)。
+        """
+        ast = parse(f"{field}:{quote}{inner}{quote}")
+        assert isinstance(ast, FieldClause)
+        assert ast.field == field
+        assert ast.value_kind == "phrase"
+        assert ast.value == inner
 
     @given(
         date_str=st.from_regex(r"\d{4}-\d{2}-\d{2}", fullmatch=True),

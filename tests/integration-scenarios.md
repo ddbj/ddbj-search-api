@@ -1099,20 +1099,33 @@
 
 **不変条件**:
 - 深さ 5 で 200、深さ 6 で 400 + `type` URI に `nest-depth-exceeded` slug
+- ノード総数上限 (`dsl_max_nodes`、default 512) 超過も同 slug を流用 (深さは OK でも横幅 `a OR b OR ... OR z` で爆発する経路をガード)。default config では parser の DSL 長さ上限 4096 文字制限内に収まり再現困難なため、ノード総数経路は unit でカバー
 
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
-**関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
+**関連 unit テスト**: `tests/unit/search/dsl/test_validator.py` (TestNestDepth, TestNestNodes)
 
 ### IT-DSL-18: missing-value で 400
 
-**endpoint**: `GET /db-portal/parse?adv=title:""`
+**endpoint**: `GET /db-portal/parse?adv=title:""` / `?adv=title:''`
 
 **不変条件**:
-- 明示空ダブルクオート (`title:""`) で 400 + `type` URI に `missing-value` slug
-- (grammar の PHRASE はダブルクオート専用。`title:''` は WORD としてパースされ別経路)
+- 明示空ダブルクオート (`title:""`) と明示空シングルクオート (`title:''`) のどちらも 400 + `type` URI に `missing-value` slug
+- grammar の PHRASE は double / single quote 両対応 (対称、`q=` 側のキーワード検索と一貫)
 
 **回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_validator.py`
+
+### IT-DSL-19: single quote phrase は double quote と同等
+
+**endpoint**: `GET /db-portal/parse?adv=organism:'Homo sapiens'` ↔ `?adv=organism:"Homo sapiens"`
+
+**不変条件**:
+- `/db-portal/parse`: single / double quote の phrase が同一の AST (`{op: eq, field, value}`) を返す
+- `/db-portal/search`: 同一クエリで `total` が一致 (quote 種別はバックエンドの match に影響しない)
+- `q=` 側 (キーワード検索) との一貫性: `phrase.py` の `tokenize_keywords` が `'...'` も phrase として扱うのと同等
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
+**関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py` (TestFieldClauseValueKinds, TestPhraseEscaping)
 
 ---
 

@@ -421,10 +421,9 @@ class TestNestDepthExceeded:
 class TestMissingValue:
     """IT-DSL-18: ``missing-value`` 400.
 
-    The grammar's PHRASE token is double-quoted only (``"..."``); single
-    quotes are part of WORD, so ``title:''`` parses as a 2-character WORD
-    rather than an empty phrase. Coverage focuses on the documented
-    double-quote form.
+    The grammar's PHRASE token accepts both double (``"..."``) and single
+    (``'...'``) quotes (対称、`q=` 側のキーワード検索と一貫)。empty phrase
+    in either form raises ``missing-value``.
     """
 
     def test_explicit_empty_double_quotes_returns_400(self, app: TestClient) -> None:
@@ -435,3 +434,68 @@ class TestMissingValue:
         )
         assert resp.status_code == 400
         assert "missing-value" in resp.json().get("type", "")
+
+    def test_explicit_empty_single_quotes_returns_400(self, app: TestClient) -> None:
+        """IT-DSL-18: ``title:''`` (single quote) も同 slug で reject される."""
+        resp = app.get(
+            "/db-portal/parse",
+            params={"adv": "title:''", "db": "bioproject"},
+        )
+        assert resp.status_code == 400
+        assert "missing-value" in resp.json().get("type", "")
+
+
+class TestSingleQuotePhrase:
+    """IT-DSL-19: single quote phrase は double quote と同等 AST を返す.
+
+    `q=` 側 (``ddbj_search_api/search/phrase.py``) と整合させるため、
+    ``adv`` でも ``field:'value'`` を ``field:"value"`` と同じ phrase として
+    parse する。共有 URL や frontend からの query 渡しで quote を変換せずに
+    済むようにするための互換性保証。
+    """
+
+    def test_single_quote_phrase_parses_as_phrase(self, app: TestClient) -> None:
+        """IT-DSL-19: ``organism:'Homo sapiens'`` が 200 で eq AST を返す."""
+        resp = app.get(
+            "/db-portal/parse",
+            params={"adv": "organism:'Homo sapiens'", "db": "bioproject"},
+        )
+        assert resp.status_code == 200
+        ast = resp.json().get("ast", {})
+        assert ast.get("op") == "eq"
+        assert ast.get("field") == "organism"
+        assert ast.get("value") == "Homo sapiens"
+
+    def test_single_and_double_quote_yield_same_ast(self, app: TestClient) -> None:
+        """IT-DSL-19: single / double quote phrase は同一 AST."""
+        single = app.get(
+            "/db-portal/parse",
+            params={"adv": "organism:'Homo sapiens'", "db": "bioproject"},
+        ).json()
+        double = app.get(
+            "/db-portal/parse",
+            params={"adv": 'organism:"Homo sapiens"', "db": "bioproject"},
+        ).json()
+        assert single == double
+
+    def test_single_quote_phrase_search_total_matches_double(self, app: TestClient) -> None:
+        """IT-DSL-19: 検索 endpoint でも single / double quote で同じ ``total``."""
+        single = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "title:'whole genome'",
+                "perPage": 20,
+            },
+        )
+        double = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": 'title:"whole genome"',
+                "perPage": 20,
+            },
+        )
+        assert single.status_code == 200
+        assert double.status_code == 200
+        assert single.json()["total"] == double.json()["total"]
