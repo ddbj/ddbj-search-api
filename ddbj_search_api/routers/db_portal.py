@@ -33,8 +33,10 @@ from ddbj_search_api.cursor import compute_next_cursor, decode_cursor
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
+    StatusMode,
     build_search_query,
     build_sort_with_tiebreaker,
+    inject_status_filter,
     pagination_to_from_size,
 )
 from ddbj_search_api.schemas.common import ProblemDetails
@@ -53,6 +55,7 @@ from ddbj_search_api.schemas.db_portal import (
     _DbPortalHitAdapter,
     _DbPortalLightweightHitAdapter,
 )
+from ddbj_search_api.search.accession import detect_accession_exact_match
 from ddbj_search_api.search.dsl import (
     DslError,
     ast_to_json,
@@ -60,6 +63,9 @@ from ddbj_search_api.search.dsl import (
     compile_to_solr,
     parse,
     validate,
+)
+from ddbj_search_api.search.dsl.accession_exact_match import (
+    detect_accession_exact_match_in_ast,
 )
 from ddbj_search_api.search.dsl.ast import Node as DslNode
 from ddbj_search_api.solr import get_solr_client
@@ -533,9 +539,9 @@ async def _cross_search(
     ``top_hits=0`` returns count-only (each ``DbPortalCount.hits=None``);
     ``top_hits>=1`` returns up to ``top_hits`` lightweight hits per DB.
     """
-    # db-portal の status filter は Future work (docs/api-spec.md § データ可視性)。
-    # ES 6 DB / Solr 2 DB の対称性を保つため status filter は適用しない。
-    query_body = build_search_query(keywords=q, keyword_operator="AND", status_mode=None)
+    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
+    status_mode: StatusMode = "include_suppressed" if detect_accession_exact_match(q) is not None else "public_only"
+    query_body = build_search_query(keywords=q, keyword_operator="AND", status_mode=status_mode)
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
         task = asyncio.create_task(
@@ -746,7 +752,11 @@ async def _adv_cross_search(
     ``asyncio.create_task`` with ``ALL_COMPLETED`` + ``cross_search_total_timeout``.
     Partial-success policy (200 unless every DB failed) matches the simple-search flow.
     """
-    es_query_body = compile_to_es(ast)
+    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
+    status_mode: StatusMode = (
+        "include_suppressed" if detect_accession_exact_match_in_ast(ast) is not None else "public_only"
+    )
+    es_query_body = inject_status_filter(compile_to_es(ast), status_mode)
     arsa_q = compile_to_solr(ast, dialect="arsa")
     txsearch_q = compile_to_solr(ast, dialect="txsearch")
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
@@ -957,7 +967,15 @@ async def _adv_db_specific_search(
             compile_to_solr(ast, dialect="txsearch"),
         )
     # ES DB: cursor + adv is blocked by _validate_cursor_exclusivity (adv in conflict list).
-    return await _db_specific_search_es_adv(es_client, query, compile_to_es(ast))
+    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
+    status_mode: StatusMode = (
+        "include_suppressed" if detect_accession_exact_match_in_ast(ast) is not None else "public_only"
+    )
+    return await _db_specific_search_es_adv(
+        es_client,
+        query,
+        inject_status_filter(compile_to_es(ast), status_mode),
+    )
 
 
 # === DB-specific hits search ===
@@ -1079,8 +1097,12 @@ async def _db_specific_search_offset(
 ) -> DbPortalHitsResponse:
     assert query.db is not None
     _validate_deep_paging(query.page, query.per_page)
-    # db-portal の status filter は Future work (docs/api-spec.md § データ可視性)。
-    es_query = build_search_query(keywords=query.q, keyword_operator="AND", status_mode=None)
+    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
+    # cursor 経路は CursorPayload.query 経由で本 query を焼き込み、後続継続でも同じ status_mode を保つ。
+    status_mode: StatusMode = (
+        "include_suppressed" if detect_accession_exact_match(query.q) is not None else "public_only"
+    )
+    es_query = build_search_query(keywords=query.q, keyword_operator="AND", status_mode=status_mode)
     sort_body = build_sort_with_tiebreaker(query.sort)
     from_, size = pagination_to_from_size(query.page, query.per_page)
     body: dict[str, Any] = {

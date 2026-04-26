@@ -480,9 +480,9 @@ ES ドキュメントの `status` フィールドは INSDC の公開状態を示
 
 `public` なエントリーのレスポンスに含まれる `dbXrefs` のうち、`withdrawn` / `private` な accession を除外する仕様は Future work とする。巨大な dbXrefs を持つエントリー (数十万件) に対する ES `_mget` のコストが重いため、今回は実装を見送る。現状は DuckDB の edge をそのまま返すため、`withdrawn` / `private` な accession の ID が `dbXrefs` に現れる可能性がある。将来的には converter 側で DuckDB の edge テーブルに status 列を持たせる等で解決する予定。
 
-**DB Portal API (`/db-portal/cross-search`, `/db-portal/search`) の status filter** (Future work):
+**DB Portal API (`/db-portal/cross-search`, `/db-portal/search`) の status filter**:
 
-DB Portal API の ES 経由検索 (`/db-portal/cross-search` の 6 ES DB 部分、および `/db-portal/search?db=bioproject|biosample|sra|jga|gea|metabobank`) に対する status filter は Future work とする。Solr proxy (`/db-portal/search?db=trad|taxonomy`) 側での status 相当の制御と対称性を取る必要があり、別途設計が必要なため。現状は 4 値いずれの status のエントリーも hit する可能性がある。
+DB Portal API の ES 経由検索 (`/db-portal/cross-search` の 6 ES DB 部分、および `/db-portal/search?db=bioproject|biosample|sra|jga|gea|metabobank`) には `/entries/*` 系と同等の status filter (`withdrawn` / `private` は常に除外、`q` または `adv` の `identifier` 単一 leaf がアクセッション ID 完全一致のときのみ `suppressed` を許可) を適用する。詳細は [db-portal-api-spec.md § データ可視性 (status 制御)](db-portal-api-spec.md#データ可視性-status-制御) を参照。Solr proxy (`/db-portal/search?db=trad|taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提のため status filter は注入しない。
 
 ### 配列フィールド
 

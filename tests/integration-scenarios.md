@@ -125,6 +125,8 @@
 
 ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) によるアクセス制御。converter リリース取り込み待ち、accession の代表値が確定するまで一部 TBD。
 
+`/entries/*`:
+
 - `/entries/` 自由文検索で `withdrawn` / `private` がヒットしない
 - `/entries/?keywords=<accession>` で suppressed accession がヒットする (UX 維持)
 - `/entries/{type}/{id}` 4 variant で withdrawn / private は 404、suppressed は 200
@@ -132,6 +134,16 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - bulk で混在 IDs が `entries` (public + suppressed) と `notFound` (withdrawn + private + 不在) に分類される
 - umbrella-tree で seed が hidden なら 404、中間 node が hidden なら edge から除外
 - facets が `status:public` のみで集計される
+
+`/db-portal/*` (ES 6 DB は `/entries/*` と同等の制御、Solr 2 DB は no-op):
+
+- `/db-portal/cross-search?q=<自由文>` で 6 ES DB の hits に `withdrawn` / `private` / `suppressed` が出ない
+- `/db-portal/cross-search?q=<accession>` で対象 ES DB の hits に `suppressed` が出る (他 DB は影響なし)
+- `/db-portal/cross-search?adv=identifier:<accession>` で対象 ES DB の hits に `suppressed` が出る (single leaf eq + accession-shape のみ解放)
+- `/db-portal/cross-search?adv=identifier:<accession> AND title:<word>` は AND ラップなので suppressed は出ない (`/db-portal/cross-search?adv=title:<word>` も同じく出ない)
+- `/db-portal/search?db=<es_db>&q=<accession>` で suppressed が出る、続く `?cursor=<token>` (2 ページ目) でも継承される (cursor token に status filter 込み query が焼き込まれる)
+- `/db-portal/search?db=<es_db>&adv=identifier:<accession>` で suppressed が出る (offset 経路、cursor + adv は exclusive 違反で 400)
+- `/db-portal/search?db=trad` / `?db=taxonomy` (Solr proxy) は status filter 影響なし (Solr index に non-public は含まれない前提、レスポンス `status` は固定 `"public"`)
 
 ### IT-DBLINK-*: DBLinks
 

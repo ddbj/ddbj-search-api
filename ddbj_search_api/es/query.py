@@ -152,6 +152,45 @@ def build_status_filter(status_mode: StatusMode) -> dict[str, Any]:
     return {"term": {"status": "public"}}
 
 
+def inject_status_filter(
+    es_query: dict[str, Any],
+    status_mode: StatusMode,
+) -> dict[str, Any]:
+    """Return a new ES query body with a status filter applied.
+
+    Used by ``/db-portal/*`` adv-search routers to apply the same status
+    filter as :func:`build_search_query` to ``compile_to_es`` output.
+    The input is either a leaf clause (``term``, ``match_phrase``,
+    ``wildcard``, ``range``, single ``nested``) or a ``bool`` wrapper.
+    Leaf clauses are wrapped into ``{"bool": {"must": [original],
+    "filter": [status]}}``. ``bool`` wrappers receive the status filter
+    prepended to ``bool.filter`` (created if absent).
+
+    The input dict is not mutated — the returned dict is a fresh
+    structure built via :func:`copy.deepcopy` so the same body can be
+    reused across 6 ES DBs in cross-search fan-out without
+    cross-contamination.
+    """
+    status_filter = build_status_filter(status_mode)
+    if "bool" in es_query and isinstance(es_query["bool"], dict):
+        new_query = copy.deepcopy(es_query)
+        bool_body = new_query["bool"]
+        existing_filter = bool_body.get("filter")
+        if existing_filter is None:
+            bool_body["filter"] = [status_filter]
+        elif isinstance(existing_filter, list):
+            bool_body["filter"] = [status_filter, *existing_filter]
+        else:
+            bool_body["filter"] = [status_filter, existing_filter]
+        return new_query
+    return {
+        "bool": {
+            "must": [copy.deepcopy(es_query)],
+            "filter": [status_filter],
+        },
+    }
+
+
 def build_search_query(
     keywords: str | None = None,
     keyword_fields: str | list[str] | None = None,
@@ -197,11 +236,8 @@ def build_search_query(
 
     A status filter (derived from ``status_mode``) is prepended to
     ``bool.filter`` by default so that ``withdrawn`` / ``private``
-    entries never leak into search results. Pass ``status_mode=None`` to
-    opt out of the status filter entirely (used by
-    ``/db-portal/cross-search`` and ``/db-portal/search`` where status
-    filtering is intentionally Future work — see
-    docs/api-spec.md § データ可視性).
+    entries never leak into search results. Pass ``status_mode=None``
+    to opt out of the filter entirely.
 
     Type-specific term / nested / text filters are accepted for any
     request; values that do not exist on the targeted index simply

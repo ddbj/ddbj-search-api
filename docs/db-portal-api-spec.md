@@ -127,6 +127,18 @@ Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており
 | `datePublished` | `Date` (`YYYYMMDD` → ISO) | `null` |
 | `isPartOf` | 固定 `"trad"` | 固定 `"taxonomy"` |
 
+### データ可視性 (status 制御)
+
+ES 6 DB (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank`) は ES ドキュメントの `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) を判定軸として可視性を制御する。仕様は `/entries/*` 系 ([api-spec.md § データ可視性 (status 制御)](api-spec.md#データ可視性-status-制御)) と揃える。
+
+- `withdrawn` / `private` は常に検索結果から除外
+- `q` (シンプル検索) のキーワードが単一のアクセッション ID と完全一致するとき、対象 DB の `suppressed` を許可。判定ルール (単一トークン、ワイルドカードなし、外側クオート剥がし、ddbj-search-converter の `ID_PATTERN_MAP` 完全一致) は `/entries/*` の判定関数 `detect_accession_exact_match` をそのまま再利用する
+- `adv` (Advanced Search DSL) は AST のトップが単一 `FieldClause` (`identifier` フィールド、`op=eq`) かつ value がアクセッション ID 完全一致のときのみ `suppressed` を許可。AND / OR / NOT でラップされたクエリ、ワイルドカード、`identifier` 以外のフィールドはすべて対象外 (`public_only` 固定)
+
+Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提。status filter は注入せず、レスポンスの `status` / `accessibility` は固定値 `"public"` / `"public-access"` で埋める ([§ `hits` lightweight schema](#hits-lightweight-schema))。
+
+cursor pagination (ES 6 DB) は cursor token に最初の offset リクエスト時点の status filter 込み query を焼き込む方式のため、後続 cursor 継続でも同じ status_mode が引き継がれる。
+
 ### タイムアウト挙動
 
 - 8 DB は `asyncio.create_task` で並列 fan-out、`asyncio.wait(return_when=ALL_COMPLETED, timeout=20s)` で集約。順序は task 完了順に依存せず常に上記固定順

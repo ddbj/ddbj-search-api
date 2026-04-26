@@ -24,7 +24,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.config import AppConfig
-from ddbj_search_api.cursor import CursorPayload, encode_cursor
+from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCountError,
     DbPortalErrorType,
@@ -459,8 +459,12 @@ class TestDbPortalCrossSearch:
         # First call is for sra (first ES-backed DB in order).  Default
         # ``topHits=10`` so size is 10 (count-only mode requires explicit
         # ``topHits=0``).
+        # ``q`` 省略でも default で ``public_only`` status filter が
+        # 付くため、query は ``match_all`` ではなく ``bool.filter`` 1 本のみ。
         first_call_body = mock_es_search_db_portal.call_args_list[0].args[2]
-        assert first_call_body["query"] == {"match_all": {}}
+        assert first_call_body["query"] == {
+            "bool": {"filter": [{"term": {"status": "public"}}]},
+        }
         assert first_call_body["size"] == 10
 
 
@@ -2018,12 +2022,17 @@ class TestDbPortalAdvValidDispatch:
             "/db-portal/search",
             params={"adv": "title:cancer", "db": "bioproject"},
         )
-        # 最後の call args の body に compile_to_es 結果が入っていることを確認
+        # 最後の call args の body に compile_to_es 結果が入っていることを確認。
         call_args = mock_es_search_db_portal.await_args
         assert call_args is not None
         body = call_args.args[2] if len(call_args.args) >= 3 else call_args.kwargs.get("body")
         assert body is not None
-        assert body["query"] == {"match_phrase": {"title": "cancer"}}
+        assert body["query"] == {
+            "bool": {
+                "must": [{"match_phrase": {"title": "cancer"}}],
+                "filter": [{"term": {"status": "public"}}],
+            },
+        }
 
     def test_adv_arsa_q_contains_compiled_solr(
         self,
@@ -2216,8 +2225,10 @@ class TestDbPortalAdvTier2Tier3:
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
-        # 期待形: nested(grant) → nested(grant.agency) → match_phrase(grant.agency.name)
-        outer = body["query"]
+        # 期待形: bool.must[0] = nested(grant) → nested(grant.agency) → match_phrase(grant.agency.name)
+        outer_bool = body["query"]["bool"]
+        assert outer_bool["filter"] == [{"term": {"status": "public"}}]
+        outer = outer_bool["must"][0]
         assert outer["nested"]["path"] == "grant"
         inner = outer["nested"]["query"]
         assert inner["nested"]["path"] == "grant.agency"
@@ -2237,9 +2248,16 @@ class TestDbPortalAdvTier2Tier3:
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
         assert body["query"] == {
-            "nested": {
-                "path": "organization",
-                "query": {"match_phrase": {"organization.name": "Tokyo University"}},
+            "bool": {
+                "must": [
+                    {
+                        "nested": {
+                            "path": "organization",
+                            "query": {"match_phrase": {"organization.name": "Tokyo University"}},
+                        },
+                    },
+                ],
+                "filter": [{"term": {"status": "public"}}],
             },
         }
 
@@ -2325,9 +2343,9 @@ class TestDbPortalAdvTier2Tier3:
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
-        assert body["query"] == {
-            "bool": {"must_not": [{"term": {"platform": "ILLUMINA"}}]},
-        }
+        body_bool = body["query"]["bool"]
+        assert body_bool["must_not"] == [{"term": {"platform": "ILLUMINA"}}]
+        assert body_bool["filter"] == [{"term": {"status": "public"}}]
 
     def test_tier3_unknown_field_still_rejected(
         self,
@@ -2354,3 +2372,546 @@ class TestDbPortalAdvTier2Tier3:
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_operator_for_field.value
+
+
+# === Status filter ===
+
+
+_PUBLIC_ONLY_CLAUSE = {"term": {"status": "public"}}
+_INCLUDE_SUPPRESSED_CLAUSE = {"terms": {"status": ["public", "suppressed"]}}
+
+
+def _extract_status_clause(es_query: dict[str, Any]) -> dict[str, Any] | None:
+    """ES query body から status filter clause を抽出する。
+
+    ``bool.filter`` 配列の中から ``term`` / ``terms`` 形式で
+    ``status`` を絞っている句を 1 つ返す (見つからなければ ``None``)。
+    """
+    bool_body = es_query.get("bool")
+    if not isinstance(bool_body, dict):
+        return None
+    filters = bool_body.get("filter", [])
+    if not isinstance(filters, list):
+        return None
+    for raw_f in filters:
+        if not isinstance(raw_f, dict):
+            continue
+        f: dict[str, Any] = raw_f
+        if "term" in f and "status" in f.get("term", {}):
+            return f
+        if "terms" in f and "status" in f.get("terms", {}):
+            return f
+    return None
+
+
+class TestDbPortalCrossSearchSimpleStatusFilter:
+    """`/db-portal/cross-search` simple ``q`` 経路の status filter 適用。
+
+    ``/entries/*`` と同じ ``detect_accession_exact_match`` を使う:
+    通常 ``public_only``、``q`` が単一 accession ID 完全一致のときのみ
+    ``include_suppressed``。判定は ``q`` から 1 回行い 6 ES DB 全部に共通の
+    query body を流す (詳細は docs/db-portal-api-spec.md § データ可視性)。
+    """
+
+    def test_no_q_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search")
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_free_text_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    @pytest.mark.parametrize(
+        "q",
+        ["PRJDB1234", "DRA000001", "JGAS000001", "SAMD00000001"],
+    )
+    def test_accession_q_allows_suppressed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        q: str,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": q})
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+    def test_accession_with_quotes_allows_suppressed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": '"PRJDB1234"'},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+    def test_multi_token_q_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """カンマ区切りの multi-token は accession 解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "PRJDB1234,DRA000001"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_wildcard_q_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """ワイルドカード ``PRJDB*`` は accession 解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "PRJDB*"})
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_non_dbtype_accession_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """DbType に含まれない accession (GSE は geo) は解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "GSE12345"})
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_all_six_es_dbs_share_status_mode(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """accession q で 6 ES DB 全部に同一 status filter (1 回判定 → fan-out)。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "PRJDB1234"})
+        assert resp.status_code == 200
+        # 6 ES DB すべてに同じ include_suppressed が流れる
+        assert len(mock_es_search_db_portal.call_args_list) == 6
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+
+class TestDbPortalCrossSearchAdvStatusFilter:
+    """`/db-portal/cross-search?adv=...` の status filter 適用 (AST 解析)。
+
+    AST が単一 ``identifier`` field の eq + accession-shape value のときのみ
+    ``include_suppressed``。AND/OR/NOT ラップ・wildcard・identifier 以外は
+    ``public_only`` 固定 (詳細は docs/db-portal-api-spec.md § データ可視性)。
+    """
+
+    def test_adv_other_field_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    @pytest.mark.parametrize(
+        "accession",
+        ["PRJDB1234", "DRA000001", "JGAS000001"],
+    )
+    def test_adv_identifier_eq_accession_allows_suppressed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        accession: str,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": f"identifier:{accession}"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+    def test_adv_identifier_wildcard_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """``identifier:PRJDB*`` は wildcard なので accession 解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "identifier:PRJDB*"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_adv_identifier_non_accession_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """``identifier:cancer`` (DbType pattern に matchしない) は解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "identifier:cancer"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_adv_and_with_identifier_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """AND ラップは AST top が BoolOp なので解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "identifier:PRJDB1234 AND title:cancer"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_adv_or_with_identifier_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """OR ラップは AST top が BoolOp なので解放対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "identifier:PRJDB1234 OR identifier:DRA000001"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_adv_publication_field_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """``publication`` は identifier 型だが field 名が違うので対象外。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "publication:PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+
+
+class TestDbPortalSearchStatusFilter:
+    """`/db-portal/search?db=<es_db>` の status filter 適用 (simple + adv + cursor)."""
+
+    @pytest.mark.parametrize("db", _ES_DBS)
+    def test_simple_q_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        db: str,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": db, "q": "cancer"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert _extract_status_clause(body["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    @pytest.mark.parametrize("db", _ES_DBS)
+    def test_simple_accession_q_allows_suppressed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        db: str,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": db, "q": "PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert _extract_status_clause(body["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+    @pytest.mark.parametrize("db", _ES_DBS)
+    def test_adv_other_field_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        db: str,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": db, "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert _extract_status_clause(body["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    @pytest.mark.parametrize("db", _ES_DBS)
+    def test_adv_identifier_accession_allows_suppressed(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        db: str,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": db, "adv": "identifier:PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert _extract_status_clause(body["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+    def test_adv_wildcard_identifier_uses_public_only(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "identifier:PRJDB*"},
+        )
+        assert resp.status_code == 200
+        body = mock_es_search_db_portal.call_args.args[2]
+        assert _extract_status_clause(body["query"]) == _PUBLIC_ONLY_CLAUSE
+
+    def test_cursor_inherits_status_filter_from_offset_request(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """offset 1 ページ目で生成された status filter 込み query が
+        CursorPayload.query に焼き込まれ、cursor token を decode すると
+        同じ filter が継承されていることを確認する。
+
+        cursor 経路 (``_db_specific_search_cursor``) は ``CursorPayload.query``
+        を ES body の ``query`` にそのまま流すため、ここで token に
+        ``include_suppressed`` 込みの query が含まれていれば 2 ページ目以降も
+        同じ status_mode が確実に適用される (実際の PIT 経路は
+        integration test で網羅)。
+        """
+        per_page = 20
+        hits_p1: list[dict[str, Any]] = [
+            {
+                "_id": f"PRJDB{i}",
+                "_source": {"identifier": f"PRJDB{i}", "type": "bioproject"},
+                "sort": [f"2024-01-{i + 1:02d}", f"PRJDB{i}"],
+            }
+            for i in range(per_page)
+        ]
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            hits=hits_p1,
+            total=per_page * 3,
+        )
+        r1 = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "PRJDB1234", "perPage": per_page},
+        )
+        assert r1.status_code == 200
+        body_p1 = mock_es_search_db_portal.call_args.args[2]
+        assert _extract_status_clause(body_p1["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+        next_cursor = r1.json()["nextCursor"]
+        assert next_cursor is not None
+        # cursor token を decode して、焼き込まれた query が
+        # include_suppressed 込みであることを直接検証する。
+        cursor_payload = decode_cursor(next_cursor)
+        assert _extract_status_clause(cursor_payload.query) == _INCLUDE_SUPPRESSED_CLAUSE
+
+
+def _solr_params_have_no_status(params: dict[str, Any]) -> bool:
+    """Solr params の key / value に ``status`` 関連の文字列が一切含まれないか確認する。
+
+    Solr 2 DB (ARSA / TXSearch) は status filter 非適用 (no-op)。
+    ``fq`` / ``q`` / その他 key にも ``status`` が混入しないことを担保する。
+    """
+    for key, value in params.items():
+        if "status" in str(key).lower():
+            return False
+        if isinstance(value, str) and "status" in value.lower():
+            return False
+        if isinstance(value, list):
+            for v in value:
+                if isinstance(v, str) and "status" in v.lower():
+                    return False
+    return True
+
+
+class TestDbPortalSolrNoStatusFilter:
+    """Solr 2 DB (ARSA / TXSearch) は status filter 非適用 (no-op) を保証する。
+
+    Solr proxy は外部 NIG cluster 側で public 固定が SSOT のため、
+    `/db-portal/*` から status 関連の filter を一切送らない (詳細は
+    docs/db-portal-api-spec.md § データ可視性 (status 制御))。
+    """
+
+    def test_arsa_simple_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "trad", "q": "cancer"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_arsa_simple_accession_q_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        """ES 6 DB なら解放対象になる accession q でも、Solr 側は影響を受けない。"""
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "trad", "q": "PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_arsa_adv_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "trad", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_txsearch_simple_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "taxonomy", "q": "human"},
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_txsearch_adv_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "taxonomy", "adv": "rank:species"},
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_cross_search_arsa_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        """`/db-portal/cross-search` の ARSA 経路 (trad) も同じく no-op。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_cross_search_txsearch_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        """`/db-portal/cross-search` の TXSearch 経路 (taxonomy) も同じく no-op。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(params)
+
+    def test_cross_search_adv_arsa_no_status_param(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        """adv 経路の cross-search でも Solr は影響を受けない。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"adv": "identifier:PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        arsa_params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        txsearch_params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert _solr_params_have_no_status(arsa_params)
+        assert _solr_params_have_no_status(txsearch_params)

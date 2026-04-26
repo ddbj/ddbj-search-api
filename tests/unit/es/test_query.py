@@ -20,6 +20,7 @@ from ddbj_search_api.es.query import (
     build_sort_with_tiebreaker,
     build_source_filter,
     build_status_filter,
+    inject_status_filter,
     pagination_to_from_size,
     resolve_requested_facets,
     validate_keyword_fields,
@@ -914,8 +915,7 @@ class TestBuildSearchQueryStatusMode:
         }
 
     def test_none_opts_out_of_status_filter(self) -> None:
-        """status_mode=None は status filter を追加しない
-        (db-portal の Future work 用)。"""
+        """status_mode=None は status filter を追加しない。"""
         result = build_search_query(status_mode=None)
         assert result == {"match_all": {}}
 
@@ -930,6 +930,133 @@ class TestBuildSearchQueryStatusMode:
         # organism のみ
         assert len(filters) == 1
         assert filters[0]["term"]["organism.identifier"] == "9606"
+
+
+class TestInjectStatusFilter:
+    """inject_status_filter prepends a status filter to compile_to_es output."""
+
+    def test_leaf_term_wrapped_in_bool(self) -> None:
+        """leaf clause (term) は bool.must でラップされ、bool.filter に status が付く。"""
+        leaf = {"term": {"identifier": "PRJDB1234"}}
+        result = inject_status_filter(leaf, "public_only")
+        assert result == {
+            "bool": {
+                "must": [{"term": {"identifier": "PRJDB1234"}}],
+                "filter": [{"term": {"status": "public"}}],
+            },
+        }
+
+    def test_leaf_match_phrase_wrapped(self) -> None:
+        leaf = {"match_phrase": {"title": "RNA-Seq"}}
+        result = inject_status_filter(leaf, "public_only")
+        assert result["bool"]["must"] == [leaf]
+        assert result["bool"]["filter"] == [{"term": {"status": "public"}}]
+
+    def test_leaf_wildcard_wrapped(self) -> None:
+        leaf = {"wildcard": {"title": {"value": "cancer*", "case_insensitive": True}}}
+        result = inject_status_filter(leaf, "public_only")
+        assert result["bool"]["must"] == [leaf]
+        assert result["bool"]["filter"] == [{"term": {"status": "public"}}]
+
+    def test_leaf_nested_wrapped(self) -> None:
+        leaf = {
+            "nested": {
+                "path": "organization",
+                "query": {"term": {"organization.name": "ddbj"}},
+            },
+        }
+        result = inject_status_filter(leaf, "public_only")
+        assert result["bool"]["must"] == [leaf]
+        assert result["bool"]["filter"] == [{"term": {"status": "public"}}]
+
+    def test_bool_wrapper_filter_added_when_absent(self) -> None:
+        bool_query = {"bool": {"must": [{"term": {"x": "y"}}]}}
+        result = inject_status_filter(bool_query, "public_only")
+        assert result == {
+            "bool": {
+                "must": [{"term": {"x": "y"}}],
+                "filter": [{"term": {"status": "public"}}],
+            },
+        }
+
+    def test_bool_wrapper_status_prepended_to_existing_filter(self) -> None:
+        bool_query = {
+            "bool": {
+                "must": [{"term": {"x": "y"}}],
+                "filter": [{"term": {"a": "b"}}],
+            },
+        }
+        result = inject_status_filter(bool_query, "include_suppressed")
+        assert result["bool"]["filter"] == [
+            {"terms": {"status": ["public", "suppressed"]}},
+            {"term": {"a": "b"}},
+        ]
+
+    def test_bool_should_wrapper_filter_added(self) -> None:
+        """OR (should) 構造でも filter は同列に追加される。"""
+        bool_query = {
+            "bool": {
+                "should": [
+                    {"term": {"a": "1"}},
+                    {"term": {"a": "2"}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
+        result = inject_status_filter(bool_query, "public_only")
+        assert result["bool"]["should"] == bool_query["bool"]["should"]
+        assert result["bool"]["minimum_should_match"] == 1
+        assert result["bool"]["filter"] == [{"term": {"status": "public"}}]
+
+    def test_bool_must_not_wrapper_filter_added(self) -> None:
+        """NOT (must_not) 構造でも filter は同列に追加される。"""
+        bool_query = {"bool": {"must_not": [{"term": {"x": "y"}}]}}
+        result = inject_status_filter(bool_query, "public_only")
+        assert result["bool"]["must_not"] == [{"term": {"x": "y"}}]
+        assert result["bool"]["filter"] == [{"term": {"status": "public"}}]
+
+    def test_input_leaf_not_mutated(self) -> None:
+        """元 dict (leaf) を変更しない。"""
+        original = {"term": {"identifier": "PRJDB1234"}}
+        _ = inject_status_filter(original, "public_only")
+        assert original == {"term": {"identifier": "PRJDB1234"}}
+
+    def test_input_bool_not_mutated(self) -> None:
+        """元 dict (bool wrapper) を変更しない。must / filter どちらも。"""
+        original: dict[str, Any] = {
+            "bool": {
+                "must": [{"term": {"x": "y"}}],
+                "filter": [{"term": {"a": "b"}}],
+            },
+        }
+        _ = inject_status_filter(original, "include_suppressed")
+        assert original == {
+            "bool": {
+                "must": [{"term": {"x": "y"}}],
+                "filter": [{"term": {"a": "b"}}],
+            },
+        }
+
+    def test_include_suppressed_on_leaf(self) -> None:
+        leaf = {"term": {"identifier": "PRJDB1234"}}
+        result = inject_status_filter(leaf, "include_suppressed")
+        assert result["bool"]["filter"] == [
+            {"terms": {"status": ["public", "suppressed"]}},
+        ]
+
+    def test_filter_as_dict_promoted_to_list(self) -> None:
+        """ES では filter を単一 dict で書ける legal フォーマット。list に正規化される。"""
+        bool_query = {
+            "bool": {
+                "must": [{"term": {"x": "y"}}],
+                "filter": {"term": {"a": "b"}},
+            },
+        }
+        result = inject_status_filter(bool_query, "public_only")
+        assert result["bool"]["filter"] == [
+            {"term": {"status": "public"}},
+            {"term": {"a": "b"}},
+        ]
 
 
 # ===================================================================
