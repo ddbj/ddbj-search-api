@@ -120,11 +120,31 @@ class TestSameAsFallback:
 
 
 class TestAliasDocument:
-    """IT-DETAIL-04: converter-side alias document hit."""
+    """IT-DETAIL-04: converter-side alias document hit.
 
-    def test_alias_resolves_to_canonical(self) -> None:
-        """IT-DETAIL-04: alias placeholder — populated during D-4."""
-        pytest.skip("alias accession not configured (D-4 deferred)")
+    ddbj-search-converter ingests JGA Secondary IDs as alias ES documents
+    whose ``_id`` is the long form but whose ``_source.identifier`` is
+    the short Primary. Hitting the long-form path must therefore resolve
+    via the direct ``_doc/{long}`` lookup (step 1 of the resolution
+    pipeline in api-spec.md § sameAs), without falling through to the
+    nested-query fallback.
+    """
+
+    def test_alias_resolves_to_canonical(self, app: TestClient) -> None:
+        """IT-DETAIL-04: long-form alias returns 200 with the Primary identifier."""
+        long_form = require_accession(
+            "SECONDARY_JGA_STUDY_ID",
+            SECONDARY_JGA_STUDY_ID,
+        )
+        resp = app.get(f"/entries/jga-study/{long_form}")
+        assert resp.status_code == 200
+        body = resp.json()
+        # ``identifier`` must be the short-form Primary (alias ``_source``
+        # is identical to the Primary document's ``_source``).
+        assert body["identifier"] != long_form
+        # Smoke: the canonical short form looks like JGAS\\d+ and is
+        # shorter than the long-form alias.
+        assert len(body["identifier"]) < len(long_form)
 
 
 class TestNotFound:

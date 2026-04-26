@@ -751,17 +751,6 @@
 
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
-### IT-UMBRELLA-04: `MAX_DEPTH = 10` 超過で 500
-
-**endpoint**: `GET /entries/bioproject/<deep_chain_accession>/umbrella-tree`
-
-**不変条件**:
-- depth 10 を超えるチェーンが走査される seed で `status_code == 500`
-- RFC 7807 形式 (`detail` で depth 超過を示す)
-
-**回帰元**: `docs/api-spec.md § Umbrella Tree` (MAX_DEPTH=10)
-**関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
-
 ### IT-UMBRELLA-05: 中間 node 参照切れで edge 除外、API 全体は 200
 
 **endpoint**: `GET /entries/bioproject/<has_dangling_child_accession>/umbrella-tree`
@@ -775,17 +764,6 @@
 
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
-### IT-UMBRELLA-06: hidden node (status withdrawn) を edge から除外
-
-**endpoint**: `GET /entries/bioproject/<has_hidden_child_accession>/umbrella-tree`
-
-**不変条件**:
-- 中間 / leaf に withdrawn / private な BioProject があっても edge から除外
-- API は 200、構造的整合性は保たれる
-
-**回帰元**: `docs/api-spec.md § Umbrella Tree` / `docs/api-spec.md § データ可視性`
-**関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
-
 ### IT-UMBRELLA-07: seed 不在で 404
 
 **endpoint**: `GET /entries/bioproject/PRJDB_DOES_NOT_EXIST_99999/umbrella-tree`
@@ -793,21 +771,9 @@
 **不変条件**:
 - `status_code == 404`
 - RFC 7807 形式
-- `detail` 文字列が hidden seed (IT-STATUS-07) と一致 (status 推測防止)
+- `detail` がアクセッション値を含まない固定文字列 (status 推測防止)
 
 **回帰元**: `docs/api-spec.md § Umbrella Tree` / `docs/api-spec.md § データ可視性`
-
-**関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
-
-### IT-UMBRELLA-08: seed sameAs フォールバック (Secondary ID で解決)
-
-**endpoint**: `GET /entries/bioproject/<Secondary_ID>/umbrella-tree`
-
-**不変条件**:
-- Secondary ID 直打ちで Primary に解決され 200
-- response の `query` は Primary ID
-
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決` / `docs/api-spec.md § Umbrella Tree`
 
 **関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
@@ -1092,67 +1058,43 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **回帰元**: `docs/api-spec.md § アクセッション ID 完全一致の判定ルール`
 **関連 unit テスト**: `tests/unit/search/test_accession.py`
 
-### IT-STATUS-03: detail 4 variant で `withdrawn` / `private` が 404、`suppressed` が 200
+### IT-STATUS-03: detail 4 variant で `private` が 404、`suppressed` が 200
 
 **endpoint**: `GET /entries/{type}/{accession}` 4 variant (`/{id}`, `.json`, `.jsonld`, `/dbxrefs.json`)
 
 **不変条件**:
-- withdrawn: 4 variant 全てで 404
 - private: 4 variant 全てで 404
 - suppressed: 4 variant 全てで 200 (direct access は許可)
+
+`withdrawn` は converter の入力 XML から外れた entry のため ES に投入されず (`docs/api-spec.md § データ可視性` 注釈)、本シナリオでは検証対象外 (実装上の防衛ロジックは unit テストで担保)。
 
 **回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-STATUS-04: 404 detail 文字列が hidden ↔ 不在で完全一致 (status 推測防止)
 
-**endpoint**: `GET /entries/{type}/{withdrawn_id}` ↔ `GET /entries/{type}/PRJDB_DOES_NOT_EXIST_99999`
+**endpoint**: `GET /entries/{type}/{private_id}` ↔ `GET /entries/{type}/PRJDB_DOES_NOT_EXIST_99999`
 
 **不変条件**:
 - `status_code` 一致 (404)
 - `body.detail` 完全一致 (status 推測材料を漏らさない)
-- private / withdrawn / 不在の 3 通り全てで `detail` が同じ
+- private / 不在の 2 通りで `detail` が同じ (`withdrawn` は ES に投入されないため対象外)
 - 4 variant 全てで成立
 
 **回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
-### IT-STATUS-05: bulk で混在 IDs が `entries` (public + suppressed) と `notFound` (withdrawn + private + 不在) に分類
+### IT-STATUS-05: bulk で混在 IDs が `entries` (public + suppressed) と `notFound` (private + 不在) に分類
 
-**endpoint**: `POST /entries/{type}/bulk` (body: 4 status + 不在の混在 IDs)
+**endpoint**: `POST /entries/{type}/bulk` (body: 3 status + 不在の混在 IDs)
 
 **不変条件**:
 - `entries` に public + suppressed が含まれる
-- `notFound` に withdrawn + private + 不在が含まれる
+- `notFound` に private + 不在が含まれる (`withdrawn` は ES 不在で `notFound` 経路と同一)
 - 不変式 IT-BULK-03 を満たす
 
 **回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_bulk.py`
-
-### IT-STATUS-06: umbrella seed が hidden なら 404 (detail 文字列一致)
-
-**endpoint**: `GET /entries/bioproject/<hidden_seed>/umbrella-tree`
-
-**不変条件**:
-- `status_code == 404`
-- detail 文字列が IT-UMBRELLA-07 (不在 seed) と一致
-
-**回帰元**: `docs/api-spec.md § Umbrella Tree` / `docs/api-spec.md § データ可視性`
-
-**関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
-
-### IT-STATUS-07: umbrella 中間 node が hidden なら edge 除外 (API は 200)
-
-**endpoint**: `GET /entries/bioproject/<has_hidden_intermediate>/umbrella-tree`
-
-**不変条件**:
-- `status_code == 200`
-- hidden 中間 node を含む edge が `edges` に出ない
-- 残った edge の整合性 (parent / child は node に存在) が保たれる
-
-**回帰元**: `docs/api-spec.md § Umbrella Tree` / `docs/api-spec.md § データ可視性`
-
-**関連 unit テスト**: `tests/unit/routers/test_umbrella_tree.py`
 
 ### IT-STATUS-08: facets が `status:public` のみで集計
 

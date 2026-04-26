@@ -1,15 +1,12 @@
 """Integration tests for IT-STATUS-* scenarios.
 
-ES status field (public / suppressed / withdrawn / private) visibility
-control across /entries/* and /db-portal/* (ES 6 DB), with no-op for
-the two Solr-backed DBs.
+ES status field (public / suppressed / private) visibility control
+across /entries/* and /db-portal/* (ES 6 DB), with no-op for the two
+Solr-backed DBs. ``withdrawn`` is omitted from the integration matrix
+because converter-side input XML never carries withdrawn records, so
+those entries do not reach ES (api-spec.md § データ可視性 注釈).
 
-See ``tests/integration-scenarios.md § IT-STATUS-*``. Many scenarios
-require status combinations not present in the staging data (no
-withdrawn entries anywhere; no private entries in BioProject /
-BioSample / JGA / GEA / MetaboBank). Those tests use
-``require_accession`` so the suite skips — not fails — when data is
-unavailable.
+See ``tests/integration-scenarios.md § IT-STATUS-*``.
 """
 
 from __future__ import annotations
@@ -22,7 +19,6 @@ from tests.integration.conftest import (
     PRIVATE_SRA_EXPERIMENT_ID,
     PUBLIC_BIOPROJECT_ID,
     SUPPRESSED_BIOPROJECT_ID,
-    WITHDRAWN_BIOPROJECT_ID,
     require_accession,
 )
 
@@ -53,38 +49,28 @@ class TestEntriesIncludeSuppressedOnAccessionMatch:
         assert suppressed in identifiers
 
 
-class TestDetailWithdrawnAndSuppressed:
-    """IT-STATUS-03: detail variants — withdrawn → 404, suppressed → 200."""
+class TestDetailPrivateAndSuppressed:
+    """IT-STATUS-03: detail variants — private → 404, suppressed → 200."""
 
-    def test_withdrawn_returns_404(self, app: TestClient) -> None:
-        """IT-STATUS-03: withdrawn accession → 404 (4 variants)."""
+    @pytest.mark.parametrize("suffix", ["", ".json", ".jsonld", "/dbxrefs.json"])
+    def test_private_returns_404(self, app: TestClient, suffix: str) -> None:
+        """IT-STATUS-03: private accession → 404 across all four variants."""
         accession = require_accession(
-            "WITHDRAWN_BIOPROJECT_ID",
-            WITHDRAWN_BIOPROJECT_ID,
+            "PRIVATE_SRA_EXPERIMENT_ID",
+            PRIVATE_SRA_EXPERIMENT_ID,
         )
-        for path in (
-            f"/entries/bioproject/{accession}",
-            f"/entries/bioproject/{accession}.json",
-            f"/entries/bioproject/{accession}.jsonld",
-            f"/entries/bioproject/{accession}/dbxrefs.json",
-        ):
-            resp = app.get(path)
-            assert resp.status_code == 404, f"{path}: {resp.status_code}"
+        resp = app.get(f"/entries/sra-experiment/{accession}{suffix}")
+        assert resp.status_code == 404, f"{suffix}: {resp.status_code}"
 
-    def test_suppressed_returns_200(self, app: TestClient) -> None:
-        """IT-STATUS-03: suppressed accession → 200 (4 variants)."""
+    @pytest.mark.parametrize("suffix", ["", ".json", ".jsonld", "/dbxrefs.json"])
+    def test_suppressed_returns_200(self, app: TestClient, suffix: str) -> None:
+        """IT-STATUS-03: suppressed accession → 200 across all four variants."""
         accession = require_accession(
             "SUPPRESSED_BIOPROJECT_ID",
             SUPPRESSED_BIOPROJECT_ID,
         )
-        for path in (
-            f"/entries/bioproject/{accession}",
-            f"/entries/bioproject/{accession}.json",
-            f"/entries/bioproject/{accession}.jsonld",
-            f"/entries/bioproject/{accession}/dbxrefs.json",
-        ):
-            resp = app.get(path)
-            assert resp.status_code == 200, f"{path}: {resp.status_code}"
+        resp = app.get(f"/entries/bioproject/{accession}{suffix}")
+        assert resp.status_code == 200, f"{suffix}: {resp.status_code}"
 
 
 class TestDetail404DetailStringIndistinguishable:
@@ -134,38 +120,6 @@ class TestBulkSplitsByStatus:
         assert public_id in entry_ids
         assert suppressed_id in entry_ids
         assert NONEXISTENT_ID in body["notFound"]
-
-
-class TestUmbrellaSeedHidden:
-    """IT-STATUS-06: hidden umbrella seed → 404 (detail matches missing).
-
-    The detail string must be identical across hidden and missing seeds —
-    if the implementation embeds the requested accession in ``detail``,
-    callers can infer existence from the response, defeating the
-    visibility-hiding contract in api-spec.md § データ可視性.
-    """
-
-    def test_hidden_seed_returns_404(self, app: TestClient) -> None:
-        """IT-STATUS-06: hidden seed and missing seed share status + detail."""
-        accession = require_accession(
-            "WITHDRAWN_BIOPROJECT_ID",
-            WITHDRAWN_BIOPROJECT_ID,
-        )
-        hidden = app.get(f"/entries/bioproject/{accession}/umbrella-tree")
-        missing = app.get(f"/entries/bioproject/{NONEXISTENT_ID}/umbrella-tree")
-        assert hidden.status_code == missing.status_code == 404
-        # Detail must NOT differ — both responses must look indistinguishable.
-        assert hidden.json()["detail"] == missing.json()["detail"]
-        assert accession not in hidden.json()["detail"]
-        assert NONEXISTENT_ID not in missing.json()["detail"]
-
-
-class TestUmbrellaIntermediateHiddenExcluded:
-    """IT-STATUS-07: hidden intermediate node is excluded from edges."""
-
-    def test_hidden_intermediate_excluded(self) -> None:
-        """IT-STATUS-07: placeholder until D-4 supplies the seed."""
-        pytest.skip("intermediate-hidden seed not configured (D-4 deferred)")
 
 
 class TestFacetsExcludeHidden:

@@ -18,7 +18,7 @@ sameAs フォールバックでヒットした場合、レスポンスは identi
 
 **sameAs クエリのエラーハンドリング**: sameAs nested query が ES エラー (400 等) を返した場合、「見つからない」として扱い、ステップ 3 の 404 へフォールスルーする。これにより、`sameAs` フィールドのマッピングが存在しないインデックスに対するリクエストでも 500 ではなく 404 を返す。
 
-**対象データ**: JGA エントリー (jga-study, jga-dataset, jga-dac) は XML の `IDENTIFIERS.SECONDARY_ID` を `sameAs` に格納しており、Secondary ID から Primary エントリーを取得できる。ロジック自体は全タイプ共通で、`sameAs` が空のタイプではフォールバックが発火しないだけである。
+**対象データ**: JGA エントリー (jga-study, jga-dataset, jga-dac) は XML の `IDENTIFIERS.SECONDARY_ID` を `sameAs` に格納しており、Secondary ID から Primary エントリーを取得できる。ロジック自体は全タイプ共通で、`sameAs` が空のタイプではフォールバックが発火しないだけである。BioProject の `sameAs` には GEO 等の外部 DB cross-ref のみが格納されており (`sameAs.type` が `bioproject` 以外)、Secondary ID による Primary 解決経路は事実上 JGA 系のみで効く。
 
 **Elasticsearch 要件**: `sameAs` フィールドは nested タイプとしてインデックスされている必要がある (ddbj-search-converter 側のマッピング定義)。
 
@@ -471,6 +471,10 @@ ES ドキュメントの `status` フィールドは INSDC の公開状態を示
 **404 による存在秘匿**:
 
 `withdrawn` および `private` のエントリーへの直接アクセス (`/entries/{type}/{id}` 系・umbrella-tree seed) は、存在しない ID と同一のレスポンス (`404 Not Found` + `The requested {type} entry was not found.` (アクセッション ID を含めない固定文字列)) を返す。これは status の有無を外部から推測できないようにするため。
+
+**`withdrawn` の実態に関する注釈**:
+
+ddbj-search-converter は livelist の `*.{bioproject,biosample}.ddbj.withdrawn.txt` および DRA / SRA accession テーブルの `Status` カラムから `withdrawn` ステータスを正規化して保持するが、対応する元 XML レコードが converter の入力に含まれないため、`withdrawn` なエントリーは ES に投入されない。結果として `/entries/{type}/{withdrawn_id}` への直接アクセスは「存在しない accession」と区別不能な 404 になる。API 側には将来 `withdrawn` が ES に到達した場合のための防衛ロジック (`status not in ("public", "suppressed")` で 404) が残っているが、本仕様書の可視性マトリクス上の `withdrawn` 列は「ES に存在した場合の論理的振る舞い」を示すに過ぎない。
 
 **`status` ファセットの廃止**:
 
