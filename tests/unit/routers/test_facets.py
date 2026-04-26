@@ -434,18 +434,15 @@ class TestFacetsObjectTypesValidation:
         )
         assert resp.status_code == 422
 
-    def test_legacy_umbrella_ignored(
+    def test_legacy_umbrella_rejected(
         self,
         app_with_facets: TestClient,
-        mock_es_search_facets: AsyncMock,
     ) -> None:
-        """旧 umbrella=TRUE は破壊的変更で廃止された。FastAPI は未定義 query を
-        無視するので 200 + filter なしで素通りする。"""
-        mock_es_search_facets.return_value = make_es_search_response(
-            aggregations=make_facets_aggregations(object_type=[]),
-        )
+        """``umbrella`` is no longer accepted; the unknown-query guard
+        rejects it with 422 (docs/api-spec.md § エンドポイント固有の
+        パラメータ)."""
         resp = app_with_facets.get("/facets/bioproject", params={"umbrella": "TRUE"})
-        assert resp.status_code == 200
+        assert resp.status_code == 422
 
 
 # === Type-specific facets ===
@@ -479,7 +476,25 @@ class TestFacetsTypeResponse:
         index = mock_es_search_facets.call_args[0][1]
         assert index == "biosample"
 
-    def test_bioproject_includes_object_type(
+    def test_bioproject_default_excludes_object_type(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        """``objectType`` is opt-in via ``facets=objectType``; default
+        responses on ``/facets/bioproject`` do not include it
+        (docs/api-spec.md § ファセット集計対象の選択)."""
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(),
+        )
+        resp = app_with_facets.get("/facets/bioproject")
+        facets = resp.json()["facets"]
+        assert facets.get("objectType") is None
+        # Aggregation should not be requested either.
+        body = mock_es_search_facets.call_args[0][2]
+        assert "objectType" not in body.get("aggs", {})
+
+    def test_bioproject_object_type_opt_in(
         self,
         app_with_facets: TestClient,
         mock_es_search_facets: AsyncMock,
@@ -492,9 +507,18 @@ class TestFacetsTypeResponse:
                 ],
             ),
         )
-        resp = app_with_facets.get("/facets/bioproject")
+        resp = app_with_facets.get("/facets/bioproject?facets=objectType")
         facets = resp.json()["facets"]
         assert facets.get("objectType") is not None
+        assert {b["value"] for b in facets["objectType"]} == {
+            "BioProject",
+            "UmbrellaBioProject",
+        }
+        body = mock_es_search_facets.call_args[0][2]
+        assert "objectType" in body["aggs"]
+        # facets=objectType means common facets are NOT requested.
+        assert "organism" not in body["aggs"]
+        assert "accessibility" not in body["aggs"]
 
     def test_non_bioproject_excludes_object_type(
         self,
@@ -676,3 +700,277 @@ class TestFacetsStatusPublicOnly:
         app_with_facets.get("/facets")
         body = mock_es_search_facets.call_args[0][2]
         assert "status" not in body["aggs"]
+
+
+# === facet pick semantics ===
+
+
+class TestFacetsPick:
+    """``facets`` query parameter selects which aggregations to compute.
+
+    Default (omitted) returns common facets only; an empty string
+    suppresses aggregation entirely; an explicit list opts in.
+    """
+
+    def test_default_returns_common_facets_only(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets/bioproject")
+        body = mock_es_search_facets.call_args[0][2]
+        assert set(body["aggs"]) == {"organism", "accessibility"}
+
+    def test_default_cross_type_includes_type(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets")
+        body = mock_es_search_facets.call_args[0][2]
+        assert set(body["aggs"]) == {"organism", "accessibility", "type"}
+
+    def test_empty_string_yields_no_aggs_key(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        # facets="" → resolve_requested_facets returns []
+        # → build_facet_aggs returns {} → router omits aggs key entirely.
+        app_with_facets.get("/facets/bioproject?facets=")
+        body = mock_es_search_facets.call_args[0][2]
+        assert "aggs" not in body
+
+    def test_explicit_subset_returned(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(
+                include_common=False,
+                organism=[{"key": "Homo sapiens", "doc_count": 1}],
+            ),
+        )
+        # Note: include_common=False means accessibility is not in aggregations
+        # but organism IS in aggregations. The router's build_facet_aggs
+        # request reflects user choice, not the mocked response shape.
+        app_with_facets.get("/facets/bioproject?facets=organism")
+        body = mock_es_search_facets.call_args[0][2]
+        assert set(body["aggs"]) == {"organism"}
+
+    def test_typo_returns_422(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets/bioproject?facets=organisms")
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["status"] == 422
+
+    def test_type_mismatch_returns_400(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        # libraryStrategy is valid in the allowlist but only applicable
+        # to sra-experiment.
+        resp = app_with_facets.get("/facets/bioproject?facets=libraryStrategy")
+        assert resp.status_code == 400
+
+    def test_cross_type_accepts_any_allowlisted_facet(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        # Cross-type endpoint is loose — type-specific facets are
+        # accepted (aggregations against indices that lack the field
+        # produce empty buckets at the ES layer).
+        resp = app_with_facets.get("/facets?facets=libraryStrategy")
+        assert resp.status_code == 200
+        body = mock_es_search_facets.call_args[0][2]
+        assert "libraryStrategy" in body["aggs"]
+
+    def test_type_specific_endpoint_accepts_its_own_facet(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        resp = app_with_facets.get("/facets/sra-experiment?facets=libraryStrategy")
+        assert resp.status_code == 200
+        body = mock_es_search_facets.call_args[0][2]
+        assert "libraryStrategy" in body["aggs"]
+
+    def test_cross_type_excludes_type_in_explicit_request(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        # Default cross-type adds ``type``; an explicit request without
+        # ``type`` must NOT auto-add it (the user picked exactly what
+        # they want).
+        app_with_facets.get("/facets?facets=organism")
+        body = mock_es_search_facets.call_args[0][2]
+        assert set(body["aggs"]) == {"organism"}
+
+
+class TestFacetsCrossTypeRejections:
+    """Cross-type endpoint rejects type-specific filter parameters.
+
+    docs/api-spec.md § エンドポイント固有のパラメータ
+    """
+
+    @pytest.mark.parametrize(
+        "param",
+        [
+            ("objectTypes", "BioProject"),
+            ("externalLinkLabel", "GEO"),
+            ("derivedFromId", "SAMD00001"),
+            ("libraryStrategy", "WGS"),
+            ("librarySource", "GENOMIC"),
+            ("librarySelection", "RANDOM"),
+            ("platform", "ILLUMINA"),
+            ("instrumentModel", "HiSeq"),
+            ("libraryLayout", "PAIRED"),
+            ("analysisType", "ALIGNMENT"),
+            ("experimentType", "RNA-Seq"),
+            ("studyType", "GWAS"),
+            ("submissionType", "open"),
+            ("datasetType", "WGS"),
+            ("projectType", "genome"),
+            ("host", "Homo sapiens"),
+            ("strain", "K12"),
+            ("isolate", "patient-1"),
+            ("geoLocName", "Japan"),
+            ("collectionDate", "2020"),
+            ("libraryName", "lib"),
+            ("libraryConstructionProtocol", "PCR-free"),
+            ("vendor", "Illumina"),
+        ],
+    )
+    def test_type_specific_filter_rejected_on_cross_type(
+        self,
+        app_with_facets: TestClient,
+        param: tuple[str, str],
+    ) -> None:
+        name, value = param
+        resp = app_with_facets.get(f"/facets?{name}={value}")
+        assert resp.status_code == 422
+
+
+class TestFacetsCrossTypeNestedAccepted:
+    """organization / publication / grant work on the cross-type endpoint."""
+
+    @pytest.mark.parametrize(
+        ("name", "nested_path"),
+        [
+            ("organization", "organization"),
+            ("publication", "publication"),
+            ("grant", "grant"),
+        ],
+    )
+    def test_nested_filter_reflected_in_es_query(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+        name: str,
+        nested_path: str,
+    ) -> None:
+        resp = app_with_facets.get(f"/facets?{name}=DDBJ")
+        assert resp.status_code == 200
+        body = mock_es_search_facets.call_args[0][2]
+        nested_clauses = [c for c in body["query"]["bool"]["filter"] if "nested" in c]
+        assert any(c["nested"]["path"] == nested_path for c in nested_clauses)
+
+
+class TestFacetsTypeGroupCommonality:
+    """SRA-* / JGA-* endpoints share the same parameter set across the group."""
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "sra-submission",
+            "sra-study",
+            "sra-experiment",
+            "sra-run",
+            "sra-sample",
+            "sra-analysis",
+        ],
+    )
+    def test_sra_group_accepts_library_strategy(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+        endpoint: str,
+    ) -> None:
+        resp = app_with_facets.get(f"/facets/{endpoint}?libraryStrategy=WGS")
+        assert resp.status_code == 200
+        body = mock_es_search_facets.call_args[0][2]
+        # Term filter on libraryStrategy.keyword is reflected in ES query
+        # for every sra-* endpoint, even if the underlying index does not
+        # actually have the field.
+        filters = body["query"]["bool"]["filter"]
+        assert any("libraryStrategy.keyword" in (f.get("term") or {}) for f in filters)
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "jga-study",
+            "jga-dataset",
+            "jga-policy",
+            "jga-dac",
+        ],
+    )
+    def test_jga_group_accepts_study_type(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+        endpoint: str,
+    ) -> None:
+        resp = app_with_facets.get(f"/facets/{endpoint}?studyType=GWAS")
+        assert resp.status_code == 200
+        body = mock_es_search_facets.call_args[0][2]
+        filters = body["query"]["bool"]["filter"]
+        assert any("studyType.keyword" in (f.get("term") or {}) for f in filters)
+
+
+class TestFacetsTypeGroupRejections:
+    """Parameters from another type group are rejected with 422."""
+
+    @pytest.mark.parametrize(
+        ("endpoint", "param"),
+        [
+            # bioproject endpoint should reject sra-* and biosample params.
+            ("bioproject", "libraryStrategy"),
+            ("bioproject", "host"),
+            ("bioproject", "studyType"),
+            # biosample endpoint should reject sra-* term-only params.
+            ("biosample", "libraryStrategy"),
+            ("biosample", "platform"),
+            ("biosample", "studyType"),
+            ("biosample", "objectTypes"),
+            # sra-* endpoint should reject biosample-only params.
+            ("sra-experiment", "objectTypes"),
+            ("sra-experiment", "host"),
+            ("sra-experiment", "strain"),
+            # jga-* endpoint should reject sra-only params.
+            ("jga-study", "libraryStrategy"),
+            ("jga-study", "host"),
+            ("jga-study", "objectTypes"),
+            # gea endpoint should reject other type-specific params.
+            ("gea", "objectTypes"),
+            ("gea", "libraryStrategy"),
+            ("gea", "studyType"),
+            # metabobank endpoint should reject other type-specific params.
+            ("metabobank", "objectTypes"),
+            ("metabobank", "libraryStrategy"),
+            ("metabobank", "host"),
+        ],
+    )
+    def test_out_of_group_param_returns_422(
+        self,
+        app_with_facets: TestClient,
+        endpoint: str,
+        param: str,
+    ) -> None:
+        resp = app_with_facets.get(f"/facets/{endpoint}?{param}=X")
+        assert resp.status_code == 422

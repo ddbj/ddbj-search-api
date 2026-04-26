@@ -19,6 +19,7 @@ class TestFacetsResponse:
                 accessibility=[FacetBucket(value="public-access", count=8)],
             ),
         )
+        assert resp.facets.organism is not None
         assert len(resp.facets.organism) == 1
 
     def test_missing_facets_raises_error(self) -> None:

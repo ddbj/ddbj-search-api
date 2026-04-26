@@ -143,11 +143,15 @@ class TestFacets:
     ``organism`` と ``accessibility`` のみが必須共通フィールド。
     """
 
-    def test_common_facets_required(self) -> None:
+    def test_common_facets_populated(self) -> None:
+        """organism / accessibility に bucket を渡せば list として保持
+        される (optional 化されているが明示的に渡したら従来通り)。"""
         facets = Facets(
             organism=[FacetBucket(value="human", count=10)],
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
+        assert facets.organism is not None
+        assert facets.accessibility is not None
         assert len(facets.organism) == 1
         assert len(facets.accessibility) == 1
 
@@ -199,9 +203,14 @@ class TestFacets:
         assert "objectType" in data
         assert "object_type" not in data
 
-    def test_missing_required_field_raises_error(self) -> None:
-        with pytest.raises(ValidationError):
-            Facets(organism=[])  # type: ignore[call-arg]
+    def test_all_fields_optional(self) -> None:
+        """全 field が optional (`Facets()` で組織未指定でも validation を
+        通り、未集計フィールドは ``None`` で残る)。"""
+        facets = Facets()
+        assert facets.organism is None
+        assert facets.accessibility is None
+        assert facets.type is None
+        assert facets.object_type is None
 
 
 # === EntryListItem ===

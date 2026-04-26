@@ -21,6 +21,7 @@ from ddbj_search_api.es.query import (
     build_source_filter,
     build_status_filter,
     pagination_to_from_size,
+    resolve_requested_facets,
     validate_keyword_fields,
 )
 from tests.unit.strategies import (
@@ -582,22 +583,32 @@ class TestBuildSearchQueryCombined:
 
 
 class TestBuildFacetAggs:
-    """build_facet_aggs(is_cross_type, db_type) -> ES aggs dict."""
+    """build_facet_aggs(is_cross_type, requested_facets) -> ES aggs dict.
 
-    # --- Common facets ---
+    ``requested_facets=None`` (default) returns common facets only;
+    cross-type endpoints additionally include ``type``. All other
+    facet aggregations are opt-in via an explicit list. ``status`` is
+    intentionally never aggregated (see docs § データ可視性).
+    """
 
-    def test_common_facets_always_present(self) -> None:
+    # --- Default (requested_facets=None) ---
+
+    def test_default_returns_common_facets_only(self) -> None:
         result = build_facet_aggs()
-        assert "organism" in result
-        assert "accessibility" in result
+        assert set(result) == {"organism", "accessibility"}
+
+    def test_default_cross_type_adds_type_facet(self) -> None:
+        result = build_facet_aggs(is_cross_type=True)
+        assert set(result) == {"organism", "accessibility", "type"}
 
     def test_status_agg_always_omitted(self) -> None:
-        """Status は常に public のみに絞り込んで集計するため、
-        status facet 自体は aggs に含めない (docs/api-spec.md
-        § データ可視性 参照)。
-        """
-        result = build_facet_aggs()
-        assert "status" not in result
+        # Status は常に public のみに絞り込んで集計するため、
+        # status facet 自体は aggs に含めない (docs/api-spec.md
+        # § データ可視性 参照)。
+        assert "status" not in build_facet_aggs()
+        assert "status" not in build_facet_aggs(is_cross_type=True)
+        assert "status" not in build_facet_aggs(requested_facets=["organism"])
+        assert "status" not in build_facet_aggs(requested_facets=["status"])
 
     def test_organism_agg_field(self) -> None:
         result = build_facet_aggs()
@@ -607,62 +618,226 @@ class TestBuildFacetAggs:
         result = build_facet_aggs()
         assert result["accessibility"]["terms"]["field"] == "accessibility"
 
-    # --- Cross-type: includes type facet ---
-
-    def test_cross_type_includes_type_facet(self) -> None:
+    def test_default_cross_type_type_field(self) -> None:
         result = build_facet_aggs(is_cross_type=True)
-        assert "type" in result
         assert result["type"]["terms"]["field"] == "type"
 
-    def test_type_specific_excludes_type_facet(self) -> None:
-        result = build_facet_aggs(is_cross_type=False)
-        assert "type" not in result
+    def test_default_excludes_object_type(self) -> None:
+        # objectType は default では返らず opt-in 専用
+        # (docs/api-spec.md § ファセット集計対象の選択)。
+        assert "objectType" not in build_facet_aggs()
+        assert "objectType" not in build_facet_aggs(is_cross_type=True)
 
-    # --- BioProject: includes objectType facet ---
+    def test_default_excludes_all_type_specific_facets(self) -> None:
+        result = build_facet_aggs(is_cross_type=True)
+        for name in (
+            "objectType",
+            "libraryStrategy",
+            "librarySource",
+            "librarySelection",
+            "platform",
+            "instrumentModel",
+            "experimentType",
+            "studyType",
+            "submissionType",
+        ):
+            assert name not in result
 
-    def test_bioproject_includes_object_type(self) -> None:
-        result = build_facet_aggs(db_type="bioproject")
-        assert "objectType" in result
+    # --- Explicit requested_facets ---
+
+    def test_empty_list_returns_empty_aggs(self) -> None:
+        # facets="" → resolve_requested_facets returns []
+        # → no aggregations at all.
+        assert build_facet_aggs(requested_facets=[]) == {}
+
+    def test_explicit_subset_returns_only_those(self) -> None:
+        result = build_facet_aggs(requested_facets=["organism"])
+        assert set(result) == {"organism"}
+
+    def test_explicit_object_type_returns_object_type_agg(self) -> None:
+        result = build_facet_aggs(requested_facets=["objectType"])
         assert result["objectType"]["terms"]["field"] == "objectType"
 
-    def test_non_bioproject_excludes_object_type(self) -> None:
-        result = build_facet_aggs(db_type="biosample")
-        assert "objectType" not in result
+    @pytest.mark.parametrize(
+        ("facet_name", "es_field"),
+        [
+            ("libraryStrategy", "libraryStrategy.keyword"),
+            ("librarySource", "librarySource.keyword"),
+            ("librarySelection", "librarySelection.keyword"),
+            ("platform", "platform.keyword"),
+            ("instrumentModel", "instrumentModel.keyword"),
+            ("experimentType", "experimentType.keyword"),
+            ("studyType", "studyType.keyword"),
+            ("submissionType", "submissionType.keyword"),
+        ],
+    )
+    def test_explicit_type_specific_facet_uses_keyword_field(
+        self,
+        facet_name: str,
+        es_field: str,
+    ) -> None:
+        result = build_facet_aggs(requested_facets=[facet_name])
+        assert facet_name in result
+        assert result[facet_name]["terms"]["field"] == es_field
 
-    def test_no_db_type_excludes_object_type(self) -> None:
-        result = build_facet_aggs(db_type=None)
-        assert "objectType" not in result
+    def test_unknown_facet_name_silently_skipped(self) -> None:
+        # The router catches typos at the FacetsParamQuery boundary; if
+        # an unknown name slips through, the agg builder is intentionally
+        # silent so requests do not blow up.
+        result = build_facet_aggs(requested_facets=["organism", "zzznotfacet"])
+        assert set(result) == {"organism"}
 
 
 class TestBuildFacetAggsPBT:
-    """PBT: facet aggs always contain common facets regardless of params,
-    and ``status`` is never included.
+    """PBT: default behavior across input combinations.
+
+    Common facets must be present whenever ``requested_facets`` is
+    omitted; ``type`` rides on ``is_cross_type`` exactly. ``status`` is
+    never present.
     """
 
-    @given(
-        is_cross_type=st.booleans(),
-        db_type=st.sampled_from(
-            [
-                None,
-                "bioproject",
-                "biosample",
-                "sra-study",
-                "jga-study",
-            ]
-        ),
-    )
-    def test_common_facets_always_included(
+    @given(is_cross_type=st.booleans())
+    def test_default_common_facets_always_included(
         self,
         is_cross_type: bool,
-        db_type: str,
     ) -> None:
-        result = build_facet_aggs(
-            is_cross_type=is_cross_type,
-            db_type=db_type,
-        )
+        result = build_facet_aggs(is_cross_type=is_cross_type)
         assert "organism" in result
         assert "accessibility" in result
         assert "status" not in result
+        assert ("type" in result) is is_cross_type
+
+    @given(
+        is_cross_type=st.booleans(),
+        names=st.sets(
+            st.sampled_from(
+                [
+                    "organism",
+                    "accessibility",
+                    "type",
+                    "objectType",
+                    "libraryStrategy",
+                    "librarySource",
+                    "librarySelection",
+                    "platform",
+                    "instrumentModel",
+                    "experimentType",
+                    "studyType",
+                    "submissionType",
+                ],
+            ),
+            max_size=5,
+        ),
+    )
+    def test_explicit_request_returns_exactly_requested(
+        self,
+        is_cross_type: bool,
+        names: set[str],
+    ) -> None:
+        result = build_facet_aggs(
+            is_cross_type=is_cross_type,
+            requested_facets=list(names),
+        )
+        # An explicit request never adds default facets and never drops
+        # known facet names.
+        assert set(result) == names
+
+
+class TestResolveRequestedFacets:
+    """resolve_requested_facets returns None / [] / list and rejects
+    type-mismatch via ValueError (router maps to HTTP 400)."""
+
+    def test_none_returns_none(self) -> None:
+        assert resolve_requested_facets(None, is_cross_type=False, db_type="bioproject") is None
+
+    def test_empty_string_returns_empty_list(self) -> None:
+        assert resolve_requested_facets("", is_cross_type=False, db_type="bioproject") == []
+
+    def test_common_facets_accepted_anywhere(self) -> None:
+        for db_type in (None, "bioproject", "biosample", "gea", "metabobank", "sra-study"):
+            result = resolve_requested_facets(
+                "organism,accessibility",
+                is_cross_type=db_type is None,
+                db_type=db_type,
+            )
+            assert result == ["organism", "accessibility"]
+
+    def test_type_facet_only_cross_type(self) -> None:
+        assert resolve_requested_facets("type", is_cross_type=True, db_type=None) == ["type"]
+        with pytest.raises(ValueError, match="not applicable"):
+            resolve_requested_facets("type", is_cross_type=False, db_type="bioproject")
+
+    def test_object_type_only_for_bioproject(self) -> None:
+        assert resolve_requested_facets("objectType", is_cross_type=False, db_type="bioproject") == ["objectType"]
+        with pytest.raises(ValueError, match="not applicable"):
+            resolve_requested_facets("objectType", is_cross_type=False, db_type="biosample")
+
+    def test_object_type_loose_on_cross_type(self) -> None:
+        assert resolve_requested_facets("objectType", is_cross_type=True, db_type=None) == ["objectType"]
+
+    @pytest.mark.parametrize(
+        ("name", "valid_db_types"),
+        [
+            ("libraryStrategy", {"sra-experiment"}),
+            ("librarySource", {"sra-experiment"}),
+            ("librarySelection", {"sra-experiment"}),
+            ("platform", {"sra-experiment"}),
+            ("instrumentModel", {"sra-experiment"}),
+            ("experimentType", {"gea", "metabobank"}),
+            ("studyType", {"jga-study", "metabobank"}),
+            ("submissionType", {"metabobank"}),
+        ],
+    )
+    def test_type_specific_facet_applicability(
+        self,
+        name: str,
+        valid_db_types: set[str],
+    ) -> None:
+        for db_type in valid_db_types:
+            result = resolve_requested_facets(name, is_cross_type=False, db_type=db_type)
+            assert result == [name]
+        # Cross-type endpoint accepts any allowlisted facet (loose).
+        assert resolve_requested_facets(name, is_cross_type=True, db_type=None) == [name]
+        # Wrong type-specific endpoint raises.
+        wrong_type = next(
+            t
+            for t in (
+                "bioproject",
+                "biosample",
+                "sra-experiment",
+                "sra-study",
+                "jga-study",
+                "jga-dataset",
+                "gea",
+                "metabobank",
+            )
+            if t not in valid_db_types
+        )
+        with pytest.raises(ValueError, match="not applicable"):
+            resolve_requested_facets(name, is_cross_type=False, db_type=wrong_type)
+
+    def test_unknown_name_raises(self) -> None:
+        # Allowlist typo is normally caught by FacetsParamQuery (422), but
+        # we still defend against direct callers landing here.
+        with pytest.raises(ValueError, match="not applicable"):
+            resolve_requested_facets("totallyUnknown", is_cross_type=False, db_type="bioproject")
+
+    def test_partial_failure_raises(self) -> None:
+        # Even when one facet is valid, an inapplicable sibling fails.
+        with pytest.raises(ValueError, match="not applicable"):
+            resolve_requested_facets(
+                "organism,libraryStrategy",
+                is_cross_type=False,
+                db_type="bioproject",
+            )
+
+    def test_whitespace_trimmed(self) -> None:
+        result = resolve_requested_facets(
+            " organism , accessibility ",
+            is_cross_type=False,
+            db_type="bioproject",
+        )
+        assert result == ["organism", "accessibility"]
 
 
 # ===================================================================
@@ -1096,3 +1271,208 @@ class TestBuildSearchQueryNestedFilters:
         # keywords のみ → filter は存在しないか、nested を含まない
         filters = result.get("bool", {}).get("filter", [])
         assert not any("nested" in c for c in filters)
+
+
+# ===================================================================
+# nested filters: externalLinkLabel / derivedFromId
+# ===================================================================
+
+
+class TestBuildSearchQueryNewNestedFilters:
+    """externalLinkLabel / derivedFromId build nested match clauses."""
+
+    def test_external_link_label_builds_nested_clause(self) -> None:
+        result = build_search_query(external_link_label="GEO Series")
+        nested = _find_nested_filter(result["bool"]["filter"], "externalLink")
+        assert nested["nested"]["query"] == {"match": {"externalLink.label": "GEO Series"}}
+
+    def test_derived_from_id_builds_nested_clause(self) -> None:
+        result = build_search_query(derived_from_id="SAMD00012345")
+        nested = _find_nested_filter(result["bool"]["filter"], "derivedFrom")
+        assert nested["nested"]["query"] == {"match": {"derivedFrom.identifier": "SAMD00012345"}}
+
+    def test_all_nested_filters_combined(self) -> None:
+        result = build_search_query(
+            organization="DDBJ",
+            publication="cancer",
+            grant="NIH",
+            external_link_label="GEO",
+            derived_from_id="SAMD00001",
+        )
+        nested_paths = {c["nested"]["path"] for c in result["bool"]["filter"] if "nested" in c}
+        assert nested_paths == {
+            "organization",
+            "publication",
+            "grant",
+            "externalLink",
+            "derivedFrom",
+        }
+
+
+# ===================================================================
+# Type-specific term filters
+# ===================================================================
+
+
+class TestBuildSearchQueryTypeSpecificTermFilters:
+    """Type-specific term filters use ``*.keyword`` and OR comma values."""
+
+    def test_library_strategy_single_value_uses_term(self) -> None:
+        result = build_search_query(library_strategy="WGS")
+        f = _find_filter(result["bool"]["filter"], "term", "libraryStrategy.keyword")
+        assert f["term"]["libraryStrategy.keyword"] == "WGS"
+
+    def test_library_strategy_multiple_values_use_terms(self) -> None:
+        result = build_search_query(library_strategy="WGS,RNA-Seq")
+        f = _find_filter(result["bool"]["filter"], "terms", "libraryStrategy.keyword")
+        assert set(f["terms"]["libraryStrategy.keyword"]) == {"WGS", "RNA-Seq"}
+
+    @pytest.mark.parametrize(
+        ("kwarg", "es_field"),
+        [
+            ("library_source", "librarySource.keyword"),
+            ("library_selection", "librarySelection.keyword"),
+            ("platform", "platform.keyword"),
+            ("instrument_model", "instrumentModel.keyword"),
+            ("library_layout", "libraryLayout.keyword"),
+            ("analysis_type", "analysisType.keyword"),
+            ("experiment_type", "experimentType.keyword"),
+            ("study_type", "studyType.keyword"),
+            ("submission_type", "submissionType.keyword"),
+            ("dataset_type", "datasetType.keyword"),
+        ],
+    )
+    def test_each_term_filter_routes_to_keyword_field(
+        self,
+        kwarg: str,
+        es_field: str,
+    ) -> None:
+        result = build_search_query(**{kwarg: "X"})  # type: ignore[arg-type]
+        f = _find_filter(result["bool"]["filter"], "term", es_field)
+        assert f["term"][es_field] == "X"
+
+    def test_empty_string_skips_term_filter(self) -> None:
+        result = build_search_query(library_strategy="")
+        clauses = result["bool"]["filter"]
+        assert not any("libraryStrategy.keyword" in c.get("term", {}) for c in clauses)
+        assert not any("libraryStrategy.keyword" in c.get("terms", {}) for c in clauses)
+
+    def test_whitespace_stripped(self) -> None:
+        result = build_search_query(library_strategy=" WGS , RNA-Seq ")
+        f = _find_filter(result["bool"]["filter"], "terms", "libraryStrategy.keyword")
+        assert set(f["terms"]["libraryStrategy.keyword"]) == {"WGS", "RNA-Seq"}
+
+    def test_duplicates_collapse_via_terms(self) -> None:
+        # Comma duplicates are kept only if distinct after strip; the
+        # builder doesn't dedup but ES tolerates duplicates inside ``terms``.
+        result = build_search_query(library_strategy="WGS,WGS,RNA-Seq")
+        f = _find_filter(result["bool"]["filter"], "terms", "libraryStrategy.keyword")
+        assert "WGS" in f["terms"]["libraryStrategy.keyword"]
+        assert "RNA-Seq" in f["terms"]["libraryStrategy.keyword"]
+
+
+# ===================================================================
+# Type-specific text match filters
+# ===================================================================
+
+
+def _find_text_match_clause(
+    filters: list[dict[str, Any]],
+    field: str,
+) -> dict[str, Any] | None:
+    for clause in filters:
+        match = clause.get("match", {})
+        if isinstance(match, dict) and field in match:
+            return clause
+    return None
+
+
+def _find_match_phrase_clause(
+    filters: list[dict[str, Any]],
+    field: str,
+) -> dict[str, Any] | None:
+    for clause in filters:
+        match_phrase = clause.get("match_phrase", {})
+        if isinstance(match_phrase, dict) and field in match_phrase:
+            return clause
+    return None
+
+
+class TestBuildSearchQueryTextMatchFilters:
+    """Type-specific text match filters use auto-phrase + match/match_phrase."""
+
+    def test_host_simple_token_uses_match_with_and_operator(self) -> None:
+        result = build_search_query(host="Homo sapiens")
+        clause = _find_text_match_clause(result["bool"]["filter"], "host")
+        assert clause is not None
+        assert clause["match"]["host"]["query"] == "Homo sapiens"
+        assert clause["match"]["host"]["operator"] == "and"
+
+    def test_host_with_quoted_phrase_uses_match_phrase(self) -> None:
+        result = build_search_query(host='"Homo sapiens"')
+        clause = _find_match_phrase_clause(result["bool"]["filter"], "host")
+        assert clause is not None
+        assert clause["match_phrase"]["host"] == "Homo sapiens"
+
+    def test_host_with_hyphen_auto_phrases(self) -> None:
+        result = build_search_query(host="HIF-1")
+        clause = _find_match_phrase_clause(result["bool"]["filter"], "host")
+        assert clause is not None
+        assert clause["match_phrase"]["host"] == "HIF-1"
+
+    def test_host_comma_separated_or_combines(self) -> None:
+        result = build_search_query(host="Homo,Mus musculus")
+        bool_clause = next(
+            (c for c in result["bool"]["filter"] if "bool" in c and "should" in c.get("bool", {})),
+            None,
+        )
+        assert bool_clause is not None
+        assert len(bool_clause["bool"]["should"]) == 2
+        assert bool_clause["bool"]["minimum_should_match"] == 1
+        # one phrase ("Mus musculus" is plain → match), one match.
+        # Ensure both refer to the host field.
+        for sub in bool_clause["bool"]["should"]:
+            target = sub.get("match") or sub.get("match_phrase") or {}
+            assert "host" in target
+
+    def test_text_match_respects_keyword_operator_or(self) -> None:
+        result = build_search_query(host="Homo sapiens", keyword_operator="OR")
+        clause = _find_text_match_clause(result["bool"]["filter"], "host")
+        assert clause is not None
+        assert clause["match"]["host"]["operator"] == "or"
+
+    def test_text_match_empty_string_skipped(self) -> None:
+        result = build_search_query(host="")
+        assert _find_text_match_clause(result["bool"]["filter"], "host") is None
+        assert _find_match_phrase_clause(result["bool"]["filter"], "host") is None
+
+    @pytest.mark.parametrize(
+        ("kwarg", "es_field"),
+        [
+            ("project_type", "projectType"),
+            ("strain", "strain"),
+            ("isolate", "isolate"),
+            ("geo_loc_name", "geoLocName"),
+            ("collection_date", "collectionDate"),
+            ("library_name", "libraryName"),
+            ("library_construction_protocol", "libraryConstructionProtocol"),
+            ("vendor", "vendor"),
+        ],
+    )
+    def test_text_match_routes_to_top_level_field(
+        self,
+        kwarg: str,
+        es_field: str,
+    ) -> None:
+        result = build_search_query(**{kwarg: "value"})  # type: ignore[arg-type]
+        clause = _find_text_match_clause(result["bool"]["filter"], es_field)
+        assert clause is not None
+        assert clause["match"][es_field]["query"] == "value"
+
+    def test_text_match_in_filter_section(self) -> None:
+        # text match clauses should live under bool.filter so they
+        # behave as AND constraints alongside the status filter.
+        result = build_search_query(keywords="cancer", host="Homo sapiens")
+        # keyword multi_match goes under must, host match under filter
+        assert "must" in result["bool"]
+        assert _find_text_match_clause(result["bool"]["filter"], "host") is not None

@@ -307,19 +307,47 @@ def make_facets_aggregations(
     accessibility: list[dict[str, Any]] | None = None,
     type_buckets: list[dict[str, Any]] | None = None,
     object_type: list[dict[str, Any]] | None = None,
+    library_strategy: list[dict[str, Any]] | None = None,
+    library_source: list[dict[str, Any]] | None = None,
+    library_selection: list[dict[str, Any]] | None = None,
+    platform: list[dict[str, Any]] | None = None,
+    instrument_model: list[dict[str, Any]] | None = None,
+    experiment_type: list[dict[str, Any]] | None = None,
+    study_type: list[dict[str, Any]] | None = None,
+    submission_type: list[dict[str, Any]] | None = None,
+    include_common: bool = True,
 ) -> dict[str, Any]:
     """Build aggregation data for facets tests.
 
     ``status`` aggregation はビルドしない (docs/api-spec.md § データ可視性)。
+
+    ``include_common=False`` を渡すと organism/accessibility も除外する
+    (facet pick で空文字 / 明示指定時の ES レスポンスを再現するために使う)。
     """
-    aggs: dict[str, Any] = {
-        "organism": {"buckets": organism or []},
-        "accessibility": {"buckets": accessibility or []},
-    }
+    aggs: dict[str, Any] = {}
+    if include_common:
+        aggs["organism"] = {"buckets": organism or []}
+        aggs["accessibility"] = {"buckets": accessibility or []}
     if type_buckets is not None:
         aggs["type"] = {"buckets": type_buckets}
     if object_type is not None:
         aggs["objectType"] = {"buckets": object_type}
+    if library_strategy is not None:
+        aggs["libraryStrategy"] = {"buckets": library_strategy}
+    if library_source is not None:
+        aggs["librarySource"] = {"buckets": library_source}
+    if library_selection is not None:
+        aggs["librarySelection"] = {"buckets": library_selection}
+    if platform is not None:
+        aggs["platform"] = {"buckets": platform}
+    if instrument_model is not None:
+        aggs["instrumentModel"] = {"buckets": instrument_model}
+    if experiment_type is not None:
+        aggs["experimentType"] = {"buckets": experiment_type}
+    if study_type is not None:
+        aggs["studyType"] = {"buckets": study_type}
+    if submission_type is not None:
+        aggs["submissionType"] = {"buckets": submission_type}
 
     return aggs
 

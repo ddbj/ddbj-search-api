@@ -7,13 +7,14 @@ sorting, and optional facet aggregation.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from typing import Any, cast
 
 import httpx
 from ddbj_search_converter.jsonl.utils import to_xref
 from ddbj_search_converter.schema import XrefType
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
@@ -28,17 +29,31 @@ from ddbj_search_api.es.query import (
     build_sort_with_tiebreaker,
     build_source_filter,
     pagination_to_from_size,
+    resolve_requested_facets,
     validate_keyword_fields,
+)
+from ddbj_search_api.routers._query_validation import (
+    TYPE_GROUP_FILTERS_DESC,
+    entries_allowed_query_params,
+    extra_to_filters,
+    reject_unknown_query_params,
 )
 from ddbj_search_api.schemas.common import DB_TYPE_DISPLAY, DbType, EntryListItem, Pagination, ProblemDetails
 from ddbj_search_api.schemas.entries import EntryListResponse
 from ddbj_search_api.schemas.queries import (
     BioProjectExtraQuery,
+    BioSampleExtraQuery,
     DbXrefsLimitQuery,
+    FacetsParamQuery,
+    GeaExtraQuery,
+    JgaExtraQuery,
+    MetaboBankExtraQuery,
     PaginationQuery,
     ResponseControlQuery,
     SearchFilterQuery,
+    SraExtraQuery,
     TypesFilterQuery,
+    TypeSpecificFilters,
 )
 from ddbj_search_api.search.accession import detect_accession_exact_match
 from ddbj_search_api.utils import parse_facets
@@ -47,7 +62,7 @@ _LIST_ENTRIES_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {
         "description": (
             "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, "
-            "invalid cursor token, cursor expired)."
+            "invalid cursor token, cursor expired, facet not applicable to this endpoint)."
         ),
         "model": ProblemDetails,
     },
@@ -62,6 +77,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _DEEP_PAGING_LIMIT = 10000
+
+# Snake_case attr -> wire-level alias for every type-specific filter
+# carried by ``TypeSpecificFilters``. ``_validate_cursor_exclusivity``
+# uses this mapping to surface the alias name (camelCase) in the 400
+# error detail when a cursor request also carries one of these
+# parameters. Adding a new field to ``TypeSpecificFilters`` requires a
+# matching entry here so the cursor exclusivity check stays complete.
+_CURSOR_EXCLUSIVE_FILTER_FIELDS: dict[str, str] = {
+    "types": "types",
+    "object_types": "objectTypes",
+    "external_link_label": "externalLinkLabel",
+    "project_type": "projectType",
+    "derived_from_id": "derivedFromId",
+    "host": "host",
+    "strain": "strain",
+    "isolate": "isolate",
+    "geo_loc_name": "geoLocName",
+    "collection_date": "collectionDate",
+    "library_strategy": "libraryStrategy",
+    "library_source": "librarySource",
+    "library_selection": "librarySelection",
+    "platform": "platform",
+    "instrument_model": "instrumentModel",
+    "library_layout": "libraryLayout",
+    "analysis_type": "analysisType",
+    "library_name": "libraryName",
+    "library_construction_protocol": "libraryConstructionProtocol",
+    "study_type": "studyType",
+    "dataset_type": "datasetType",
+    "vendor": "vendor",
+    "experiment_type": "experimentType",
+    "submission_type": "submissionType",
+}
 
 
 # === Shared logic ===
@@ -84,13 +132,10 @@ def _validate_cursor_exclusivity(
     pagination: PaginationQuery,
     search_filter: SearchFilterQuery,
     response_control: ResponseControlQuery,
-    types: str | None = None,
-    organization: str | None = None,
-    publication: str | None = None,
-    grant: str | None = None,
-    object_types: str | None = None,
+    facets_param: FacetsParamQuery,
+    filters: TypeSpecificFilters,
 ) -> None:
-    """Raise 400 if cursor is used alongside page or search params."""
+    """Raise 400 if cursor is used alongside any non-cursor-safe parameter."""
     conflicting: list[str] = []
 
     if pagination.page != 1:
@@ -104,6 +149,12 @@ def _validate_cursor_exclusivity(
         conflicting.append("keywordOperator")
     if search_filter.organism is not None:
         conflicting.append("organism")
+    if search_filter.organization is not None:
+        conflicting.append("organization")
+    if search_filter.publication is not None:
+        conflicting.append("publication")
+    if search_filter.grant is not None:
+        conflicting.append("grant")
     if search_filter.date_published_from is not None:
         conflicting.append("datePublishedFrom")
     if search_filter.date_published_to is not None:
@@ -122,16 +173,12 @@ def _validate_cursor_exclusivity(
     if response_control.fields is not None:
         conflicting.append("fields")
 
-    if types is not None:
-        conflicting.append("types")
-    if organization is not None:
-        conflicting.append("organization")
-    if publication is not None:
-        conflicting.append("publication")
-    if grant is not None:
-        conflicting.append("grant")
-    if object_types is not None:
-        conflicting.append("objectTypes")
+    if facets_param.facets is not None:
+        conflicting.append("facets")
+
+    for attr, alias in _CURSOR_EXCLUSIVE_FILTER_FIELDS.items():
+        if getattr(filters, attr) is not None:
+            conflicting.append(alias)
 
     if conflicting:
         raise HTTPException(
@@ -182,16 +229,21 @@ async def _do_search(
     search_filter: SearchFilterQuery,
     response_control: ResponseControlQuery,
     db_xrefs_limit: int,
+    filters: TypeSpecificFilters,
     is_cross_type: bool = False,
     db_type: str | None = None,
-    types: str | None = None,
-    organization: str | None = None,
-    publication: str | None = None,
-    grant: str | None = None,
-    object_types: str | None = None,
+    requested_facets: list[str] | None = None,
     include_db_xrefs: bool = True,
 ) -> Any:
-    """Execute search against ES and build the response."""
+    """Execute search against ES and build the response.
+
+    ``filters`` carries every type-specific kwarg consumed by
+    :func:`build_search_query` plus the cross-type ``types`` filter.
+    Routers convert their endpoint-scoped ``*ExtraQuery`` and
+    :class:`TypesFilterQuery` dependencies into the dataclass via
+    :func:`extra_to_filters`; non-applicable fields stay ``None`` and
+    become inert downstream.
+    """
     if include_db_xrefs:
         _check_dblink_db()
 
@@ -212,13 +264,10 @@ async def _do_search(
         search_filter=search_filter,
         response_control=response_control,
         db_xrefs_limit=db_xrefs_limit,
+        filters=filters,
         is_cross_type=is_cross_type,
         db_type=db_type,
-        types=types,
-        organization=organization,
-        publication=publication,
-        grant=grant,
-        object_types=object_types,
+        requested_facets=requested_facets,
         include_db_xrefs=include_db_xrefs,
     )
 
@@ -230,13 +279,10 @@ async def _do_search_offset(
     search_filter: SearchFilterQuery,
     response_control: ResponseControlQuery,
     db_xrefs_limit: int,
+    filters: TypeSpecificFilters,
     is_cross_type: bool = False,
     db_type: str | None = None,
-    types: str | None = None,
-    organization: str | None = None,
-    publication: str | None = None,
-    grant: str | None = None,
-    object_types: str | None = None,
+    requested_facets: list[str] | None = None,
     include_db_xrefs: bool = True,
 ) -> Any:
     """Offset-based search (existing behaviour + nextCursor generation)."""
@@ -270,12 +316,11 @@ async def _do_search_offset(
         date_published_to=search_filter.date_published_to,
         date_modified_from=search_filter.date_modified_from,
         date_modified_to=search_filter.date_modified_to,
-        types=types,
-        organization=organization,
-        publication=publication,
-        grant=grant,
-        object_types=object_types,
+        organization=search_filter.organization,
+        publication=search_filter.publication,
+        grant=search_filter.grant,
         status_mode=status_mode,
+        **dataclasses.asdict(filters),
     )
 
     # 5. Pagination -> from/size
@@ -298,10 +343,12 @@ async def _do_search_offset(
 
     # 8. Facet aggregations
     if response_control.include_facets:
-        body["aggs"] = build_facet_aggs(
+        aggs = build_facet_aggs(
             is_cross_type=is_cross_type,
-            db_type=db_type,
+            requested_facets=requested_facets,
         )
+        if aggs:
+            body["aggs"] = aggs
 
     # 9. Execute
     es_resp = await es_search(client, index, body)
@@ -314,11 +361,7 @@ async def _do_search_offset(
 
     facets = None
     if response_control.include_facets and "aggregations" in es_resp:
-        facets = parse_facets(
-            es_resp["aggregations"],
-            is_cross_type=is_cross_type,
-            db_type=db_type,
-        )
+        facets = parse_facets(es_resp["aggregations"])
 
     # 11. Compute nextCursor
     next_cursor, has_next = compute_next_cursor(
@@ -471,30 +514,64 @@ async def _enrich_hits(
     return [EntryListItem(**src) for src in enriched]
 
 
+def _resolve_requested_facets_or_400(
+    facets_param: FacetsParamQuery,
+    include_facets: bool,
+    *,
+    is_cross_type: bool,
+    db_type: str | None,
+) -> list[str] | None:
+    """Resolve ``facets`` -> list, 400 on type-mismatch, ignore when off."""
+    if not include_facets:
+        return None
+    try:
+        return resolve_requested_facets(
+            facets_param.facets,
+            is_cross_type=is_cross_type,
+            db_type=db_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # === GET /entries/ (cross-type search) ===
 
 
 async def _list_all_entries(
+    request: Request,
     pagination: PaginationQuery = Depends(),
     search_filter: SearchFilterQuery = Depends(),
     response_control: ResponseControlQuery = Depends(),
     types_filter: TypesFilterQuery = Depends(),
+    facets_param: FacetsParamQuery = Depends(),
     db_xrefs: DbXrefsLimitQuery = Depends(),
     client: httpx.AsyncClient = Depends(get_es_client),
 ) -> Any:
     """Search entries across all database types.
 
     Supports keyword search, organism/date filtering, pagination,
-    sorting, field selection, and facet aggregation.  Use the ``types``
+    sorting, field selection, and facet aggregation. Use the ``types``
     parameter to narrow the search to specific database types.
     """
+    reject_unknown_query_params(request, allowed=entries_allowed_query_params(None))
+
+    filters = extra_to_filters(None, types=types_filter.types)
+
     if pagination.cursor is not None:
         _validate_cursor_exclusivity(
             pagination,
             search_filter,
             response_control,
-            types=types_filter.types,
+            facets_param,
+            filters,
         )
+
+    requested_facets = _resolve_requested_facets_or_400(
+        facets_param,
+        include_facets=response_control.include_facets,
+        is_cross_type=True,
+        db_type=None,
+    )
 
     return await _do_search(
         client=client,
@@ -503,8 +580,9 @@ async def _list_all_entries(
         search_filter=search_filter,
         response_control=response_control,
         db_xrefs_limit=db_xrefs.db_xrefs_limit,
+        filters=filters,
         is_cross_type=True,
-        types=types_filter.types,
+        requested_facets=requested_facets,
         include_db_xrefs=db_xrefs.include_db_xrefs,
     )
 
@@ -532,84 +610,222 @@ router.add_api_route(
 # === GET /entries/{type}/ (type-specific search) ===
 
 
+def _is_sra(db_type: DbType) -> bool:
+    return db_type.value.startswith("sra-")
+
+
+def _is_jga(db_type: DbType) -> bool:
+    return db_type.value.startswith("jga-")
+
+
+_TypeExtraQuery = (
+    BioProjectExtraQuery | BioSampleExtraQuery | SraExtraQuery | JgaExtraQuery | GeaExtraQuery | MetaboBankExtraQuery
+)
+
+
+async def _run_type_search(
+    *,
+    request: Request,
+    pagination: PaginationQuery,
+    search_filter: SearchFilterQuery,
+    response_control: ResponseControlQuery,
+    extra: _TypeExtraQuery,
+    facets_param: FacetsParamQuery,
+    db_xrefs: DbXrefsLimitQuery,
+    client: httpx.AsyncClient,
+    db_type: DbType,
+) -> Any:
+    """Common type-specific entrypoint shared by every handler factory branch."""
+    reject_unknown_query_params(request, allowed=entries_allowed_query_params(db_type))
+
+    filters = extra_to_filters(extra)
+
+    if pagination.cursor is not None:
+        _validate_cursor_exclusivity(
+            pagination,
+            search_filter,
+            response_control,
+            facets_param,
+            filters,
+        )
+
+    requested_facets = _resolve_requested_facets_or_400(
+        facets_param,
+        include_facets=response_control.include_facets,
+        is_cross_type=False,
+        db_type=db_type.value,
+    )
+
+    return await _do_search(
+        client=client,
+        index=db_type.value,
+        pagination=pagination,
+        search_filter=search_filter,
+        response_control=response_control,
+        db_xrefs_limit=db_xrefs.db_xrefs_limit,
+        filters=filters,
+        is_cross_type=False,
+        db_type=db_type.value,
+        requested_facets=requested_facets,
+        include_db_xrefs=db_xrefs.include_db_xrefs,
+    )
+
+
 def _make_type_search_handler(db_type: DbType) -> Any:
     """Factory: create a type-specific search handler.
 
-    BioProject gets extra filter parameters (organization, publication,
-    grant, objectTypes); other types use the common filter set.
+    The handler injects exactly the ``*ExtraQuery`` matching the type
+    group. Parameters from another type group surface as 422 through
+    FastAPI's unknown-query handling.
     """
     if db_type == DbType.bioproject:
 
         async def _handler(
+            request: Request,
             pagination: PaginationQuery = Depends(),
             search_filter: SearchFilterQuery = Depends(),
             response_control: ResponseControlQuery = Depends(),
-            bioproject_extra: BioProjectExtraQuery = Depends(),
+            extra: BioProjectExtraQuery = Depends(),
+            facets_param: FacetsParamQuery = Depends(),
             db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
         ) -> Any:
-            if pagination.cursor is not None:
-                _validate_cursor_exclusivity(
-                    pagination,
-                    search_filter,
-                    response_control,
-                    organization=bioproject_extra.organization,
-                    publication=bioproject_extra.publication,
-                    grant=bioproject_extra.grant,
-                    object_types=bioproject_extra.object_types,
-                )
-
-            return await _do_search(
-                client=client,
-                index=db_type.value,
+            return await _run_type_search(
+                request=request,
                 pagination=pagination,
                 search_filter=search_filter,
                 response_control=response_control,
-                db_xrefs_limit=db_xrefs.db_xrefs_limit,
-                is_cross_type=False,
-                db_type=db_type.value,
-                organization=bioproject_extra.organization,
-                publication=bioproject_extra.publication,
-                grant=bioproject_extra.grant,
-                object_types=bioproject_extra.object_types,
-                include_db_xrefs=db_xrefs.include_db_xrefs,
+                extra=extra,
+                facets_param=facets_param,
+                db_xrefs=db_xrefs,
+                client=client,
+                db_type=db_type,
             )
 
-        _handler.__doc__ = (
-            f"Search {db_type.value} entries.\n\n"
-            "Supports BioProject-specific filters: organization, "
-            "publication, grant, objectTypes."
-        )
-    else:
+    elif db_type == DbType.biosample:
 
         async def _handler(  # type: ignore[misc]
+            request: Request,
             pagination: PaginationQuery = Depends(),
             search_filter: SearchFilterQuery = Depends(),
             response_control: ResponseControlQuery = Depends(),
+            extra: BioSampleExtraQuery = Depends(),
+            facets_param: FacetsParamQuery = Depends(),
             db_xrefs: DbXrefsLimitQuery = Depends(),
             client: httpx.AsyncClient = Depends(get_es_client),
         ) -> Any:
-            if pagination.cursor is not None:
-                _validate_cursor_exclusivity(
-                    pagination,
-                    search_filter,
-                    response_control,
-                )
-
-            return await _do_search(
-                client=client,
-                index=db_type.value,
+            return await _run_type_search(
+                request=request,
                 pagination=pagination,
                 search_filter=search_filter,
                 response_control=response_control,
-                db_xrefs_limit=db_xrefs.db_xrefs_limit,
-                is_cross_type=False,
-                db_type=db_type.value,
-                include_db_xrefs=db_xrefs.include_db_xrefs,
+                extra=extra,
+                facets_param=facets_param,
+                db_xrefs=db_xrefs,
+                client=client,
+                db_type=db_type,
             )
 
-        _handler.__doc__ = f"Search {db_type.value} entries."
+    elif _is_sra(db_type):
 
+        async def _handler(  # type: ignore[misc]
+            request: Request,
+            pagination: PaginationQuery = Depends(),
+            search_filter: SearchFilterQuery = Depends(),
+            response_control: ResponseControlQuery = Depends(),
+            extra: SraExtraQuery = Depends(),
+            facets_param: FacetsParamQuery = Depends(),
+            db_xrefs: DbXrefsLimitQuery = Depends(),
+            client: httpx.AsyncClient = Depends(get_es_client),
+        ) -> Any:
+            return await _run_type_search(
+                request=request,
+                pagination=pagination,
+                search_filter=search_filter,
+                response_control=response_control,
+                extra=extra,
+                facets_param=facets_param,
+                db_xrefs=db_xrefs,
+                client=client,
+                db_type=db_type,
+            )
+
+    elif _is_jga(db_type):
+
+        async def _handler(  # type: ignore[misc]
+            request: Request,
+            pagination: PaginationQuery = Depends(),
+            search_filter: SearchFilterQuery = Depends(),
+            response_control: ResponseControlQuery = Depends(),
+            extra: JgaExtraQuery = Depends(),
+            facets_param: FacetsParamQuery = Depends(),
+            db_xrefs: DbXrefsLimitQuery = Depends(),
+            client: httpx.AsyncClient = Depends(get_es_client),
+        ) -> Any:
+            return await _run_type_search(
+                request=request,
+                pagination=pagination,
+                search_filter=search_filter,
+                response_control=response_control,
+                extra=extra,
+                facets_param=facets_param,
+                db_xrefs=db_xrefs,
+                client=client,
+                db_type=db_type,
+            )
+
+    elif db_type == DbType.gea:
+
+        async def _handler(  # type: ignore[misc]
+            request: Request,
+            pagination: PaginationQuery = Depends(),
+            search_filter: SearchFilterQuery = Depends(),
+            response_control: ResponseControlQuery = Depends(),
+            extra: GeaExtraQuery = Depends(),
+            facets_param: FacetsParamQuery = Depends(),
+            db_xrefs: DbXrefsLimitQuery = Depends(),
+            client: httpx.AsyncClient = Depends(get_es_client),
+        ) -> Any:
+            return await _run_type_search(
+                request=request,
+                pagination=pagination,
+                search_filter=search_filter,
+                response_control=response_control,
+                extra=extra,
+                facets_param=facets_param,
+                db_xrefs=db_xrefs,
+                client=client,
+                db_type=db_type,
+            )
+
+    elif db_type == DbType.metabobank:
+
+        async def _handler(  # type: ignore[misc]
+            request: Request,
+            pagination: PaginationQuery = Depends(),
+            search_filter: SearchFilterQuery = Depends(),
+            response_control: ResponseControlQuery = Depends(),
+            extra: MetaboBankExtraQuery = Depends(),
+            facets_param: FacetsParamQuery = Depends(),
+            db_xrefs: DbXrefsLimitQuery = Depends(),
+            client: httpx.AsyncClient = Depends(get_es_client),
+        ) -> Any:
+            return await _run_type_search(
+                request=request,
+                pagination=pagination,
+                search_filter=search_filter,
+                response_control=response_control,
+                extra=extra,
+                facets_param=facets_param,
+                db_xrefs=db_xrefs,
+                client=client,
+                db_type=db_type,
+            )
+
+    else:  # pragma: no cover — every DbType should hit a branch above
+        raise RuntimeError(f"Unhandled DbType in entries handler factory: {db_type}")
+
+    _handler.__doc__ = f"Search {db_type.value} entries. {TYPE_GROUP_FILTERS_DESC[db_type]}"
     _handler.__name__ = f"list_{db_type.value.replace('-', '_')}_entries"
 
     return _handler

@@ -174,12 +174,12 @@ class TestEntriesBioProjectObjectTypesValidation:
         )
         assert resp.status_code == 200
 
-    def test_legacy_umbrella_param_ignored_or_rejected(self, app_with_es: TestClient) -> None:
-        """旧 umbrella=TRUE は新仕様では未定義パラメータ。FastAPI のデフォルトでは
-        未定義 query param は 200 で素通りするため、ここでは「200 になり、新パラメータ
-        が無効化されていない」ことを確認する (破壊的変更の確認はドキュメントのみ)。"""
+    def test_legacy_umbrella_param_rejected(self, app_with_es: TestClient) -> None:
+        """``umbrella`` is no longer accepted; the unknown-query guard
+        rejects it with 422 (docs/api-spec.md § エンドポイント固有の
+        パラメータ)."""
         resp = app_with_es.get("/entries/bioproject/", params={"umbrella": "TRUE"})
-        assert resp.status_code == 200
+        assert resp.status_code == 422
 
     def test_lowercase_rejected(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get("/entries/bioproject/", params={"objectTypes": "bioproject"})
@@ -1256,17 +1256,87 @@ class TestCursorExclusivity:
         )
         assert resp.status_code == 200
 
-    def test_cursor_with_object_types_returns_400(self, app_with_es: TestClient) -> None:
-        """objectTypes は BioProject 固有なので /entries/bioproject/ で検証する。"""
+    @pytest.mark.parametrize(
+        ("endpoint", "param", "value"),
+        [
+            # bioproject 型グループ
+            ("bioproject", "objectTypes", "BioProject"),
+            ("bioproject", "externalLinkLabel", "GEO"),
+            ("bioproject", "projectType", "metagenome"),
+            # biosample 型グループ
+            ("biosample", "derivedFromId", "SAMD00012345"),
+            ("biosample", "host", "Homo sapiens"),
+            ("biosample", "strain", "K12"),
+            ("biosample", "isolate", "patient-1"),
+            ("biosample", "geoLocName", "Japan"),
+            ("biosample", "collectionDate", "2020-05-01"),
+            # sra-* 型グループ (sra-experiment を代表として使う)
+            ("sra-experiment", "libraryStrategy", "WGS"),
+            ("sra-experiment", "librarySource", "GENOMIC"),
+            ("sra-experiment", "librarySelection", "RANDOM"),
+            ("sra-experiment", "platform", "ILLUMINA"),
+            ("sra-experiment", "instrumentModel", "HiSeq"),
+            ("sra-experiment", "libraryLayout", "PAIRED"),
+            ("sra-experiment", "analysisType", "ALIGNMENT"),
+            ("sra-experiment", "derivedFromId", "SAMD00012345"),
+            ("sra-experiment", "libraryName", "lib1"),
+            ("sra-experiment", "libraryConstructionProtocol", "PCR-free"),
+            # jga-* 型グループ (jga-study を代表として使う)
+            ("jga-study", "studyType", "GWAS"),
+            ("jga-study", "datasetType", "WGS"),
+            ("jga-study", "vendor", "Illumina"),
+            # gea / metabobank
+            ("gea", "experimentType", "RNA-Seq"),
+            ("metabobank", "submissionType", "open"),
+        ],
+    )
+    def test_cursor_with_type_specific_param_returns_400(
+        self,
+        app_with_es: TestClient,
+        endpoint: str,
+        param: str,
+        value: str,
+    ) -> None:
+        """cursor 排他リスト (docs/api-spec.md § カーソルベース) の
+        type-specific filter / nested / text param をすべて parametrize し、
+        cursor と併用したら 400 になることを担保する。"""
         resp = app_with_es.get(
-            "/entries/bioproject/",
-            params={
-                "cursor": _make_cursor_token(),
-                "objectTypes": "BioProject",
-            },
+            f"/entries/{endpoint}/",
+            params={"cursor": _make_cursor_token(), param: value},
         )
         assert resp.status_code == 400
-        assert "objectTypes" in resp.json()["detail"]
+        assert param in resp.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "param",
+        ["organization", "publication", "grant"],
+    )
+    def test_cursor_with_common_nested_param_returns_400(
+        self,
+        app_with_es: TestClient,
+        param: str,
+    ) -> None:
+        """共通 nested (organization/publication/grant) も cursor と
+        排他 (docs/api-spec.md § カーソルベース)。"""
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), param: "DDBJ"},
+        )
+        assert resp.status_code == 400
+        assert param in resp.json()["detail"]
+
+    @pytest.mark.parametrize("param", ["facets"])
+    def test_cursor_with_facets_returns_400(
+        self,
+        app_with_es: TestClient,
+        param: str,
+    ) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), param: "organism"},
+        )
+        assert resp.status_code == 400
+        assert param in resp.json()["detail"]
 
 
 class TestCursorOffsetMode:
@@ -1714,3 +1784,402 @@ class TestFacetsAlwaysPublicOnly:
         # facet aggs には status が含まれない
         if "aggs" in body:
             assert "status" not in body["aggs"]
+
+
+# ===================================================================
+# Type group filter: cross-type rejection / type group commonality
+# ===================================================================
+
+
+def _es_filters(call_args: Any) -> list[dict[str, Any]]:
+    """Pull bool.filter clauses from the ES query body of the latest call."""
+    body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+    return list(body["query"]["bool"]["filter"])
+
+
+class TestEntriesCrossTypeRejections:
+    """Cross-type endpoint (`GET /entries/`) は type-specific filter /
+    型グループ限定 nested / text match を 422 で拒否する
+    (docs/api-spec.md § エンドポイント固有のパラメータ)。"""
+
+    @pytest.mark.parametrize(
+        "param",
+        [
+            ("objectTypes", "BioProject"),
+            ("externalLinkLabel", "GEO"),
+            ("derivedFromId", "SAMD00001"),
+            ("libraryStrategy", "WGS"),
+            ("librarySource", "GENOMIC"),
+            ("librarySelection", "RANDOM"),
+            ("platform", "ILLUMINA"),
+            ("instrumentModel", "HiSeq"),
+            ("libraryLayout", "PAIRED"),
+            ("analysisType", "ALIGNMENT"),
+            ("experimentType", "RNA-Seq"),
+            ("studyType", "GWAS"),
+            ("submissionType", "open"),
+            ("datasetType", "WGS"),
+            ("projectType", "metagenome"),
+            ("host", "Homo sapiens"),
+            ("strain", "K12"),
+            ("isolate", "patient-1"),
+            ("geoLocName", "Japan"),
+            ("collectionDate", "2020"),
+            ("libraryName", "lib1"),
+            ("libraryConstructionProtocol", "PCR-free"),
+            ("vendor", "Illumina"),
+        ],
+    )
+    def test_type_specific_filter_rejected_on_cross_type(
+        self,
+        app_with_es: TestClient,
+        param: tuple[str, str],
+    ) -> None:
+        name, value = param
+        resp = app_with_es.get(f"/entries/?{name}={value}")
+        assert resp.status_code == 422
+
+
+class TestEntriesCrossTypeNestedAccepted:
+    """organization / publication / grant は cross-type endpoint でも
+    受け付けられ、ES query body に nested clause として反映される。"""
+
+    @pytest.mark.parametrize(
+        ("name", "nested_path", "sub_field"),
+        [
+            ("organization", "organization", "organization.name"),
+            ("publication", "publication", "publication.title"),
+            ("grant", "grant", "grant.title"),
+        ],
+    )
+    def test_common_nested_filter_reflected(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        name: str,
+        nested_path: str,
+        sub_field: str,
+    ) -> None:
+        resp = app_with_es.get(f"/entries/?{name}=DDBJ")
+        assert resp.status_code == 200
+        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        match = [c for c in nested if c["nested"]["path"] == nested_path]
+        assert len(match) == 1
+        assert match[0]["nested"]["query"] == {"match": {sub_field: "DDBJ"}}
+
+
+class TestEntriesTypeGroupCommonality:
+    """型グループ内の各 type で同じ type-specific param が受理される
+    (docs/api-spec.md § エンドポイント固有のパラメータ — 型グループ単位)。
+
+    field を持たない type は ES 側で match なしになるが、router 層では
+    422 にせず ES query に渡すことを確認する。
+    """
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "sra-submission",
+            "sra-study",
+            "sra-experiment",
+            "sra-run",
+            "sra-sample",
+            "sra-analysis",
+        ],
+    )
+    def test_sra_group_accepts_library_strategy(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        endpoint: str,
+    ) -> None:
+        resp = app_with_es.get(f"/entries/{endpoint}/?libraryStrategy=WGS")
+        assert resp.status_code == 200
+        filters = _es_filters(mock_es_search.call_args)
+        assert any("libraryStrategy.keyword" in (f.get("term") or {}) for f in filters)
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        ["jga-study", "jga-dataset", "jga-policy", "jga-dac"],
+    )
+    def test_jga_group_accepts_study_type(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        endpoint: str,
+    ) -> None:
+        resp = app_with_es.get(f"/entries/{endpoint}/?studyType=GWAS")
+        assert resp.status_code == 200
+        filters = _es_filters(mock_es_search.call_args)
+        assert any("studyType.keyword" in (f.get("term") or {}) for f in filters)
+
+
+class TestEntriesTypeGroupRejections:
+    """型グループ外の param は 422 (docs/api-spec.md § 型グループ単位)。"""
+
+    @pytest.mark.parametrize(
+        ("endpoint", "param"),
+        [
+            # bioproject endpoint は sra/biosample/jga 系を拒否
+            ("bioproject", "libraryStrategy"),
+            ("bioproject", "host"),
+            ("bioproject", "studyType"),
+            # biosample endpoint は sra/jga 系を拒否
+            ("biosample", "libraryStrategy"),
+            ("biosample", "platform"),
+            ("biosample", "studyType"),
+            ("biosample", "objectTypes"),
+            # sra-* endpoint は biosample-only / bioproject 系を拒否
+            ("sra-experiment", "objectTypes"),
+            ("sra-experiment", "host"),
+            ("sra-experiment", "strain"),
+            # jga-* endpoint は sra-only を拒否
+            ("jga-study", "libraryStrategy"),
+            ("jga-study", "host"),
+            ("jga-study", "objectTypes"),
+            # gea / metabobank も型グループ外を拒否
+            ("gea", "objectTypes"),
+            ("gea", "libraryStrategy"),
+            ("gea", "studyType"),
+            ("metabobank", "objectTypes"),
+            ("metabobank", "libraryStrategy"),
+            ("metabobank", "host"),
+        ],
+    )
+    def test_out_of_group_param_returns_422(
+        self,
+        app_with_es: TestClient,
+        endpoint: str,
+        param: str,
+    ) -> None:
+        resp = app_with_es.get(f"/entries/{endpoint}/?{param}=X")
+        assert resp.status_code == 422
+
+
+class TestEntriesNewNestedFilters:
+    """型グループ限定 nested (externalLinkLabel / derivedFromId) が
+    type-specific endpoint で ES query に nested として反映される。"""
+
+    def test_external_link_label_on_bioproject(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/bioproject/?externalLinkLabel=GEO")
+        assert resp.status_code == 200
+        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        match = [c for c in nested if c["nested"]["path"] == "externalLink"]
+        assert len(match) == 1
+        assert match[0]["nested"]["query"] == {"match": {"externalLink.label": "GEO"}}
+
+    def test_external_link_label_on_jga_study(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/jga-study/?externalLinkLabel=dbGaP")
+        assert resp.status_code == 200
+        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        assert any(c["nested"]["path"] == "externalLink" for c in nested)
+
+    def test_derived_from_id_on_biosample(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/biosample/?derivedFromId=SAMD00012345")
+        assert resp.status_code == 200
+        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        match = [c for c in nested if c["nested"]["path"] == "derivedFrom"]
+        assert len(match) == 1
+        assert match[0]["nested"]["query"] == {"match": {"derivedFrom.identifier": "SAMD00012345"}}
+
+    def test_derived_from_id_on_sra_experiment(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        resp = app_with_es.get("/entries/sra-experiment/?derivedFromId=SAMD00001")
+        assert resp.status_code == 200
+        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        assert any(c["nested"]["path"] == "derivedFrom" for c in nested)
+
+
+class TestEntriesTermFilterReflected:
+    """型グループ別の term filter が ES query body に反映される。"""
+
+    @pytest.mark.parametrize(
+        ("endpoint", "param", "es_field", "value"),
+        [
+            ("sra-experiment", "libraryStrategy", "libraryStrategy.keyword", "WGS"),
+            ("sra-experiment", "librarySource", "librarySource.keyword", "GENOMIC"),
+            ("sra-experiment", "librarySelection", "librarySelection.keyword", "RANDOM"),
+            ("sra-experiment", "platform", "platform.keyword", "ILLUMINA"),
+            ("sra-experiment", "instrumentModel", "instrumentModel.keyword", "HiSeq"),
+            ("sra-experiment", "libraryLayout", "libraryLayout.keyword", "PAIRED"),
+            ("sra-analysis", "analysisType", "analysisType.keyword", "ALIGNMENT"),
+            ("jga-study", "studyType", "studyType.keyword", "GWAS"),
+            ("jga-dataset", "datasetType", "datasetType.keyword", "WGS"),
+            ("gea", "experimentType", "experimentType.keyword", "RNA-Seq"),
+            ("metabobank", "submissionType", "submissionType.keyword", "open"),
+        ],
+    )
+    def test_term_filter_reflected(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        endpoint: str,
+        param: str,
+        es_field: str,
+        value: str,
+    ) -> None:
+        resp = app_with_es.get(f"/entries/{endpoint}/?{param}={value}")
+        assert resp.status_code == 200
+        filters = _es_filters(mock_es_search.call_args)
+        match = [f for f in filters if "term" in f and es_field in f["term"]]
+        assert len(match) == 1
+        assert match[0]["term"][es_field] == value
+
+
+class TestEntriesTextMatchReflected:
+    """型グループ別の text match が ES query body に反映され、auto-phrase
+    機構を通って ``match`` / ``match_phrase`` が組まれる。"""
+
+    @pytest.mark.parametrize(
+        ("endpoint", "param", "es_field"),
+        [
+            ("bioproject", "projectType", "projectType"),
+            ("biosample", "host", "host"),
+            ("biosample", "strain", "strain"),
+            ("biosample", "isolate", "isolate"),
+            ("biosample", "geoLocName", "geoLocName"),
+            ("biosample", "collectionDate", "collectionDate"),
+            ("sra-experiment", "libraryName", "libraryName"),
+            ("sra-experiment", "libraryConstructionProtocol", "libraryConstructionProtocol"),
+            ("jga-study", "vendor", "vendor"),
+        ],
+    )
+    def test_text_match_reflected_with_simple_token(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        endpoint: str,
+        param: str,
+        es_field: str,
+    ) -> None:
+        # 単一 token (記号なし) は ``match`` clause + operator=and を組む
+        resp = app_with_es.get(f"/entries/{endpoint}/?{param}=cancer")
+        assert resp.status_code == 200
+        filters = _es_filters(mock_es_search.call_args)
+        match = [f for f in filters if isinstance(f.get("match"), dict) and es_field in f["match"]]
+        assert len(match) == 1
+        assert match[0]["match"][es_field]["query"] == "cancer"
+        assert match[0]["match"][es_field]["operator"] == "and"
+
+    def test_text_match_auto_phrase_on_hyphen(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """``host=HIF-1`` は記号 ``-`` を含むので auto-phrase で
+        ``match_phrase`` clause を作る (docs/api-spec.md § text match)。"""
+        resp = app_with_es.get("/entries/biosample/?host=HIF-1")
+        assert resp.status_code == 200
+        filters = _es_filters(mock_es_search.call_args)
+        phrase = [f for f in filters if isinstance(f.get("match_phrase"), dict) and "host" in f["match_phrase"]]
+        assert len(phrase) == 1
+        assert phrase[0]["match_phrase"]["host"] == "HIF-1"
+
+    def test_text_match_keyword_operator_or_propagates(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """``keywordOperator=OR`` は text match の operator にも伝搬する
+        (docs/api-spec.md § text match — keywordOperator 連動)。"""
+        resp = app_with_es.get("/entries/biosample/?host=Homo sapiens&keywordOperator=OR")
+        assert resp.status_code == 200
+        filters = _es_filters(mock_es_search.call_args)
+        match = [f for f in filters if isinstance(f.get("match"), dict) and "host" in f["match"]]
+        assert len(match) == 1
+        assert match[0]["match"]["host"]["operator"] == "or"
+
+
+class TestEntriesFacetsPick:
+    """``facets`` クエリパラメータが entries 側 (`includeFacets=true`) でも
+    動く (router の wiring 確認、build_facet_aggs のロジック自体は
+    es/test_query.py で網羅)。"""
+
+    def test_default_returns_common_facets_only(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(
+            aggregations={
+                "type": {"buckets": []},
+                "organism": {"buckets": []},
+                "accessibility": {"buckets": []},
+            },
+        )
+        app_with_es.get("/entries/?includeFacets=true")
+        body = mock_es_search.call_args[0][2]
+        assert set(body["aggs"]) == {"organism", "accessibility", "type"}
+
+    def test_explicit_facets_replaces_default(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """明示指定は完全置換 (docs/api-spec.md § ファセット集計対象の選択)。
+        common facet (organism/accessibility) は自動付与されない。"""
+        mock_es_search.return_value = make_es_search_response(
+            aggregations={"objectType": {"buckets": []}},
+        )
+        app_with_es.get("/entries/bioproject/?includeFacets=true&facets=objectType")
+        body = mock_es_search.call_args[0][2]
+        assert set(body["aggs"]) == {"objectType"}
+
+    def test_empty_facets_yields_no_aggs(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/bioproject/?includeFacets=true&facets=")
+        body = mock_es_search.call_args[0][2]
+        assert "aggs" not in body
+
+    def test_typo_returns_422(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get("/entries/?includeFacets=true&facets=organisms")
+        assert resp.status_code == 422
+
+    def test_type_mismatch_returns_400(self, app_with_es: TestClient) -> None:
+        """`/entries/bioproject/` で sra-experiment 専用 facet を投げると
+        400 (allowlist は通るが applicability で reject)。"""
+        resp = app_with_es.get(
+            "/entries/bioproject/?includeFacets=true&facets=libraryStrategy",
+        )
+        assert resp.status_code == 400
+
+    def test_cross_type_accepts_any_allowlisted_facet(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """cross-type endpoint は any allowlisted facet を受理する
+        (該当 index でのみ集計、他は空 buckets)。"""
+        resp = app_with_es.get("/entries/?includeFacets=true&facets=libraryStrategy")
+        assert resp.status_code == 200
+        body = mock_es_search.call_args[0][2]
+        assert "libraryStrategy" in body["aggs"]
+
+    def test_facets_ignored_when_include_facets_false(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """``facets=...`` 指定があっても ``includeFacets=false`` なら
+        集計しない (docs/api-spec.md § ファセット集計対象の選択)。"""
+        app_with_es.get("/entries/bioproject/?facets=objectType")
+        body = mock_es_search.call_args[0][2]
+        assert "aggs" not in body

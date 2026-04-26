@@ -5,6 +5,7 @@ Pure functions that convert API parameters to Elasticsearch query DSL.
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Literal
 
 from ddbj_search_api.search.phrase import (
@@ -165,6 +166,28 @@ def build_search_query(
     publication: str | None = None,
     grant: str | None = None,
     object_types: str | None = None,
+    external_link_label: str | None = None,
+    derived_from_id: str | None = None,
+    library_strategy: str | None = None,
+    library_source: str | None = None,
+    library_selection: str | None = None,
+    platform: str | None = None,
+    instrument_model: str | None = None,
+    library_layout: str | None = None,
+    analysis_type: str | None = None,
+    experiment_type: str | None = None,
+    study_type: str | None = None,
+    submission_type: str | None = None,
+    dataset_type: str | None = None,
+    project_type: str | None = None,
+    host: str | None = None,
+    strain: str | None = None,
+    isolate: str | None = None,
+    geo_loc_name: str | None = None,
+    collection_date: str | None = None,
+    library_name: str | None = None,
+    library_construction_protocol: str | None = None,
+    vendor: str | None = None,
     status_mode: StatusMode | None = "public_only",
 ) -> dict[str, Any]:
     """Build ES query dict from search parameters.
@@ -179,8 +202,15 @@ def build_search_query(
     ``/db-portal/cross-search`` and ``/db-portal/search`` where status
     filtering is intentionally Future work — see
     docs/api-spec.md § データ可視性).
+
+    Type-specific term / nested / text filters are accepted for any
+    request; values that do not exist on the targeted index simply
+    produce no hits on the Elasticsearch side. Routers reject
+    type-specific parameters that should not reach a given endpoint
+    before this function is called.
     """
     keyword_list = _parse_keywords(keywords)
+    operator = keyword_operator.lower() if keyword_operator else "and"
     filters: list[dict[str, Any]] = []
     if status_mode is not None:
         filters.append(build_status_filter(status_mode))
@@ -196,6 +226,29 @@ def build_search_query(
             publication=publication,
             grant=grant,
             object_types=object_types,
+            external_link_label=external_link_label,
+            derived_from_id=derived_from_id,
+            library_strategy=library_strategy,
+            library_source=library_source,
+            library_selection=library_selection,
+            platform=platform,
+            instrument_model=instrument_model,
+            library_layout=library_layout,
+            analysis_type=analysis_type,
+            experiment_type=experiment_type,
+            study_type=study_type,
+            submission_type=submission_type,
+            dataset_type=dataset_type,
+            project_type=project_type,
+            host=host,
+            strain=strain,
+            isolate=isolate,
+            geo_loc_name=geo_loc_name,
+            collection_date=collection_date,
+            library_name=library_name,
+            library_construction_protocol=library_construction_protocol,
+            vendor=vendor,
+            text_match_operator=operator,
         )
     )
 
@@ -227,6 +280,92 @@ def build_search_query(
     return {"bool": bool_query}
 
 
+# Mapping from API parameter name to the ES ``*.keyword`` field used as a
+# term filter. Keys are kwarg-style identifiers that match the
+# ``_build_filter_clauses`` signature.
+_TERM_FILTER_FIELDS: list[tuple[str, str]] = [
+    ("library_strategy", "libraryStrategy.keyword"),
+    ("library_source", "librarySource.keyword"),
+    ("library_selection", "librarySelection.keyword"),
+    ("platform", "platform.keyword"),
+    ("instrument_model", "instrumentModel.keyword"),
+    ("library_layout", "libraryLayout.keyword"),
+    ("analysis_type", "analysisType.keyword"),
+    ("experiment_type", "experimentType.keyword"),
+    ("study_type", "studyType.keyword"),
+    ("submission_type", "submissionType.keyword"),
+    ("dataset_type", "datasetType.keyword"),
+]
+
+# Mapping from API parameter name to the ES top-level text field used by
+# the auto-phrase text matcher.
+_TEXT_MATCH_FIELDS: list[tuple[str, str]] = [
+    ("project_type", "projectType"),
+    ("host", "host"),
+    ("strain", "strain"),
+    ("isolate", "isolate"),
+    ("geo_loc_name", "geoLocName"),
+    ("collection_date", "collectionDate"),
+    ("library_name", "libraryName"),
+    ("library_construction_protocol", "libraryConstructionProtocol"),
+    ("vendor", "vendor"),
+]
+
+
+def _build_term_clause(field: str, value: str | None) -> dict[str, Any] | None:
+    """Build a single term/terms clause for comma-separated values."""
+    if not value:
+        return None
+    values = [v.strip() for v in value.split(",")]
+    values = [v for v in values if v]
+    if not values:
+        return None
+    if len(values) == 1:
+        return {"term": {field: values[0]}}
+    return {"terms": {field: values}}
+
+
+def _build_nested_match_clause(
+    path: str,
+    sub_field: str,
+    value: str | None,
+) -> dict[str, Any] | None:
+    """Build a nested match clause for a single nested-path/value pair."""
+    if not value:
+        return None
+    return {
+        "nested": {
+            "path": path,
+            "query": {"match": {sub_field: value}},
+        },
+    }
+
+
+def _build_text_match_clause(
+    field: str,
+    value: str | None,
+    operator: str,
+) -> dict[str, Any] | None:
+    """Build a match / match_phrase clause with auto-phrase semantics.
+
+    ``operator`` is the in-token operator (``and`` / ``or``); comma-
+    separated input values are split into multiple per-value clauses
+    OR'd together via ``bool.should`` with ``minimum_should_match=1``.
+    """
+    parsed = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
+    if not parsed:
+        return None
+    per_value_clauses: list[dict[str, Any]] = []
+    for token, is_phrase in parsed:
+        if is_phrase:
+            per_value_clauses.append({"match_phrase": {field: token}})
+        else:
+            per_value_clauses.append({"match": {field: {"query": token, "operator": operator}}})
+    if len(per_value_clauses) == 1:
+        return per_value_clauses[0]
+    return {"bool": {"should": per_value_clauses, "minimum_should_match": 1}}
+
+
 def _build_filter_clauses(
     organism: str | None = None,
     date_published_from: str | None = None,
@@ -238,6 +377,29 @@ def _build_filter_clauses(
     publication: str | None = None,
     grant: str | None = None,
     object_types: str | None = None,
+    external_link_label: str | None = None,
+    derived_from_id: str | None = None,
+    library_strategy: str | None = None,
+    library_source: str | None = None,
+    library_selection: str | None = None,
+    platform: str | None = None,
+    instrument_model: str | None = None,
+    library_layout: str | None = None,
+    analysis_type: str | None = None,
+    experiment_type: str | None = None,
+    study_type: str | None = None,
+    submission_type: str | None = None,
+    dataset_type: str | None = None,
+    project_type: str | None = None,
+    host: str | None = None,
+    strain: str | None = None,
+    isolate: str | None = None,
+    geo_loc_name: str | None = None,
+    collection_date: str | None = None,
+    library_name: str | None = None,
+    library_construction_protocol: str | None = None,
+    vendor: str | None = None,
+    text_match_operator: str = "and",
 ) -> list[dict[str, Any]]:
     """Build list of ES filter clauses."""
     clauses: list[dict[str, Any]] = []
@@ -270,7 +432,7 @@ def _build_filter_clauses(
         if type_list:
             clauses.append({"terms": {"type": type_list}})
 
-    # BioProject-specific filters
+    # BioProject-specific filter (kept as-is for the BioProject/UmbrellaBioProject enum).
     if object_types:
         values = sorted({v.strip() for v in object_types.split(",") if v.strip()})
         if len(values) == 1:
@@ -278,44 +440,171 @@ def _build_filter_clauses(
         elif len(values) >= 2:
             clauses.append({"terms": {"objectType": values}})
 
-    if organization:
-        clauses.append(
-            {
-                "nested": {
-                    "path": "organization",
-                    "query": {"match": {"organization.name": organization}},
-                },
-            }
-        )
+    nested_specs: list[tuple[str, str, str | None]] = [
+        ("organization", "organization.name", organization),
+        ("publication", "publication.title", publication),
+        ("grant", "grant.title", grant),
+        ("externalLink", "externalLink.label", external_link_label),
+        ("derivedFrom", "derivedFrom.identifier", derived_from_id),
+    ]
+    for path, sub_field, value in nested_specs:
+        clause = _build_nested_match_clause(path, sub_field, value)
+        if clause is not None:
+            clauses.append(clause)
 
-    if publication:
-        clauses.append(
-            {
-                "nested": {
-                    "path": "publication",
-                    "query": {"match": {"publication.title": publication}},
-                },
-            }
-        )
+    term_values: dict[str, str | None] = {
+        "library_strategy": library_strategy,
+        "library_source": library_source,
+        "library_selection": library_selection,
+        "platform": platform,
+        "instrument_model": instrument_model,
+        "library_layout": library_layout,
+        "analysis_type": analysis_type,
+        "experiment_type": experiment_type,
+        "study_type": study_type,
+        "submission_type": submission_type,
+        "dataset_type": dataset_type,
+    }
+    for kwarg_name, es_field in _TERM_FILTER_FIELDS:
+        clause = _build_term_clause(es_field, term_values[kwarg_name])
+        if clause is not None:
+            clauses.append(clause)
 
-    if grant:
-        clauses.append(
-            {
-                "nested": {
-                    "path": "grant",
-                    "query": {"match": {"grant.title": grant}},
-                },
-            }
-        )
+    text_values: dict[str, str | None] = {
+        "project_type": project_type,
+        "host": host,
+        "strain": strain,
+        "isolate": isolate,
+        "geo_loc_name": geo_loc_name,
+        "collection_date": collection_date,
+        "library_name": library_name,
+        "library_construction_protocol": library_construction_protocol,
+        "vendor": vendor,
+    }
+    for kwarg_name, es_field in _TEXT_MATCH_FIELDS:
+        clause = _build_text_match_clause(es_field, text_values[kwarg_name], text_match_operator)
+        if clause is not None:
+            clauses.append(clause)
 
     return clauses
 
 
+# Facet aggregation specifications. ``size`` is intentionally fixed at 50
+# for now; per-facet ``shard_size`` tuning can be revisited if cardinality
+# growth on the SRA ``instrumentModel`` / ``libraryStrategy`` fields starts
+# leaving meaningful counts in ``sum_other_doc_count`` (see docs § ファセット).
+_FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
+    "organism": {"terms": {"field": "organism.name", "size": 50}},
+    "accessibility": {"terms": {"field": "accessibility", "size": 50}},
+    "type": {"terms": {"field": "type", "size": 50}},
+    "objectType": {"terms": {"field": "objectType", "size": 50}},
+    "libraryStrategy": {"terms": {"field": "libraryStrategy.keyword", "size": 50}},
+    "librarySource": {"terms": {"field": "librarySource.keyword", "size": 50}},
+    "librarySelection": {"terms": {"field": "librarySelection.keyword", "size": 50}},
+    "platform": {"terms": {"field": "platform.keyword", "size": 50}},
+    "instrumentModel": {"terms": {"field": "instrumentModel.keyword", "size": 50}},
+    "experimentType": {"terms": {"field": "experimentType.keyword", "size": 50}},
+    "studyType": {"terms": {"field": "studyType.keyword", "size": 50}},
+    "submissionType": {"terms": {"field": "submissionType.keyword", "size": 50}},
+}
+
+# Default common facets when ``requested_facets`` is omitted. ``type`` is
+# appended on cross-type endpoints inside :func:`build_facet_aggs`.
+_DEFAULT_COMMON_FACETS: tuple[str, ...] = ("organism", "accessibility")
+
+# Facets always available, regardless of endpoint scope (derived from the
+# default tuple to keep the two views in sync).
+_COMMON_FACET_NAMES: frozenset[str] = frozenset(_DEFAULT_COMMON_FACETS)
+
+# Facets accepted only on cross-type endpoints.
+_CROSS_TYPE_ONLY_FACET_NAMES: frozenset[str] = frozenset({"type"})
+
+# Public allowlist for the ``facets`` query parameter.  Sourced from the
+# agg-spec keys so the wire-level allowlist (in
+# :mod:`ddbj_search_api.schemas.queries`) and the aggregation builder
+# stay in sync without manual duplication.
+VALID_FACET_FIELDS: frozenset[str] = frozenset(_FACET_AGG_SPECS)
+
+# Mapping from a type-specific facet to the DbType values that own it on
+# their indices. cross-type endpoints accept the union of these (the
+# router treats them as loosely scoped — empty buckets fall out
+# naturally on indices that lack the field).
+_TYPE_SPECIFIC_FACET_SCOPE: dict[str, frozenset[str]] = {
+    "objectType": frozenset({"bioproject"}),
+    "libraryStrategy": frozenset({"sra-experiment"}),
+    "librarySource": frozenset({"sra-experiment"}),
+    "librarySelection": frozenset({"sra-experiment"}),
+    "platform": frozenset({"sra-experiment"}),
+    "instrumentModel": frozenset({"sra-experiment"}),
+    "experimentType": frozenset({"gea", "metabobank"}),
+    "studyType": frozenset({"jga-study", "metabobank"}),
+    "submissionType": frozenset({"metabobank"}),
+}
+
+
+def resolve_requested_facets(
+    facets_param: str | None,
+    *,
+    is_cross_type: bool,
+    db_type: str | None = None,
+) -> list[str] | None:
+    """Resolve the raw ``facets`` query value into an explicit selection.
+
+    Returns:
+        ``None`` when ``facets_param`` is ``None`` (caller falls back to
+        :func:`build_facet_aggs`'s default common-facet behaviour);
+        ``[]`` when ``facets_param`` is the empty string (no
+        aggregation); otherwise the parsed list of facet names.
+
+    Raises:
+        ValueError: when a requested facet name is valid in the global
+        allowlist but not applicable to the endpoint (caller maps to
+        HTTP 400). Allowlist typos are caught upstream in
+        :class:`FacetsParamQuery` and produce HTTP 422.
+    """
+    if facets_param is None:
+        return None
+    if facets_param == "":
+        return []
+    requested = [f.strip() for f in facets_param.split(",")]
+    requested = [f for f in requested if f]
+
+    invalid: list[str] = []
+    for name in requested:
+        if name in _COMMON_FACET_NAMES:
+            continue
+        if name in _CROSS_TYPE_ONLY_FACET_NAMES:
+            if not is_cross_type:
+                invalid.append(name)
+            continue
+        scope = _TYPE_SPECIFIC_FACET_SCOPE.get(name)
+        if scope is None:
+            invalid.append(name)
+            continue
+        if is_cross_type:
+            continue
+        if db_type not in scope:
+            invalid.append(name)
+    if invalid:
+        raise ValueError(
+            "Facets not applicable to this endpoint: " + ", ".join(invalid) + ".",
+        )
+    return requested
+
+
 def build_facet_aggs(
     is_cross_type: bool = False,
-    db_type: str | None = None,
+    requested_facets: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build ES aggregation queries for facets.
+
+    ``requested_facets`` controls which buckets to compute:
+    - ``None`` (default): common facets only (organism, accessibility);
+      cross-type endpoints additionally include ``type``.
+    - ``[]``: no aggregations (caller asked for an empty facet set).
+    - explicit list: just those facet names. Unknown names are silently
+      ignored — the router validates the allowlist via
+      :func:`resolve_requested_facets` before reaching here.
 
     ``status`` is intentionally not aggregated: the query that feeds the
     facet aggregations is always constrained to ``status:public``
@@ -323,15 +612,20 @@ def build_facet_aggs(
     value and provides no information (see
     ``docs/api-spec.md`` § データ可視性).
     """
-    aggs: dict[str, Any] = {
-        "organism": {"terms": {"field": "organism.name", "size": 50}},
-        "accessibility": {"terms": {"field": "accessibility", "size": 50}},
-    }
+    if requested_facets is None:
+        wanted: list[str] = list(_DEFAULT_COMMON_FACETS)
+        if is_cross_type:
+            wanted.append("type")
+    else:
+        wanted = list(requested_facets)
 
-    if is_cross_type:
-        aggs["type"] = {"terms": {"field": "type", "size": 50}}
-
-    if db_type == "bioproject":
-        aggs["objectType"] = {"terms": {"field": "objectType", "size": 50}}
-
+    aggs: dict[str, Any] = {}
+    for name in wanted:
+        spec = _FACET_AGG_SPECS.get(name)
+        if spec is None:
+            continue
+        # deepcopy keeps the per-call agg dict independent from the
+        # module-level template; callers can safely mutate the result
+        # (e.g. inject ``shard_size``) without leaking changes.
+        aggs[name] = copy.deepcopy(spec)
     return aggs

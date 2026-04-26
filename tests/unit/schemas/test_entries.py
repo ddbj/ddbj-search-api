@@ -199,6 +199,7 @@ class TestEntryListResponse:
             facets=facets,
         )
         assert resp.facets is not None
+        assert resp.facets.organism is not None
         assert len(resp.facets.organism) == 1
 
     def test_empty_items_accepted(self) -> None:

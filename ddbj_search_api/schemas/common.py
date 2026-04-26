@@ -81,9 +81,19 @@ class FacetBucket(BaseModel):
 class Facets(BaseModel):
     """Facet aggregation results.
 
-    Common facets (organism, accessibility) are always present.
-    ``type`` is included only for cross-type searches.
-    ``objectType`` is included only for bioproject-type searches.
+    Every field is optional (nullable). The ``facets`` query parameter
+    on the request side selects which aggregations to compute, and only
+    selected fields are returned as a list; the rest are ``null``.
+    This means callers can distinguish "aggregated but no buckets"
+    (empty list ``[]``) from "not aggregated" (``null``).
+
+    Default behaviour (no ``facets`` parameter): ``organism`` and
+    ``accessibility`` are populated; ``type`` is also populated on
+    cross-type endpoints. All other fields default to ``null``.
+
+    Explicit ``facets=...`` selection fully replaces the default
+    (no auto-merge), so passing ``facets=objectType`` returns
+    ``organism`` / ``accessibility`` as ``null``.
 
     The ``status`` facet is intentionally omitted: aggregations are
     always constrained to ``status:public`` upstream, so the bucket
@@ -94,18 +104,61 @@ class Facets(BaseModel):
 
     type: list[FacetBucket] | None = Field(
         default=None,
-        description="Entry count per database type (cross-type search only).",
+        description="Entry count per database type (cross-type search only; null when not aggregated).",
     )
-    organism: list[FacetBucket] = Field(
-        description="Entry count per organism.",
+    organism: list[FacetBucket] | None = Field(
+        default=None,
+        description=(
+            "Entry count per organism. Null when not aggregated (e.g. excluded from an explicit ``facets`` selection)."
+        ),
     )
-    accessibility: list[FacetBucket] = Field(
-        description="Entry count per accessibility level.",
+    accessibility: list[FacetBucket] | None = Field(
+        default=None,
+        description="Entry count per accessibility level. Null when not aggregated.",
     )
     object_type: list[FacetBucket] | None = Field(
         default=None,
         alias="objectType",
-        description="Umbrella / non-umbrella count (bioproject only).",
+        description="Umbrella / non-umbrella count (bioproject only, opt-in).",
+    )
+    library_strategy: list[FacetBucket] | None = Field(
+        default=None,
+        alias="libraryStrategy",
+        description="Library strategy count (sra-experiment only, opt-in).",
+    )
+    library_source: list[FacetBucket] | None = Field(
+        default=None,
+        alias="librarySource",
+        description="Library source count (sra-experiment only, opt-in).",
+    )
+    library_selection: list[FacetBucket] | None = Field(
+        default=None,
+        alias="librarySelection",
+        description="Library selection count (sra-experiment only, opt-in).",
+    )
+    platform: list[FacetBucket] | None = Field(
+        default=None,
+        description="Sequencing platform count (sra-experiment only, opt-in).",
+    )
+    instrument_model: list[FacetBucket] | None = Field(
+        default=None,
+        alias="instrumentModel",
+        description="Instrument model count (sra-experiment only, opt-in).",
+    )
+    experiment_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="experimentType",
+        description="Experiment type count (gea / metabobank, opt-in).",
+    )
+    study_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="studyType",
+        description="Study type count (jga-study / metabobank, opt-in).",
+    )
+    submission_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="submissionType",
+        description="Submission type count (metabobank only, opt-in).",
     )
 
 
