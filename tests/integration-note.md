@@ -32,6 +32,17 @@ ddbj-search-converter リポジトリ側に compose があり、`ddbj-search-net
 
 **推奨は案 A**。converter のリリース取り込み手順に「代表 accession の更新」を組み込む。案 B は補助的に「条件を満たす ID を 1 件以上見つける」スモークでだけ使う。案 C は禁止 (共有 ES を汚さない)。
 
+### staging データ実態 (採取時に判明したカバー漏れ)
+
+代表 accession を採取するときに、staging ES に以下のデータが存在しないことが判明した。該当する `*_ID` 定数は空のまま (`""`) で `require_accession` 経由で当該シナリオを skip する運用とする。converter 側で対応データが投入されたら値を埋めて skip を外す。
+
+- **`withdrawn` 全 type で 0 件**: `WITHDRAWN_*_ID` は全 type で空。IT-STATUS-03/06/07、IT-DETAIL-05 の withdrawn 系 assertion は skip。
+- **`private` は SRA 系のみ存在**: BioProject / BioSample / JGA / GEA / MetaboBank には 0 件。`PRIVATE_BIOPROJECT_ID` 等は空、`PRIVATE_SRA_*_ID` のみ値が入る。
+- **`suppressed` は BioProject / BioSample / SRA-{submission, study, experiment, sample} のみ**: JGA / GEA / MetaboBank には 0 件。
+- **`sameAs.identifier` を持つ entry 0 件**: `SECONDARY_*_ID` 全空、IT-DETAIL-03/10、IT-UMBRELLA-08 の sameAs フォールバック系は skip。
+- **`parentBioProjects` / `childBioProjects` の link 0 件**: BioProject に親子関係データが投入されていない (UmbrellaBioProject の `objectType` は付いているが children link は無し)。`UMBRELLA_BIOPROJECT_ID` (`PRJDB42131`) は応答するが `edges == []`。`MULTI_PARENT_BIOPROJECT_ID` / `DANGLING_CHILD_BIOPROJECT_ID` は空のまま。IT-UMBRELLA-02/03/05/06 はそれぞれ「edges 構造の parseability」レベルに緩和済または skip。
+- **`DEEP_CHAIN_BIOPROJECT_ID` は採取せず Future work**: MAX_DEPTH=10 超えチェーンを意図的に作る必要があり、staging で再現不能。
+
 ## 件数 drift 対策
 
 ES / Solr のデータは converter の更新で件数が変わる。固定値 assert は壊れる前提で書かない。代わりに **構造的不変条件** で書く。既存テストもこのパターンで揃えてある。

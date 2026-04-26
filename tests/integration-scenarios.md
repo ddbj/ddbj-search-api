@@ -963,24 +963,24 @@
 
 `/db-portal/cross-search` (8 DB fan-out) と `/db-portal/search?db=trad|taxonomy` の Solr (ARSA / TXSearch) 経由シナリオ。**全シナリオに `@pytest.mark.staging_only` を付与** (Solr は staging のみ)。
 
-### IT-DBPORTAL-01: ARSA `MolecularType` field がレスポンスに含まれる
+### IT-DBPORTAL-01: ARSA `molecularType` field がレスポンスに含まれる
 
 **endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20`
 
 **不変条件**:
-- `hits[*].MolecularType` が response に出る (ARSA fl に含まれる)
+- `hits[*].molecularType` (Pydantic alias `molecularType`、Python attr `molecular_type`) が response に出る
 - 一定割合の hit で値が non-null
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)` / `11dace7` (MolecularType / SequenceLength を fl に追加)
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)` / `11dace7` (molecularType / sequenceLength を fl に追加)
 
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
-### IT-DBPORTAL-02: ARSA `SequenceLength` field がレスポンスに含まれる
+### IT-DBPORTAL-02: ARSA `sequenceLength` field がレスポンスに含まれる
 
 **endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20`
 
 **不変条件**:
-- `hits[*].SequenceLength` が response に出る
+- `hits[*].sequenceLength` (Pydantic alias、Python attr `sequence_length`) が response に出る
 - 一定割合の hit で値が non-null
 
 **回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)` / `11dace7`
@@ -1024,10 +1024,10 @@
 
 ### IT-DBPORTAL-06: adv Tier 3 field の uf allowlist 完全性
 
-**endpoint**: `GET /db-portal/search?db=trad&adv=<Tier 3 field>:value` (compile_to_solr で edismax を経由)
+**endpoint**: `GET /db-portal/search?db=trad&adv=molecularType:DNA` (compile_to_solr で edismax を経由)
 
 **不変条件**:
-- compile_to_solr が emit する全 field が edismax の `uf` allowlist を通る
+- compile_to_solr が emit する全 field が edismax の `uf` allowlist を通る (`molecularType` 等の小文字始まり field 名)
 - silent wrong-field match や dropped value が起きない (`total > 0` を別経路で確認可能なクエリで成立)
 
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3` / `11dace7`
@@ -1298,8 +1298,9 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20` / `?db=taxonomy&q=*&perPage=20` (`@pytest.mark.staging_only`)
 
 **不変条件**:
-- レスポンス `hits[*].status` が固定 `"public"` (Solr index に non-public は含まれない前提)
+- レスポンス `hits[*].status` は `null` または `"public"` のいずれか (Solr index に non-public は含まれない前提)
 - ES と異なり filter 不注入 (Solr query に status 条件が無い)
+- hidden な status (`suppressed` / `withdrawn` / `private`) は決して出ない
 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性` (Solr no-op) / `27e2285`
 

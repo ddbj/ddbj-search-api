@@ -21,7 +21,7 @@ class TestArsaMolecularType:
     """IT-DBPORTAL-01: ARSA exposes MolecularType."""
 
     def test_molecular_type_present_in_some_hits(self, app: TestClient) -> None:
-        """IT-DBPORTAL-01: at least one trad hit carries MolecularType."""
+        """IT-DBPORTAL-01: at least one trad hit carries molecularType."""
         resp = app.get(
             "/db-portal/search",
             params={"db": "trad", "q": "*", "perPage": 20},
@@ -29,14 +29,16 @@ class TestArsaMolecularType:
         assert resp.status_code == 200
         hits = resp.json()["hits"]
         assert len(hits) > 0
-        assert any("MolecularType" in hit for hit in hits)
+        # ``DbPortalHitTrad.molecular_type`` is exposed via the JSON alias
+        # ``molecularType``.
+        assert any("molecularType" in hit for hit in hits)
 
 
 class TestArsaSequenceLength:
     """IT-DBPORTAL-02: ARSA exposes SequenceLength."""
 
     def test_sequence_length_present_in_some_hits(self, app: TestClient) -> None:
-        """IT-DBPORTAL-02: at least one trad hit carries SequenceLength."""
+        """IT-DBPORTAL-02: at least one trad hit carries sequenceLength."""
         resp = app.get(
             "/db-portal/search",
             params={"db": "trad", "q": "*", "perPage": 20},
@@ -44,7 +46,9 @@ class TestArsaSequenceLength:
         assert resp.status_code == 200
         hits = resp.json()["hits"]
         assert len(hits) > 0
-        assert any("SequenceLength" in hit for hit in hits)
+        # ``DbPortalHitTrad.sequence_length`` is exposed via the JSON alias
+        # ``sequenceLength``.
+        assert any("sequenceLength" in hit for hit in hits)
 
 
 class TestArsaOrganismIdentifier:
@@ -109,10 +113,10 @@ class TestSolrUfAllowlistCompleteness:
     """IT-DBPORTAL-06: Tier 3 fields are accepted by edismax (uf allowlist)."""
 
     def test_tier3_field_query_accepted(self, app: TestClient) -> None:
-        """IT-DBPORTAL-06: ``adv=MolecularType:DNA`` is accepted by Solr."""
+        """IT-DBPORTAL-06: ``adv=molecularType:DNA`` is accepted by Solr."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "adv": "MolecularType:DNA", "perPage": 5},
+            params={"db": "trad", "adv": "molecularType:DNA", "perPage": 5},
         )
         assert resp.status_code == 200
 
