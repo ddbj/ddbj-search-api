@@ -117,9 +117,10 @@ class TestSolrUfAllowlistCompleteness:
         # ``division`` is an enum-typed trad-only DSL field per
         # ``search/dsl/allowlist.py``. ``molecularType`` / ``sequenceLength``
         # surface in the response shape but are not search-allowlisted.
+        # Solr DBs only accept perPage in {20, 50, 100} (IT-DBPORTAL-11).
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "adv": "division:BCT", "perPage": 5},
+            params={"db": "trad", "adv": "division:BCT", "perPage": 20},
         )
         assert resp.status_code == 200
 

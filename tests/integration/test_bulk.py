@@ -7,7 +7,6 @@ body only carries ``ids``. See ``tests/integration-scenarios.md § IT-BULK-*``.
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.integration.conftest import (
@@ -64,14 +63,6 @@ class TestBulkInvariant:
 class TestBulkDuplicateIds:
     """IT-BULK-04: duplicate IDs collapse to a single response entry."""
 
-    @pytest.mark.xfail(
-        reason=(
-            "IT-BULK-04: api-spec.md § Bulk API specifies dedup of duplicate "
-            "ids, but the current implementation returns each occurrence "
-            "(implementation gap, tracked separately)."
-        ),
-        strict=False,
-    )
     def test_duplicates_collapse_to_one(self, app: TestClient) -> None:
         """IT-BULK-04: each unique ID appears at most once across the response."""
         resp = app.post(

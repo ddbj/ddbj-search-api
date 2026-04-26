@@ -735,7 +735,10 @@ def _make_status_source(status: str) -> object:
     return _side_effect
 
 
-_NOT_FOUND_MESSAGE = "The requested bioproject 'PRJDB1' was not found."
+# The detail string deliberately omits the requested accession ID so that
+# missing / withdrawn / private cases are indistinguishable
+# (api-spec.md § データ可視性).
+_NOT_FOUND_MESSAGE = "The requested bioproject entry was not found."
 
 
 class TestEntryDetailStatusGating:

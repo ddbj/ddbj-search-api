@@ -457,12 +457,12 @@ class TestBulkEsError:
 class TestBulkDuplicateIds:
     """Duplicate IDs in request."""
 
-    def test_duplicate_ids_both_returned(
+    def test_duplicate_ids_collapse_to_one(
         self,
         app_with_bulk: TestClient,
         mock_es_get_source_stream_bulk: AsyncMock,
     ) -> None:
-        """Duplicate IDs produce duplicate entries in the response."""
+        """Duplicate IDs are deduplicated (api-spec.md § Bulk API)."""
         _setup_found_and_not_found(
             mock_es_get_source_stream_bulk,
             ["PRJDB001"],
@@ -470,9 +470,8 @@ class TestBulkDuplicateIds:
         )
         resp = _bulk_post(app_with_bulk, ["PRJDB001", "PRJDB001"])
         data = resp.json()
-        assert len(data["entries"]) == 2
+        assert len(data["entries"]) == 1
         assert data["entries"][0]["identifier"] == "PRJDB001"
-        assert data["entries"][1]["identifier"] == "PRJDB001"
 
 
 @pytest.fixture

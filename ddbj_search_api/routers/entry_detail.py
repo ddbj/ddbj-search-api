@@ -69,9 +69,13 @@ async def _resolve_visible_entry(
     hidden entries return identical responses so that existence cannot
     be inferred from outside (see docs/api-spec.md § データ可視性).
     """
+    # The detail string deliberately omits the requested ``id_`` so the
+    # response is identical for missing, withdrawn, and private entries —
+    # callers must not be able to infer which case they hit (api-spec.md
+    # § データ可視性).
     not_found = HTTPException(
         status_code=404,
-        detail=f"The requested {db_type} '{id_}' was not found.",
+        detail=f"The requested {db_type} entry was not found.",
     )
 
     source = await es_get_source(
@@ -123,9 +127,11 @@ async def _get_source_with_fallback(
     if response is None:
         # Edge case: document deleted between visibility check and stream.
         # Return the same 404 payload for consistency.
+        # Same detail string as ``_resolve_visible_entry`` to keep the
+        # missing / hidden response indistinguishable.
         raise HTTPException(
             status_code=404,
-            detail=f"The requested {db_type} '{id_}' was not found.",
+            detail=f"The requested {db_type} entry was not found.",
         )
     return response, primary_id
 

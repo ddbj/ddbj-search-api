@@ -235,13 +235,21 @@ async def bulk_entries(
     index = type.value
     acc_type = type.value
 
+    # Dedup ids while preserving first-seen order (api-spec.md § Bulk API).
+    seen: set[str] = set()
+    deduped_ids: list[str] = []
+    for i in body.ids:
+        if i not in seen:
+            seen.add(i)
+            deduped_ids.append(i)
+
     if query.format == BulkFormat.ndjson:
         return StreamingResponse(
-            _generate_bulk_ndjson(client, index, body.ids, acc_type, query.include_db_xrefs),
+            _generate_bulk_ndjson(client, index, deduped_ids, acc_type, query.include_db_xrefs),
             media_type="application/x-ndjson",
         )
 
     return StreamingResponse(
-        _generate_bulk_json(client, index, body.ids, acc_type, query.include_db_xrefs),
+        _generate_bulk_json(client, index, deduped_ids, acc_type, query.include_db_xrefs),
         media_type="application/json",
     )
