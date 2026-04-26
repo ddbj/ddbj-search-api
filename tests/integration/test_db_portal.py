@@ -127,8 +127,11 @@ class TestCrossSearchEightDbFanout:
             params={"q": "cancer", "topHits": 10},
         )
         assert resp.status_code == 200
-        body = resp.json()
-        for db_key in (
+        databases = resp.json()["databases"]
+        # ``DbPortalCrossSearchResponse.databases`` is fixed length 8 with one
+        # entry per documented DB.
+        present_dbs = {entry.get("db") for entry in databases}
+        expected = {
             "bioproject",
             "biosample",
             "sra",
@@ -137,12 +140,8 @@ class TestCrossSearchEightDbFanout:
             "metabobank",
             "trad",
             "taxonomy",
-        ):
-            # Either top-level or nested under a "results" key — the SSOT
-            # specifies 8-DB fan-out; relax to a substring check so the
-            # exact response shape can be confirmed at run time.
-            present = db_key in body or any(db_key in str(k) for k in body)
-            assert present, f"missing DB key: {db_key}"
+        }
+        assert expected <= present_dbs, f"missing DBs: {expected - present_dbs}"
 
 
 class TestCrossSearchTopHitsBoundary:

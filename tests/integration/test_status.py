@@ -168,14 +168,14 @@ class TestDbPortalCrossSearchExcludeHidden:
             params={"q": "cancer", "topHits": 10},
         )
         assert resp.status_code == 200
-        body = resp.json()
-        for db_key in ("bioproject", "biosample", "jga", "gea", "metabobank"):
-            db_block = body.get(db_key)
-            if not isinstance(db_block, dict):
+        databases = resp.json()["databases"]
+        es_dbs = {"bioproject", "biosample", "sra", "jga", "gea", "metabobank"}
+        for entry in databases:
+            if entry.get("db") not in es_dbs:
                 continue
-            for hit in db_block.get("hits", []):
+            for hit in entry.get("hits") or []:
                 assert hit.get("status") == "public", (
-                    f"{db_key} hit has status={hit.get('status')}"
+                    f"{entry['db']} hit has status={hit.get('status')}"
                 )
 
 
@@ -193,10 +193,13 @@ class TestDbPortalCrossSearchAccessionExposesSuppressed:
             params={"q": accession, "topHits": 10},
         )
         assert resp.status_code == 200
-        bp = resp.json().get("bioproject")
-        if isinstance(bp, dict):
-            identifiers = {h["identifier"] for h in bp.get("hits", [])}
-            assert accession in identifiers
+        bp = next(
+            (d for d in resp.json()["databases"] if d.get("db") == "bioproject"),
+            None,
+        )
+        assert bp is not None
+        identifiers = {h["identifier"] for h in bp.get("hits") or []}
+        assert accession in identifiers
 
 
 class TestDbPortalCrossSearchIdentifierLeaf:
@@ -232,9 +235,12 @@ class TestDbPortalCrossSearchAndWrappedHidesSuppressed:
             },
         )
         assert resp.status_code == 200
-        bp = resp.json().get("bioproject")
-        if isinstance(bp, dict):
-            identifiers = {h["identifier"] for h in bp.get("hits", [])}
+        bp = next(
+            (d for d in resp.json()["databases"] if d.get("db") == "bioproject"),
+            None,
+        )
+        if bp is not None:
+            identifiers = {h["identifier"] for h in bp.get("hits") or []}
             assert accession not in identifiers
 
 

@@ -142,11 +142,11 @@ class TestTypesFilter:
 
     def test_single_type_total_le_combined(self, app: TestClient) -> None:
         """IT-SEARCH-10: total(bioproject) <= total(bioproject,biosample)."""
-        only_bp = app.get("/entries/", params={"types": "bioproject"}).json()["total"]
+        only_bp = app.get("/entries/", params={"types": "bioproject"}).json()["pagination"]["total"]
         combined = app.get(
             "/entries/",
             params={"types": "bioproject,biosample"},
-        ).json()["total"]
+        ).json()["pagination"]["total"]
         assert only_bp <= combined
 
 
@@ -155,26 +155,26 @@ class TestKeywordOperators:
 
     def test_and_total_le_single(self, app: TestClient) -> None:
         """IT-SEARCH-11: total(A AND B) <= total(A)."""
-        a = app.get("/entries/", params={"keywords": "cancer"}).json()["total"]
+        a = app.get("/entries/", params={"keywords": "cancer"}).json()["pagination"]["total"]
         a_and_b = app.get(
             "/entries/", params={"keywords": "cancer AND brain"}
-        ).json()["total"]
+        ).json()["pagination"]["total"]
         assert a_and_b <= a
 
     def test_or_total_ge_single(self, app: TestClient) -> None:
         """IT-SEARCH-11: total(A OR B) >= total(A)."""
-        a = app.get("/entries/", params={"keywords": "cancer"}).json()["total"]
+        a = app.get("/entries/", params={"keywords": "cancer"}).json()["pagination"]["total"]
         a_or_b = app.get(
             "/entries/", params={"keywords": "cancer OR brain"}
-        ).json()["total"]
+        ).json()["pagination"]["total"]
         assert a_or_b >= a
 
     def test_not_total_le_single(self, app: TestClient) -> None:
         """IT-SEARCH-11: total(A NOT B) <= total(A)."""
-        a = app.get("/entries/", params={"keywords": "cancer"}).json()["total"]
+        a = app.get("/entries/", params={"keywords": "cancer"}).json()["pagination"]["total"]
         a_not_b = app.get(
             "/entries/", params={"keywords": "cancer NOT brain"}
-        ).json()["total"]
+        ).json()["pagination"]["total"]
         assert a_not_b <= a
 
 

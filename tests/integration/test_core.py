@@ -90,7 +90,7 @@ class TestTrailingSlash:
         resp_slash = app.get("/entries/", params={"perPage": 5})
         assert resp_no_slash.status_code == 200
         assert resp_slash.status_code == 200
-        assert resp_no_slash.json()["total"] == resp_slash.json()["total"]
+        assert resp_no_slash.json()["pagination"]["total"] == resp_slash.json()["pagination"]["total"]
 
     def test_dblink_with_and_without_trailing_slash_succeed(self, app: TestClient) -> None:
         """IT-CORE-04: both ``/dblink/`` (canonical) and ``/dblink`` (alias) are 200."""
