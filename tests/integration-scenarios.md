@@ -86,15 +86,20 @@
 
 **関連 unit テスト**: `tests/unit/test_main.py`
 
-### IT-CORE-04: Trailing slash の有無で同じ結果が返る
+### IT-CORE-04: Trailing slash policy
 
-**endpoint**: `GET /entries` ↔ `GET /entries/`、`GET /facets` ↔ `GET /facets/` 等
+**endpoint**:
+- リスト系 (`/entries/`, `/entries/{type}/`, `/dblink/`) — canonical は with slash、no slash も alias で 200
+- Facets / db-portal (`/facets`, `/facets/{type}`, `/db-portal/*`) — no slash のみ canonical、with slash は 404
+- 個別リソース (`/entries/{type}/{id}`, `/dblink/{type}/{id}`) — slash なし
 
 **不変条件**:
-- 両 path で `status_code == 200` かつ body の `total` が一致 (検索系)
-- ステータス・content-type が一致
+- `/entries` と `/entries/` で `total` が一致 (両方 200)
+- `/dblink` と `/dblink/` で両方 200 (alias の挙動が一貫している)
+- `/facets/` (with slash) は 404 (canonical は `/facets` のみ)
+- `redirect_slashes=False` (`main.py`) なので path はリダイレクトされない
 
-**回帰元**: `docs/api-spec.md § Trailing Slash` / `40196f7` で `/dblink/` のみ alias を廃止した点に注意 (`/dblink` は 404)
+**回帰元**: `docs/api-spec.md § Trailing Slash`
 
 **関連 unit テスト**: `tests/unit/routers/test_entries.py`
 
@@ -136,16 +141,17 @@
 
 **関連 unit テスト**: `tests/unit/test_main.py`
 
-### IT-CORE-08: `/service-info` が ES 接続情報を含む
+### IT-CORE-08: `/service-info` が ES 健康状態を含む
 
 **endpoint**: `GET /service-info`
 
 **不変条件**:
 - `status_code == 200`
 - body に `name`, `version`, `description`, `elasticsearch` キーが存在
-- `elasticsearch.cluster_name` 等が ES に到達できた値で埋まっている
+- `elasticsearch` フィールドは `Literal["ok", "unavailable"]` の string 値 (`schemas.service_info.ElasticsearchStatus`)
+- 実 ES に到達できる integration では `"ok"`
 
-**回帰元**: `docs/api-spec.md § サービス情報`
+**回帰元**: `docs/api-spec.md § サービス情報` / `schemas/service_info.ElasticsearchStatus`
 
 **関連 unit テスト**: `tests/unit/routers/test_service_info.py`
 

@@ -75,29 +75,36 @@ class TestRfc7807ProblemDetails:
 
 
 class TestTrailingSlash:
-    """IT-CORE-04: trailing-slash equivalence with dblink alias dropped."""
+    """IT-CORE-04: trailing-slash policy per ``docs/api-spec.md § Trailing Slash``.
+
+    - List endpoints (``/entries/``, ``/entries/{type}/``, ``/dblink/``) accept
+      both forms (canonical with-slash + no-slash alias).
+    - Facets and db-portal endpoints accept only the no-slash form.
+    - Individual-resource endpoints (``/entries/{type}/{id}``, ``/dblink/{type}/{id}``)
+      have no trailing slash.
+    """
 
     def test_entries_with_and_without_trailing_slash_match(self, app: TestClient) -> None:
-        """IT-CORE-04: /entries and /entries/ return the same total."""
+        """IT-CORE-04: ``/entries`` and ``/entries/`` return the same total."""
         resp_no_slash = app.get("/entries", params={"perPage": 5})
         resp_slash = app.get("/entries/", params={"perPage": 5})
         assert resp_no_slash.status_code == 200
         assert resp_slash.status_code == 200
         assert resp_no_slash.json()["total"] == resp_slash.json()["total"]
 
-    def test_facets_with_and_without_trailing_slash_match(self, app: TestClient) -> None:
-        """IT-CORE-04: /facets and /facets/ both succeed."""
-        resp_no_slash = app.get("/facets")
-        resp_slash = app.get("/facets/")
-        assert resp_no_slash.status_code == 200
-        assert resp_slash.status_code == 200
-
-    def test_dblink_alias_without_trailing_slash_is_dropped(self, app: TestClient) -> None:
-        """IT-CORE-04: /dblink alias is dropped (commit 40196f7); only /dblink/ works."""
-        resp_no_slash = app.get("/dblink")
-        assert resp_no_slash.status_code == 404
+    def test_dblink_with_and_without_trailing_slash_succeed(self, app: TestClient) -> None:
+        """IT-CORE-04: both ``/dblink/`` (canonical) and ``/dblink`` (alias) are 200."""
         resp_slash = app.get("/dblink/")
+        resp_no_slash = app.get("/dblink")
         assert resp_slash.status_code == 200
+        assert resp_no_slash.status_code == 200
+
+    def test_facets_no_slash_is_canonical(self, app: TestClient) -> None:
+        """IT-CORE-04: ``/facets`` (no-slash) is the only supported form."""
+        resp_no_slash = app.get("/facets")
+        assert resp_no_slash.status_code == 200
+        resp_slash = app.get("/facets/")
+        assert resp_slash.status_code == 404
 
 
 class TestContentTypeByExtension:
@@ -171,10 +178,11 @@ class TestServiceInfo:
         for key in ("name", "version", "description", "elasticsearch"):
             assert key in body, f"missing key: {key}"
 
-    def test_elasticsearch_section_is_populated(self, app: TestClient) -> None:
-        """IT-CORE-08: the elasticsearch section reflects an actual probe response."""
+    def test_elasticsearch_section_is_status_string(self, app: TestClient) -> None:
+        """IT-CORE-08: the elasticsearch field is the literal "ok" or "unavailable"."""
         resp = app.get("/service-info")
         es_info = resp.json()["elasticsearch"]
-        assert isinstance(es_info, dict)
-        # We hit a real ES, so at least one key must be present.
-        assert len(es_info) > 0
+        # Per ``schemas.service_info.ElasticsearchStatus`` (Literal["ok", "unavailable"]).
+        assert es_info in {"ok", "unavailable"}
+        # We hit a real reachable ES, so it should report ok.
+        assert es_info == "ok"
