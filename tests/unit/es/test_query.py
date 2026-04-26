@@ -613,7 +613,9 @@ class TestBuildFacetAggs:
 
     def test_organism_agg_field(self) -> None:
         result = build_facet_aggs()
-        assert result["organism"]["terms"]["field"] == "organism.name"
+        # ``organism.name`` is a text field with a ``.keyword`` sub-field on
+        # every entry index; aggregations require the keyword variant.
+        assert result["organism"]["terms"]["field"] == "organism.name.keyword"
 
     def test_accessibility_agg_field(self) -> None:
         result = build_facet_aggs()

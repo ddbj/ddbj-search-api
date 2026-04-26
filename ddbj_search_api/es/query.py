@@ -530,7 +530,7 @@ def _build_filter_clauses(
 # growth on the SRA ``instrumentModel`` / ``libraryStrategy`` fields starts
 # leaving meaningful counts in ``sum_other_doc_count`` (see docs § ファセット).
 _FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
-    "organism": {"terms": {"field": "organism.name", "size": 50}},
+    "organism": {"terms": {"field": "organism.name.keyword", "size": 50}},
     "accessibility": {"terms": {"field": "accessibility", "size": 50}},
     "type": {"terms": {"field": "type", "size": 50}},
     "objectType": {"terms": {"field": "objectType", "size": 50}},
