@@ -203,11 +203,13 @@ class TestDbXrefsFullStream:
     """IT-DETAIL-09: ``/dbxrefs.json`` streams the complete dbXrefs list."""
 
     def test_dbxrefs_full_returns_array(self, app: TestClient) -> None:
-        """IT-DETAIL-09: response carries identifier + dbXrefs list."""
+        """IT-DETAIL-09: ``DbXrefsFullResponse`` carries a ``dbXrefs`` list."""
         resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}/dbxrefs.json")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["identifier"] == PUBLIC_BIOPROJECT_ID
+        # ``DbXrefsFullResponse`` schema is just ``{dbXrefs: list[Xref]}``;
+        # the canonical identifier check is covered by IT-DETAIL-01.
+        assert "dbXrefs" in body
         assert isinstance(body["dbXrefs"], list)
 
     def test_full_count_ge_short_variant(self, app: TestClient) -> None:
