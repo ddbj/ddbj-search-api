@@ -164,11 +164,15 @@ class TestFieldsFilter:
             assert "identifier" in item
             assert "type" in item
 
-    def test_unrequested_fields_omitted(self, app: TestClient) -> None:
-        """IT-SEARCH-09: fields not in the allowlist do not surface.
+    def test_unrequested_fields_carry_null_values(self, app: TestClient) -> None:
+        """IT-SEARCH-09: fields outside ``fields=`` come back as ``null``.
 
-        Unrequested optional fields like ``title`` and ``description``
-        must not appear in the response when ``fields=identifier,type``.
+        ES ``_source_includes`` only fetches the requested fields, but the
+        FastAPI / Pydantic response retains every schema-declared key.
+        Unrequested fields therefore surface as ``None`` (per
+        api-spec.md § 検索パラメータ). If a non-requested field comes
+        back with a real value, the ``fields`` allowlist is not being
+        applied and the test fails loudly.
         """
         resp = app.get(
             "/entries/",
@@ -176,11 +180,11 @@ class TestFieldsFilter:
         )
         items = resp.json()["items"]
         assert items
-        # ``title`` is a top-level field in every DbType; it must be
-        # filtered out when not requested.
         for item in items:
-            assert "title" not in item, item
-            assert "description" not in item, item
+            # Unrequested top-level fields exist in the schema but must
+            # not be populated from ES.
+            assert item.get("title") is None, item
+            assert item.get("description") is None, item
 
 
 class TestTypesFilter:

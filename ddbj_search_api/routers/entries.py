@@ -116,14 +116,18 @@ _CURSOR_EXCLUSIVE_FILTER_FIELDS: dict[str, str] = {
 
 
 def _validate_deep_paging(page: int, per_page: int) -> None:
-    """Raise 400 if page * perPage exceeds the deep paging limit."""
+    """Raise 400 if page * perPage exceeds the deep paging limit.
+
+    The detail string mirrors :mod:`routers.db_portal` and points callers
+    at cursor pagination per ``docs/api-spec.md § カーソルベースページネーション``.
+    """
     if page * per_page > _DEEP_PAGING_LIMIT:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Deep paging limit exceeded: page ({page}) * "
                 f"perPage ({per_page}) = {page * per_page} > "
-                f"{_DEEP_PAGING_LIMIT}. Use Bulk API for large result sets."
+                f"{_DEEP_PAGING_LIMIT}. Use cursor-based pagination for deep results."
             ),
         )
 
