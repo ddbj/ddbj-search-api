@@ -164,3 +164,51 @@ class TestDbLinkBulkCounts:
         """IT-DBLINK-05: empty array also fails Pydantic min_length=1."""
         resp = app.post("/dblink/counts", json={"items": []})
         assert resp.status_code == 422
+
+
+class TestDbLinkInvalidPathType:
+    """IT-DBLINK-06: invalid ``{type}`` is rejected as 422."""
+
+    def test_unknown_path_type_returns_422(self, app: TestClient) -> None:
+        """IT-DBLINK-06: ``/dblink/__not_a_type__/X`` fails AccessionType enum."""
+        resp = app.get("/dblink/__not_a_type__/X")
+        assert resp.status_code == 422
+
+    def test_uppercase_known_type_returns_422(self, app: TestClient) -> None:
+        """IT-DBLINK-06: enum values are case-sensitive (lowercase canonical)."""
+        # ``BioProject`` is not a documented AccessionType (canonical is ``bioproject``).
+        resp = app.get("/dblink/BioProject/X")
+        assert resp.status_code == 422
+
+
+class TestDbLinkCountsInvalidPayload:
+    """IT-DBLINK-07: ``POST /dblink/counts`` rejects bad payloads atomically."""
+
+    def test_invalid_type_in_single_item_returns_422(self, app: TestClient) -> None:
+        """IT-DBLINK-07: AccessionType-外 ``type`` in any item → 422."""
+        resp = app.post(
+            "/dblink/counts",
+            json={"items": [{"type": "__not_a_type__", "id": "X"}]},
+        )
+        assert resp.status_code == 422
+
+    def test_mixed_valid_and_invalid_returns_422(self, app: TestClient) -> None:
+        """IT-DBLINK-07: a single bad item taints the whole request."""
+        resp = app.post(
+            "/dblink/counts",
+            json={
+                "items": [
+                    {"type": "bioproject", "id": "PRJDB1"},
+                    {"type": "__not_a_type__", "id": "X"},
+                ],
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_missing_id_field_returns_422(self, app: TestClient) -> None:
+        """IT-DBLINK-07: items missing the ``id`` field fail Pydantic."""
+        resp = app.post(
+            "/dblink/counts",
+            json={"items": [{"type": "bioproject"}]},
+        )
+        assert resp.status_code == 422

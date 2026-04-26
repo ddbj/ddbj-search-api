@@ -7,6 +7,7 @@ SSOT.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 # Defaults documented in api-spec.md § ファセット集計対象の選択.
@@ -14,6 +15,20 @@ _CROSS_TYPE_DEFAULTS = {"organism", "accessibility", "type"}
 
 # Strings unlikely to collide with any real facet name (used for 422/400 probes).
 _UNKNOWN_FACET = "__definitely_not_a_facet__"
+
+# IT-FACETS-08 matrix: (type endpoint, type-specific facet field).
+_TYPE_SPECIFIC_FACETS: list[tuple[str, str]] = [
+    ("sra-experiment", "libraryStrategy"),
+    ("sra-experiment", "librarySource"),
+    ("sra-experiment", "librarySelection"),
+    ("sra-experiment", "platform"),
+    ("sra-experiment", "instrumentModel"),
+    ("gea", "experimentType"),
+    ("metabobank", "studyType"),
+    ("metabobank", "experimentType"),
+    ("metabobank", "submissionType"),
+    ("jga-study", "studyType"),
+]
 
 
 class TestCrossTypeFacets:
@@ -147,13 +162,7 @@ class TestOpenAPIFacetsSchema:
 
 
 class TestFacetsAllowlistRejection:
-    """IT-FACETS-07: unknown facet names are rejected with 422.
-
-    Per api-spec.md § ファセット集計対象の選択, allowlist typos must be
-    422 (Pydantic-level) and type-mismatch (valid name on the wrong
-    endpoint) must be 400. The two error classes encode different
-    failure modes for callers, so the test enforces them strictly.
-    """
+    """IT-FACETS-07: unknown facet names are rejected with 422 (Pydantic typo class)."""
 
     def test_unknown_facet_on_entries(self, app: TestClient) -> None:
         """IT-FACETS-07: /entries/ rejects an unknown facet name with 422."""
@@ -165,11 +174,44 @@ class TestFacetsAllowlistRejection:
         resp = app.get("/facets", params={"facets": _UNKNOWN_FACET})
         assert resp.status_code == 422
 
-    def test_type_mismatch_facet_returns_400(self, app: TestClient) -> None:
-        """IT-FACETS-07: valid name on the wrong endpoint returns 400.
 
-        ``libraryStrategy`` is allowlisted but only available for
-        sra-experiment; on /facets/bioproject it is a type-mismatch.
-        """
+class TestTypeSpecificFacetBuckets:
+    """IT-FACETS-08: per-type endpoint exposes its type-specific aggregations."""
+
+    @pytest.mark.parametrize(("type_", "facet"), _TYPE_SPECIFIC_FACETS)
+    def test_type_specific_bucket_returned(
+        self,
+        app: TestClient,
+        type_: str,
+        facet: str,
+    ) -> None:
+        """IT-FACETS-08: facets={facet} on the right endpoint surfaces non-empty buckets."""
+        resp = app.get(f"/facets/{type_}", params={"facets": facet})
+        assert resp.status_code == 200, f"{type_}/{facet}: {resp.status_code}"
+        bucket = resp.json()["facets"].get(facet)
+        assert bucket is not None, f"{type_}/{facet}: bucket missing"
+        assert isinstance(bucket, list)
+        assert bucket, f"{type_}/{facet}: bucket empty"
+        for entry in bucket:
+            assert "key" in entry
+            assert isinstance(entry.get("count"), int)
+            assert entry["count"] >= 0
+
+
+class TestFacetsTypeMismatchOnPerTypeEndpoint:
+    """IT-FACETS-09: valid facet name on the wrong type endpoint returns 400."""
+
+    def test_library_strategy_on_bioproject_returns_400(self, app: TestClient) -> None:
+        """IT-FACETS-09: ``libraryStrategy`` (sra-experiment-only) on bioproject → 400."""
         resp = app.get("/facets/bioproject", params={"facets": "libraryStrategy"})
         assert resp.status_code == 400
+
+    def test_object_type_on_biosample_returns_400(self, app: TestClient) -> None:
+        """IT-FACETS-09: ``objectType`` (bioproject-only) on biosample → 400."""
+        resp = app.get("/facets/biosample", params={"facets": "objectType"})
+        assert resp.status_code == 400
+
+    def test_unknown_facet_still_returns_422(self, app: TestClient) -> None:
+        """IT-FACETS-09: typo (allowlist outside) is 422, distinct from type-mismatch 400."""
+        resp = app.get("/facets/bioproject", params={"facets": _UNKNOWN_FACET})
+        assert resp.status_code == 422

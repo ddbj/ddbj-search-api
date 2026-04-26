@@ -15,7 +15,7 @@
 
 ## シナリオテンプレート
 
-各シナリオは以下 4 項目で記述する。件数の実測値は書かない (drift で壊れるため、構造的不変条件のみ書く。`integration-note.md § 件数 drift 対策` 参照)。
+各シナリオは以下 4 項目で記述する。件数の実測値は書かない (構造的不変条件のみ。書き方は `integration-note.md § 件数 drift 対策`)。
 
 ```markdown
 ### IT-XXX-NN: <短いタイトル>
@@ -37,11 +37,11 @@
 
 | 観点 | 内容 | 主な対象カテゴリ |
 |------|------|-----------------|
-| 正常系 | 主要パス、sameAs フォールバック、alias ヒット | 全カテゴリ |
-| 境界値 | ページネーション境界 (`page * perPage <= 10000`)、`MAX_DEPTH=10`、cursor 5 分期限、`perPage` 上下限、`topHits` 0/50 | SEARCH / UMBRELLA / DBPORTAL / BULK |
-| 異常系 | 422 (Pydantic) / 400 (業務エラー) / 404 / 410 / 500、RFC 7807 形式 | 全カテゴリ |
+| 正常系 | 主要パス、sameAs フォールバック、alias ヒット、DSL 各演算子 | 全カテゴリ |
+| 境界値 | ページネーション境界、cursor 期限、`perPage` 上下限、`topHits` 上下限、`hardLimitReached` 閾値、DSL ネスト深さ上限 | SEARCH / DBPORTAL / BULK / DSL |
+| 異常系 | 422 (Pydantic) / 400 (業務エラー) / 404 / 500 / 502、RFC 7807 形式、DSL 7 slug | 全カテゴリ |
 | status filter | `withdrawn` / `private` 常に除外、`suppressed` はアクセッション完全一致 (q) または single leaf `identifier:` eq (adv) のみ解放 | DETAIL / SEARCH / BULK / UMBRELLA / FACETS / STATUS / DBPORTAL |
-| Solr 依存 | ARSA (8-shard fan-out) / TXSearch、cursor 非対応、proxy で status filter 不注入 | DBPORTAL / STATUS の Solr 部分のみ (`@pytest.mark.staging_only`) |
+| Solr 依存 | ARSA (8-shard fan-out) / TXSearch、cursor 非対応 | DBPORTAL / STATUS の Solr 部分のみ (`@pytest.mark.staging_only`) |
 
 ---
 
@@ -97,7 +97,7 @@
 - `/entries` と `/entries/` で `total` が一致 (両方 200)
 - `/dblink` と `/dblink/` で両方 200 (alias の挙動が一貫している)
 - `/facets/` (with slash) は 404 (canonical は `/facets` のみ)
-- `redirect_slashes=False` (`main.py`) なので path はリダイレクトされない
+- どの form でも HTTP redirect (3xx) を返さない
 
 **回帰元**: `docs/api-spec.md § Trailing Slash`
 
@@ -359,13 +359,11 @@
 
 ### IT-SEARCH-17: text match フィールド検索 (9 個、type-specific)
 
-**endpoint**: `GET /entries/biosample/?host=Homo+sapiens` 等 (`projectType` / `host` / `strain` / `isolate` / `geoLocName` / `collectionDate` / `libraryName` / `libraryConstructionProtocol` / `vendor`)
+**endpoint**: `GET /entries/{type}/?<param>=<token>` (spec L347-369 の 9 (type, field) ペアを parametrize で網羅)
 
 **不変条件**:
-- 適用範囲内 endpoint で 200、analyzer 適用 + auto-phrase
-- カンマ区切り複数値で OR 結合 (例: `host=Homo+sapiens,Mus+musculus`)
-- 引用符でフレーズ検索 (`host="Homo sapiens"`)
-- 記号含み値で自動 phrase 化 (`host=HIF-1`、`-` `/` `.` `+` `:` の token 分割が抑止される)
+- 適用範囲内 endpoint で 200 かつ `total > 0` (代表 token は conftest 定数)
+- 記号含み値で自動 phrase 化が効く (`host=HIF-1` の `total <= host=HIF` の `total`)
 
 **回帰元**: `docs/api-spec.md § text match フィールド検索`
 **関連 unit テスト**: `tests/unit/search/test_phrase.py`, `tests/unit/schemas/test_queries.py`
@@ -380,6 +378,101 @@
 
 **回帰元**: `docs/api-spec.md § text match フィールド検索`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-SEARCH-19: type-specific term filter (sra-* / gea / metabobank / jga-*)
+
+**endpoint**: `GET /entries/{type}/?<param>=<bucket>` (spec L309-318 の term 行を parametrize で網羅)
+
+**不変条件**:
+- 適用範囲内 endpoint で 200 かつ `total > 0`
+- cross-type endpoint で 422
+- bioproject `objectTypes` のみ排他検証: `BioProject` + `UmbrellaBioProject` 単独 total の和が OR 指定の total と一致 (term filter の OR セマンティクス確認)
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ § エンドポイント固有のパラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-SEARCH-20: organism (NCBI Taxonomy ID) 単独フィルタ
+
+**endpoint**: `GET /entries/?organism=9606`
+
+**不変条件**:
+- 200 かつ `total > 0`
+- `keywords` と AND 結合: `?keywords=cancer&organism=9606` の `total` <= `?keywords=cancer` の `total`
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-SEARCH-21: 日付範囲と不正日付 422
+
+**endpoint**: `GET /entries/?datePublishedFrom=...&datePublishedTo=...`
+
+**不変条件**:
+- 妥当範囲・単側指定で 200
+- 形式違反 (`2020/01/01` 等) と実在しない日付 (`2024-02-30`) で 422
+- From > To は Pydantic を通り ES で `total == 0` になる
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-SEARCH-22: keywordFields allowlist と不正値 422
+
+**endpoint**: `GET /entries/?keywords=<token>&keywordFields=<value>`
+
+**不変条件**:
+- 4 値 (`identifier` / `title` / `name` / `description`) と複数カンマ区切りで 200
+- allowlist 外で 422
+- `keywordFields=title` の `total` <= 未指定 (全フィールド) の `total` (絞り込みの方向)
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-SEARCH-23: keywordOperator AND と OR の挙動差
+
+**endpoint**: `GET /entries/?keywords=cancer,brain&keywordOperator={AND|OR}`
+
+**不変条件**:
+- `AND` の `total` <= `OR` の `total`
+- `OR` の `total` >= 単独 `keywords=cancer` の `total`
+- allowlist 外 (`XOR` 等) で 422
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-SEARCH-24: dbXrefsLimit リスト系 (type ごとに切り詰め)
+
+**endpoint**: `GET /entries/?perPage=5&dbXrefsLimit=N`
+
+**不変条件**:
+- 各 entry の `dbXrefs` を `type` で group-by すると、各 type の長さ <= N
+- N=0 で `dbXrefs == []`、`dbXrefsCount` は present (実数)
+- N=1000 で 200、N=1001 で 422
+
+**回帰元**: `docs/api-spec.md § dbXrefs`
+**関連 unit テスト**: `tests/unit/routers/test_entries.py`
+
+### IT-SEARCH-25: includeProperties 効果 (検索結果)
+
+**endpoint**: `GET /entries/?perPage=5&includeProperties={true|false}`
+
+**不変条件**:
+- default で `items[*].properties` キーが present
+- `false` で `properties` キーが items から落ちる
+- `total` は両者で一致
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ § ResponseControlQuery`
+**関連 unit テスト**: `tests/unit/routers/test_entries.py`
+
+### IT-SEARCH-26: includeDbXrefs=false で dbXrefs/dbXrefsCount 省略
+
+**endpoint**: `GET /entries/?perPage=5&includeDbXrefs=false`
+
+**不変条件**:
+- 各 entry から `dbXrefs` / `dbXrefsCount` キーが両方落ちる
+- `dbXrefsLimit=0` の場合は `dbXrefs == []` + `dbXrefsCount` present で挙動が異なる
+- `includeDbXrefs=false` + `dbXrefsLimit=100` で `includeDbXrefs=false` が優先
+
+**回帰元**: `docs/api-spec.md § dbXrefs § includeDbXrefs パラメータ`
+**関連 unit テスト**: `tests/unit/routers/test_entries.py`
 
 ---
 
@@ -508,15 +601,40 @@
 **回帰元**: `docs/api-spec.md § sameAs による ID 解決`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
-### IT-DETAIL-11: 大文字小文字の正規化 (accession)
+### IT-DETAIL-11: lowercase / mixedcase accession は 404
 
-**endpoint**: `GET /entries/bioproject/{lowercase_or_mixedcase_accession}`
+**endpoint**: `GET /entries/{type}/{lowercase_or_mixedcase_accession}` (4 variant)
 
 **不変条件**:
-- 大文字小文字が違っても 200 で同じ entry に解決される
-- もしくは 404 で挙動が一貫している (どちらかは docs に従う)
+- `status_code == 404` (case-folding しないので Primary とも sameAs alias とも一致しない)
+- 4 variant 全てで 404
+- `body.detail` が `IT-DETAIL-05` (不在 ID) と完全一致 (status 推測防止に使う固定文字列を再利用)
+- 元 accession を大文字に揃えれば 200 で同じ entry に解決される (case 違いの理由が「正規化 off」だと示すために対比で確認)
 
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決` (実装に応じて)
+**回帰元**: `docs/api-spec.md § sameAs による ID 解決 § Case-sensitivity`
+**関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
+
+### IT-DETAIL-12: includeDbXrefs=false で dbXrefs/dbXrefsCount 省略 (`/{id}`)
+
+**endpoint**: `GET /entries/{type}/{id}?includeDbXrefs=false`
+
+**不変条件**:
+- response から `dbXrefs` / `dbXrefsCount` キーが両方落ちる
+- `?dbXrefsLimit=0` は `dbXrefs == []` + `dbXrefsCount` present で挙動が異なる
+- `includeDbXrefs=false&dbXrefsLimit=100` で `includeDbXrefs=false` が優先
+
+**回帰元**: `docs/api-spec.md § dbXrefs § includeDbXrefs パラメータ`
+**関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
+
+### IT-DETAIL-13: includeProperties 効果 (`/{id}`)
+
+**endpoint**: `GET /entries/{type}/{id}?includeProperties={true|false}`
+
+**不変条件**:
+- default で `properties` キーが present、`false` で落ちる
+- `identifier` 等の主要フィールドは両者で一致
+
+**回帰元**: `docs/api-spec.md § 検索パラメータ § ResponseControlQuery`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ---
@@ -651,16 +769,18 @@
 **回帰元**: `docs/api-spec.md § ファセット`
 **関連 unit テスト**: `tests/unit/routers/test_facets.py`
 
-### IT-FACETS-03: cross-type で type-specific facet を要求すると除外 or 422
+### IT-FACETS-03: cross-type で type-specific facet を要求すると 200 で該当 index のみ集計
 
 **endpoint**: `GET /facets?facets=objectType` (`objectType` は bioproject 固有)
 
 **不変条件**:
-- response に `objectType` が含まれない (cross では適用不可) もしくは 422
-- 挙動が docs と一貫している
+- `status_code == 200`
+- response に `objectType` キーが存在し、bucket が non-empty (bioproject index のみで集計)
+- 同 endpoint で `?facets=organism,objectType` に拡張すると `organism` も同時に返る
+- 同 endpoint で `?facets=libraryStrategy` (sra-experiment 固有) も同様に 200 (該当 index のみで集計)
 
-**回帰元**: `docs/api-spec.md § ファセット集計対象の選択`
-**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+**回帰元**: `docs/api-spec.md § ファセット集計対象の選択` (cross-type endpoint は該当 index のみで集計する条項)
+**関連 unit テスト**: `tests/unit/routers/test_facets.py`, `tests/unit/schemas/test_queries.py`
 
 ### IT-FACETS-04: `includeFacets=true` で検索結果 + facet 一括取得
 
@@ -707,6 +827,28 @@
 **回帰元**: `docs/api-spec.md § ファセット集計対象の選択`
 
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+
+### IT-FACETS-08: type-specific facet (sra-experiment / gea / metabobank / jga-study)
+
+**endpoint**: `GET /facets/{type}?facets=<field>` (spec L405-411 のタイプ固有フィールドを parametrize で網羅)
+
+**不変条件**:
+- 対応 (type, field) ペアで 200、対応 facet が non-empty bucket
+- 各 bucket は `{key, count: int >= 0}` 形式
+
+**回帰元**: `docs/api-spec.md § ファセット § タイプ固有フィールド`
+**関連 unit テスト**: `tests/unit/routers/test_facets.py`
+
+### IT-FACETS-09: type-specific endpoint で対象外 facet 400 (allowlist 外 422 と区別)
+
+**endpoint**: `GET /facets/bioproject?facets=libraryStrategy`
+
+**不変条件**:
+- valid な field 名だが対象 endpoint で利用不可 → 400
+- typo (allowlist 外) → 422 (IT-FACETS-07 と区別される異なる failure class)
+
+**回帰元**: `docs/api-spec.md § ファセット集計対象の選択 § エラー`
+**関連 unit テスト**: `tests/unit/routers/test_facets.py`
 
 ---
 
@@ -888,11 +1030,105 @@
 
 **関連 unit テスト**: `tests/unit/search/dsl/test_allowlist.py`
 
+### IT-DSL-10: between 範囲検索 (date)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&adv=date_published:[a TO b]`
+
+**不変条件**:
+- 200 で 1 日範囲 `total` <= 5 年範囲 `total` (drift 非依存の相対不変)
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 演算子マトリクス`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
+
+### IT-DSL-11: phrase 検索 (text)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&adv=title:"whole genome"`
+
+**不変条件**:
+- 200 で phrase の `total` <= `title:whole AND title:genome` の `total` (順序固定で厳しい)
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 演算子マトリクス`
+**関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`
+
+### IT-DSL-12: AND/OR/NOT 優先度・grouping
+
+**endpoint**: `GET /db-portal/search?db=bioproject&adv=<expr>`
+
+**不変条件**:
+- `A AND B` の `total` <= `A OR B` の `total`
+- `A AND NOT B` の `total` <= `A` 単独の `total`
+- 異なる grouping (`(A OR B) AND C` vs `A OR (B AND C)`) で `total` が異なる
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
+**関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_compiler_es.py`
+
+### IT-DSL-13: enum 演算子 (`project_type`)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&adv=project_type:<value>`
+
+**不変条件**:
+- `BioProject` / `UmbrellaBioProject` 単独 `total` の和が OR 結合 `total` と一致 (enum 排他)
+- enum 違反値 (`Foobar` 等) はパース成功 + ES 側で `total == 0`
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
+
+### IT-DSL-14: 2 段 nested (`grant_agency`)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&adv=grant_agency:NIH`
+
+**不変条件**:
+- 200 (silent 5xx 化しない)
+- `grant_agency:NIH AND title:cancer` の `total` <= `grant_agency:NIH` 単独
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3 § BioProject`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
+
+### IT-DSL-15: invalid-date-format で 400
+
+**endpoint**: `GET /db-portal/parse?adv=<bad date>`
+
+**不変条件**:
+- 形式違反・実在しない日付の双方で 400 + `type` URI に `invalid-date-format` slug
+
+**回帰元**: `docs/db-portal-api-spec.md § エラー`
+**関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
+
+### IT-DSL-16: invalid-operator-for-field で 400
+
+**endpoint**: `GET /db-portal/parse?adv=<type/operator mismatch>`
+
+**不変条件**:
+- date に wildcard、identifier に between 等の不整合で 400 + `type` URI に `invalid-operator-for-field` slug
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 演算子マトリクス`
+**関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
+
+### IT-DSL-17: nest-depth-exceeded で 400
+
+**endpoint**: `GET /db-portal/parse?adv=<深さ N のネスト>`
+
+**不変条件**:
+- 深さ 5 で 200、深さ 6 で 400 + `type` URI に `nest-depth-exceeded` slug
+
+**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
+**関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
+
+### IT-DSL-18: missing-value で 400
+
+**endpoint**: `GET /db-portal/parse?adv=title:""`
+
+**不変条件**:
+- 明示空クオート (`""` / `''`) で 400 + `type` URI に `missing-value` slug
+
+**回帰元**: `docs/db-portal-api-spec.md § エラー`
+**関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_validator.py`
+
 ---
 
-## IT-DBPORTAL-*: db-portal 横断 (Solr 依存)
+## IT-DBPORTAL-*: db-portal 横断 / DB 指定
 
-`/db-portal/cross-search` (8 DB fan-out) と `/db-portal/search?db=trad|taxonomy` の Solr (ARSA / TXSearch) 経由シナリオ。**全シナリオに `@pytest.mark.staging_only` を付与** (Solr は staging のみ)。
+`/db-portal/cross-search` と `/db-portal/search` の動作シナリオ。Solr (ARSA / TXSearch) 経由のシナリオには `@pytest.mark.staging_only` を付与 (Solr は staging のみ)、ES 6 DB のみのシナリオは marker なし。
 
 ### IT-DBPORTAL-01: ARSA `molecularType` field がレスポンスに含まれる
 
@@ -950,12 +1186,11 @@
 
 ### IT-DBPORTAL-06: adv Tier 3 field の uf allowlist 完全性
 
-**endpoint**: `GET /db-portal/search?db=trad&adv=division:BCT` (compile_to_solr で edismax を経由)
+**endpoint**: `GET /db-portal/search?db=trad&adv=division:BCT` (compile_to_solr 経由)
 
 **不変条件**:
-- compile_to_solr が emit する全 field が edismax の `uf` allowlist を通る (`division` などの trad-only Tier 3 field、`search/dsl/allowlist.py` 参照)
-- silent wrong-field match や dropped value が起きない (`total > 0` を別経路で確認可能なクエリで成立)
-- 注: `molecularType` / `sequenceLength` は response field のみで DSL allowlist には含まれない (検索フィールドとしては未公開)
+- `status_code == 200` かつ `total > 0` (allowlist を通って division で実フィルタが効いている)
+- 同 `q=*` (フィルタなし) との `total` 比で `adv=division:BCT` の方が小さい (silent wrong-field match で全件 fallback すると等しくなる)
 
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_solr.py`, `tests/unit/solr/test_query.py`
@@ -1029,6 +1264,69 @@
 **回帰元**: `docs/db-portal-api-spec.md § タイムアウト挙動`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
+### IT-DBPORTAL-13: cross-search の `unexpected-parameter` で 400
+
+**endpoint**: `GET /db-portal/cross-search?q=cancer&<extra>=...` (`db` / `page` / `perPage` / `cursor` / `sort` を parametrize)
+
+**不変条件**:
+- どの余剰パラメータでも 400 + `type` URI に `unexpected-parameter` slug
+
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search § 排他ルール`
+**関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
+
+### IT-DBPORTAL-14: search の `missing-db` で 400
+
+**endpoint**: `GET /db-portal/search?q=cancer`
+
+**不変条件**:
+- 400 + `type` URI に `missing-db` slug
+
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § 排他ルール`
+**関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
+
+### IT-DBPORTAL-15: q + adv 同時指定で `invalid-query-combination` 400
+
+**endpoint**: `GET /db-portal/cross-search?q=...&adv=...` / `GET /db-portal/search?db=...&q=...&adv=...`
+
+**不変条件**:
+- 両 endpoint で 400 + `type` URI に `invalid-query-combination` slug (同 slug 共有)
+
+**回帰元**: `docs/db-portal-api-spec.md § エラー`
+**関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
+
+### IT-DBPORTAL-16: search の sort allowlist
+
+**endpoint**: `GET /db-portal/search?db=bioproject&q=*&sort=<value>`
+
+**不変条件**:
+- `datePublished:desc` / `:asc` で 200、`hits` が指定方向にソート
+- allowlist 外で 422
+
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § クエリパラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_db_portal.py`
+
+### IT-DBPORTAL-17: hardLimitReached フラグ
+
+**endpoint**: `GET /db-portal/search?db=bioproject&q=...`
+
+**不変条件**:
+- `total >= 10000` で `hardLimitReached == true`
+- `total < 10000` で `hardLimitReached == false`
+
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § レスポンス`
+**関連 unit テスト**: `tests/unit/schemas/test_db_portal.py`
+
+### IT-DBPORTAL-18: search?db=ES_DB の cursor 正常系
+
+**endpoint**: 1 ページ目 `?db=bioproject&q=*&perPage=20` → 2 ページ目 `?db=bioproject&cursor=<token>&perPage=20`
+
+**不変条件**:
+- 2 ページ目 `hits` の identifier 集合が 1 ページ目と排他
+- `cursor` + 検索条件 (`q` / `adv` / `sort` / `page`) 併用で 400 (排他ルール)
+
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § ページネーション`
+**関連 unit テスト**: `tests/unit/test_cursor.py`, `tests/unit/routers/test_db_portal.py`
+
 ---
 
 ## IT-STATUS-*: status filter
@@ -1066,7 +1364,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 - private: 4 variant 全てで 404
 - suppressed: 4 variant 全てで 200 (direct access は許可)
 
-`withdrawn` は converter の入力 XML から外れた entry のため ES に投入されず (`docs/api-spec.md § データ可視性` 注釈)、本シナリオでは検証対象外 (実装上の防衛ロジックは unit テストで担保)。
+`withdrawn` は ES に存在しないため検証対象外 (`docs/api-spec.md § データ可視性` 参照)。防衛ロジックは unit でカバー。
 
 **回帰元**: `docs/api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
@@ -1178,17 +1476,27 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/search/dsl/test_accession_exact_match.py`
 
-### IT-STATUS-15: `/db-portal/search?db=trad|taxonomy` (Solr proxy) は status filter 影響なし — staging_only
+### IT-STATUS-15: `/db-portal/search?db=trad|taxonomy` (Solr proxy) は public のみが見える — staging_only
 
 **endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20` / `?db=taxonomy&q=*&perPage=20` (`@pytest.mark.staging_only`)
 
 **不変条件**:
-- レスポンス `hits[*].status` は `null` または `"public"` のいずれか (Solr index に non-public は含まれない前提)
-- ES と異なり filter 不注入 (Solr query に status 条件が無い)
+- レスポンス `hits[*].status` は `null` または `"public"` のいずれか
 - hidden な status (`suppressed` / `withdrawn` / `private`) は決して出ない
 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性` (Solr no-op)
 **関連 unit テスト**: `tests/unit/solr/test_query.py`
+
+### IT-STATUS-16: アクセッション完全一致のクオート剥がしと否認パターン
+
+**endpoint**: `GET /entries/?keywords=<variant>` (suppressed accession を変奏)
+
+**不変条件**:
+- 外側ダブルクオート (`"acc"`) / シングルクオート (`'acc'`) は判定前に剥がされ suppressed が出る
+- ワイルドカード付き (`acc*`) / カンマ区切り複数トークン (`acc,foo`) で suppressed が出ない (単一・非ワイルドカード縛り)
+
+**回帰元**: `docs/api-spec.md § データ可視性 § アクセッション ID 完全一致の判定ルール`
+**関連 unit テスト**: `tests/unit/search/test_accession.py`
 
 ---
 
@@ -1252,10 +1560,33 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **endpoint**: `POST /dblink/counts` (body: `{items: [{type, id}, ...]}`)
 
 **不変条件**:
-- 上限件数以内で 200、各 `{type, id}` に対する count を返す
-- 上限超過で 422
-- 不在 entry は `count = 0` (404 ではない)
+- 1-100 件で 200、各 `{type, id}` に対する `counts` (タイプ別件数 dict) を返す
+- 0 件で 422、101 件で 422
+- 不在 entry は `counts == {}` (404 ではない)
+- response の `items[*].identifier` / `items[*].type` がリクエスト順と一致
 
 **回帰元**: `docs/api-spec.md § POST /dblink/counts`
 **関連 unit テスト**: `tests/unit/routers/test_dblink.py`, `tests/unit/dblink/test_client.py`
+
+### IT-DBLINK-06: path `{type}` の AccessionType 違反で 422
+
+**endpoint**: `GET /dblink/__not_a_type__/{id}` / `GET /dblink/BioProject/{id}` (case-sensitive)
+
+**不変条件**:
+- 不正 type / 大文字違いで 422
+- IT-DBLINK-02 の `target` 422 とは別経路 (path vs query)
+
+**回帰元**: `docs/api-spec.md § GET /dblink/{type}/{id}`
+**関連 unit テスト**: `tests/unit/routers/test_dblink.py`, `tests/unit/schemas/test_dblink.py`
+
+### IT-DBLINK-07: `POST /dblink/counts` の不正 payload は atomic に 422
+
+**endpoint**: `POST /dblink/counts`
+
+**不変条件**:
+- AccessionType 外の `type` を含む item が 1 件でもあれば全体 422
+- `id` 欠落 item で 422
+
+**回帰元**: `docs/api-spec.md § POST /dblink/counts`
+**関連 unit テスト**: `tests/unit/schemas/test_dblink.py`
 

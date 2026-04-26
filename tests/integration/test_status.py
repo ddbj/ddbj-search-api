@@ -274,3 +274,54 @@ class TestDbPortalSearchSolrNoStatusFilter:
         # never appear.
         for hit in resp.json()["hits"]:
             assert hit.get("status") in (None, "public")
+
+
+class TestAccessionExactMatchEdgeCases:
+    """IT-STATUS-16: accession-exact-match strips outer quotes; rejects wildcard / multi-token."""
+
+    def test_double_quoted_accession_exposes_suppressed(self, app: TestClient) -> None:
+        """IT-STATUS-16: outer ``"..."`` is stripped before the exact-match check."""
+        accession = require_accession(
+            "SUPPRESSED_BIOPROJECT_ID",
+            SUPPRESSED_BIOPROJECT_ID,
+        )
+        resp = app.get("/entries/", params={"keywords": f'"{accession}"'})
+        assert resp.status_code == 200
+        identifiers = {item["identifier"] for item in resp.json()["items"]}
+        assert accession in identifiers
+
+    def test_single_quoted_accession_exposes_suppressed(self, app: TestClient) -> None:
+        """IT-STATUS-16: outer ``'...'`` is stripped before the exact-match check."""
+        accession = require_accession(
+            "SUPPRESSED_BIOPROJECT_ID",
+            SUPPRESSED_BIOPROJECT_ID,
+        )
+        resp = app.get("/entries/", params={"keywords": f"'{accession}'"})
+        assert resp.status_code == 200
+        identifiers = {item["identifier"] for item in resp.json()["items"]}
+        assert accession in identifiers
+
+    def test_wildcard_accession_does_not_expose_suppressed(self, app: TestClient) -> None:
+        """IT-STATUS-16: wildcard suffix breaks the exact-match guard."""
+        accession = require_accession(
+            "SUPPRESSED_BIOPROJECT_ID",
+            SUPPRESSED_BIOPROJECT_ID,
+        )
+        resp = app.get("/entries/", params={"keywords": f"{accession}*"})
+        assert resp.status_code == 200
+        identifiers = {item["identifier"] for item in resp.json()["items"]}
+        assert accession not in identifiers
+
+    def test_comma_separated_token_does_not_expose_suppressed(self, app: TestClient) -> None:
+        """IT-STATUS-16: multi-token (comma-separated) breaks the exact-match guard."""
+        accession = require_accession(
+            "SUPPRESSED_BIOPROJECT_ID",
+            SUPPRESSED_BIOPROJECT_ID,
+        )
+        resp = app.get(
+            "/entries/",
+            params={"keywords": f"{accession},cancer"},
+        )
+        assert resp.status_code == 200
+        identifiers = {item["identifier"] for item in resp.json()["items"]}
+        assert accession not in identifiers

@@ -149,3 +149,277 @@ class TestParseUnknownField:
             params={"adv": "__not_a_field__:value", "db": "bioproject"},
         )
         assert resp.status_code == 400
+
+
+class TestBetweenRange:
+    """IT-DSL-10: ``date_published:[a TO b]`` between range."""
+
+    def test_wide_range_succeeds(self, app: TestClient) -> None:
+        """IT-DSL-10: a 5-year window returns 200."""
+        resp = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "date_published:[2020-01-01 TO 2024-12-31]",
+                "perPage": 20,
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_narrow_subset_of_wide(self, app: TestClient) -> None:
+        """IT-DSL-10: 1-day window total <= 5-year window total (inclusive bounds)."""
+        wide = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "date_published:[2020-01-01 TO 2024-12-31]",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        narrow = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "date_published:[2020-01-01 TO 2020-01-01]",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        assert narrow <= wide
+
+
+class TestPhraseSearch:
+    """IT-DSL-11: ``title:"whole genome"`` phrase match."""
+
+    def test_phrase_succeeds(self, app: TestClient) -> None:
+        """IT-DSL-11: phrase parses and returns 200."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": 'title:"whole genome"', "perPage": 1},
+        )
+        assert resp.status_code == 200
+
+    def test_phrase_at_most_as_broad_as_token(self, app: TestClient) -> None:
+        """IT-DSL-11: phrase total <= individual token AND total."""
+        phrase = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": 'title:"whole genome"', "perPage": 1},
+        ).json()["total"]
+        ands = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "title:whole AND title:genome",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        # Order-fixed phrase cannot match more docs than the AND of its
+        # constituent tokens.
+        assert phrase <= ands
+
+
+class TestBoolPrecedence:
+    """IT-DSL-12: AND/OR/NOT precedence and grouping."""
+
+    def test_and_subset_of_or(self, app: TestClient) -> None:
+        """IT-DSL-12: AND total <= OR total for the same operands."""
+        and_total = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "title:cancer AND title:brain",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        or_total = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "title:cancer OR title:brain",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        assert and_total <= or_total
+
+    def test_and_not_subset_of_left(self, app: TestClient) -> None:
+        """IT-DSL-12: ``A AND NOT B`` total <= ``A`` total."""
+        a_only = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "title:cancer", "perPage": 1},
+        ).json()["total"]
+        a_not_b = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "title:cancer AND NOT title:brain",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        assert a_not_b <= a_only
+
+    def test_grouping_changes_result(self, app: TestClient) -> None:
+        """IT-DSL-12: grouping shifts the result set (precedence is honoured)."""
+        left_grouped = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": '(title:cancer OR title:brain) AND organism:"Homo sapiens"',
+                "perPage": 1,
+            },
+        ).json()["total"]
+        right_grouped = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": 'title:cancer OR (title:brain AND organism:"Homo sapiens")',
+                "perPage": 1,
+            },
+        ).json()["total"]
+        # Different parse trees ⇒ result sets must differ.
+        assert left_grouped != right_grouped
+
+
+class TestEnumOperator:
+    """IT-DSL-13: enum operator on ``project_type``."""
+
+    def test_umbrella_bioproject_succeeds(self, app: TestClient) -> None:
+        """IT-DSL-13: ``project_type:UmbrellaBioProject`` returns 200 with hits."""
+        resp = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "project_type:UmbrellaBioProject",
+                "perPage": 1,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] > 0
+
+    def test_two_buckets_disjoint(self, app: TestClient) -> None:
+        """IT-DSL-13: BioProject + UmbrellaBioProject sums to OR(both)."""
+        primary = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "project_type:BioProject", "perPage": 1},
+        ).json()["total"]
+        umbrella = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "project_type:UmbrellaBioProject",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        either = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "project_type:BioProject OR project_type:UmbrellaBioProject",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        assert either == primary + umbrella
+
+    def test_unknown_enum_value_yields_zero(self, app: TestClient) -> None:
+        """IT-DSL-13: a value outside the enum is parsed but matches 0 docs."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "project_type:Foobar", "perPage": 1},
+        )
+        # The validator allows any enum-typed value; the ES side returns 0.
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+
+class TestTwoLevelNestedGrantAgency:
+    """IT-DSL-14: two-level nested ``grant_agency`` filter."""
+
+    def test_grant_agency_returns_200(self, app: TestClient) -> None:
+        """IT-DSL-14: 2-level nested DSL parses and runs (no silent 5xx)."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "grant_agency:NIH", "perPage": 1},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 0
+
+    def test_combined_with_title_narrows(self, app: TestClient) -> None:
+        """IT-DSL-14: ``grant_agency:NIH AND title:cancer`` <= grant_agency alone."""
+        ga = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "grant_agency:NIH", "perPage": 1},
+        ).json()["total"]
+        ga_and_title = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "grant_agency:NIH AND title:cancer",
+                "perPage": 1,
+            },
+        ).json()["total"]
+        assert ga_and_title <= ga
+
+
+class TestInvalidDateFormat:
+    """IT-DSL-15: ``invalid-date-format`` 400."""
+
+    @pytest.mark.parametrize(
+        "adv",
+        [
+            "date_published:2020/01/01",  # wrong separator
+            "date_published:20200101",  # missing dashes
+            "date_published:[2024-02-30 TO 2024-12-31]",  # impossible date
+            "date_published:[2024-13-01 TO 2024-12-31]",  # impossible month
+        ],
+    )
+    def test_returns_400_with_slug(self, app: TestClient, adv: str) -> None:
+        """IT-DSL-15: malformed or impossible dates surface as ``invalid-date-format``."""
+        resp = app.get("/db-portal/parse", params={"adv": adv, "db": "bioproject"})
+        assert resp.status_code == 400, adv
+        assert "invalid-date-format" in resp.json().get("type", ""), adv
+
+
+class TestInvalidOperatorForField:
+    """IT-DSL-16: ``invalid-operator-for-field`` 400."""
+
+    @pytest.mark.parametrize(
+        "adv",
+        [
+            "date_published:cancer*",  # wildcard on date
+            "identifier:[PRJDB1 TO PRJDB99]",  # between on identifier
+            "organism:cancer*",  # wildcard on organism (eq-only)
+        ],
+    )
+    def test_returns_400_with_slug(self, app: TestClient, adv: str) -> None:
+        """IT-DSL-16: type/operator mismatch returns the correct slug."""
+        resp = app.get("/db-portal/parse", params={"adv": adv, "db": "bioproject"})
+        assert resp.status_code == 400, adv
+        assert "invalid-operator-for-field" in resp.json().get("type", ""), adv
+
+
+class TestNestDepthExceeded:
+    """IT-DSL-17: AND/OR/NOT nest depth limit."""
+
+    def test_max_depth_succeeds(self, app: TestClient) -> None:
+        """IT-DSL-17: nesting depth 5 (the documented max) parses cleanly."""
+        # Depth 5 nested OR groups.
+        adv = "((((title:a OR title:b) OR title:c) OR title:d) OR title:e)"
+        resp = app.get("/db-portal/parse", params={"adv": adv, "db": "bioproject"})
+        assert resp.status_code == 200
+
+    def test_above_max_returns_400(self, app: TestClient) -> None:
+        """IT-DSL-17: depth 6 yields ``nest-depth-exceeded`` 400."""
+        # Depth 6 nested OR groups.
+        adv = "(((((title:a OR title:b) OR title:c) OR title:d) OR title:e) OR title:f)"
+        resp = app.get("/db-portal/parse", params={"adv": adv, "db": "bioproject"})
+        assert resp.status_code == 400
+        assert "nest-depth-exceeded" in resp.json().get("type", "")
+
+
+class TestMissingValue:
+    """IT-DSL-18: ``missing-value`` 400."""
+
+    @pytest.mark.parametrize("adv", ['title:""', "title:''"])
+    def test_explicit_empty_quotes_returns_400(self, app: TestClient, adv: str) -> None:
+        """IT-DSL-18: explicit empty quotes are rejected as missing-value."""
+        resp = app.get("/db-portal/parse", params={"adv": adv, "db": "bioproject"})
+        assert resp.status_code == 400, adv
+        assert "missing-value" in resp.json().get("type", ""), adv

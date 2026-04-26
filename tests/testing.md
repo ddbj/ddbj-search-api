@@ -63,10 +63,10 @@ router テストでは `TestClient` で HTTP リクエスト → レスポンス
 
 ## Integration テスト
 
-実 ES (場合により Solr) に対する E2E 検証。件数スナップショットは記録せず、構造的不変条件 (set 一致、相対比較、`>= 0`、`detail` 文字列一致) のみを assert する方針。
+実 ES (場合により Solr) に対する E2E 検証。
 
-- シナリオ列挙: [tests/integration-scenarios.md](integration-scenarios.md)
-- 環境構築・運用: [tests/integration-note.md](integration-note.md)
+- シナリオ列挙の SSOT: [tests/integration-scenarios.md](integration-scenarios.md)
+- 環境準備・代表 accession・書き方ガイド (件数 drift 対策、Solr marker、CI): [tests/integration-note.md](integration-note.md)
 
 ## バグ回帰テスト
 

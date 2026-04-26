@@ -20,9 +20,15 @@ ddbj-search-converter リポジトリ側に compose があり、`ddbj-search-net
 
 ## fixture 戦略
 
-特定の不変条件を assert するために代表 accession が必要 (例: status filter のテストには `public` / `suppressed` / `withdrawn` / `private` の 4 値の代表 ID)。実 ES に登録されている代表 accession を実測し、`tests/integration/conftest.py` の定数として登録する。converter のリリース取り込みのタイミングで再採取する。
+`tests/integration/conftest.py` に accession / 代表 token / bucket key を定数として置く。種類は 3 系統:
 
-接続先のデータに対象の status / 形状が存在しない場合 (例: `withdrawn` 全 type で 0 件) は対応する定数を空文字 (`""`) のまま置き、`require_accession` ヘルパー経由で当該テストを skip する。空文字を残すかどうかは converter のデータ供給に依存し、データが揃ったら値を埋めて skip を外す。
+- 代表 accession (status / shape を pin する例: `public` / `suppressed` / `private` 各 1 件)
+- type-specific term filter の代表 bucket (例: `SRA_LIBRARY_STRATEGY="WGS"`)
+- type-specific text-match の代表 token (例: `BIOSAMPLE_HOST="Homo sapiens"`)
+
+値は実 ES への aggregation / count probe で実測し、converter のリリース取り込みのタイミングで再採取する。
+
+接続先のデータに対象が存在しない場合は対応する定数を空文字 (`""`) のまま置き、`require_value` ヘルパー経由で当該テストを skip する。**使う見込みのない定数は置かない** (drift しても気付かれずに腐るため)。データが揃ったら値を埋めて skip を外す。
 
 テスト用 doc を共有 ES に POST して setUp/tearDown する運用は禁止 (汚染リスクがあるため)。
 

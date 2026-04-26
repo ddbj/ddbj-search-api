@@ -292,10 +292,94 @@ class TestSameAsFallthrough:
         assert resp.status_code in {404, 422}
 
 
-class TestCaseNormalization:
-    """IT-DETAIL-11: case-insensitive accession lookup (or consistent 404)."""
+class TestCaseSensitivity:
+    """IT-DETAIL-11: case-folding is not applied; lowercase = 404."""
 
-    def test_lowercase_does_not_5xx(self, app: TestClient) -> None:
-        """IT-DETAIL-11: lowercase variant resolves to 200 or 404, never 5xx."""
-        resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID.lower()}")
-        assert resp.status_code in {200, 404}
+    @pytest.mark.parametrize("suffix", ["", ".json", ".jsonld", "/dbxrefs.json"])
+    def test_lowercase_returns_404(self, app: TestClient, suffix: str) -> None:
+        """IT-DETAIL-11: lowercase accession resolves to 404 across variants."""
+        resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID.lower()}{suffix}")
+        assert resp.status_code == 404, suffix
+
+    def test_lowercase_detail_matches_missing(self, app: TestClient) -> None:
+        """IT-DETAIL-11: lowercase 404 detail equals missing-ID 404 detail.
+
+        Both must collapse to the visibility-hiding fixed string used for
+        ``private`` / non-existent accessions (IT-STATUS-04 SSOT).
+        """
+        miss = app.get(f"/entries/bioproject/{NONEXISTENT_ID}")
+        low = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID.lower()}")
+        assert miss.status_code == low.status_code == 404
+        assert miss.json()["detail"] == low.json()["detail"]
+
+    def test_canonical_uppercase_still_resolves(self, app: TestClient) -> None:
+        """IT-DETAIL-11: uppercase canonical accession returns 200 (anchor)."""
+        resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}")
+        assert resp.status_code == 200
+
+
+class TestIncludeDbXrefs:
+    """IT-DETAIL-12: ``includeDbXrefs=false`` skips DuckDB and drops both keys."""
+
+    def test_include_db_xrefs_false_omits_keys(self, app: TestClient) -> None:
+        """IT-DETAIL-12: ``includeDbXrefs=false`` drops dbXrefs / dbXrefsCount."""
+        resp = app.get(
+            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
+            params={"includeDbXrefs": "false"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "dbXrefs" not in body
+        assert "dbXrefsCount" not in body
+
+    def test_db_xrefs_limit_zero_keeps_count(self, app: TestClient) -> None:
+        """IT-DETAIL-12: ``dbXrefsLimit=0`` keeps both keys (empty list, real count)."""
+        resp = app.get(
+            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
+            params={"dbXrefsLimit": 0},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # ``dbXrefs`` is preserved as an empty list and ``dbXrefsCount`` as
+        # the real (non-truncated) per-type aggregate.
+        assert body.get("dbXrefs") == []
+        assert "dbXrefsCount" in body
+
+    def test_include_false_overrides_limit(self, app: TestClient) -> None:
+        """IT-DETAIL-12: ``includeDbXrefs=false`` wins over ``dbXrefsLimit``."""
+        resp = app.get(
+            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
+            params={"includeDbXrefs": "false", "dbXrefsLimit": 100},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "dbXrefs" not in body
+        assert "dbXrefsCount" not in body
+
+
+class TestIncludeProperties:
+    """IT-DETAIL-13: ``includeProperties=false`` drops the ``properties`` key."""
+
+    def test_include_properties_default_present(self, app: TestClient) -> None:
+        """IT-DETAIL-13: default response carries ``properties``."""
+        resp = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}")
+        assert resp.status_code == 200
+        assert "properties" in resp.json()
+
+    def test_include_properties_false_omits_key(self, app: TestClient) -> None:
+        """IT-DETAIL-13: ``includeProperties=false`` removes the key."""
+        resp = app.get(
+            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
+            params={"includeProperties": "false"},
+        )
+        assert resp.status_code == 200
+        assert "properties" not in resp.json()
+
+    def test_identifier_unchanged_between_modes(self, app: TestClient) -> None:
+        """IT-DETAIL-13: dropping properties does not perturb other fields."""
+        with_props = app.get(f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}").json()
+        without = app.get(
+            f"/entries/bioproject/{PUBLIC_BIOPROJECT_ID}",
+            params={"includeProperties": "false"},
+        ).json()
+        assert with_props["identifier"] == without["identifier"]

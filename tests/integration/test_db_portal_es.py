@@ -1,0 +1,198 @@
+"""Integration tests for IT-DBPORTAL-13..18 (ES-only db-portal scenarios).
+
+These scenarios exercise validation, error slugs, sort, hardLimitReached,
+and ES-backed cursor pagination on /db-portal/cross-search and
+/db-portal/search. Solr-dependent scenarios live in test_db_portal.py
+(module-level ``staging_only``).
+
+See ``tests/integration-scenarios.md § IT-DBPORTAL-*``.
+"""
+
+from __future__ import annotations
+
+import itertools
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+class TestCrossSearchUnexpectedParameter:
+    """IT-DBPORTAL-13: cross-search rejects DB-specific parameters."""
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"db": "bioproject"},
+            {"page": "1"},
+            {"perPage": "20"},
+            {"cursor": "any-token"},
+            {"sort": "datePublished:desc"},
+        ],
+    )
+    def test_extra_param_returns_400(self, app: TestClient, extra: dict[str, str]) -> None:
+        """IT-DBPORTAL-13: any DB / pagination / sort param triggers 400."""
+        params = {"q": "cancer", **extra}
+        resp = app.get("/db-portal/cross-search", params=params)
+        assert resp.status_code == 400, extra
+        assert "unexpected-parameter" in resp.json().get("type", ""), extra
+
+
+class TestSearchMissingDb:
+    """IT-DBPORTAL-14: search without ``db`` returns ``missing-db``."""
+
+    def test_missing_db_returns_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-14: 400 with the slug when db is omitted."""
+        resp = app.get("/db-portal/search", params={"q": "cancer"})
+        assert resp.status_code == 400
+        assert "missing-db" in resp.json().get("type", "")
+
+
+class TestQAdvExclusivity:
+    """IT-DBPORTAL-15: q + adv combination → ``invalid-query-combination``."""
+
+    def test_cross_search_returns_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-15: cross-search rejects q + adv."""
+        resp = app.get(
+            "/db-portal/cross-search",
+            params={"q": "cancer", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 400
+        assert "invalid-query-combination" in resp.json().get("type", "")
+
+    def test_search_returns_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-15: search rejects q + adv (same slug)."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 400
+        assert "invalid-query-combination" in resp.json().get("type", "")
+
+
+class TestSearchSortAllowlist:
+    """IT-DBPORTAL-16: sort accepts only documented values."""
+
+    @pytest.mark.parametrize("sort", ["datePublished:desc", "datePublished:asc"])
+    def test_documented_sort_succeeds(self, app: TestClient, sort: str) -> None:
+        """IT-DBPORTAL-16: documented sort form returns 200."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "*", "sort": sort, "perPage": 20},
+        )
+        assert resp.status_code == 200, sort
+
+    def test_descending_sort_is_actually_descending(self, app: TestClient) -> None:
+        """IT-DBPORTAL-16: ``datePublished:desc`` produces a non-increasing sequence."""
+        resp = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": "*",
+                "sort": "datePublished:desc",
+                "perPage": 20,
+            },
+        )
+        assert resp.status_code == 200
+        dates = [
+            hit.get("datePublished")
+            for hit in resp.json()["hits"]
+            if hit.get("datePublished")
+        ]
+        for left, right in itertools.pairwise(dates):
+            assert left >= right, f"sort broken: {left} < {right}"
+
+    @pytest.mark.parametrize(
+        "sort",
+        ["identifier:asc", "datePublished:foo", "title:desc"],
+    )
+    def test_invalid_sort_returns_422(self, app: TestClient, sort: str) -> None:
+        """IT-DBPORTAL-16: anything outside the allowlist yields 422."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "*", "sort": sort, "perPage": 20},
+        )
+        assert resp.status_code == 422, sort
+
+
+class TestHardLimitReachedFlag:
+    """IT-DBPORTAL-17: ``hardLimitReached`` flips at the 10000-hit boundary."""
+
+    def test_large_total_sets_flag_true(self, app: TestClient) -> None:
+        """IT-DBPORTAL-17: ``q=*`` (~all docs) yields hardLimitReached=true."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "*", "perPage": 20},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        if body["total"] >= 10000:
+            assert body["hardLimitReached"] is True
+        else:
+            pytest.skip(f"total={body['total']} < 10000; cannot probe true branch")
+
+    def test_small_total_sets_flag_false(self, app: TestClient) -> None:
+        """IT-DBPORTAL-17: a narrow query stays below 10000."""
+        resp = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "adv": "identifier:PRJDB42131",
+                "perPage": 20,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # Single-accession exact-match cannot reach 10000.
+        assert body["total"] < 10000
+        assert body["hardLimitReached"] is False
+
+
+class TestSearchEsCursor:
+    """IT-DBPORTAL-18: cursor pagination on ES-backed search."""
+
+    def test_cursor_continuation_returns_distinct_hits(self, app: TestClient) -> None:
+        """IT-DBPORTAL-18: page 1 ``nextCursor`` drives a disjoint page 2."""
+        first = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "*", "perPage": 20},
+        )
+        assert first.status_code == 200
+        first_body = first.json()
+        cursor = first_body.get("nextCursor")
+        if not cursor:
+            pytest.skip("nextCursor missing; dataset may be smaller than perPage")
+
+        second = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "cursor": cursor, "perPage": 20},
+        )
+        assert second.status_code == 200
+        second_body = second.json()
+        assert len(second_body["hits"]) <= 20
+
+        first_ids = {hit["identifier"] for hit in first_body["hits"]}
+        second_ids = {hit["identifier"] for hit in second_body["hits"]}
+        # Cursor pagination must not repeat identifiers.
+        assert first_ids.isdisjoint(second_ids)
+
+    def test_cursor_with_search_condition_returns_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-18: cursor + q on the same request is mutually exclusive."""
+        # Generate a cursor first.
+        first = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "*", "perPage": 20},
+        ).json()
+        cursor = first.get("nextCursor")
+        if not cursor:
+            pytest.skip("nextCursor missing; dataset may be smaller than perPage")
+
+        resp = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "cursor": cursor,
+                "q": "cancer",
+                "perPage": 20,
+            },
+        )
+        assert resp.status_code == 400
