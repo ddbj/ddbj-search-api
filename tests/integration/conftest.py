@@ -59,3 +59,56 @@ def app(config: AppConfig) -> collections.abc.Iterator[TestClient]:
     application = create_app(config)
     with TestClient(application, raise_server_exceptions=False) as client:
         yield client
+
+
+# Representative accession constants (option A: measure on staging, register here).
+# Values are filled in once measured against the staging ES (see tests/integration-note.md
+# § fixture 戦略). Leaving them as placeholders here keeps lint/type checks green and
+# makes IT-* expectations grep-able.
+
+# BioProject
+PUBLIC_BIOPROJECT_ID: str = "..."
+SUPPRESSED_BIOPROJECT_ID: str = "..."
+WITHDRAWN_BIOPROJECT_ID: str = "..."
+PRIVATE_BIOPROJECT_ID: str = "..."
+UMBRELLA_BIOPROJECT_ID: str = "..."
+ORPHAN_BIOPROJECT_ID: str = "..."
+DEEP_CHAIN_BIOPROJECT_ID: str = "..."
+MULTI_PARENT_BIOPROJECT_ID: str = "..."
+DANGLING_CHILD_BIOPROJECT_ID: str = "..."
+SECONDARY_BIOPROJECT_ID: str = "..."
+
+# BioSample
+PUBLIC_BIOSAMPLE_ID: str = "..."
+SUPPRESSED_BIOSAMPLE_ID: str = "..."
+WITHDRAWN_BIOSAMPLE_ID: str = "..."
+PRIVATE_BIOSAMPLE_ID: str = "..."
+SECONDARY_BIOSAMPLE_ID: str = "..."
+
+# SRA
+PUBLIC_SRA_ID: str = "..."
+SUPPRESSED_SRA_ID: str = "..."
+WITHDRAWN_SRA_ID: str = "..."
+PRIVATE_SRA_ID: str = "..."
+SECONDARY_SRA_ID: str = "..."
+
+# JGA
+PUBLIC_JGA_ID: str = "..."
+SUPPRESSED_JGA_ID: str = "..."
+WITHDRAWN_JGA_ID: str = "..."
+PRIVATE_JGA_ID: str = "..."
+
+# GEA
+PUBLIC_GEA_ID: str = "..."
+SUPPRESSED_GEA_ID: str = "..."
+
+# MetaboBank
+PUBLIC_METABOBANK_ID: str = "..."
+SUPPRESSED_METABOBANK_ID: str = "..."
+
+# Trad / Taxonomy (Solr backed; @pytest.mark.staging_only suites only)
+PUBLIC_TRAD_ACCESSION: str = "..."
+PUBLIC_TAXONOMY_ID: str = "..."
+
+# Cross-cutting
+NONEXISTENT_ID: str = "PRJDB_DOES_NOT_EXIST_99999"

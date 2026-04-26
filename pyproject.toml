@@ -45,6 +45,9 @@ dump_openapi_spec = "ddbj_search_api.main:dump_openapi_spec"
 addopts = ["-n", "auto"]
 testpaths = ["tests/unit"]
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "staging_only: requires staging environment (Solr endpoints: ARSA/TXSearch)",
+]
 
 [tool.mypy]
 files = ["./ddbj_search_api/**/*.py", "./tests/**/*.py"]

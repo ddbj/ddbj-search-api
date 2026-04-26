@@ -71,9 +71,23 @@ assert resp_hidden.json()["detail"] == resp_missing.json()["detail"]
 
 ## Solr 必須シナリオ
 
-`/db-portal/cross-search` の 8 DB fan-out と `/db-portal/search?db=trad|taxonomy` は ARSA / TXSearch (Solr) を経由する。Solr はローカルに代替がなく、staging 環境にしかない。これらのシナリオは `@pytest.mark.staging_only` などで分離する想定 (現状 marker 未定義、整備時に `pyproject.toml` に追加)。
+`/db-portal/cross-search` の 8 DB fan-out と `/db-portal/search?db=trad|taxonomy` は ARSA / TXSearch (Solr) を経由する。Solr はローカルに代替がなく、staging 環境にしかない。これらのシナリオは `@pytest.mark.staging_only` で分離する。
 
-`staging_only` を付けたテストはデフォルトの `pytest tests/integration/` では skip し、`pytest -m staging_only` で明示的に有効化する。CI (Solr が無い) では skip され、staging に実環境を持つ作業者が手元で回す。
+`pyproject.toml` の `[tool.pytest.ini_options]` に marker を登録する。
+
+```toml
+markers = [
+    "staging_only: requires staging environment (Solr endpoints: ARSA/TXSearch)",
+]
+```
+
+`addopts` には `-m "not staging_only"` を入れない (デフォルトで全 marker を含めて実行する方針)。実行コマンドは目的に応じて使い分ける。
+
+| コマンド | 含まれるシナリオ | 用途 |
+|---------|----------------|------|
+| `pytest tests/integration/` | 全シナリオ (Solr 含む) | staging 環境 (default) |
+| `pytest tests/integration/ -m "not staging_only"` | Solr 抜き | CI 統合時 (Future work、Solr が無い環境) |
+| `pytest tests/integration/ -m staging_only` | Solr のみ | 限定確認 (ARSA / TXSearch の整合性チェック) |
 
 ## CI
 
