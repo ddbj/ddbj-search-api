@@ -4,8 +4,8 @@ SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
 
 - Tier 1 は 6 flat + 2 or_flat (organism / date alias)。
 - Tier 2 は 2 nested (submitter: organization, publication: publication)。
-- Tier 3 (ES 対象) は 8 flat (BioProject project_type / SRA 5 / JGA/MetaboBank shared 3) +
-  1 double-nested (grant_agency: grant → grant.agency)。
+- Tier 3 (ES 対象) は 19 flat (BioProject project_type/relevance / BioSample 5 /
+  SRA 7 / JGA 3 / MetaboBank shared 3) + 1 double-nested (grant_agency: grant → grant.agency)。
 - Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
 
 前提: validator で ``(field_type, value_kind)`` 互換性および cross-mode Tier 3 拒否は担保済。
@@ -53,14 +53,26 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "publication": _ESStrategy(kind="nested", path="publication", sub="publication.id"),
     # === Tier 3 flat ===
     "project_type": _ESStrategy(kind="flat", path="objectType"),
+    "relevance": _ESStrategy(kind="flat", path="relevance"),
     "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy"),
     "library_source": _ESStrategy(kind="flat", path="librarySource"),
     "library_layout": _ESStrategy(kind="flat", path="libraryLayout"),
     "platform": _ESStrategy(kind="flat", path="platform"),
     "instrument_model": _ESStrategy(kind="flat", path="instrumentModel"),
+    "library_name": _ESStrategy(kind="flat", path="libraryName"),
+    "library_construction_protocol": _ESStrategy(kind="flat", path="libraryConstructionProtocol"),
+    "analysis_type": _ESStrategy(kind="flat", path="analysisType"),
     "study_type": _ESStrategy(kind="flat", path="studyType"),
+    "vendor": _ESStrategy(kind="flat", path="vendor"),
+    "dataset_type": _ESStrategy(kind="flat", path="datasetType"),
     "experiment_type": _ESStrategy(kind="flat", path="experimentType"),
     "submission_type": _ESStrategy(kind="flat", path="submissionType"),
+    # BioSample 5 (converter 0.3.0 で top-level 化、geo_loc_name / collection_date は SRA-sample と共通)
+    "host": _ESStrategy(kind="flat", path="host"),
+    "strain": _ESStrategy(kind="flat", path="strain"),
+    "isolate": _ESStrategy(kind="flat", path="isolate"),
+    "geo_loc_name": _ESStrategy(kind="flat", path="geoLocName"),
+    "collection_date": _ESStrategy(kind="flat", path="collectionDate"),
     # === Tier 3 double-nested ===
     # BioProject / JGA 共通: grant[].agency[].name。GUI 側で bioproject_grant_agency /
     # jga_grant_agency の ID 区別あり、DSL 名は `grant_agency` 統一 (search-backends.md L551)。

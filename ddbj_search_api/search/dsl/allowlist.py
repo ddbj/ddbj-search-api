@@ -3,7 +3,7 @@
 3 段構成:
 - Tier 1 (横断可、8 field): identifier / text / organism / date 系の基本 field。
 - Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
-- Tier 3 (単一 DB 指定必須、25 unique / per-DB 集計 28 field): DB 特化 field。
+- Tier 3 (単一 DB 指定必須、36 unique / per-DB 集計 41 field): DB 特化 field。
 
 SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス、
 db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
@@ -43,24 +43,38 @@ TIER2_FIELDS: frozenset[str] = frozenset(
 )
 
 # 単一 DB 選択時のみ使える Tier 3 (DB 特化 field)。
-# unique 25 field、ただし per-DB 集計は 28 (grant_agency / study_type / experiment_type が 2 DB 間で shared)。
+# unique 36 field、ただし per-DB 集計は 41 (grant_agency / study_type / experiment_type / geo_loc_name /
+# collection_date が 2 DB 間で shared、計 +5 重複)。
 # SSOT: search-backends.md L560-575 Tier 3 DB 別フィールド。
-# 未 allowlist 化で保留中の候補 field: BioSample attributes 系 6 field / JGA principal_investigator /
-# submitting_organization / BioProject project_type の INSDC 値域 / Taxonomy japanese_name
-# (staging TXSearch に field 不在)。
+# 未 allowlist 化で保留中の候補 field: JGA principal_investigator / submitting_organization /
+# BioProject project_type の INSDC 値域 / Taxonomy japanese_name (staging TXSearch に field 不在)。
 TIER3_FIELDS: frozenset[str] = frozenset(
     {
-        # BioProject (2): grant_agency は JGA と共通
+        # BioProject (3): grant_agency は JGA と共通
         "project_type",
         "grant_agency",
-        # SRA 5 fields
+        "relevance",
+        # BioSample (5): geo_loc_name / collection_date は SRA-sample と共通
+        "host",
+        "strain",
+        "isolate",
+        "geo_loc_name",
+        "collection_date",
+        # SRA 8 fields (subtype 別ヒット): library_* / platform / instrument_model は sra-experiment、
+        # analysis_type は sra-analysis、geo_loc_name / collection_date は sra-sample (BioSample 共通)
         "library_strategy",
         "library_source",
         "library_layout",
         "platform",
         "instrument_model",
-        # JGA (2): study_type は MetaboBank と共通。grant_agency は BioProject と共通
+        "library_name",
+        "library_construction_protocol",
+        "analysis_type",
+        # JGA (4): study_type は MetaboBank と共通、grant_agency は BioProject と共通、
+        # vendor は jga-study、dataset_type は jga-dataset
         "study_type",
+        "vendor",
+        "dataset_type",
         # GEA (1) + MetaboBank (3): experiment_type は両方で共通
         "experiment_type",
         # MetaboBank exclusive
@@ -103,14 +117,30 @@ FIELD_TYPES: dict[str, FieldType] = {
     # === Tier 3 BioProject ===
     "project_type": "enum",
     "grant_agency": "text",
+    "relevance": "enum",
+    # === Tier 3 BioSample (converter 0.3.0 で top-level 化) ===
+    # converter mapping は text + keyword:256 (host/strain/isolate) または text 単独 (geo_loc_name/
+    # collection_date)。値域が free text 寄り (Homo sapiens / liver / Tokyo, Japan / 2020-04 等) なので text 型。
+    "host": "text",
+    "strain": "text",
+    "isolate": "text",
+    "geo_loc_name": "text",
+    "collection_date": "text",
     # === Tier 3 SRA ===
     "library_strategy": "enum",
     "library_source": "enum",
     "library_layout": "enum",
     "platform": "enum",
     "instrument_model": "text",
+    "library_name": "text",
+    "library_construction_protocol": "text",
+    # analysis_type / dataset_type は controlled vocab に近い使われ方をするが、converter で
+    # Literal 制約を外して free string 化された経緯 (commit 16e0b30) があり、API 側でも text で開放。
+    "analysis_type": "text",
     # === Tier 3 JGA ===
     "study_type": "enum",
+    "vendor": "text",
+    "dataset_type": "text",
     # === Tier 3 GEA / MetaboBank ===
     # experiment_type は spec L562 で SRA 同等の enum 想定だが、converter 実装は list[str]。
     # ここでは text 型として開放し、enum 値域検証は converter 側での正規化完了後に導入する。
@@ -161,20 +191,36 @@ OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
 
 # Tier 3 field → 使用可能な DbPortalDb 値の tuple (cross-mode 拒否時の detail 文字列用)。
 # SSOT: search-backends.md L530-575 のバックエンドマッピング表。
-# 複数 DB 共通の field (grant_agency / study_type / experiment_type) は候補 DB を列挙して提示する。
+# 複数 DB 共通の field (grant_agency / study_type / experiment_type / geo_loc_name / collection_date)
+# は候補 DB を列挙して提示する。
 TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     # BioProject-only
     "project_type": ("bioproject",),
+    "relevance": ("bioproject",),
     # BioProject + JGA (jga-study のみ)
     "grant_agency": ("bioproject", "jga"),
-    # SRA-only (sra-experiment のみ実ヒット、他 subtype は ES mapping に field 不在)
+    # BioSample-only
+    "host": ("biosample",),
+    "strain": ("biosample",),
+    "isolate": ("biosample",),
+    # BioSample + SRA (SRA-sample のみ field を持つ)
+    "geo_loc_name": ("biosample", "sra"),
+    "collection_date": ("biosample", "sra"),
+    # SRA-only (subtype 別: library_* / platform / instrument_model は sra-experiment、
+    # analysis_type は sra-analysis、他 subtype は ES mapping に field 不在)
     "library_strategy": ("sra",),
     "library_source": ("sra",),
     "library_layout": ("sra",),
     "platform": ("sra",),
     "instrument_model": ("sra",),
+    "library_name": ("sra",),
+    "library_construction_protocol": ("sra",),
+    "analysis_type": ("sra",),
     # JGA + MetaboBank
     "study_type": ("jga", "metabobank"),
+    # JGA-only (vendor=jga-study、dataset_type=jga-dataset)
+    "vendor": ("jga",),
+    "dataset_type": ("jga",),
     # GEA + MetaboBank
     "experiment_type": ("gea", "metabobank"),
     # MetaboBank-only

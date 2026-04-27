@@ -1,7 +1,7 @@
 """Tests for ddbj_search_api.search.dsl.allowlist.
 
-3 段構成の Tier 1/2/3 allowlist (30 field per DB 集計 = 27 unique) と
-`TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
+3 段構成の Tier 1/2/3 allowlist (51 field per DB 集計 = 46 unique; Tier 1 8 + Tier 2 2 +
+Tier 3 unique 36 / per-DB 41) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
 db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
 """
 
@@ -35,33 +35,48 @@ class TestTierFrozensets:
         assert frozenset({"submitter", "publication"}) == TIER2_FIELDS
 
     def test_tier3_contains_expected_per_db_fields(self) -> None:
-        # BioProject 2 + SRA 5 + JGA-exclusive 0 (share grant_agency/study_type)
-        # + MetaboBank-exclusive 1 (submission_type) + GEA/MetaboBank shared 1 (experiment_type)
-        # + Trad 5 + Taxonomy 10 = 24 unique, plus shared 3 (grant_agency/study_type共有、experiment_type 既算入)
-        # → shared は実質 grant_agency (BP+JGA), study_type (JGA+MetaboBank), experiment_type (GEA+MetaboBank)
+        # Tier 3 unique 36 / per-DB 41。
+        # 内訳は BioProject 3、BioSample 5、SRA 8、JGA 3、GEA 0、MetaboBank 1、
+        # Trad 5、Taxonomy 10 で計 35 件。GEA は experiment_type を MetaboBank と共有するため 0。
+        # 加えて shared が 5: grant_agency は BP と JGA で、study_type は JGA と MetaboBank で、
+        # experiment_type は GEA と MetaboBank で、geo_loc_name と collection_date は BioSample と
+        # SRA-sample で共有 → unique は 36、per-DB は 41。
         expected = {
-            # BioProject
+            # BioProject 3 件
             "project_type",
             "grant_agency",  # BioProject と JGA 共通
-            # SRA
+            "relevance",
+            # BioSample 5 件。geo_loc_name と collection_date は SRA-sample と共通
+            "host",
+            "strain",
+            "isolate",
+            "geo_loc_name",
+            "collection_date",
+            # SRA 8 件。library_* / platform / instrument_model は sra-experiment、
+            # analysis_type は sra-analysis のみ field 存在
             "library_strategy",
             "library_source",
             "library_layout",
             "platform",
             "instrument_model",
-            # JGA (grant_agency は BP と共通)
+            "library_name",
+            "library_construction_protocol",
+            "analysis_type",
+            # JGA 3 件。grant_agency は BP と共通
             "study_type",  # JGA と MetaboBank 共通
-            # GEA
+            "vendor",
+            "dataset_type",
+            # GEA は experiment_type のみ
             "experiment_type",  # GEA と MetaboBank 共通
-            # MetaboBank
+            # MetaboBank exclusive
             "submission_type",
-            # Trad
+            # Trad / ARSA 5 件
             "division",
             "molecular_type",
             "sequence_length",
             "feature_gene_name",
             "reference_journal",
-            # Taxonomy
+            # Taxonomy / TXSearch 10 件
             "rank",
             "lineage",
             "kingdom",
@@ -75,8 +90,8 @@ class TestTierFrozensets:
         }
         assert expected == TIER3_FIELDS
 
-    def test_tier3_unique_count_is_25(self) -> None:
-        assert len(TIER3_FIELDS) == 25
+    def test_tier3_unique_count_is_36(self) -> None:
+        assert len(TIER3_FIELDS) == 36
 
     def test_tiers_are_disjoint(self) -> None:
         assert frozenset() == TIER1_FIELDS & TIER2_FIELDS
@@ -110,6 +125,7 @@ class TestFieldTypesMapping:
             ("publication", "identifier"),
             # Tier 3 enum
             ("project_type", "enum"),
+            ("relevance", "enum"),
             ("library_strategy", "enum"),
             ("library_source", "enum"),
             ("library_layout", "enum"),
@@ -122,9 +138,19 @@ class TestFieldTypesMapping:
             ("sequence_length", "number"),
             # Tier 3 text
             ("instrument_model", "text"),
+            ("library_name", "text"),
+            ("library_construction_protocol", "text"),
+            ("analysis_type", "text"),
             ("grant_agency", "text"),
             ("experiment_type", "text"),
             ("submission_type", "text"),
+            ("vendor", "text"),
+            ("dataset_type", "text"),
+            ("host", "text"),
+            ("strain", "text"),
+            ("isolate", "text"),
+            ("geo_loc_name", "text"),
+            ("collection_date", "text"),
             ("feature_gene_name", "text"),
             ("reference_journal", "text"),
             ("lineage", "text"),
@@ -200,16 +226,30 @@ class TestTier3FieldDbs:
         [
             # BioProject-only
             ("project_type", ("bioproject",)),
+            ("relevance", ("bioproject",)),
             # BioProject + JGA shared
             ("grant_agency", ("bioproject", "jga")),
+            # BioSample-only
+            ("host", ("biosample",)),
+            ("strain", ("biosample",)),
+            ("isolate", ("biosample",)),
+            # BioSample + SRA shared (SRA-sample のみ field 存在)
+            ("geo_loc_name", ("biosample", "sra")),
+            ("collection_date", ("biosample", "sra")),
             # SRA-only
             ("library_strategy", ("sra",)),
             ("library_source", ("sra",)),
             ("library_layout", ("sra",)),
             ("platform", ("sra",)),
             ("instrument_model", ("sra",)),
+            ("library_name", ("sra",)),
+            ("library_construction_protocol", ("sra",)),
+            ("analysis_type", ("sra",)),
             # JGA + MetaboBank shared
             ("study_type", ("jga", "metabobank")),
+            # JGA-only
+            ("vendor", ("jga",)),
+            ("dataset_type", ("jga",)),
             # GEA + MetaboBank shared
             ("experiment_type", ("gea", "metabobank")),
             # MetaboBank-only

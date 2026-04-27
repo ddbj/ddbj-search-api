@@ -276,14 +276,26 @@ class TestTier3CrossModeReject:
             # BioProject
             ("project_type", "BioProject"),
             ("grant_agency", "JSPS"),
+            ("relevance", "reference"),
+            # BioSample (converter 0.3.0 で top-level 化)
+            ("host", "Homo"),
+            ("strain", "C57BL"),
+            ("isolate", "test_isolate"),
+            ("geo_loc_name", "Japan"),
+            ("collection_date", "2020"),
             # SRA
             ("library_strategy", "WGS"),
             ("library_source", "GENOMIC"),
             ("library_layout", "SINGLE"),
             ("platform", "ILLUMINA"),
             ("instrument_model", "NovaSeq"),
+            ("library_name", "test_lib"),
+            ("library_construction_protocol", "Illumina"),
+            ("analysis_type", "variation"),
             # JGA
             ("study_type", "Cohort"),
+            ("vendor", "Illumina"),
+            ("dataset_type", "fastq"),
             # GEA / MetaboBank
             ("experiment_type", "RNA-Seq"),
             ("submission_type", "metabolite"),
@@ -330,6 +342,27 @@ class TestTier3CrossModeReject:
             validate(ast, mode="cross")
         assert "use db=bioproject or db=jga" in exc_info.value.detail
 
+    def test_detail_contains_multiple_db_hints_geo_loc_name(self) -> None:
+        """BioSample + SRA-sample 両方に乗る geo_loc_name は ' or ' 連結で列挙する。"""
+        ast = parse("geo_loc_name:Japan")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=biosample or db=sra" in exc_info.value.detail
+
+    def test_detail_contains_single_db_hint_biosample(self) -> None:
+        """BioSample exclusive な host は 'use db=biosample' のみを列挙。"""
+        ast = parse("host:Homo")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=biosample" in exc_info.value.detail
+
+    def test_detail_contains_single_db_hint_relevance(self) -> None:
+        """BioProject exclusive な relevance は 'use db=bioproject' のみを列挙。"""
+        ast = parse("relevance:reference")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=bioproject" in exc_info.value.detail
+
     def test_detail_contains_field_name(self) -> None:
         ast = parse("platform:ILLUMINA")
         with pytest.raises(DslError) as exc_info:
@@ -351,8 +384,15 @@ class TestTier3SingleModeAccepted:
         ("field", "value"),
         [
             ("project_type", "BioProject"),
+            ("relevance", "reference"),
             ("library_strategy", "WGS"),
+            ("analysis_type", "variation"),
+            ("library_construction_protocol", "Illumina"),
+            ("host", "Homo"),
+            ("geo_loc_name", "Japan"),
             ("study_type", "Cohort"),
+            ("vendor", "Illumina"),
+            ("dataset_type", "fastq"),
             ("division", "BCT"),
             ("rank", "species"),
         ],
@@ -379,6 +419,8 @@ class TestEnumValueKindCompat:
             "platform:ILLUMINA",
             "rank:species",
             "project_type:BioProject",
+            "relevance:reference",
+            'relevance:"reference genome"',  # 空白含み phrase
             "division:BCT",
             "molecular_type:DNA",
         ],
@@ -393,6 +435,8 @@ class TestEnumValueKindCompat:
             "platform:ILLU*",
             "rank:2024-01-01",  # date
             "project_type:[A TO B]",  # range
+            "relevance:ref*",  # 新 enum field も wildcard 不可
+            "relevance:[a TO z]",  # 新 enum field も range 不可
         ],
     )
     def test_enum_wildcard_range_date_rejected(self, dsl: str) -> None:
@@ -489,6 +533,7 @@ class TestValidatorPBT:
 
 _ENUM_FIELDS = [
     "project_type",
+    "relevance",
     "library_strategy",
     "library_source",
     "library_layout",
@@ -500,6 +545,7 @@ _ENUM_FIELDS = [
 ]
 _ENUM_DBS: dict[str, DbPortalDb] = {
     "project_type": DbPortalDb.bioproject,
+    "relevance": DbPortalDb.bioproject,
     "library_strategy": DbPortalDb.sra,
     "library_source": DbPortalDb.sra,
     "library_layout": DbPortalDb.sra,

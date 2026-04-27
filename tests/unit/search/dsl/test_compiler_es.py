@@ -304,6 +304,7 @@ class TestTier3FlatEnum:
             ("library_layout:SINGLE", DbPortalDb.sra, "libraryLayout", "SINGLE"),
             ("platform:ILLUMINA", DbPortalDb.sra, "platform", "ILLUMINA"),
             ("study_type:Cohort", DbPortalDb.jga, "studyType", "Cohort"),
+            ("relevance:reference", DbPortalDb.bioproject, "relevance", "reference"),
         ],
     )
     def test_enum_eq(self, dsl: str, db: DbPortalDb, es_field: str, value: str) -> None:
@@ -320,14 +321,62 @@ class TestTier3FlatText:
     @pytest.mark.parametrize(
         ("dsl", "db", "es_field"),
         [
+            # 既存
             ("instrument_model:NovaSeq", DbPortalDb.sra, "instrumentModel"),
             ("experiment_type:ChIP-Seq", DbPortalDb.gea, "experimentType"),
             ("submission_type:metabolite", DbPortalDb.metabobank, "submissionType"),
+            # BioSample exclusive (converter 0.3.0 top-level)
+            ("host:Homo", DbPortalDb.biosample, "host"),
+            ("strain:C57BL", DbPortalDb.biosample, "strain"),
+            ("isolate:test_isolate", DbPortalDb.biosample, "isolate"),
+            # BioSample + SRA shared (TIER3_FIELD_DBS の 2 候補両方を確認)
+            ("geo_loc_name:Japan", DbPortalDb.biosample, "geoLocName"),
+            ("geo_loc_name:Japan", DbPortalDb.sra, "geoLocName"),
+            ("collection_date:2020", DbPortalDb.biosample, "collectionDate"),
+            ("collection_date:2020", DbPortalDb.sra, "collectionDate"),
+            # SRA exclusive
+            ("library_name:test_lib", DbPortalDb.sra, "libraryName"),
+            ("library_construction_protocol:Illumina", DbPortalDb.sra, "libraryConstructionProtocol"),
+            ("analysis_type:variation", DbPortalDb.sra, "analysisType"),
+            # JGA exclusive
+            ("dataset_type:fastq", DbPortalDb.jga, "datasetType"),
+            ("vendor:Illumina", DbPortalDb.jga, "vendor"),
         ],
     )
     def test_text_match_phrase(self, dsl: str, db: DbPortalDb, es_field: str) -> None:
         value = dsl.split(":", 1)[1].strip('"')
         assert _compile_single(dsl, db) == {"match_phrase": {es_field: value}}
+
+
+class TestTier3WildcardExpansion:
+    """Tier 3 text field の wildcard は match_phrase ではなく wildcard query (case_insensitive=True)."""
+
+    def test_host_wildcard(self) -> None:
+        assert _compile_single("host:Homo*", DbPortalDb.biosample) == {
+            "wildcard": {"host": {"value": "Homo*", "case_insensitive": True}},
+        }
+
+    def test_analysis_type_wildcard(self) -> None:
+        assert _compile_single("analysis_type:var*", DbPortalDb.sra) == {
+            "wildcard": {"analysisType": {"value": "var*", "case_insensitive": True}},
+        }
+
+
+class TestTier3PhraseSpaceValue:
+    """空白含み値は phrase quote 経由で match_phrase に渡る (token 順保持)."""
+
+    def test_host_phrase_with_space(self) -> None:
+        assert _compile_single('host:"Homo sapiens"', DbPortalDb.biosample) == {
+            "match_phrase": {"host": "Homo sapiens"},
+        }
+
+    def test_library_construction_protocol_phrase_with_space(self) -> None:
+        assert _compile_single(
+            'library_construction_protocol:"Illumina TruSeq"',
+            DbPortalDb.sra,
+        ) == {
+            "match_phrase": {"libraryConstructionProtocol": "Illumina TruSeq"},
+        }
 
 
 class TestTier3GrantAgencyNested2:
