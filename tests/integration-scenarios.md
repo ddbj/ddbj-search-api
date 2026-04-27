@@ -1336,18 +1336,18 @@
 
 **不変条件**:
 - `status_code == 200` かつ `total > 0` (allowlist を通って `geoLocName` で実フィルタが効いている)
-- 同 `q=*` (フィルタなし) との `total` 比で `adv=geo_loc_name:Japan` の方が小さい (silent wrong-field match で全件 fallback すると等しくなる)
+- 同 `q=cancer` (broad keyword baseline) との `total` 比で `adv=geo_loc_name:Japan` の方が小さい (silent wrong-field match で baseline 相当に膨らむ regression を弾く)
 
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`, `tests/unit/search/dsl/test_allowlist.py`
 
 ### IT-DBPORTAL-20: SRA Tier 3 (analysis_type) の uf allowlist 完全性
 
-**endpoint**: `GET /db-portal/search?db=sra&adv=analysis_type:variation&perPage=20` (compile_to_es 経由、sra-analysis のみヒット)
+**endpoint**: `GET /db-portal/search?db=sra&adv=analysis_type:reference_alignment&perPage=20` (compile_to_es 経由、sra-analysis のみヒット)
 
 **不変条件**:
 - `status_code == 200` かつ `total > 0` (allowlist を通って `analysisType` で実フィルタが効いている)
-- 同 `q=*` (フィルタなし) との `total` 比で `adv=analysis_type:variation` の方が小さい
+- 同 `q=cancer` (broad keyword baseline) との `total` 比で `adv=analysis_type:reference_alignment` の方が小さい
 
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`, `tests/unit/search/dsl/test_allowlist.py`

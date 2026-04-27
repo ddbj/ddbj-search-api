@@ -196,7 +196,7 @@ class TestUfAllowlistCompletenessBioSample:
     """IT-DBPORTAL-19: BioSample Tier 3 (geo_loc_name) is reachable via the ES allowlist."""
 
     def test_geo_loc_name_filters_actually_apply(self, app: TestClient) -> None:
-        """IT-DBPORTAL-19: ``adv=geo_loc_name:Japan`` shrinks ``total`` vs the unfiltered baseline."""
+        """IT-DBPORTAL-19: ``adv=geo_loc_name:Japan`` shrinks ``total`` vs a broad baseline."""
         adv_resp = app.get(
             "/db-portal/search",
             params={"db": "biosample", "adv": "geo_loc_name:Japan", "perPage": 20},
@@ -205,13 +205,15 @@ class TestUfAllowlistCompletenessBioSample:
         adv_total = adv_resp.json()["total"]
         assert adv_total > 0
 
+        # ``q=*`` would search the literal ``*`` token (auto-phrase) and yield 0
+        # hits, so a broad keyword baseline (``cancer``) is used to detect a
+        # silent wrong-field fallback that would inflate adv toward baseline.
         baseline_resp = app.get(
             "/db-portal/search",
-            params={"db": "biosample", "q": "*", "perPage": 20},
+            params={"db": "biosample", "q": "cancer", "perPage": 20},
         )
         assert baseline_resp.status_code == 200
         baseline_total = baseline_resp.json()["total"]
-        # Silent wrong-field fallback would make adv match the baseline.
         assert adv_total < baseline_total
 
 
@@ -219,18 +221,19 @@ class TestUfAllowlistCompletenessSraAnalysis:
     """IT-DBPORTAL-20: SRA Tier 3 (analysis_type) is reachable via the ES allowlist."""
 
     def test_analysis_type_filters_actually_apply(self, app: TestClient) -> None:
-        """IT-DBPORTAL-20: ``adv=analysis_type:variation`` shrinks ``total`` vs the unfiltered baseline."""
+        """IT-DBPORTAL-20: ``adv=analysis_type:reference_alignment`` shrinks ``total`` vs a broad baseline."""
         adv_resp = app.get(
             "/db-portal/search",
-            params={"db": "sra", "adv": "analysis_type:variation", "perPage": 20},
+            params={"db": "sra", "adv": "analysis_type:reference_alignment", "perPage": 20},
         )
         assert adv_resp.status_code == 200
         adv_total = adv_resp.json()["total"]
         assert adv_total > 0
 
+        # See IT-DBPORTAL-19 for why ``q=cancer`` is used as the broad baseline.
         baseline_resp = app.get(
             "/db-portal/search",
-            params={"db": "sra", "q": "*", "perPage": 20},
+            params={"db": "sra", "q": "cancer", "perPage": 20},
         )
         assert baseline_resp.status_code == 200
         baseline_total = baseline_resp.json()["total"]
