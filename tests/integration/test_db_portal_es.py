@@ -235,3 +235,63 @@ class TestUfAllowlistCompletenessSraAnalysis:
         assert baseline_resp.status_code == 200
         baseline_total = baseline_resp.json()["total"]
         assert adv_total < baseline_total
+
+
+_ES_DBS_FOR_UNIQUENESS: tuple[str, ...] = (
+    "sra",
+    "bioproject",
+    "biosample",
+    "jga",
+    "gea",
+    "metabobank",
+)
+
+
+class TestCrossSearchHitsUniqueness:
+    """IT-DBPORTAL-21: cross-search per-DB hits は ``(identifier, type)`` で unique.
+
+    ddbj-search-converter の sameAs alias 投入 (同一 ``_source`` を別 ``_id`` で
+    複数件投入) により ES raw hits に同 ``(identifier, type)`` が複数現れることが
+    あるが、API 層で de-dup している (docs/db-portal-api-spec.md § hits 仕様)。
+    JGA / SRA など subtype を持つ DB で特に効果がある。
+    """
+
+    @pytest.mark.parametrize("query", ["human", "cancer"])
+    def test_es_dbs_have_unique_identifier_type_pairs(
+        self,
+        app: TestClient,
+        query: str,
+    ) -> None:
+        """全 ES DB で ``(identifier, type)`` が unique、かつ ``count >= len(hits)``."""
+        resp = app.get(
+            "/db-portal/cross-search",
+            params={"q": query, "topHits": 50},
+        )
+        assert resp.status_code == 200
+        databases = resp.json()["databases"]
+        for entry in databases:
+            if entry["db"] not in _ES_DBS_FOR_UNIQUENESS:
+                continue
+            hits = entry.get("hits") or []
+            pairs = [(h["identifier"], h["type"]) for h in hits]
+            assert len(pairs) == len(set(pairs)), f"db={entry['db']} q={query} hits に重複: {pairs}"
+            count = entry.get("count")
+            if count is not None:
+                assert count >= len(hits), f"db={entry['db']} q={query} count={count} < len(hits)={len(hits)}"
+
+    def test_jga_top_hits_for_human_are_unique(self, app: TestClient) -> None:
+        """報告再現: ``q=human topHits=5`` の JGA hits は重複なし (regression 防止)."""
+        resp = app.get(
+            "/db-portal/cross-search",
+            params={"q": "human", "topHits": 5},
+        )
+        assert resp.status_code == 200
+        databases = resp.json()["databases"]
+        jga = next(d for d in databases if d["db"] == "jga")
+        hits = jga.get("hits") or []
+        # JGA は staging に「human」を含む public dataset が複数ある前提。
+        # hits=0 になると uniqueness 不変条件が trivially 成立してしまい
+        # regression を検出できないため、明示的に最低 1 件を要求する。
+        assert len(hits) >= 1, "jga hits が空: テスト前提のデータ不足"
+        pairs = [(h["identifier"], h["type"]) for h in hits]
+        assert len(pairs) == len(set(pairs)), f"jga hits に重複: {pairs}"

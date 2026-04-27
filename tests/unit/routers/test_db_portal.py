@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.routers.db_portal import _CROSS_SEARCH_DEDUP_OVERSHOOT
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCountError,
     DbPortalErrorType,
@@ -457,15 +458,16 @@ class TestDbPortalCrossSearch:
         resp = app_with_db_portal.get("/db-portal/cross-search")
         assert resp.status_code == 200
         # First call is for sra (first ES-backed DB in order).  Default
-        # ``topHits=10`` so size is 10 (count-only mode requires explicit
-        # ``topHits=0``).
+        # ``topHits=10``; ES ``size`` is overshot by
+        # ``_CROSS_SEARCH_DEDUP_OVERSHOOT`` so post-filter de-dup can still
+        # yield 10 unique hits when sameAs alias docs collide.
         # ``q`` 省略でも default で ``public_only`` status filter が
         # 付くため、query は ``match_all`` ではなく ``bool.filter`` 1 本のみ。
         first_call_body = mock_es_search_db_portal.call_args_list[0].args[2]
         assert first_call_body["query"] == {
             "bool": {"filter": [{"term": {"status": "public"}}]},
         }
-        assert first_call_body["size"] == 10
+        assert first_call_body["size"] == 10 * _CROSS_SEARCH_DEDUP_OVERSHOOT
 
 
 class TestDbPortalCrossSearchTopHits:
@@ -514,7 +516,8 @@ class TestDbPortalCrossSearchTopHits:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args_list[0].args[2]
-        assert body["size"] == 10
+        # Default ``topHits=10`` 、ES ``size`` は de-dup overshoot 込み。
+        assert body["size"] == 10 * _CROSS_SEARCH_DEDUP_OVERSHOOT
         # Source allowlist is the 12-field lightweight contract.
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
@@ -547,7 +550,8 @@ class TestDbPortalCrossSearchTopHits:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 25})
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args_list[0].args[2]
-        assert body["size"] == 25
+        # Explicit ``topHits`` 値も de-dup overshoot 倍率で ES へ流れる。
+        assert body["size"] == 25 * _CROSS_SEARCH_DEDUP_OVERSHOOT
 
     def test_top_hits_max_50_accepted(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 50})
@@ -748,7 +752,8 @@ class TestDbPortalAdvCrossSearchTopHits:
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args_list[0].args[2]
-        assert body["size"] == 7
+        # adv 経路でも ES ``size`` は de-dup overshoot 倍率。
+        assert body["size"] == 7 * _CROSS_SEARCH_DEDUP_OVERSHOOT
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
         assert "sort" in body

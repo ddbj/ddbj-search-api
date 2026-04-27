@@ -87,6 +87,8 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
   - `topHits=0` のとき `null` (count-only モード)
   - `topHits>=1` で per-DB に最大 `topHits` 件 (relevance 順、`_score` desc + `identifier` asc tiebreaker)
   - `q` を省略した場合 (`match_all`) はすべての `_score` が同点になり、tiebreaker により実質 `identifier` 昇順の最初の N 件になる
+  - per-DB 内で `(identifier, type)` の組は unique。subtype 違い (例: 同一 entity が `jga-study` と `jga-dataset` の両方で hit) は別 hit として並びうる
+  - `count` は raw 値 (上記 unique 化前の件数) なので、常に `count >= len(hits)` が成立する。極端な重複 (Tier 3 単一 DB 集計の重複源など) があると `count` と `len(hits)` の乖離が顕著になることがある
   - per-DB error 時は `[]` (空配列、`error` と整合)
 - 1 つ以上の DB で成功: HTTP 200 (部分失敗許容)
 - 全 DB 失敗: HTTP 502 (`about:blank`)

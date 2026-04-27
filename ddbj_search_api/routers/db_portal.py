@@ -298,6 +298,33 @@ def _empty_hits_or_none(top_hits: int) -> list[DbPortalLightweightHit] | None:
     return [] if top_hits > 0 else None
 
 
+# converter 側の sameAs alias 投入 (同一 _source を別 _id で複数件 ES に格納する
+# 設計) により ES raw hits に同 (identifier, type) の重複が混入する。multiplier
+# は経験則: alias 1 entity あたりの secondary 数は小さい (prefix 一致 + 同 type
+# 条件で限定) ため 3 倍取れば top_hits 件 unique を再構成できる前提。
+_CROSS_SEARCH_DEDUP_OVERSHOOT = 3
+
+
+def _dedup_lightweight_hits(
+    hits: list[DbPortalLightweightHit],
+    limit: int,
+) -> list[DbPortalLightweightHit]:
+    """Drop duplicates by ``(identifier, type)`` (insertion-order, first-wins) and truncate to *limit*."""
+    if limit <= 0:
+        return []
+    seen: set[tuple[str, str]] = set()
+    result: list[DbPortalLightweightHit] = []
+    for hit in hits:
+        key = (hit.identifier, hit.type)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(hit)
+        if len(result) >= limit:
+            break
+    return result
+
+
 async def _count_one_db_es(
     client: httpx.AsyncClient,
     config: AppConfig,
@@ -305,7 +332,8 @@ async def _count_one_db_es(
     query_body: dict[str, Any],
     top_hits: int,
 ) -> DbPortalCount:
-    body: dict[str, Any] = {"query": query_body, "size": top_hits}
+    fetch_size = top_hits * _CROSS_SEARCH_DEDUP_OVERSHOOT if top_hits > 0 else 0
+    body: dict[str, Any] = {"query": query_body, "size": fetch_size}
     if top_hits > 0:
         body["_source"] = list(_CROSS_SEARCH_LIGHTWEIGHT_FIELDS)
         body["sort"] = build_sort_with_tiebreaker(None)
@@ -359,7 +387,8 @@ async def _count_one_db_es(
     hits: list[DbPortalLightweightHit] | None = None
     if top_hits > 0:
         raw_hits = resp.get("hits", {}).get("hits", [])
-        hits = [_DbPortalLightweightHitAdapter.validate_python(h.get("_source", {})) for h in raw_hits]
+        parsed = [_DbPortalLightweightHitAdapter.validate_python(h.get("_source", {})) for h in raw_hits]
+        hits = _dedup_lightweight_hits(parsed, top_hits)
     return DbPortalCount(db=db, count=count, error=None, hits=hits)
 
 

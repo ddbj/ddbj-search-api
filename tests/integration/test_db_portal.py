@@ -180,6 +180,31 @@ class TestCrossSearchTopHitsBoundary:
         assert resp.status_code == 422
 
 
+class TestCrossSearchEightDbHitsUniqueness:
+    """IT-DBPORTAL-22: 8 DB すべての hits が ``(identifier, type)`` で unique."""
+
+    @pytest.mark.parametrize("query", ["human", "cancer"])
+    def test_all_eight_dbs_have_unique_identifier_type_pairs(
+        self,
+        app: TestClient,
+        query: str,
+    ) -> None:
+        """ES 6 DB は API 層 de-dup、Solr 2 DB は別 mapper 経路で重複を持たない."""
+        resp = app.get(
+            "/db-portal/cross-search",
+            params={"q": query, "topHits": 50},
+        )
+        assert resp.status_code == 200
+        databases = resp.json()["databases"]
+        for entry in databases:
+            hits = entry.get("hits") or []
+            pairs = [(h["identifier"], h["type"]) for h in hits]
+            assert len(pairs) == len(set(pairs)), f"db={entry['db']} q={query} hits に重複: {pairs}"
+            count = entry.get("count")
+            if count is not None:
+                assert count >= len(hits), f"db={entry['db']} q={query} count={count} < len(hits)={len(hits)}"
+
+
 class TestSearchTradCursorNotSupported:
     """IT-DBPORTAL-09: db=trad cursor 不可."""
 
