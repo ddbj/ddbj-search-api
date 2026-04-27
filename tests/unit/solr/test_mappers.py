@@ -235,7 +235,7 @@ class TestTxsearchDocsToHits:
 
     def test_url_uses_tax_id(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
-        assert h.url == "https://ddbj.nig.ac.jp/resource/taxonomy/9606"
+        assert h.url == "https://ddbj.nig.ac.jp/tx_search/9606?view=info"
 
     def test_rank_passthrough(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606", "rank": "species"}])[0]
@@ -467,7 +467,7 @@ class TestTxsearchDocsToLightweightHits:
         assert set(dumped.keys()) == self._LIGHTWEIGHT_FIELDS
         assert dumped["identifier"] == "9606"
         assert dumped["type"] == "taxonomy"
-        assert dumped["url"] == "https://ddbj.nig.ac.jp/resource/taxonomy/9606"
+        assert dumped["url"] == "https://ddbj.nig.ac.jp/tx_search/9606?view=info"
         assert dumped["title"] == "Homo sapiens"
         assert dumped["description"] is None
         assert dumped["organism"] == {"identifier": "9606", "name": "Homo sapiens"}

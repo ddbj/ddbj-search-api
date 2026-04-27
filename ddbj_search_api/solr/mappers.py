@@ -27,7 +27,10 @@ _FEATURE_TAXON_RE = re.compile(r'/db_xref="taxon:(\d+)"')
 
 _DEEP_PAGING_LIMIT = 10_000
 _ARSA_URL_PREFIX = "https://getentry.ddbj.nig.ac.jp/getentry/na/"
-_TAXONOMY_URL_PREFIX = "https://ddbj.nig.ac.jp/resource/taxonomy/"
+_TAXONOMY_URL_PREFIX = "https://ddbj.nig.ac.jp/tx_search/"
+# ``?view=info`` で TXSearch の Info タブ (rank / lineage / 名前等の概要) を直接開く。
+# 省略するとデフォルトの検索結果ビューに落ちて識別子からは情報が読み取れない。
+_TAXONOMY_URL_QUERY = "?view=info"
 
 
 def _parse_arsa_date(raw: Any) -> str | None:
@@ -155,7 +158,7 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "organism": organism,
             "description": None,
             "datePublished": None,
-            "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}" if tax_id else None,
+            "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}{_TAXONOMY_URL_QUERY}" if tax_id else None,
             "sameAs": None,
             "dbXrefs": None,
             "rank": doc.get("rank"),
@@ -240,7 +243,7 @@ def txsearch_docs_to_lightweight_hits(
             "description": None,
             "organism": organism,
             "datePublished": None,
-            "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}" if tax_id else None,
+            "url": f"{_TAXONOMY_URL_PREFIX}{tax_id}{_TAXONOMY_URL_QUERY}" if tax_id else None,
             "status": "public",
             "accessibility": "public-access",
             "dateCreated": None,

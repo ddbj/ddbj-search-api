@@ -676,7 +676,7 @@ class TestDbPortalCrossSearchTopHits:
         h = tax["hits"][0]
         assert h["identifier"] == "9606"
         assert h["type"] == "taxonomy"
-        assert h["url"].endswith("/9606")
+        assert h["url"] == "https://ddbj.nig.ac.jp/tx_search/9606?view=info"
         assert h["title"] == "Homo sapiens"
         assert h["organism"] == {"identifier": "9606", "name": "Homo sapiens"}
         # Fixed values + nulls.
@@ -1427,7 +1427,7 @@ class TestDbPortalTaxonomySpecificSearch:
         assert hit["title"] == "Homo sapiens"
         assert hit["organism"] == {"name": "Homo sapiens", "identifier": "9606"}
         assert hit["datePublished"] is None
-        assert hit["url"] == "https://ddbj.nig.ac.jp/resource/taxonomy/9606"
+        assert hit["url"] == "https://ddbj.nig.ac.jp/tx_search/9606?view=info"
         assert hit["rank"] == "species"
         assert hit["commonName"] == "human"
         assert hit["japaneseName"] == "ヒト"

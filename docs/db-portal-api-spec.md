@@ -118,7 +118,7 @@ Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており
 |---|---|---|
 | `identifier` | `PrimaryAccessionNumber` | `tax_id` |
 | `type` | 固定 `"trad"` | 固定 `"taxonomy"` |
-| `url` | `https://getentry.ddbj.nig.ac.jp/getentry/na/{accession}/` | `https://ddbj.nig.ac.jp/resource/taxonomy/{tax_id}` |
+| `url` | `https://getentry.ddbj.nig.ac.jp/getentry/na/{accession}/` | `https://ddbj.nig.ac.jp/tx_search/{tax_id}?view=info` |
 | `title` | `Definition` | `scientific_name` |
 | `description` | `null` | `null` |
 | `organism` | `Organism` (name) + `Feature` の `db_xref="taxon:..."` (identifier) | `scientific_name` (name) + `tax_id` (identifier) |
