@@ -2356,10 +2356,15 @@ class TestDbPortalAdvTier2Tier3:
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """GUI が送る可能性のない field (例: geo_loc_name、未 allowlist 化) は unknown-field."""
+        """allowlist 外 field は ``unknown-field`` で 400.
+
+        実在しない synthetic な field 名を使う。実在 field を例に取ると
+        allowlist 拡張で test が drift する (L33 grammar は ``[a-z_]+`` を
+        受理するので parse は通る、validator 段階で reject されるはず)。
+        """
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "geo_loc_name:Japan", "db": "biosample"},
+            params={"adv": "synthetic_unknown_field:Japan", "db": "biosample"},
         )
         assert resp.status_code == 400
         body = resp.json()
