@@ -94,5 +94,12 @@ def parse_facets(aggregations: dict[str, Any]) -> Facets:
             "experimentType": _optional("experimentType"),
             "studyType": _optional("studyType"),
             "submissionType": _optional("submissionType"),
+            # db-portal sidebar 拡張で追加された 6 facet
+            "relevance": _optional("relevance"),
+            "package": _optional("package"),
+            "model": _optional("model"),
+            "libraryLayout": _optional("libraryLayout"),
+            "analysisType": _optional("analysisType"),
+            "datasetType": _optional("datasetType"),
         }
     )

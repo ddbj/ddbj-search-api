@@ -98,6 +98,13 @@ class TestParseFacetsOptionalSemantics:
             "experimentType",
             "studyType",
             "submissionType",
+            # db-portal sidebar 拡張で追加された 6 facet
+            "relevance",
+            "package",
+            "model",
+            "libraryLayout",
+            "analysisType",
+            "datasetType",
         ],
     )
     def test_individual_optional_field_aggregated(self, agg_name: str) -> None:
@@ -115,6 +122,12 @@ class TestParseFacetsOptionalSemantics:
             "experimentType": "experiment_type",
             "studyType": "study_type",
             "submissionType": "submission_type",
+            "relevance": "relevance",
+            "package": "package",
+            "model": "model",
+            "libraryLayout": "library_layout",
+            "analysisType": "analysis_type",
+            "datasetType": "dataset_type",
         }[agg_name]
         value = getattr(facets, attr)
         assert value is not None
