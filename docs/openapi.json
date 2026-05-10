@@ -22686,6 +22686,152 @@
                 }
               ]
             ]
+          },
+          "relevance": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance",
+            "description": "BioProject relevance count (bioproject only, opt-in). INSDC controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other.",
+            "examples": [
+              [
+                {
+                  "count": 1500,
+                  "value": "Medical"
+                },
+                {
+                  "count": 800,
+                  "value": "ModelOrganism"
+                }
+              ]
+            ]
+          },
+          "package": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package",
+            "description": "BioSample package count (biosample only, opt-in). bucket value is the package name (``package.name`` keyword).",
+            "examples": [
+              [
+                {
+                  "count": 4000,
+                  "value": "MIGS.ba"
+                }
+              ]
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "BioSample model count (biosample only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 5000,
+                  "value": "Generic.1.0"
+                }
+              ]
+            ]
+          },
+          "libraryLayout": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarylayout",
+            "description": "Library layout count (sra-experiment only, opt-in). Cardinality 2.",
+            "examples": [
+              [
+                {
+                  "count": 800,
+                  "value": "PAIRED"
+                },
+                {
+                  "count": 200,
+                  "value": "SINGLE"
+                }
+              ]
+            ]
+          },
+          "analysisType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysistype",
+            "description": "Analysis type count (sra-analysis only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 300,
+                  "value": "REFERENCE_ALIGNMENT"
+                }
+              ]
+            ]
+          },
+          "datasetType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasettype",
+            "description": "JGA dataset type count (jga-dataset only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 250,
+                  "value": "Whole genome sequencing"
+                }
+              ]
+            ]
           }
         },
         "type": "object",

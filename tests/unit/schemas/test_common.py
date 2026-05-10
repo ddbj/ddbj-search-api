@@ -219,6 +219,36 @@ class TestFacets:
         assert facets.accessibility is None
         assert facets.type is None
         assert facets.object_type is None
+        # db-portal sidebar 拡張で追加された 6 facet も同様に optional
+        assert facets.relevance is None
+        assert facets.package is None
+        assert facets.model is None
+        assert facets.library_layout is None
+        assert facets.analysis_type is None
+        assert facets.dataset_type is None
+
+    def test_new_facets_serialization_uses_camelcase_alias(self) -> None:
+        """db-portal 拡張 facet (libraryLayout / analysisType / datasetType) は
+        camelCase alias で serialize される。relevance / package / model は alias 無し
+        (snake_case と camelCase が同形)。"""
+        facets = Facets(
+            relevance=[FacetBucket(value="Medical", count=10)],
+            package=[FacetBucket(value="MIGS.ba", count=20)],
+            model=[FacetBucket(value="Generic.1.0", count=30)],
+            libraryLayout=[FacetBucket(value="PAIRED", count=40)],
+            analysisType=[FacetBucket(value="REFERENCE_ALIGNMENT", count=50)],
+            datasetType=[FacetBucket(value="Whole genome sequencing", count=60)],
+        )
+        data = facets.model_dump(by_alias=True, exclude_none=True)
+        assert "relevance" in data
+        assert "package" in data
+        assert "model" in data
+        assert "libraryLayout" in data
+        assert "library_layout" not in data
+        assert "analysisType" in data
+        assert "analysis_type" not in data
+        assert "datasetType" in data
+        assert "dataset_type" not in data
 
 
 # === EntryListItem ===

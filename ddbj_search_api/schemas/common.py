@@ -201,6 +201,45 @@ class Facets(BaseModel):
         examples=[[{"value": "open", "count": 20}]],
         description="Submission type count (metabobank only, opt-in).",
     )
+    relevance: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "Medical", "count": 1500}, {"value": "ModelOrganism", "count": 800}]],
+        description=(
+            "BioProject relevance count (bioproject only, opt-in). INSDC controlled values: "
+            "Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other."
+        ),
+    )
+    package: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "MIGS.ba", "count": 4000}]],
+        description=(
+            "BioSample package count (biosample only, opt-in). bucket value is the package name "
+            "(``package.name`` keyword)."
+        ),
+    )
+    model: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "Generic.1.0", "count": 5000}]],
+        description="BioSample model count (biosample only, opt-in).",
+    )
+    library_layout: list[FacetBucket] | None = Field(
+        default=None,
+        alias="libraryLayout",
+        examples=[[{"value": "PAIRED", "count": 800}, {"value": "SINGLE", "count": 200}]],
+        description="Library layout count (sra-experiment only, opt-in). Cardinality 2.",
+    )
+    analysis_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="analysisType",
+        examples=[[{"value": "REFERENCE_ALIGNMENT", "count": 300}]],
+        description="Analysis type count (sra-analysis only, opt-in).",
+    )
+    dataset_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="datasetType",
+        examples=[[{"value": "Whole genome sequencing", "count": 250}]],
+        description="JGA dataset type count (jga-dataset only, opt-in).",
+    )
 
 
 # DbXrefsCount: mapping from XrefType to count
