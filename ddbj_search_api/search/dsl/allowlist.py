@@ -3,7 +3,7 @@
 3 段構成:
 - Tier 1 (横断可、8 field): identifier / text / organism / date 系の基本 field。
 - Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
-- Tier 3 (単一 DB 指定必須、36 unique / per-DB 集計 41 field): DB 特化 field。
+- Tier 3 (単一 DB 指定必須、39 unique / per-DB 集計 45 field): DB 特化 field。
 
 SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス、
 db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
@@ -43,8 +43,8 @@ TIER2_FIELDS: frozenset[str] = frozenset(
 )
 
 # 単一 DB 選択時のみ使える Tier 3 (DB 特化 field)。
-# unique 36 field、ただし per-DB 集計は 41 (grant_agency / study_type / experiment_type / geo_loc_name /
-# collection_date が 2 DB 間で shared、計 +5 重複)。
+# unique 39 field、ただし per-DB 集計は 45 (grant_agency / study_type / experiment_type / geo_loc_name /
+# collection_date が 2 DB 間で shared、`type` も SRA / JGA で shared、計 +6 重複)。
 # SSOT: search-backends.md L560-575 Tier 3 DB 別フィールド。
 # 未 allowlist 化で保留中の候補 field: JGA principal_investigator / submitting_organization /
 # BioProject project_type の INSDC 値域 / Taxonomy japanese_name (staging TXSearch に field 不在)。
@@ -54,12 +54,14 @@ TIER3_FIELDS: frozenset[str] = frozenset(
         "project_type",
         "grant_agency",
         "relevance",
-        # BioSample (5): geo_loc_name / collection_date は SRA-sample と共通
+        # BioSample (7): geo_loc_name / collection_date は SRA-sample と共通
         "host",
         "strain",
         "isolate",
         "geo_loc_name",
         "collection_date",
+        "package",
+        "model",
         # SRA 8 fields (subtype 別ヒット): library_* / platform / instrument_model は sra-experiment、
         # analysis_type は sra-analysis、geo_loc_name / collection_date は sra-sample (BioSample 共通)
         "library_strategy",
@@ -75,6 +77,8 @@ TIER3_FIELDS: frozenset[str] = frozenset(
         "study_type",
         "vendor",
         "dataset_type",
+        # SRA / JGA 共通 (1): subtype 識別子。db-portal sidebar UI で subtype 絞込みに使う
+        "type",
         # GEA (1) + MetaboBank (3): experiment_type は両方で共通
         "experiment_type",
         # MetaboBank exclusive
@@ -126,6 +130,10 @@ FIELD_TYPES: dict[str, FieldType] = {
     "isolate": "text",
     "geo_loc_name": "text",
     "collection_date": "text",
+    # package は object{name:keyword, displayName:keyword}、DSL 経由では package.name.keyword に
+    # 解決 (compiler_es.py)。model は keyword 単独。両者とも controlled vocab 寄り。
+    "package": "enum",
+    "model": "enum",
     # === Tier 3 SRA ===
     "library_strategy": "enum",
     "library_source": "enum",
@@ -141,6 +149,10 @@ FIELD_TYPES: dict[str, FieldType] = {
     "study_type": "enum",
     "vendor": "text",
     "dataset_type": "text",
+    # === Tier 3 SRA / JGA 共通 ===
+    # type は subtype 識別子 (SRA: sra-submission..sra-analysis、JGA: jga-study..jga-policy)。
+    # 値域 validation は ES 側に委譲、未知値は 0 件で返る。
+    "type": "enum",
     # === Tier 3 GEA / MetaboBank ===
     # experiment_type は spec L562 で SRA 同等の enum 想定だが、converter 実装は list[str]。
     # ここでは text 型として開放し、enum 値域検証は converter 側での正規化完了後に導入する。
@@ -203,6 +215,8 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "host": ("biosample",),
     "strain": ("biosample",),
     "isolate": ("biosample",),
+    "package": ("biosample",),
+    "model": ("biosample",),
     # BioSample + SRA (SRA-sample のみ field を持つ)
     "geo_loc_name": ("biosample", "sra"),
     "collection_date": ("biosample", "sra"),
@@ -221,6 +235,8 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     # JGA-only (vendor=jga-study、dataset_type=jga-dataset)
     "vendor": ("jga",),
     "dataset_type": ("jga",),
+    # SRA + JGA 共通 (subtype 識別子)
+    "type": ("sra", "jga"),
     # GEA + MetaboBank
     "experiment_type": ("gea", "metabobank"),
     # MetaboBank-only

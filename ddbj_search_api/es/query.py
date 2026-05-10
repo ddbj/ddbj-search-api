@@ -552,6 +552,16 @@ _FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
     "experimentType": {"terms": {"field": "experimentType.keyword", "size": 50}},
     "studyType": {"terms": {"field": "studyType.keyword", "size": 50}},
     "submissionType": {"terms": {"field": "submissionType.keyword", "size": 50}},
+    # === BioProject ===
+    "relevance": {"terms": {"field": "relevance", "size": 50}},
+    # === BioSample (package は object{name:keyword,displayName:keyword} の name サブフィールド) ===
+    "package": {"terms": {"field": "package.name", "size": 50}},
+    "model": {"terms": {"field": "model", "size": 50}},
+    # === SRA (libraryLayout は cardinality 2、analysisType は cardinality 4 で size 抑制) ===
+    "libraryLayout": {"terms": {"field": "libraryLayout.keyword", "size": 10}},
+    "analysisType": {"terms": {"field": "analysisType.keyword", "size": 10}},
+    # === JGA ===
+    "datasetType": {"terms": {"field": "datasetType.keyword", "size": 50}},
 }
 
 # Default common facets when ``requested_facets`` is omitted. ``type`` is
@@ -585,6 +595,12 @@ _TYPE_SPECIFIC_FACET_SCOPE: dict[str, frozenset[str]] = {
     "experimentType": frozenset({"gea", "metabobank"}),
     "studyType": frozenset({"jga-study", "metabobank"}),
     "submissionType": frozenset({"metabobank"}),
+    "relevance": frozenset({"bioproject"}),
+    "package": frozenset({"biosample"}),
+    "model": frozenset({"biosample"}),
+    "libraryLayout": frozenset({"sra-experiment"}),
+    "analysisType": frozenset({"sra-analysis"}),
+    "datasetType": frozenset({"jga-dataset"}),
 }
 
 

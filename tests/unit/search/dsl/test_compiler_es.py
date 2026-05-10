@@ -305,6 +305,12 @@ class TestTier3FlatEnum:
             ("platform:ILLUMINA", DbPortalDb.sra, "platform", "ILLUMINA"),
             ("study_type:Cohort", DbPortalDb.jga, "studyType", "Cohort"),
             ("relevance:reference", DbPortalDb.bioproject, "relevance", "reference"),
+            # db-portal sidebar 拡張で追加された Tier 3 enum
+            ("package:MIGS.ba", DbPortalDb.biosample, "package.name", "MIGS.ba"),
+            ("model:HiSeq", DbPortalDb.biosample, "model", "HiSeq"),
+            # SRA + JGA 共通 type (subtype 識別子)
+            ("type:sra-experiment", DbPortalDb.sra, "type", "sra-experiment"),
+            ("type:jga-dataset", DbPortalDb.jga, "type", "jga-dataset"),
         ],
     )
     def test_enum_eq(self, dsl: str, db: DbPortalDb, es_field: str, value: str) -> None:

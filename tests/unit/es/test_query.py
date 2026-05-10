@@ -677,6 +677,17 @@ class TestBuildFacetAggs:
             ("experimentType", "experimentType.keyword"),
             ("studyType", "studyType.keyword"),
             ("submissionType", "submissionType.keyword"),
+            # db-portal sidebar 拡張で追加された 6 facet
+            # relevance / model は ES mapping が keyword 単独 (text+keyword multi-field ではない)
+            # なので suffix `.keyword` を付けない
+            ("relevance", "relevance"),
+            ("model", "model"),
+            # package は object{name:keyword,displayName:keyword} で name サブフィールド
+            ("package", "package.name"),
+            # libraryLayout / analysisType / datasetType は text+keyword multi-field
+            ("libraryLayout", "libraryLayout.keyword"),
+            ("analysisType", "analysisType.keyword"),
+            ("datasetType", "datasetType.keyword"),
         ],
     )
     def test_explicit_type_specific_facet_uses_keyword_field(
@@ -732,6 +743,13 @@ class TestBuildFacetAggsPBT:
                     "experimentType",
                     "studyType",
                     "submissionType",
+                    # db-portal sidebar 拡張で追加された 6 facet
+                    "relevance",
+                    "package",
+                    "model",
+                    "libraryLayout",
+                    "analysisType",
+                    "datasetType",
                 ],
             ),
             max_size=5,

@@ -109,6 +109,30 @@ class TestBioProjectVariant:
                 },
             )
 
+    def test_with_relevance(self) -> None:
+        h = _validate(
+            {
+                "identifier": "PRJDB2",
+                "type": "bioproject",
+                "relevance": ["Medical", "ModelOrganism"],
+            },
+        )
+        assert isinstance(h, DbPortalHitBioProject)
+        assert h.relevance == ["Medical", "ModelOrganism"]
+
+    def test_relevance_accepts_arbitrary_strings(self) -> None:
+        # allowlist は INSDC controlled values を docs で示しているが、Pydantic 側は
+        # list[str] で開放 (converter ingestion に未知値が紛れた場合に silently drop しない)。
+        h = _validate(
+            {
+                "identifier": "PRJDB3",
+                "type": "bioproject",
+                "relevance": ["FreeFormValue"],
+            },
+        )
+        assert isinstance(h, DbPortalHitBioProject)
+        assert h.relevance == ["FreeFormValue"]
+
 
 class TestBioSampleVariant:
     def test_with_package_and_model(self) -> None:
@@ -126,6 +150,35 @@ class TestBioSampleVariant:
         assert h.package.name == "MIGS.ba"
         assert h.package.displayName == "MIGS Bacteria"
         assert h.model == ["model-a", "model-b"]
+
+    def test_with_top_level_attributes_camelcase(self) -> None:
+        """converter 0.3.0 で top-level 化された host/strain/isolate/geoLocName/collectionDate."""
+        h = _validate(
+            {
+                "identifier": "SAMD00000002",
+                "type": "biosample",
+                "host": "Homo sapiens",
+                "strain": "K12",
+                "isolate": "patient-1",
+                "geoLocName": "Japan: Tokyo",
+                "collectionDate": "2020-04",
+            },
+        )
+        assert isinstance(h, DbPortalHitBioSample)
+        assert h.host == "Homo sapiens"
+        assert h.strain == "K12"
+        assert h.isolate == "patient-1"
+        assert h.geo_loc_name == "Japan: Tokyo"
+        assert h.collection_date == "2020-04"
+
+    def test_top_level_attributes_default_to_none_when_absent(self) -> None:
+        h = _validate({"identifier": "SAMD00000003", "type": "biosample"})
+        assert isinstance(h, DbPortalHitBioSample)
+        assert h.host is None
+        assert h.strain is None
+        assert h.isolate is None
+        assert h.geo_loc_name is None
+        assert h.collection_date is None
 
 
 class TestSraVariant:
@@ -162,6 +215,45 @@ class TestSraVariant:
         )
         assert isinstance(h, DbPortalHitSra)
         assert h.analysis_type == "REFERENCE_ALIGNMENT"
+
+    def test_sra_experiment_with_library_name_and_protocol(self) -> None:
+        """library_name / library_construction_protocol は sra-experiment のみ populate される."""
+        h = _validate(
+            {
+                "identifier": "DRX000002",
+                "type": "sra-experiment",
+                "libraryName": "lib-001",
+                "libraryConstructionProtocol": "PCR-free",
+            },
+        )
+        assert isinstance(h, DbPortalHitSra)
+        assert h.library_name == "lib-001"
+        assert h.library_construction_protocol == "PCR-free"
+
+    def test_sra_sample_with_geo_loc_collection_date(self) -> None:
+        """geo_loc_name / collection_date は sra-sample のみ populate (BioSample と共通 schema)."""
+        h = _validate(
+            {
+                "identifier": "DRS000001",
+                "type": "sra-sample",
+                "geoLocName": "Japan: Tokyo",
+                "collectionDate": "2020-04",
+            },
+        )
+        assert isinstance(h, DbPortalHitSra)
+        assert h.geo_loc_name == "Japan: Tokyo"
+        assert h.collection_date == "2020-04"
+
+    def test_sra_other_subtypes_leave_subtype_specific_fields_none(self) -> None:
+        """sra-submission / sra-study / sra-run は subtype 固有 field を持たず null."""
+        for subtype in ("sra-submission", "sra-study", "sra-run"):
+            h = _validate({"identifier": "X", "type": subtype})
+            assert isinstance(h, DbPortalHitSra)
+            assert h.library_name is None, f"{subtype} should have library_name=None"
+            assert h.library_construction_protocol is None
+            assert h.geo_loc_name is None
+            assert h.collection_date is None
+            assert h.analysis_type is None
 
 
 class TestJgaVariant:

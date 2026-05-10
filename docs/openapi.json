@@ -18981,6 +18981,26 @@
                 }
               ]
             ]
+          },
+          "relevance": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance",
+            "description": "BioProject relevance (INSDC controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other).",
+            "examples": [
+              [
+                "Medical"
+              ]
+            ]
           }
         },
         "type": "object",
@@ -19276,6 +19296,76 @@
               [
                 "model-a"
               ]
+            ]
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host",
+            "examples": [
+              "Homo sapiens"
+            ]
+          },
+          "strain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strain",
+            "examples": [
+              "K12"
+            ]
+          },
+          "isolate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isolate",
+            "examples": [
+              "patient-1"
+            ]
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname",
+            "examples": [
+              "Japan: Tokyo"
+            ]
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate",
+            "examples": [
+              "2020-04"
             ]
           }
         },
@@ -20725,6 +20815,62 @@
             "examples": [
               "ALIGNMENT"
             ]
+          },
+          "libraryName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryname",
+            "examples": [
+              "lib-001"
+            ]
+          },
+          "libraryConstructionProtocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryconstructionprotocol",
+            "examples": [
+              "PCR-free"
+            ]
+          },
+          "geoLocName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geolocname",
+            "examples": [
+              "Japan: Tokyo"
+            ]
+          },
+          "collectionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collectiondate",
+            "examples": [
+              "2020-04"
+            ]
           }
         },
         "type": "object",
@@ -20733,7 +20879,7 @@
           "type"
         ],
         "title": "DbPortalHitSra",
-        "description": "SRA hit (6 subtypes share one variant; subtype-specific fields are optional).\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``.  ``library_*`` /\n``platform`` / ``instrumentModel`` are populated only on\n``sra-experiment`` hits, and ``analysisType`` only on\n``sra-analysis`` hits; the remaining subtypes leave them as\n``null``."
+        "description": "SRA hit (6 subtypes share one variant; subtype-specific fields are optional).\n\n``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /\n``sra-run`` / ``sra-sample`` / ``sra-analysis``.\n\nSubtype-specific populate rules:\n- ``library_strategy`` / ``library_source`` / ``library_layout`` / ``platform`` /\n  ``instrument_model`` / ``library_name`` / ``library_construction_protocol`` are\n  populated only on ``sra-experiment`` hits.\n- ``analysis_type`` is populated only on ``sra-analysis`` hits.\n- ``geo_loc_name`` / ``collection_date`` are populated only on ``sra-sample`` hits\n  (shared schema with BioSample).\n\nRemaining subtypes leave the unrelated fields as ``null``."
       },
       "DbPortalHitTaxonomy": {
         "properties": {

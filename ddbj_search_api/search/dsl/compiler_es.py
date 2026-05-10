@@ -4,8 +4,10 @@ SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
 
 - Tier 1 は 6 flat + 2 or_flat (organism / date alias)。
 - Tier 2 は 2 nested (submitter: organization, publication: publication)。
-- Tier 3 (ES 対象) は 19 flat (BioProject project_type/relevance / BioSample 5 /
-  SRA 7 / JGA 3 / MetaboBank shared 3) + 1 double-nested (grant_agency: grant → grant.agency)。
+- Tier 3 (ES 対象) は 22 flat (BioProject project_type/relevance / BioSample 7
+  (host/strain/isolate/geo_loc_name/collection_date/package/model) / SRA 7 / JGA 3 /
+  MetaboBank shared 3 / SRA+JGA shared 1 (type)) + 1 double-nested
+  (grant_agency: grant → grant.agency)。
 - Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
 
 前提: validator で ``(field_type, value_kind)`` 互換性および cross-mode Tier 3 拒否は担保済。
@@ -67,12 +69,17 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "dataset_type": _ESStrategy(kind="flat", path="datasetType"),
     "experiment_type": _ESStrategy(kind="flat", path="experimentType"),
     "submission_type": _ESStrategy(kind="flat", path="submissionType"),
-    # BioSample 5 (converter 0.3.0 で top-level 化、geo_loc_name / collection_date は SRA-sample と共通)
+    # BioSample 7 (converter 0.3.0 で top-level 化、geo_loc_name / collection_date は SRA-sample と共通、
+    # package は object{name:keyword, displayName:keyword} で `package.name` keyword 単独に解決)
     "host": _ESStrategy(kind="flat", path="host"),
     "strain": _ESStrategy(kind="flat", path="strain"),
     "isolate": _ESStrategy(kind="flat", path="isolate"),
     "geo_loc_name": _ESStrategy(kind="flat", path="geoLocName"),
     "collection_date": _ESStrategy(kind="flat", path="collectionDate"),
+    "package": _ESStrategy(kind="flat", path="package.name"),
+    "model": _ESStrategy(kind="flat", path="model"),
+    # SRA + JGA 共通 (subtype 識別子。SRA: sra-submission..sra-analysis、JGA: jga-study..jga-policy)
+    "type": _ESStrategy(kind="flat", path="type"),
     # === Tier 3 double-nested ===
     # BioProject / JGA 共通: grant[].agency[].name。GUI 側で bioproject_grant_agency /
     # jga_grant_agency の ID 区別あり、DSL 名は `grant_agency` 統一 (search-backends.md L551)。

@@ -398,7 +398,10 @@ cross-type endpoint (`GET /entries/`, `GET /facets`) では text match パラメ
 
 **bucket 形式**:
 
-`organism` を除く全 facet は `FacetBucket` (`{value, count}` の 2 フィールド) を返す。`value` は対応する検索フィルタパラメータの入力値と同形で、bucket の `value` をそのまま検索 API に渡せる (例: `libraryStrategy` facet の value `"WGS"` を `?libraryStrategy=WGS` に再注入できる)。
+`organism` を除く全 facet は `FacetBucket` (`{value, count}` の 2 フィールド) を返す。`value` の再注入経路は対応する term filter parameter の有無で 2 通りある:
+
+- **term filter parameter を持つ facet** (`objectType`, `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout`, `analysisType`, `experimentType`, `studyType`, `submissionType`, `datasetType`): `?<facet>=<value>` で直接再注入できる (例: `libraryStrategy` facet の value `"WGS"` を `?libraryStrategy=WGS` に再注入)。Advanced Search DSL での再注入も可 (`adv=library_strategy equals "WGS"`、Tier 3 allowlist の snake_case field 名)
+- **term filter parameter を持たない facet** (`relevance`, `package`, `model`): Advanced Search DSL での再注入のみ (例: `relevance` facet の value `"Medical"` を `adv=relevance equals "Medical"` に再注入、`package` / `model` は対応する Tier 3 allowlist field 名 `package` / `model` で adv DSL 合算)
 
 `organism` のみ例外で `OrganismFacetBucket` (`{value, count, label}` の 3 フィールド) を返す:
 
@@ -438,11 +441,14 @@ ES の terms aggregation は `organism.identifier` を bucket key にし、各 b
 
 | タイプ | フィールド | 説明 |
 |--------|----------|------|
-| bioproject | `objectType` | Umbrella / 通常の区分。bucket key は `BioProject` / `UmbrellaBioProject`。同じ key を `objectTypes` filter に渡すと検索を絞り込める |
-| sra-experiment | `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel` | 各 `*.keyword` の値域。同名の type-specific filter parameter で検索を絞り込める |
+| bioproject | `objectType`, `relevance` | `objectType`: Umbrella / 通常の区分 (`BioProject` / `UmbrellaBioProject`、同じ key を `objectTypes` filter に渡すと検索を絞り込める)。`relevance`: INSDC 7 値 (Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other) |
+| biosample | `package`, `model` | `package`: BioSample package 名 (`package.name` の値域、controlled vocab)。`model`: モデル名 (`model` の値域) |
+| sra-experiment | `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout` | 各 `*.keyword` の値域。同名の type-specific filter parameter で検索を絞り込める |
+| sra-analysis | `analysisType` | `analysisType.keyword` の値域 |
 | gea | `experimentType` | `experimentType.keyword` の値域 |
 | metabobank | `studyType`, `experimentType`, `submissionType` | 各 `*.keyword` の値域 |
 | jga-study | `studyType` | `studyType.keyword` の値域 |
+| jga-dataset | `datasetType` | `datasetType.keyword` の値域 |
 
 タイプ固有フィールドは、そのタイプのファセット (`GET /facets/{type}`, `GET /entries/{type}/?includeFacets=true`) でのみ返される。bucket key の値域は ES データから動的に決まるため (converter mapping の値域)、本仕様書には列挙しない。
 

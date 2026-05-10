@@ -1,7 +1,7 @@
 """Tests for ddbj_search_api.search.dsl.allowlist.
 
-3 段構成の Tier 1/2/3 allowlist (51 field per DB 集計 = 46 unique; Tier 1 8 + Tier 2 2 +
-Tier 3 unique 36 / per-DB 41) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
+3 段構成の Tier 1/2/3 allowlist (55 field per DB 集計 = 49 unique; Tier 1 8 + Tier 2 2 +
+Tier 3 unique 39 / per-DB 45) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
 db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
 """
 
@@ -35,23 +35,27 @@ class TestTierFrozensets:
         assert frozenset({"submitter", "publication"}) == TIER2_FIELDS
 
     def test_tier3_contains_expected_per_db_fields(self) -> None:
-        # Tier 3 unique 36 / per-DB 41。
-        # 内訳は BioProject 3、BioSample 5、SRA 8、JGA 3、GEA 0、MetaboBank 1、
-        # Trad 5、Taxonomy 10 で計 35 件。GEA は experiment_type を MetaboBank と共有するため 0。
-        # 加えて shared が 5: grant_agency は BP と JGA で、study_type は JGA と MetaboBank で、
+        # Tier 3 unique 39 / per-DB 45。
+        # 内訳は BioProject 3、BioSample 7、SRA 8、JGA 3、GEA 0、MetaboBank 1、
+        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 38 件。GEA は experiment_type を
+        # MetaboBank と共有するため 0。
+        # 加えて shared が 6: grant_agency は BP と JGA で、study_type は JGA と MetaboBank で、
         # experiment_type は GEA と MetaboBank で、geo_loc_name と collection_date は BioSample と
-        # SRA-sample で共有 → unique は 36、per-DB は 41。
+        # SRA-sample で共有、type は SRA と JGA で共有 → unique は 39、per-DB は 45。
         expected = {
             # BioProject 3 件
             "project_type",
             "grant_agency",  # BioProject と JGA 共通
             "relevance",
-            # BioSample 5 件。geo_loc_name と collection_date は SRA-sample と共通
+            # BioSample 7 件。geo_loc_name と collection_date は SRA-sample と共通、
+            # package / model は db-portal sidebar で controlled-value facet として使う
             "host",
             "strain",
             "isolate",
             "geo_loc_name",
             "collection_date",
+            "package",
+            "model",
             # SRA 8 件。library_* / platform / instrument_model は sra-experiment、
             # analysis_type は sra-analysis のみ field 存在
             "library_strategy",
@@ -66,6 +70,8 @@ class TestTierFrozensets:
             "study_type",  # JGA と MetaboBank 共通
             "vendor",
             "dataset_type",
+            # SRA + JGA 共通 1 件 (db-portal sidebar の subtype 絞込み用)
+            "type",
             # GEA は experiment_type のみ
             "experiment_type",  # GEA と MetaboBank 共通
             # MetaboBank exclusive
@@ -90,8 +96,8 @@ class TestTierFrozensets:
         }
         assert expected == TIER3_FIELDS
 
-    def test_tier3_unique_count_is_36(self) -> None:
-        assert len(TIER3_FIELDS) == 36
+    def test_tier3_unique_count_is_39(self) -> None:
+        assert len(TIER3_FIELDS) == 39
 
     def test_tiers_are_disjoint(self) -> None:
         assert frozenset() == TIER1_FIELDS & TIER2_FIELDS
@@ -134,6 +140,10 @@ class TestFieldTypesMapping:
             ("division", "enum"),
             ("molecular_type", "enum"),
             ("rank", "enum"),
+            # db-portal sidebar 拡張で追加された Tier 3 enum
+            ("package", "enum"),
+            ("model", "enum"),
+            ("type", "enum"),
             # Tier 3 number
             ("sequence_length", "number"),
             # Tier 3 text
@@ -233,6 +243,8 @@ class TestTier3FieldDbs:
             ("host", ("biosample",)),
             ("strain", ("biosample",)),
             ("isolate", ("biosample",)),
+            ("package", ("biosample",)),
+            ("model", ("biosample",)),
             # BioSample + SRA shared (SRA-sample のみ field 存在)
             ("geo_loc_name", ("biosample", "sra")),
             ("collection_date", ("biosample", "sra")),
@@ -250,6 +262,8 @@ class TestTier3FieldDbs:
             # JGA-only
             ("vendor", ("jga",)),
             ("dataset_type", ("jga",)),
+            # SRA + JGA shared (subtype 識別子)
+            ("type", ("sra", "jga")),
             # GEA + MetaboBank shared
             ("experiment_type", ("gea", "metabobank")),
             # MetaboBank-only

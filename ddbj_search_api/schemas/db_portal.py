@@ -378,6 +378,14 @@ class DbPortalHitBioProject(DbPortalHitBase):
         alias="externalLink",
         examples=[[{"url": "https://example.com/", "label": "External"}]],
     )
+    relevance: list[str] | None = Field(
+        default=None,
+        examples=[["Medical"]],
+        description=(
+            "BioProject relevance (INSDC controlled values: Agricultural / Medical / "
+            "Industrial / Environmental / Evolution / ModelOrganism / Other)."
+        ),
+    )
 
 
 class DbPortalHitBioSample(DbPortalHitBase):
@@ -393,17 +401,28 @@ class DbPortalHitBioSample(DbPortalHitBase):
         examples=[{"name": "MIGS.ba", "displayName": "MIGS Bacteria"}],
     )
     model: list[str] | None = Field(default=None, examples=[["model-a"]])
+    host: str | None = Field(default=None, examples=["Homo sapiens"])
+    strain: str | None = Field(default=None, examples=["K12"])
+    isolate: str | None = Field(default=None, examples=["patient-1"])
+    geo_loc_name: str | None = Field(default=None, alias="geoLocName", examples=["Japan: Tokyo"])
+    collection_date: str | None = Field(default=None, alias="collectionDate", examples=["2020-04"])
 
 
 class DbPortalHitSra(DbPortalHitBase):
     """SRA hit (6 subtypes share one variant; subtype-specific fields are optional).
 
     ``type`` values: ``sra-submission`` / ``sra-study`` / ``sra-experiment`` /
-    ``sra-run`` / ``sra-sample`` / ``sra-analysis``.  ``library_*`` /
-    ``platform`` / ``instrumentModel`` are populated only on
-    ``sra-experiment`` hits, and ``analysisType`` only on
-    ``sra-analysis`` hits; the remaining subtypes leave them as
-    ``null``.
+    ``sra-run`` / ``sra-sample`` / ``sra-analysis``.
+
+    Subtype-specific populate rules:
+    - ``library_strategy`` / ``library_source`` / ``library_layout`` / ``platform`` /
+      ``instrument_model`` / ``library_name`` / ``library_construction_protocol`` are
+      populated only on ``sra-experiment`` hits.
+    - ``analysis_type`` is populated only on ``sra-analysis`` hits.
+    - ``geo_loc_name`` / ``collection_date`` are populated only on ``sra-sample`` hits
+      (shared schema with BioSample).
+
+    Remaining subtypes leave the unrelated fields as ``null``.
     """
 
     type: Literal[
@@ -429,6 +448,14 @@ class DbPortalHitSra(DbPortalHitBase):
     platform: str | None = Field(default=None, examples=["ILLUMINA"])
     instrument_model: list[str] | None = Field(default=None, alias="instrumentModel", examples=[["HiSeq X Ten"]])
     analysis_type: str | None = Field(default=None, alias="analysisType", examples=["ALIGNMENT"])
+    library_name: str | None = Field(default=None, alias="libraryName", examples=["lib-001"])
+    library_construction_protocol: str | None = Field(
+        default=None,
+        alias="libraryConstructionProtocol",
+        examples=["PCR-free"],
+    )
+    geo_loc_name: str | None = Field(default=None, alias="geoLocName", examples=["Japan: Tokyo"])
+    collection_date: str | None = Field(default=None, alias="collectionDate", examples=["2020-04"])
 
 
 class DbPortalHitJga(DbPortalHitBase):

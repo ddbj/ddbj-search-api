@@ -283,6 +283,9 @@ class TestTier3CrossModeReject:
             ("isolate", "test_isolate"),
             ("geo_loc_name", "Japan"),
             ("collection_date", "2020"),
+            # BioSample (db-portal sidebar 拡張)
+            ("package", "MIGS.ba"),
+            ("model", "HiSeq"),
             # SRA
             ("library_strategy", "WGS"),
             ("library_source", "GENOMIC"),
@@ -296,6 +299,8 @@ class TestTier3CrossModeReject:
             ("study_type", "Cohort"),
             ("vendor", "Illumina"),
             ("dataset_type", "fastq"),
+            # SRA + JGA 共通 (subtype 識別子、db-portal sidebar 拡張)
+            ("type", "sra-experiment"),
             # GEA / MetaboBank
             ("experiment_type", "RNA-Seq"),
             ("submission_type", "metabolite"),
@@ -362,6 +367,13 @@ class TestTier3CrossModeReject:
         with pytest.raises(DslError) as exc_info:
             validate(ast, mode="cross")
         assert "use db=bioproject" in exc_info.value.detail
+
+    def test_detail_contains_multiple_db_hints_type(self) -> None:
+        """SRA + JGA 共通の type は 'use db=sra or db=jga' を列挙する (subtype 識別子)。"""
+        ast = parse("type:sra-experiment")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=sra or db=jga" in exc_info.value.detail
 
     def test_detail_contains_field_name(self) -> None:
         ast = parse("platform:ILLUMINA")
@@ -542,6 +554,10 @@ _ENUM_FIELDS = [
     "division",
     "molecular_type",
     "rank",
+    # db-portal sidebar 拡張で追加された Tier 3 enum
+    "package",
+    "model",
+    "type",
 ]
 _ENUM_DBS: dict[str, DbPortalDb] = {
     "project_type": DbPortalDb.bioproject,
@@ -554,6 +570,9 @@ _ENUM_DBS: dict[str, DbPortalDb] = {
     "division": DbPortalDb.trad,
     "molecular_type": DbPortalDb.trad,
     "rank": DbPortalDb.taxonomy,
+    "package": DbPortalDb.biosample,
+    "model": DbPortalDb.biosample,
+    "type": DbPortalDb.sra,
 }
 
 
