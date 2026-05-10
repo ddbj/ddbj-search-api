@@ -740,7 +740,8 @@
 
 **不変条件**:
 - response に `organization`, `publication`, `accessibility` 等の cross 共通 facet が存在
-- 各 facet bucket は `{key, count}` 形式
+- `organism` 以外の facet bucket は `{value, count}` 形式 (`FacetBucket`)
+- `organism` bucket のみ `{value, count, label}` 形式 (`OrganismFacetBucket`、value=TaxID、label=scientific name)
 - type 固有 facet (`objectType` 等) は **含まれない**
 
 **回帰元**: `docs/api-spec.md § ファセット`
@@ -822,7 +823,7 @@
 
 **不変条件**:
 - 対応 (type, field) ペアで 200、対応 facet が non-empty bucket
-- 各 bucket は `{key, count: int >= 0}` 形式
+- 各 bucket は `{value, count: int >= 0}` 形式 (`FacetBucket`、type 固有 facet は label を持たない)
 
 **回帰元**: `docs/api-spec.md § ファセット § タイプ固有フィールド`
 **関連 unit テスト**: `tests/unit/routers/test_facets.py`
@@ -837,6 +838,20 @@
 
 **回帰元**: `docs/api-spec.md § ファセット集計対象の選択 § エラー`
 **関連 unit テスト**: `tests/unit/routers/test_facets.py`
+
+### IT-FACETS-10: organism facet bucket の value/label と検索 API への再注入
+
+**endpoint**: `GET /facets`
+
+**不変条件**:
+- `organism` bucket の各要素は `{value, count, label}` 3 フィールド
+- `value` が `^\d+$` (NCBI Taxonomy ID、string)
+- `label` が non-empty 文字列 (scientific name または fallback で TaxID と同値)
+- bucket の `value` をそのまま `?organism=<value>` に渡したリクエストが 200 を返し、レスポンスの該当エントリー件数が bucket の `count` と一致する
+- `?organism=<label>` (= organism 名) を渡したリクエストは引き続き 422 (`_ORGANISM_PATTERN = ^\d+$` バリデーション、§ 検索パラメータ)
+
+**回帰元**: `docs/api-spec.md § ファセット § bucket 形式`
+**関連 unit テスト**: `tests/unit/routers/test_facets.py`, `tests/unit/schemas/test_facets.py`
 
 ---
 

@@ -23,8 +23,16 @@ def _facets_aggs_with_data() -> dict[str, Any]:
 
     return make_facets_aggregations(
         organism=[
-            {"key": "Homo sapiens", "doc_count": 100},
-            {"key": "Mus musculus", "doc_count": 50},
+            {
+                "key": "9606",
+                "doc_count": 100,
+                "name": {"buckets": [{"key": "Homo sapiens", "doc_count": 100}]},
+            },
+            {
+                "key": "10090",
+                "doc_count": 50,
+                "name": {"buckets": [{"key": "Mus musculus", "doc_count": 50}]},
+            },
         ],
         accessibility=[
             {"key": "unrestricted", "doc_count": 150},
@@ -140,8 +148,13 @@ class TestFacetsResponse:
         resp = app_with_facets.get("/facets")
         buckets = resp.json()["facets"]["organism"]
         assert len(buckets) == 2
-        assert buckets[0]["value"] == "Homo sapiens"
+        # organism bucket carries TaxID as ``value`` and scientific name
+        # as ``label`` (docs/api-spec.md § ファセット § bucket 形式).
+        assert buckets[0]["value"] == "9606"
         assert buckets[0]["count"] == 100
+        assert buckets[0]["label"] == "Homo sapiens"
+        assert buckets[1]["value"] == "10090"
+        assert buckets[1]["label"] == "Mus musculus"
 
 
 # === ES query construction ===

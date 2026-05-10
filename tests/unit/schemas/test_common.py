@@ -6,7 +6,15 @@ import pytest
 from hypothesis import given
 from pydantic import ValidationError
 
-from ddbj_search_api.schemas.common import DbType, EntryListItem, FacetBucket, Facets, Pagination, ProblemDetails
+from ddbj_search_api.schemas.common import (
+    DbType,
+    EntryListItem,
+    FacetBucket,
+    Facets,
+    OrganismFacetBucket,
+    Pagination,
+    ProblemDetails,
+)
 from tests.unit.strategies import valid_facet_count, valid_facet_value, valid_page, valid_per_page, valid_total
 
 # === DbType ===
@@ -147,7 +155,7 @@ class TestFacets:
         """organism / accessibility に bucket を渡せば list として保持
         される (optional 化されているが明示的に渡したら従来通り)。"""
         facets = Facets(
-            organism=[FacetBucket(value="human", count=10)],
+            organism=[OrganismFacetBucket(value="9606", count=10, label="Homo sapiens")],
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
         assert facets.organism is not None

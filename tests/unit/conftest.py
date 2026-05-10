@@ -320,6 +320,27 @@ def app_with_bulk(
 # --- Facets API fixtures ---
 
 
+def _organism_bucket_with_sub_agg(bucket: dict[str, Any]) -> dict[str, Any]:
+    """Normalize an organism bucket to include the ``name`` sub-aggregation.
+
+    The real ES aggregation for ``organism`` (configured in
+    ``_FACET_AGG_SPECS["organism"]``) groups by ``organism.identifier`` and
+    attaches a ``name`` ``terms`` sub-aggregation on
+    ``organism.name.keyword``. Tests that don't care about labels can pass
+    ``{"key": <tax_id>, "doc_count": N}`` and we synthesize a sub-bucket
+    ``{"key": f"label-{tax_id}", "doc_count": N}`` so the parser sees a
+    realistic shape. Tests that need a specific label pass an explicit
+    ``"name": {"buckets": [...]}`` and that takes precedence verbatim.
+    """
+    if "name" in bucket:
+        return bucket
+    tax_id = bucket["key"]
+    return {
+        **bucket,
+        "name": {"buckets": [{"key": f"label-{tax_id}", "doc_count": bucket["doc_count"]}]},
+    }
+
+
 def make_facets_aggregations(
     organism: list[dict[str, Any]] | None = None,
     accessibility: list[dict[str, Any]] | None = None,
@@ -341,10 +362,15 @@ def make_facets_aggregations(
 
     ``include_common=False`` を渡すと organism/accessibility も除外する
     (facet pick で空文字 / 明示指定時の ES レスポンスを再現するために使う)。
+
+    organism bucket は ``{"key": <tax_id>, "doc_count": N}`` のショートハンド、
+    または ``{"key": ..., "doc_count": ..., "name": {"buckets": [...]}}`` の
+    完全形を受け付ける (前者はラベル補完のみ自動で行う)。
     """
     aggs: dict[str, Any] = {}
     if include_common:
-        aggs["organism"] = {"buckets": organism or []}
+        organism_buckets = [_organism_bucket_with_sub_agg(b) for b in (organism or [])]
+        aggs["organism"] = {"buckets": organism_buckets}
         aggs["accessibility"] = {"buckets": accessibility or []}
     if type_buckets is not None:
         aggs["type"] = {"buckets": type_buckets}

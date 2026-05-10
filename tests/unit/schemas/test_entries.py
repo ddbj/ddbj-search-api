@@ -8,7 +8,7 @@ import pytest
 from ddbj_search_converter.schema import GEA, JGA, SRA, BioProject, BioSample, MetaboBank
 from pydantic import ValidationError
 
-from ddbj_search_api.schemas.common import EntryListItem, FacetBucket, Facets, Pagination
+from ddbj_search_api.schemas.common import EntryListItem, FacetBucket, Facets, OrganismFacetBucket, Pagination
 from ddbj_search_api.schemas.entries import (
     DB_TYPE_TO_ENTRY_MODEL,
     BioProjectDetailResponse,
@@ -190,7 +190,7 @@ class TestEntryListResponse:
 
     def test_with_facets(self) -> None:
         facets = Facets(
-            organism=[FacetBucket(value="human", count=10)],
+            organism=[OrganismFacetBucket(value="9606", count=10, label="Homo sapiens")],
             accessibility=[FacetBucket(value="public-access", count=8)],
         )
         resp = EntryListResponse(

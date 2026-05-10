@@ -22228,9 +22228,9 @@
           "value": {
             "type": "string",
             "title": "Value",
-            "description": "Facet value (e.g. organism name, status).",
+            "description": "Facet value (re-injectable into the matching search filter).",
             "examples": [
-              "Homo sapiens"
+              "WGS"
             ]
           },
           "count": {
@@ -22283,7 +22283,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/FacetBucket"
+                  "$ref": "#/components/schemas/OrganismFacetBucket"
                 },
                 "type": "array"
               },
@@ -22292,12 +22292,13 @@
               }
             ],
             "title": "Organism",
-            "description": "Entry count per organism. Null when not aggregated (e.g. excluded from an explicit ``facets`` selection).",
+            "description": "Entry count per organism. ``value`` is the NCBI Taxonomy ID (string), ``label`` is the scientific name; ``value`` can be re-injected into ``?organism=`` directly. Null when not aggregated (e.g. excluded from an explicit ``facets`` selection).",
             "examples": [
               [
                 {
                   "count": 1000,
-                  "value": "Homo sapiens"
+                  "label": "Homo sapiens",
+                  "value": "9606"
                 }
               ]
             ]
@@ -24382,6 +24383,42 @@
         },
         "type": "object",
         "title": "Organism"
+      },
+      "OrganismFacetBucket": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "description": "NCBI Taxonomy ID (string). Re-injectable into ``?organism=``.",
+            "examples": [
+              "9606"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of entries matching this value.",
+            "examples": [
+              100
+            ]
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Scientific name (NCBI Taxonomy name) for this TaxID.",
+            "examples": [
+              "Homo sapiens"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "count",
+          "label"
+        ],
+        "title": "OrganismFacetBucket",
+        "description": "A facet bucket for the ``organism`` aggregation.\n\n``organism`` is the only facet that exposes a separate display\nlabel.  ``value`` carries the NCBI Taxonomy ID (string, matches the\n``^\\d+$`` pattern enforced by the ``organism`` search filter), and\n``label`` carries the scientific name (e.g. ``\"Homo sapiens\"``)\nchosen as the doc_count-most-frequent ``organism.name.keyword`` value\ninside the bucket.  Callers can re-inject ``value`` into\n``?organism=`` directly; ``label`` is for human display."
       },
       "Organization": {
         "properties": {

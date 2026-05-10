@@ -530,7 +530,17 @@ def _build_filter_clauses(
 # growth on the SRA ``instrumentModel`` / ``libraryStrategy`` fields starts
 # leaving meaningful counts in ``sum_other_doc_count`` (see docs § ファセット).
 _FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
-    "organism": {"terms": {"field": "organism.name.keyword", "size": 50}},
+    # ``organism`` buckets on ``organism.identifier`` (TaxID) so the bucket
+    # value can be re-injected into ``?organism=`` (which only accepts
+    # ``^\d+$``).  A sub-aggregation pulls the doc_count-most-frequent
+    # ``organism.name.keyword`` value as the display ``label`` (see
+    # :func:`ddbj_search_api.utils._optional_organism`).
+    "organism": {
+        "terms": {"field": "organism.identifier", "size": 50},
+        "aggs": {
+            "name": {"terms": {"field": "organism.name.keyword", "size": 1}},
+        },
+    },
     "accessibility": {"terms": {"field": "accessibility", "size": 50}},
     "type": {"terms": {"field": "type", "size": 50}},
     "objectType": {"terms": {"field": "objectType", "size": 50}},

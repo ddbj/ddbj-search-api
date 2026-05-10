@@ -613,9 +613,14 @@ class TestBuildFacetAggs:
 
     def test_organism_agg_field(self) -> None:
         result = build_facet_aggs()
-        # ``organism.name`` is a text field with a ``.keyword`` sub-field on
-        # every entry index; aggregations require the keyword variant.
-        assert result["organism"]["terms"]["field"] == "organism.name.keyword"
+        # bucket は TaxID で集計し (検索 API の ``?organism=`` と整合)、
+        # sub-aggregation で ``organism.name.keyword`` の代表値を ``label``
+        # として取り出す (docs/api-spec.md § ファセット § bucket 形式)。
+        assert result["organism"]["terms"]["field"] == "organism.identifier"
+        assert result["organism"]["aggs"]["name"]["terms"] == {
+            "field": "organism.name.keyword",
+            "size": 1,
+        }
 
     def test_accessibility_agg_field(self) -> None:
         result = build_facet_aggs()

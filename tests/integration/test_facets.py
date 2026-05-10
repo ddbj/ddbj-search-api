@@ -7,6 +7,9 @@ SSOT.
 
 from __future__ import annotations
 
+import re
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -215,4 +218,62 @@ class TestFacetsTypeMismatchOnPerTypeEndpoint:
     def test_unknown_facet_still_returns_422(self, app: TestClient) -> None:
         """IT-FACETS-09: typo (allowlist outside) is 422, distinct from type-mismatch 400."""
         resp = app.get("/facets/bioproject", params={"facets": _UNKNOWN_FACET})
+        assert resp.status_code == 422
+
+
+class TestOrganismFacetBucketShape:
+    """IT-FACETS-10: organism bucket は value=TaxID / label=name で、
+    bucket の value をそのまま検索 API に再注入できる。
+
+    docs/api-spec.md § ファセット § bucket 形式
+    """
+
+    _TAX_ID_PATTERN = re.compile(r"^\d+$")
+
+    def _organism_buckets(self, app: TestClient) -> list[dict[str, Any]]:
+        resp = app.get("/facets", params={"facets": "organism"})
+        assert resp.status_code == 200, resp.text
+        buckets: list[dict[str, Any]] | None = resp.json()["facets"].get("organism")
+        assert buckets is not None, "organism aggregation should be present when explicitly requested"
+        if not buckets:
+            pytest.skip("staging data has no organism buckets to validate against")
+        return buckets
+
+    def test_value_is_tax_id_string(self, app: TestClient) -> None:
+        """IT-FACETS-10: organism bucket value は ``^\\d+$`` (NCBI TaxID, string)。"""
+        for bucket in self._organism_buckets(app):
+            value = bucket["value"]
+            assert isinstance(value, str)
+            assert self._TAX_ID_PATTERN.fullmatch(value), bucket
+
+    def test_label_is_non_empty_string(self, app: TestClient) -> None:
+        """IT-FACETS-10: bucket には label が必ず存在し non-empty。"""
+        for bucket in self._organism_buckets(app):
+            label = bucket["label"]
+            assert isinstance(label, str)
+            assert label, bucket
+
+    def test_value_is_re_injectable_into_search_api(self, app: TestClient) -> None:
+        """IT-FACETS-10: bucket の value をそのまま ``?organism=<value>`` に
+        渡したリクエストが 200 を返し、ヒット件数が bucket の count 以上 (status:public
+        フィルタは facet 集計と /entries 検索で共通、entries は accession-exact 例外で
+        suppressed が混じりうるため `==` ではなく `>=` で確認)。
+        """
+        buckets = self._organism_buckets(app)
+        # 上位 bucket だけサンプリング (staging で全 bucket を回すとレスポンス時間がかさむ)。
+        for bucket in buckets[:3]:
+            value: str = bucket["value"]
+            count: int = bucket["count"]
+            resp = app.get(
+                "/entries/",
+                params={"organism": value, "perPage": 1},
+            )
+            assert resp.status_code == 200, (bucket, resp.text)
+            total = resp.json()["pagination"]["total"]
+            assert total >= count, (bucket, total)
+
+    def test_organism_name_still_rejected_with_422(self, app: TestClient) -> None:
+        """IT-FACETS-10: 旧仕様で動いていた ``?organism=<scientific name>`` が
+        引き続き 422 で蹴られること (`_ORGANISM_PATTERN = ^\\d+$`)。"""
+        resp = app.get("/entries/", params={"organism": "Homo sapiens"})
         assert resp.status_code == 422

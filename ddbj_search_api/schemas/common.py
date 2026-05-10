@@ -77,8 +77,30 @@ class Pagination(BaseModel):
 class FacetBucket(BaseModel):
     """A single bucket in a facet aggregation."""
 
-    value: str = Field(examples=["Homo sapiens"], description="Facet value (e.g. organism name, status).")
+    value: str = Field(examples=["WGS"], description="Facet value (re-injectable into the matching search filter).")
     count: int = Field(examples=[100], description="Number of entries matching this value.")
+
+
+class OrganismFacetBucket(FacetBucket):
+    """A facet bucket for the ``organism`` aggregation.
+
+    ``organism`` is the only facet that exposes a separate display
+    label.  ``value`` carries the NCBI Taxonomy ID (string, matches the
+    ``^\\d+$`` pattern enforced by the ``organism`` search filter), and
+    ``label`` carries the scientific name (e.g. ``"Homo sapiens"``)
+    chosen as the doc_count-most-frequent ``organism.name.keyword`` value
+    inside the bucket.  Callers can re-inject ``value`` into
+    ``?organism=`` directly; ``label`` is for human display.
+    """
+
+    value: str = Field(
+        examples=["9606"],
+        description="NCBI Taxonomy ID (string). Re-injectable into ``?organism=``.",
+    )
+    label: str = Field(
+        examples=["Homo sapiens"],
+        description="Scientific name (NCBI Taxonomy name) for this TaxID.",
+    )
 
 
 class Facets(BaseModel):
@@ -111,11 +133,14 @@ class Facets(BaseModel):
         examples=[[{"value": "bioproject", "count": 1234}, {"value": "biosample", "count": 567}]],
         description="Entry count per database type (cross-type search only; null when not aggregated).",
     )
-    organism: list[FacetBucket] | None = Field(
+    organism: list[OrganismFacetBucket] | None = Field(
         default=None,
-        examples=[[{"value": "Homo sapiens", "count": 1000}]],
+        examples=[[{"value": "9606", "count": 1000, "label": "Homo sapiens"}]],
         description=(
-            "Entry count per organism. Null when not aggregated (e.g. excluded from an explicit ``facets`` selection)."
+            "Entry count per organism. ``value`` is the NCBI Taxonomy ID (string), "
+            "``label`` is the scientific name; ``value`` can be re-injected into "
+            "``?organism=`` directly. Null when not aggregated (e.g. excluded from "
+            "an explicit ``facets`` selection)."
         ),
     )
     accessibility: list[FacetBucket] | None = Field(
