@@ -48,11 +48,11 @@ def build_arsa_request_params(
     """Build Solr query params for ARSA ``/collection1/select`` from a pre-compiled ``q`` string.
 
     ``q`` は handler が :func:`ddbj_search_api.search.dsl.compile_to_solr` で生成した
-    edismax ``q`` 文字列 (FreeText 単独なら ``"..."`` 群、adv 含むなら
-    ``(<adv_compiled> AND "<token>"...)`` 等)。``with_uf`` が True のとき
-    ``uf`` (edismax allowlist) を付与する。AST 内に ``FieldClause`` (adv DSL leaf)
-    が含まれるかを handler 側で判定して渡す (
-    :func:`ddbj_search_api.search.dsl.inspect.ast_has_field_clause`)。
+    edismax ``q`` 文字列 (FreeText 単独なら ``"..."`` 群、``field:value`` 含むなら
+    ``(<field_compiled> AND "<token>"...)`` 等)。``with_uf`` が True のとき
+    ``uf`` (edismax allowlist) を付与する。AST 内に ``FieldClause`` が含まれるかを
+    handler 側で判定して渡す
+    (:func:`ddbj_search_api.search.dsl.inspect.ast_has_field_clause`)。
     """
     start, rows = _pagination_to_start_rows(page, per_page)
     params: dict[str, str] = {

@@ -1,14 +1,15 @@
 """AST → JSON tree.
 
-SSOT: search-backends.md §スキーマ仕様 (L363-381).
+SSOT: search-backends.md §スキーマ仕様.
 
 Tree form::
 
     BoolOp:  {"op": "AND"|"OR"|"NOT", "rules": [...]}
     Leaf (value): {"field": "...", "op": "eq"|"contains"|"wildcard", "value": "..."}
     Leaf (range): {"field": "...", "op": "between", "from": "...", "to": "..."}
+    FreeText:    {"op": "free_text", "value": "..."}
 
-``GET /db-portal/parse?adv=...`` endpoint のレスポンス形式として使用する。
+``GET /db-portal/parse?q=...`` endpoint のレスポンス形式として使用する。
 """
 
 from __future__ import annotations
@@ -20,21 +21,13 @@ from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
 
 
 def ast_to_json(ast: Node) -> dict[str, Any]:
-    """Convert an AST to the SSOT query-tree JSON form.
-
-    ``FreeText`` ノードは ``/db-portal/parse`` の返却対象外 (Lark パーサからは
-    生成されず、handler 経由でしか出現しない)。serializer に到達した場合は
-    contract 違反として ``TypeError`` を raise する。
-    """
+    """Convert an AST to the SSOT query-tree JSON form."""
     return _node_to_json(ast)
 
 
 def _node_to_json(node: Node) -> dict[str, Any]:
     if isinstance(node, FreeText):
-        raise TypeError(
-            "ast_to_json received FreeText; this node type is internal to handler routing "
-            "and must not be serialized via /db-portal/parse."
-        )
+        return {"op": "free_text", "value": node.value}
     if isinstance(node, FieldClause):
         return _leaf_to_json(node)
     return {

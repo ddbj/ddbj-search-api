@@ -159,8 +159,8 @@ def inject_status_filter(
 ) -> dict[str, Any]:
     """Return a new ES query body with a status filter applied.
 
-    Used by ``/db-portal/*`` adv-search routers to apply the same status
-    filter as :func:`build_search_query` to ``compile_to_es`` output.
+    Used by ``/db-portal/*`` routers to apply the same status filter as
+    :func:`build_search_query` to ``compile_to_es`` output.
     The input is either a leaf clause (``term``, ``match_phrase``,
     ``wildcard``, ``range``, single ``nested``) or a ``bool`` wrapper.
     Leaf clauses are wrapped into ``{"bool": {"must": [original],

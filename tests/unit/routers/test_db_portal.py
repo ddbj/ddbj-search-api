@@ -2,7 +2,7 @@
 
 Covers:
 - endpoint registration (trailing slash policy, tags)
-- (q, adv) x (db) dispatch matrix
+- q dispatch matrix (cross + single)
 - FastAPI-level enum/Literal validation (422)
 - cross-database fan-out flow (8 DBs, count + top hits, success/error mix, all-failed 502)
 - DB-specific hits flow (offset + cursor, hardLimitReached boundary,
@@ -60,84 +60,61 @@ class TestDbPortalTrailingSlash:
 
 
 class TestDbPortalQueryCombination:
-    """q / adv exclusivity (400) and DSL parse/validate error surfacing.
+    """Query parse / validate error surfacing (400).
 
-    Both endpoints share the same q/adv exclusivity check, so it is
-    parametrized over both.  DSL parse/validate errors are also raised
-    by both endpoints; cross-search exercises Tier 1/2 paths and search
-    exercises the full Tier 1/2/3 allowlist.
+    Both endpoints share the same query parsing pipeline, so they raise
+    the same error slugs.  cross-search exercises Tier 1/2 paths and
+    search exercises the full Tier 1/2/3 allowlist.
     """
 
-    def test_adv_parse_error_returns_400_unexpected_token_on_cross_search(
+    def test_unsupported_syntax_returns_400_unexpected_token_on_cross_search(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        # `type=bioproject` is not a valid DSL (no `:` and uses `=`).
+        # boost ``^`` は非対応構文。grammar が unexpected-token で reject する。
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "type=bioproject"},
+            params={"q": "title:cancer^2"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.unexpected_token.value
 
-    def test_adv_unknown_field_returns_400_on_cross_search(
+    def test_unknown_field_returns_400_on_cross_search(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "foo:bar"},
+            params={"q": "foo:bar"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.unknown_field.value
 
-    def test_adv_invalid_operator_returns_400_on_cross_search(
+    def test_invalid_operator_returns_400_on_cross_search(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "date:cancer*"},
+            params={"q": "date:cancer*"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.invalid_operator_for_field.value
 
-    def test_adv_with_db_parse_error_still_400(
+    def test_unsupported_syntax_with_db_still_400(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "type=bioproject", "db": "sra"},
+            params={"q": "title:cancer^2", "db": "sra"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.unexpected_token.value
-
-    @pytest.mark.parametrize(
-        "endpoint, params",
-        [
-            ("/db-portal/cross-search", {"adv": "foo:bar"}),
-            ("/db-portal/cross-search", {"adv": "title:cancer^2"}),
-            ("/db-portal/cross-search", {"adv": "type=bioproject"}),
-            ("/db-portal/search", {"adv": "foo:bar", "db": "bioproject"}),
-            ("/db-portal/search", {"adv": "title:cancer^2", "db": "bioproject"}),
-            ("/db-portal/search", {"adv": "type=bioproject", "db": "bioproject"}),
-        ],
-    )
-    def test_advanced_search_not_implemented_never_emitted(
-        self,
-        app_with_db_portal: TestClient,
-        endpoint: str,
-        params: dict[str, str],
-    ) -> None:
-        """DSL 実装済のため 501 advanced-search-not-implemented は返らない."""
-        resp = app_with_db_portal.get(endpoint, params=params)
-        assert resp.status_code != 501
-        assert resp.json()["type"] != DbPortalErrorType.advanced_search_not_implemented.value
 
 
 # === Endpoint-specific contract: cross-search rejects forbidden params, search requires db ===
@@ -197,22 +174,22 @@ class TestDbPortalSearchMissingDb:
         assert body["type"] == DbPortalErrorType.missing_db.value
         assert "/db-portal/cross-search" in body["detail"]
 
-    def test_missing_db_with_adv(self, app_with_db_portal: TestClient) -> None:
+    def test_missing_db_with_field_clause_q(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:cancer"},
+            params={"q": "title:cancer"},
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.missing_db.value
 
-    def test_missing_db_takes_priority_over_q_adv_exclusivity(
+    def test_missing_db_takes_priority_over_query_parse(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """missing-db is raised before the q/adv exclusivity check."""
+        """missing-db is raised before query parsing kicks in."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "foo", "adv": "title:cancer"},
+            params={"q": "foo AND title:cancer"},
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.missing_db.value
@@ -689,7 +666,7 @@ class TestDbPortalCrossSearchTopHits:
 
 
 class TestDbPortalAdvCrossSearchTopHits:
-    """``topHits`` propagates through the adv (DSL) cross-search path."""
+    """``topHits`` propagates through the q with field clauses cross-search path."""
 
     _LIGHTWEIGHT_FIELDS = {
         "identifier",
@@ -714,11 +691,11 @@ class TestDbPortalAdvCrossSearchTopHits:
         mock_es_search_db_portal.return_value = make_es_search_response(total=1)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "title:cancer", "topHits": 7},
+            params={"q": "title:cancer", "topHits": 7},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args_list[0].args[2]
-        # adv 経路でも ES ``size`` は de-dup overshoot 倍率。
+        # field clause を含む q でも ES ``size`` は de-dup overshoot 倍率。
         assert body["size"] == 7 * _CROSS_SEARCH_DEDUP_OVERSHOOT
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
@@ -742,7 +719,7 @@ class TestDbPortalAdvCrossSearchTopHits:
         )
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "title:cancer", "topHits": 4},
+            params={"q": "title:cancer", "topHits": 4},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -764,7 +741,7 @@ class TestDbPortalAdvCrossSearchTopHits:
         )
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "title:human", "topHits": 6},
+            params={"q": "title:human", "topHits": 6},
         )
         assert resp.status_code == 200
         params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
@@ -787,7 +764,7 @@ class TestDbPortalAdvCrossSearchTopHits:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "title:cancer", "topHits": 0},
+            params={"q": "title:cancer", "topHits": 0},
         )
         assert resp.status_code == 200
         es_body = mock_es_search_db_portal.call_args_list[0].args[2]
@@ -1083,7 +1060,7 @@ class TestDbPortalErrorFormat:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "foo:bar"},
+            params={"q": "foo:bar"},
         )
         assert resp.status_code == 400
         assert resp.headers["content-type"].startswith("application/problem+json")
@@ -1150,9 +1127,11 @@ class TestDbPortalErrorFormat:
         assert body["type"] == "about:blank"
 
     def test_request_id_echoed(self, app_with_db_portal: TestClient) -> None:
+        # エラーレスポンス (ProblemDetails) で X-Request-ID が echo されること。
+        # unknown-field を発生させて 400 を取り、requestId フィールドを検証する。
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"q": "foo", "adv": "bar"},
+            params={"q": "foo:bar"},
             headers={"X-Request-ID": "test-req-123"},
         )
         assert resp.headers.get("X-Request-ID") == "test-req-123"
@@ -1862,11 +1841,11 @@ class TestDbPortalCrossSearchPBT:
         assert [e["db"] for e in body["databases"]] == list(_DB_ORDER)
 
 
-# === Advanced Search DSL dispatch ===
+# === Field-clause query dispatch (ES / ARSA / TXSearch) ===
 
 
 class TestDbPortalAdvValidDispatch:
-    """adv: valid DSL dispatch routes to ES / ARSA / TXSearch.
+    """valid q (field clauses) dispatch routes to ES / ARSA / TXSearch.
 
     Mock boundary is the HTTP client for each backend (upstream), so the
     parse → validate → compile → dispatch pipeline is exercised end-to-end
@@ -1885,7 +1864,7 @@ class TestDbPortalAdvValidDispatch:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "title:cancer"},
+            params={"q": "title:cancer"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -1904,7 +1883,7 @@ class TestDbPortalAdvValidDispatch:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "date:[2020-01-01 TO 2024-12-31]"},
+            params={"q": "date:[2020-01-01 TO 2024-12-31]"},
         )
         assert resp.status_code == 200
         counts = {e["db"]: e["count"] for e in resp.json()["databases"]}
@@ -1924,7 +1903,7 @@ class TestDbPortalAdvValidDispatch:
         )
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:cancer", "db": "bioproject"},
+            params={"q": "title:cancer", "db": "bioproject"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -1942,7 +1921,7 @@ class TestDbPortalAdvValidDispatch:
         )
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": 'title:"human"', "db": "trad"},
+            params={"q": 'title:"human"', "db": "trad"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -1959,7 +1938,7 @@ class TestDbPortalAdvValidDispatch:
         )
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:human", "db": "taxonomy"},
+            params={"q": "title:human", "db": "taxonomy"},
         )
         assert resp.status_code == 200
         assert resp.json()["total"] == 1
@@ -1972,7 +1951,7 @@ class TestDbPortalAdvValidDispatch:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:cancer", "db": "bioproject"},
+            params={"q": "title:cancer", "db": "bioproject"},
         )
         # 最後の call args の body に compile_to_es 結果が入っていることを確認。
         call_args = mock_es_search_db_portal.await_args
@@ -1994,7 +1973,7 @@ class TestDbPortalAdvValidDispatch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:cancer", "db": "trad"},
+            params={"q": "title:cancer", "db": "trad"},
         )
         call_args = mock_arsa_search_db_portal.await_args
         assert call_args is not None
@@ -2011,24 +1990,26 @@ class TestDbPortalAdvValidDispatch:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:cancer", "db": "trad", "cursor": "abc.def"},
+            params={"q": "title:cancer", "db": "trad", "cursor": "abc.def"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.cursor_not_supported.value
 
-    def test_adv_cursor_with_es_db_returns_cursor_not_supported(
+    def test_cursor_with_q_on_es_db_returns_cursor_exclusivity(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """adv + cursor は ES DB でも cursor_not_supported slug を流用."""
+        """cursor + q (どんな q でも) は ES DB でも about:blank (cursor exclusivity) で 400."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "title:cancer", "db": "bioproject", "cursor": "abc.def"},
+            params={"q": "title:cancer", "db": "bioproject", "cursor": "abc.def"},
         )
         assert resp.status_code == 400
         body = resp.json()
-        assert body["type"] == DbPortalErrorType.cursor_not_supported.value
+        # _validate_cursor_exclusivity が plain HTTPException で about:blank を返す。
+        assert "cursor" in body["detail"].lower()
+        assert "q" in body["detail"].lower()
 
     def test_adv_nest_depth_exceeded_returns_400(
         self,
@@ -2037,7 +2018,7 @@ class TestDbPortalAdvValidDispatch:
         dsl = "title:a"
         for i in range(6):
             dsl = f"({dsl} AND title:v{i})"
-        resp = app_with_db_portal.get("/db-portal/cross-search", params={"adv": dsl})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": dsl})
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.nest_depth_exceeded.value
 
@@ -2047,7 +2028,7 @@ class TestDbPortalAdvValidDispatch:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": 'title:""'},
+            params={"q": 'title:""'},
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.missing_value.value
@@ -2058,7 +2039,7 @@ class TestDbPortalAdvValidDispatch:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "date_published:2024-99-99"},
+            params={"q": "date_published:2024-99-99"},
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.invalid_date_format.value
@@ -2068,7 +2049,7 @@ class TestDbPortalAdvValidDispatch:
         app_with_db_portal: TestClient,
     ) -> None:
         dsl = "title:" + ("x" * 5000)
-        resp = app_with_db_portal.get("/db-portal/cross-search", params={"adv": dsl})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": dsl})
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
 
@@ -2087,7 +2068,7 @@ class TestDbPortalAdvTier2Tier3:
         """Tier 3 x cross mode は field-not-available-in-cross-db で 400."""
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "library_strategy:WGS"},
+            params={"q": "library_strategy:WGS"},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -2100,7 +2081,7 @@ class TestDbPortalAdvTier2Tier3:
         """detail 文字列に候補 DB 列挙 (use db=sra)。"""
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "library_strategy:WGS"},
+            params={"q": "library_strategy:WGS"},
         )
         body = resp.json()
         assert "use db=sra" in body["detail"]
@@ -2112,7 +2093,7 @@ class TestDbPortalAdvTier2Tier3:
         """grant_agency は BioProject + JGA 共通 → 両方列挙."""
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": 'grant_agency:"NIH"'},
+            params={"q": 'grant_agency:"NIH"'},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -2124,7 +2105,7 @@ class TestDbPortalAdvTier2Tier3:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "rank:species"},
+            params={"q": "rank:species"},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -2141,7 +2122,7 @@ class TestDbPortalAdvTier2Tier3:
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={
-                "adv": "library_strategy:WGS AND platform:ILLUMINA",
+                "q": "library_strategy:WGS AND platform:ILLUMINA",
                 "db": "sra",
             },
         )
@@ -2161,7 +2142,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "grant_agency:JSPS", "db": "bioproject"},
+            params={"q": "grant_agency:JSPS", "db": "bioproject"},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
@@ -2183,7 +2164,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": 'submitter:"Tokyo University"', "db": "bioproject"},
+            params={"q": 'submitter:"Tokyo University"', "db": "bioproject"},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
@@ -2214,7 +2195,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": 'submitter:"DDBJ"'},
+            params={"q": 'submitter:"DDBJ"'},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -2234,7 +2215,7 @@ class TestDbPortalAdvTier2Tier3:
         )
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "rank:species", "db": "taxonomy"},
+            params={"q": "rank:species", "db": "taxonomy"},
         )
         assert resp.status_code == 200
         params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
@@ -2249,7 +2230,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "division:BCT", "db": "trad"},
+            params={"q": "division:BCT", "db": "trad"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -2264,7 +2245,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "sequence_length:[100 TO 5000]", "db": "trad"},
+            params={"q": "sequence_length:[100 TO 5000]", "db": "trad"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -2279,7 +2260,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "NOT platform:ILLUMINA", "db": "sra"},
+            params={"q": "NOT platform:ILLUMINA", "db": "sra"},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
@@ -2299,7 +2280,7 @@ class TestDbPortalAdvTier2Tier3:
         """
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "synthetic_unknown_field:Japan", "db": "biosample"},
+            params={"q": "synthetic_unknown_field:Japan", "db": "biosample"},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -2312,7 +2293,7 @@ class TestDbPortalAdvTier2Tier3:
         """number 型の非 digit 値は invalid_operator_for_field (new slug 不設けの方針)."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"adv": "sequence_length:abc", "db": "trad"},
+            params={"q": "sequence_length:abc", "db": "trad"},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -2425,14 +2406,14 @@ class TestDbPortalCrossSearchSimpleStatusFilter:
         for call in mock_es_search_db_portal.call_args_list:
             assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
 
-    def test_wildcard_q_uses_public_only(
+    def test_wildcard_field_clause_uses_public_only(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """ワイルドカード ``PRJDB*`` は accession 解放対象外。"""
+        """field clause 形式のワイルドカード ``identifier:PRJDB*`` は accession 解放対象外."""
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
-        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "PRJDB*"})
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "identifier:PRJDB*"})
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
             assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
@@ -2465,7 +2446,7 @@ class TestDbPortalCrossSearchSimpleStatusFilter:
 
 
 class TestDbPortalCrossSearchAdvStatusFilter:
-    """`/db-portal/cross-search?adv=...` の status filter 適用 (AST 解析)。
+    """`/db-portal/cross-search?q=...` の status filter 適用 (AST 解析)。
 
     AST が単一 ``identifier`` field の eq + accession-shape value のときのみ
     ``include_suppressed``。AND/OR/NOT ラップ・wildcard・identifier 以外は
@@ -2480,7 +2461,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "title:cancer"},
+            params={"q": "title:cancer"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2499,7 +2480,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": f"identifier:{accession}"},
+            params={"q": f"identifier:{accession}"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2514,7 +2495,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "identifier:PRJDB*"},
+            params={"q": "identifier:PRJDB*"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2529,7 +2510,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "identifier:cancer"},
+            params={"q": "identifier:cancer"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2549,7 +2530,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "identifier:PRJDB1234 AND title:cancer"},
+            params={"q": "identifier:PRJDB1234 AND title:cancer"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2564,7 +2545,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "identifier:PRJDB1234 OR identifier:DRA000001"},
+            params={"q": "identifier:PRJDB1234 OR identifier:DRA000001"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2579,7 +2560,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "publication:PRJDB1234"},
+            params={"q": "publication:PRJDB1234"},
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
@@ -2587,7 +2568,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
 
 
 class TestDbPortalSearchStatusFilter:
-    """`/db-portal/search?db=<es_db>` の status filter 適用 (simple + adv + cursor)."""
+    """`/db-portal/search?db=<es_db>` の status filter 適用 (simple + cursor + field clause)."""
 
     @pytest.mark.parametrize("db", _ES_DBS)
     def test_simple_q_uses_public_only(
@@ -2631,7 +2612,7 @@ class TestDbPortalSearchStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": db, "adv": "title:cancer"},
+            params={"db": db, "q": "title:cancer"},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
@@ -2647,7 +2628,7 @@ class TestDbPortalSearchStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": db, "adv": "identifier:PRJDB1234"},
+            params={"db": db, "q": "identifier:PRJDB1234"},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
@@ -2661,7 +2642,7 @@ class TestDbPortalSearchStatusFilter:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "bioproject", "adv": "identifier:PRJDB*"},
+            params={"db": "bioproject", "q": "identifier:PRJDB*"},
         )
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
@@ -2773,7 +2754,7 @@ class TestDbPortalSolrNoStatusFilter:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "adv": "title:cancer"},
+            params={"db": "trad", "q": "title:cancer"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -2801,7 +2782,7 @@ class TestDbPortalSolrNoStatusFilter:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "taxonomy", "adv": "rank:species"},
+            params={"db": "taxonomy", "q": "rank:species"},
         )
         assert resp.status_code == 200
         params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
@@ -2852,13 +2833,13 @@ class TestDbPortalSolrNoStatusFilter:
         mock_arsa_search_db_portal: AsyncMock,
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
-        """adv 経路の cross-search でも Solr は影響を受けない。"""
+        """q with field clauses の cross-search でも Solr は影響を受けない。"""
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"adv": "identifier:PRJDB1234"},
+            params={"q": "identifier:PRJDB1234"},
         )
         assert resp.status_code == 200
         arsa_params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -2867,7 +2848,7 @@ class TestDbPortalSolrNoStatusFilter:
         assert _solr_params_have_no_status(txsearch_params)
 
 
-# === q + adv combination ===
+# === q AND-join semantics ===
 
 
 def _bioproject_es_body(mock: AsyncMock) -> dict[str, Any]:
@@ -2887,11 +2868,14 @@ def _flatten_must(clause: dict[str, Any]) -> list[dict[str, Any]]:
     return [clause]
 
 
-class TestQAdvCombination:
-    """q + adv coexistence: ES bool.must AND-join, Solr edismax AND-join,
-    OR-composed status_mode, and cursor + adv conflict preservation."""
+class TestQueryAndJoin:
+    """``q`` 内に bare word + ``field:value`` を AND で並べた場合のコンパイル契約.
 
-    def test_search_combined_es_bool_must_has_q_and_adv_clauses(
+    例: ``q='human AND title:cancer'`` → AST ``BoolOp(AND, [FreeText('human'),
+    FieldClause(title, cancer)])`` → ES bool.must / Solr edismax AND-join.
+    """
+
+    def test_search_es_bool_must_has_free_text_and_field_clauses(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -2899,29 +2883,29 @@ class TestQAdvCombination:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "human", "adv": "title:cancer"},
+            params={"db": "bioproject", "q": "human AND title:cancer"},
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
         bool_clause = body["query"]["bool"]
         must = bool_clause["must"]
-        has_q = any(
+        has_free_text = any(
             isinstance(c, dict)
             and "multi_match" in c
             and c["multi_match"]["query"] == "human"
             for c in must
         )
-        has_adv = any(
+        has_field_clause = any(
             isinstance(c, dict)
             and "match_phrase" in c
             and c["match_phrase"].get("title") == "cancer"
             for c in must
         )
-        assert has_q, f"q multi_match missing from bool.must: {must}"
-        assert has_adv, f"adv match_phrase missing from bool.must: {must}"
+        assert has_free_text, f"free-text multi_match missing from bool.must: {must}"
+        assert has_field_clause, f"field-clause match_phrase missing from bool.must: {must}"
         assert bool_clause["filter"] == [{"term": {"status": "public"}}]
 
-    def test_cross_search_combined_es_bool_must_has_q_and_adv_clauses(
+    def test_cross_search_es_bool_must_has_free_text_and_field_clauses(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -2933,32 +2917,31 @@ class TestQAdvCombination:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"q": "human", "adv": "title:cancer", "topHits": 0},
+            params={"q": "human AND title:cancer", "topHits": 0},
         )
         assert resp.status_code == 200
-        # Every ES call (6 DBs) shares the same combined query body — pick the first.
         body = mock_es_search_db_portal.call_args_list[0].args[2]
         must = body["query"]["bool"]["must"]
-        has_q = any(
+        has_free_text = any(
             "multi_match" in c and c["multi_match"]["query"] == "human" for c in must
         )
-        has_adv = any(
+        has_field_clause = any(
             "match_phrase" in c and c["match_phrase"].get("title") == "cancer"
             for c in must
         )
-        assert has_q
-        assert has_adv
+        assert has_free_text
+        assert has_field_clause
 
-    def test_combined_status_mode_with_q_accession_match(
+    def test_status_mode_with_free_text_accession_match(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """q が accession exact match → include_suppressed (OR 合成、q 起因)."""
+        """FreeText 側が accession exact match → include_suppressed."""
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "PRJDB1234", "adv": "title:cancer"},
+            params={"db": "bioproject", "q": "PRJDB1234 AND title:cancer"},
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
@@ -2966,16 +2949,16 @@ class TestQAdvCombination:
             {"terms": {"status": ["public", "suppressed"]}}
         ]
 
-    def test_combined_status_mode_with_adv_identifier_match(
+    def test_status_mode_with_field_clause_identifier_match(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """adv 側のトップレベル identifier:<accession> → include_suppressed (OR 合成、adv 起因)."""
+        """トップレベル AND 直下の identifier:<accession> → include_suppressed."""
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "cancer", "adv": "identifier:PRJDB1234"},
+            params={"db": "bioproject", "q": "cancer AND identifier:PRJDB1234"},
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
@@ -2983,59 +2966,53 @@ class TestQAdvCombination:
             {"terms": {"status": ["public", "suppressed"]}}
         ]
 
-    def test_combined_status_mode_neither_accession_match(
+    def test_status_mode_neither_accession_match(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """両方とも非 accession → public_only (OR 合成の degenerate ケース)."""
+        """両方とも非 accession → public_only."""
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "cancer", "adv": "title:cancer"},
+            params={"db": "bioproject", "q": "cancer AND title:cancer"},
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
         assert body["query"]["bool"]["filter"] == [{"term": {"status": "public"}}]
 
-    def test_combined_arsa_q_is_and_joined(
+    def test_arsa_q_is_and_joined(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
-        """ARSA combined q は AST 経由で ``(<adv_compiled> AND <q_quoted>)`` の単一括弧形式.
-
-        旧 ``build_arsa_combined_params`` の ``({adv}) AND ({q})`` 各子括弧形式から
-        AST 一本化で ``compile_to_solr(BoolOp(AND, [adv, FreeText(q)]))`` の
-        外側括弧 1 つに変わる (edismax 評価結果は等価)。
-        """
+        """ARSA 側で AND-join された edismax ``q`` 文字列 (単一外側括弧)."""
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "human", "adv": "title:cancer"},
+            params={"db": "trad", "q": "human AND title:cancer"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         q = params["q"]
-        # AST 経由で外側 1 つの括弧 + 内側 ``<adv> AND <q>``。
         assert q.startswith("(")
         assert q.endswith(")")
         assert " AND " in q
-        assert 'Definition:"cancer"' in q  # adv compiled (ARSA dialect)
-        assert '"human"' in q  # quoted q token
-        # uf は adv 含む AST で付与される。
+        assert 'Definition:"cancer"' in q  # field clause compiled (ARSA dialect)
+        assert '"human"' in q  # free-text quoted token
+        # uf は FieldClause を含む AST で付与される。
         assert "uf" in params
 
-    def test_combined_txsearch_q_is_and_joined(
+    def test_txsearch_q_is_and_joined(
         self,
         app_with_db_portal: TestClient,
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
-        """TXSearch combined q も ``(<adv_compiled> AND <q_quoted>)`` の単一括弧形式."""
+        """TXSearch 側で AND-join された edismax ``q`` 文字列."""
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "taxonomy", "q": "human", "adv": "title:cancer"},
+            params={"db": "taxonomy", "q": "human AND title:cancer"},
         )
         assert resp.status_code == 200
         params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
@@ -3043,23 +3020,24 @@ class TestQAdvCombination:
         assert q.startswith("(")
         assert q.endswith(")")
         assert " AND " in q
-        assert 'scientific_name:"cancer"' in q  # adv compiled (TXSearch dialect)
+        assert 'scientific_name:"cancer"' in q  # field clause compiled (TXSearch dialect)
         assert '"human"' in q
         assert "uf" in params
 
-    def test_cursor_with_q_and_adv_returns_400_cursor_not_supported(
+    def test_cursor_with_q_returns_400(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """cursor + (q+adv) は引き続き 400 ``cursor-not-supported`` (adv branch で拒否)."""
+        """cursor + q (どんな q でも) は cursor exclusivity で 400 (about:blank)."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={
                 "db": "bioproject",
                 "cursor": "any-token",
-                "q": "human",
-                "adv": "title:cancer",
+                "q": "human AND title:cancer",
             },
         )
         assert resp.status_code == 400
-        assert resp.json()["type"] == DbPortalErrorType.cursor_not_supported.value
+        # _validate_cursor_exclusivity が plain HTTPException で 400 を返す (about:blank)。
+        body = resp.json()
+        assert "cursor" in body["detail"].lower()

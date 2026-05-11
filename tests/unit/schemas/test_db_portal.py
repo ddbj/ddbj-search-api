@@ -84,25 +84,17 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: base 4 + DSL 7 = 11 problem type URIs."""
+    """DbPortalErrorType: 3 routing slugs + 9 query parser slugs = 12 URIs."""
 
     def test_has_all_members(self) -> None:
-        # base 4 (advanced-search-not-implemented, cursor-not-supported,
-        # unexpected-parameter, missing-db) + DSL 7 = 11.
-        # advanced_search_not_implemented stays for backward compatibility
-        # until a later cleanup PR but is never emitted.
-        assert len(DbPortalErrorType) == 11
+        # routing 3 (cursor-not-supported, unexpected-parameter, missing-db)
+        # + query parser 9 (incl. invalid-freetext-position / duplicate-freetext) = 12.
+        assert len(DbPortalErrorType) == 12
 
     def test_prefix_is_ddbj_problems(self) -> None:
         prefix = "https://ddbj.nig.ac.jp/problems/"
         for e in DbPortalErrorType:
             assert e.value.startswith(prefix)
-
-    def test_advanced_search_not_implemented_uri(self) -> None:
-        assert (
-            DbPortalErrorType.advanced_search_not_implemented.value
-            == "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
-        )
 
     def test_cursor_not_supported_uri(self) -> None:
         assert DbPortalErrorType.cursor_not_supported.value == "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
@@ -113,8 +105,8 @@ class TestDbPortalErrorType:
     def test_missing_db_uri(self) -> None:
         assert DbPortalErrorType.missing_db.value == "https://ddbj.nig.ac.jp/problems/missing-db"
 
-    def test_dsl_slugs_present(self) -> None:
-        """DSL 関連 7 slug の URI."""
+    def test_query_parser_slugs_present(self) -> None:
+        """Query parser 関連 9 slug の URI."""
         expected_slugs = {
             "unexpected-token",
             "unknown-field",
@@ -123,6 +115,8 @@ class TestDbPortalErrorType:
             "invalid-operator-for-field",
             "nest-depth-exceeded",
             "missing-value",
+            "invalid-freetext-position",
+            "duplicate-freetext",
         }
         actual_slugs = {e.value.rsplit("/", 1)[-1] for e in DbPortalErrorType}
         assert expected_slugs <= actual_slugs
@@ -135,7 +129,6 @@ def _search_query(**overrides: Any) -> DbPortalSearchQuery:
     """Shorthand for DbPortalSearchQuery with sensible defaults."""
     defaults: dict[str, Any] = {
         "q": None,
-        "adv": None,
         "db": None,
         "page": 1,
         "per_page": 20,
@@ -150,7 +143,6 @@ def _cross_query(**overrides: Any) -> DbPortalCrossSearchQuery:
     """Shorthand for DbPortalCrossSearchQuery with sensible defaults."""
     defaults: dict[str, Any] = {
         "q": None,
-        "adv": None,
         "top_hits": 10,
     }
     defaults.update(overrides)
@@ -158,7 +150,7 @@ def _cross_query(**overrides: Any) -> DbPortalCrossSearchQuery:
 
 
 class TestDbPortalCrossSearchQuery:
-    """DbPortalCrossSearchQuery: only q / adv / topHits accepted at the schema layer.
+    """DbPortalCrossSearchQuery: only q / topHits accepted at the schema layer.
 
     Other parameters (db / cursor / page / perPage / sort) are not part of
     the constructor; the router rejects them at runtime via
@@ -168,16 +160,11 @@ class TestDbPortalCrossSearchQuery:
     def test_stores_defaults(self) -> None:
         q = _cross_query()
         assert q.q is None
-        assert q.adv is None
         assert q.top_hits == 10
 
     def test_stores_q(self) -> None:
-        q = _cross_query(q="cancer")
-        assert q.q == "cancer"
-
-    def test_stores_adv(self) -> None:
-        q = _cross_query(adv="title:cancer")
-        assert q.adv == "title:cancer"
+        q = _cross_query(q="cancer AND title:cancer")
+        assert q.q == "cancer AND title:cancer"
 
     def test_stores_top_hits(self) -> None:
         q = _cross_query(top_hits=25)
@@ -189,16 +176,16 @@ class TestDbPortalCrossSearchQuery:
 
     def test_constructor_rejects_db(self) -> None:
         with pytest.raises(TypeError):
-            DbPortalCrossSearchQuery(q=None, adv=None, top_hits=10, db=DbPortalDb.bioproject)  # type: ignore[call-arg]
+            DbPortalCrossSearchQuery(q=None, top_hits=10, db=DbPortalDb.bioproject)  # type: ignore[call-arg]
 
     def test_constructor_rejects_cursor(self) -> None:
         with pytest.raises(TypeError):
-            DbPortalCrossSearchQuery(q=None, adv=None, top_hits=10, cursor="abc")  # type: ignore[call-arg]
+            DbPortalCrossSearchQuery(q=None, top_hits=10, cursor="abc")  # type: ignore[call-arg]
 
     @pytest.mark.parametrize("kwarg, value", [("page", 5), ("per_page", 50), ("sort", "datePublished:desc")])
     def test_constructor_rejects_paging_and_sort(self, kwarg: str, value: Any) -> None:
         with pytest.raises(TypeError):
-            DbPortalCrossSearchQuery(q=None, adv=None, top_hits=10, **{kwarg: value})
+            DbPortalCrossSearchQuery(q=None, top_hits=10, **{kwarg: value})
 
 
 class TestDbPortalSearchQuery:
@@ -207,7 +194,6 @@ class TestDbPortalSearchQuery:
     def test_stores_defaults(self) -> None:
         q = _search_query()
         assert q.q is None
-        assert q.adv is None
         assert q.db is None
         assert q.page == 1
         assert q.per_page == 20
@@ -215,12 +201,8 @@ class TestDbPortalSearchQuery:
         assert q.sort is None
 
     def test_stores_q(self) -> None:
-        q = _search_query(q="cancer")
-        assert q.q == "cancer"
-
-    def test_stores_adv(self) -> None:
-        q = _search_query(adv="type=bioproject")
-        assert q.adv == "type=bioproject"
+        q = _search_query(q="cancer AND title:cancer")
+        assert q.q == "cancer AND title:cancer"
 
     def test_stores_db(self) -> None:
         q = _search_query(db=DbPortalDb.bioproject)

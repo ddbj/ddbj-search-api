@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "DDBJ Search API",
-    "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.\n\nSee [docs/api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/api-spec.md) for behaviour-level specifications (status visibility, sameAs resolution, pagination semantics) and [docs/db-portal-api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) for the ``/db-portal/*`` endpoints (unified search, Advanced Search DSL).",
+    "description": "RESTful API for searching and retrieving BioProject, BioSample, SRA, and JGA entries from DDBJ.\n\nSee [docs/api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/api-spec.md) for behaviour-level specifications (status visibility, sameAs resolution, pagination semantics) and [docs/db-portal-api-spec.md](https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) for the ``/db-portal/*`` endpoints (unified search and query language).",
     "contact": {
       "name": "DDBJ Search team",
       "url": "https://www.ddbj.nig.ac.jp/contact-e.html"
@@ -16265,7 +16265,7 @@
           "db-portal"
         ],
         "summary": "DB Portal cross-database fan-out (count + top hits)",
-        "description": "``GET /db-portal/cross-search``: cross-database count + top hits search.\n\n``q`` / ``adv`` / 併用 / 両方未指定 の 4 入力パターンを ``_build_query_ast``\nで AST に正規化し、単一 ``_cross_search_dispatch`` に渡す。AST 一本化方針は\ndocs/db-portal-api-spec.md § 内部モデル参照。",
+        "description": "``GET /db-portal/cross-search``: cross-database count + top hits search.\n\n``q`` を Lark でパース → validator → ES/Solr compiler の単一 pipeline を通して\n``_cross_search_dispatch`` に渡す。``q`` 省略時は ``ast=None`` で全件 match_all\nfan-out を行う。",
         "operationId": "crossSearchDbPortal",
         "parameters": [
           {
@@ -16281,34 +16281,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.",
+              "description": "Search query.  Bare word / quoted phrase / ``field:value`` / ``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single expression.  Bare words and phrases are matched as free text against indexed fields; ``field:value`` constrains to a specific field.  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Free text may only appear as the sole top-level term or directly under a top-level AND (max one); placing it under OR / NOT or nested AND yields 400 ``invalid-freetext-position``.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` / ``invalid-freetext-position`` / ``duplicate-freetext`` etc.).",
               "examples": [
-                "cancer"
+                "cancer AND organism:9606"
               ],
               "title": "Q"
             },
-            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query."
-          },
-          {
-            "name": "adv",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
-              "examples": [
-                "title:cancer"
-              ],
-              "title": "Adv"
-            },
-            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+            "description": "Search query.  Bare word / quoted phrase / ``field:value`` / ``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single expression.  Bare words and phrases are matched as free text against indexed fields; ``field:value`` constrains to a specific field.  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Free text may only appear as the sole top-level term or directly under a top-level AND (max one); placing it under OR / NOT or nested AND yields 400 ``invalid-freetext-position``.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` / ``invalid-freetext-position`` / ``duplicate-freetext`` etc.)."
           },
           {
             "name": "topHits",
@@ -16347,7 +16326,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (unexpected parameter, DSL parse/validate error).",
+            "description": "Bad Request (unexpected parameter, query parse/validate error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16385,7 +16364,7 @@
           "db-portal"
         ],
         "summary": "DB Portal db-specific hits search",
-        "description": "``GET /db-portal/search``: db-specific hits search.\n\ncursor 経路 (旧 ``_db_specific_search_cursor``) は cursor token に焼き込んだ\nES query を decode して継続する設計のため、AST dispatch には流さない。\ncursor + adv / cursor + q は ``_validate_cursor_exclusivity`` で弾く。",
+        "description": "``GET /db-portal/search``: db-specific hits search.\n\ncursor 経路 (``_db_specific_search_cursor``) は cursor token に焼き込んだ\nES query を decode して継続する設計のため、本 dispatch には流さない。\ncursor + q は ``_validate_cursor_exclusivity`` (cursor 経路前段) で弾く。",
         "operationId": "searchDbPortal",
         "parameters": [
           {
@@ -16401,34 +16380,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.",
+              "description": "Search query.  Bare word / quoted phrase / ``field:value`` / ``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single expression.  Bare words and phrases are matched as free text against indexed fields; ``field:value`` constrains to a specific field.  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Free text may only appear as the sole top-level term or directly under a top-level AND (max one); placing it under OR / NOT or nested AND yields 400 ``invalid-freetext-position``.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` / ``invalid-freetext-position`` / ``duplicate-freetext`` etc.).",
               "examples": [
-                "cancer"
+                "cancer AND organism:9606"
               ],
               "title": "Q"
             },
-            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query."
-          },
-          {
-            "name": "adv",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
-              "examples": [
-                "title:cancer"
-              ],
-              "title": "Adv"
-            },
-            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+            "description": "Search query.  Bare word / quoted phrase / ``field:value`` / ``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single expression.  Bare words and phrases are matched as free text against indexed fields; ``field:value`` constrains to a specific field.  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Free text may only appear as the sole top-level term or directly under a top-level AND (max one); placing it under OR / NOT or nested AND yields 400 ``invalid-freetext-position``.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` / ``invalid-freetext-position`` / ``duplicate-freetext`` etc.)."
           },
           {
             "name": "db",
@@ -16550,7 +16508,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (missing-db, cursor exclusivity, DSL parse/validate error, deep paging limit).",
+            "description": "Bad Request (missing-db, cursor exclusivity, query parse/validate error, deep paging limit).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16587,23 +16545,23 @@
         "tags": [
           "db-portal"
         ],
-        "summary": "Parse Advanced Search DSL into the SSOT query-tree JSON for GUI state restoration.",
-        "description": "Parse ``adv`` DSL and return the SSOT query-tree JSON for GUI restoration.",
+        "summary": "Parse a search query into the SSOT query-tree JSON for GUI state restoration.",
+        "description": "Parse the query and return the SSOT query-tree JSON for GUI restoration.",
         "operationId": "parseDbPortal",
         "parameters": [
           {
-            "name": "adv",
+            "name": "q",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/cross-search?adv=...`` / ``GET /db-portal/search?adv=...&db=<id>``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs.",
+              "description": "Search query to parse into AST.  Same grammar as ``GET /db-portal/cross-search?q=...`` / ``GET /db-portal/search?q=...&db=<id>``.  Returned JSON tree is intended for GUI state restoration from shared URLs.",
               "examples": [
-                "title:cancer"
+                "cancer AND organism:9606"
               ],
-              "title": "Adv"
+              "title": "Q"
             },
-            "description": "Advanced Search DSL to parse into AST.  Same grammar as ``GET /db-portal/cross-search?adv=...`` / ``GET /db-portal/search?adv=...&db=<id>``.  Returned JSON tree follows SSOT search-backends.md §L363-381 and is intended for GUI state restoration from shared URLs."
+            "description": "Search query to parse into AST.  Same grammar as ``GET /db-portal/cross-search?q=...`` / ``GET /db-portal/search?q=...&db=<id>``.  Returned JSON tree is intended for GUI state restoration from shared URLs."
           },
           {
             "name": "db",
@@ -16618,13 +16576,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Validator mode target.  Omit for cross-db mode (Tier 1 only); specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist).",
+              "description": "Validator mode target.  Omit for cross-db mode (Tier 1/2 only); specify a DB for single-db mode (Tier 1/2/3 allowlist).",
               "examples": [
                 "bioproject"
               ],
               "title": "Db"
             },
-            "description": "Validator mode target.  Omit for cross-db mode (Tier 1 only); specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist)."
+            "description": "Validator mode target.  Omit for cross-db mode (Tier 1/2 only); specify a DB for single-db mode (Tier 1/2/3 allowlist)."
           }
         ],
         "responses": {
@@ -16649,7 +16607,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (DSL parse/validate error).",
+            "description": "Bad Request (query parse/validate error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16659,7 +16617,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity (missing adv, invalid db value).",
+            "description": "Unprocessable Entity (missing q, invalid db value).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21841,6 +21799,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/DbPortalParseLeafRange"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalParseFreeText"
                 }
               ],
               "discriminator": {
@@ -21852,6 +21813,7 @@
                   "between": "#/components/schemas/DbPortalParseLeafRange",
                   "contains": "#/components/schemas/DbPortalParseLeafValue",
                   "eq": "#/components/schemas/DbPortalParseLeafValue",
+                  "free_text": "#/components/schemas/DbPortalParseFreeText",
                   "wildcard": "#/components/schemas/DbPortalParseLeafValue"
                 }
               }
@@ -21862,9 +21824,13 @@
             "examples": [
               [
                 {
-                  "field": "title",
-                  "op": "contains",
+                  "op": "free_text",
                   "value": "cancer"
+                },
+                {
+                  "field": "organism",
+                  "op": "eq",
+                  "value": "Homo sapiens"
                 }
               ]
             ]
@@ -21877,6 +21843,34 @@
         ],
         "title": "DbPortalParseBoolOp",
         "description": "Boolean node combining child clauses with AND / OR / NOT."
+      },
+      "DbPortalParseFreeText": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "free_text",
+            "title": "Op",
+            "description": "Always 'free_text' for bare word / phrase.",
+            "examples": [
+              "free_text"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "description": "Free-text value (the bare word or unquoted phrase).",
+            "examples": [
+              "cancer"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "op",
+          "value"
+        ],
+        "title": "DbPortalParseFreeText",
+        "description": "Free-text leaf produced from bare word / quoted phrase in the query."
       },
       "DbPortalParseLeafRange": {
         "properties": {
@@ -21977,15 +21971,27 @@
               },
               {
                 "$ref": "#/components/schemas/DbPortalParseLeafRange"
+              },
+              {
+                "$ref": "#/components/schemas/DbPortalParseFreeText"
               }
             ],
             "title": "Ast",
-            "description": "Parsed AST as SSOT query-tree JSON (search-backends.md §L363-381).",
+            "description": "Parsed AST as SSOT query-tree JSON.",
             "examples": [
               {
-                "field": "title",
-                "op": "contains",
-                "value": "cancer"
+                "op": "AND",
+                "rules": [
+                  {
+                    "op": "free_text",
+                    "value": "cancer"
+                  },
+                  {
+                    "field": "organism",
+                    "op": "eq",
+                    "value": "Homo sapiens"
+                  }
+                ]
               }
             ],
             "discriminator": {
@@ -21997,6 +22003,7 @@
                 "between": "#/components/schemas/DbPortalParseLeafRange",
                 "contains": "#/components/schemas/DbPortalParseLeafValue",
                 "eq": "#/components/schemas/DbPortalParseLeafValue",
+                "free_text": "#/components/schemas/DbPortalParseFreeText",
                 "wildcard": "#/components/schemas/DbPortalParseLeafValue"
               }
             }
@@ -26175,7 +26182,7 @@
     },
     {
       "name": "db-portal",
-      "description": "DB Portal frontend API: unified search across ES (6 DBs) and Solr (ARSA / TXSearch), plus the Advanced Search DSL parser."
+      "description": "DB Portal frontend API: unified search across ES (6 DBs) and Solr (ARSA / TXSearch), with a query parser for field-prefixed clauses and free text."
     },
     {
       "name": "Service Info",

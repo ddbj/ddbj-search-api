@@ -20,6 +20,8 @@ class TestErrorTypeEnum:
             (ErrorType.invalid_operator_for_field, "invalid-operator-for-field"),
             (ErrorType.nest_depth_exceeded, "nest-depth-exceeded"),
             (ErrorType.missing_value, "missing-value"),
+            (ErrorType.invalid_freetext_position, "invalid-freetext-position"),
+            (ErrorType.duplicate_freetext, "duplicate-freetext"),
         ],
     )
     def test_slug_value(self, error_type: ErrorType, slug: str) -> None:
@@ -30,7 +32,7 @@ class TestErrorTypeEnum:
             assert "_" not in error_type.value
             assert error_type.value == error_type.value.lower()
 
-    def test_all_seven_ap3_slugs_present(self) -> None:
+    def test_all_slugs_present(self) -> None:
         expected = {
             "unexpected-token",
             "unknown-field",
@@ -39,6 +41,8 @@ class TestErrorTypeEnum:
             "invalid-operator-for-field",
             "nest-depth-exceeded",
             "missing-value",
+            "invalid-freetext-position",
+            "duplicate-freetext",
         }
         actual = {e.value for e in ErrorType}
         assert actual == expected

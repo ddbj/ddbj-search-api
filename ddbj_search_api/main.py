@@ -264,7 +264,8 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "db-portal",
         "description": (
             "DB Portal frontend API: unified search across ES (6 DBs) "
-            "and Solr (ARSA / TXSearch), plus the Advanced Search DSL parser."
+            "and Solr (ARSA / TXSearch), with a query parser for "
+            "field-prefixed clauses and free text."
         ),
     },
     {
@@ -410,7 +411,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "for behaviour-level specifications (status visibility, sameAs resolution, pagination semantics) "
             "and [docs/db-portal-api-spec.md]("
             "https://github.com/ddbj/ddbj-search-api/blob/main/docs/db-portal-api-spec.md) "
-            "for the ``/db-portal/*`` endpoints (unified search, Advanced Search DSL)."
+            "for the ``/db-portal/*`` endpoints (unified search and query language)."
         ),
         version=importlib.metadata.version("ddbj-search-api"),
         docs_url="/docs",

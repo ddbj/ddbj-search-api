@@ -61,15 +61,12 @@ class DbPortalErrorType(str, Enum):
 
     Member names mirror ``ddbj_search_api.search.dsl.errors.ErrorType`` so the
     router can map a ``DslError`` to the db-portal enum via ``DbPortalErrorType[err.type.name]``.
-    ``advanced_search_not_implemented`` is retained for backward compatibility but is
-    not emitted by the DSL-backed router (slated for removal in a future cleanup PR).
     """
 
-    advanced_search_not_implemented = "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
     unexpected_parameter = "https://ddbj.nig.ac.jp/problems/unexpected-parameter"
     missing_db = "https://ddbj.nig.ac.jp/problems/missing-db"
-    # DSL parser error types.
+    # Query parser error types.
     unexpected_token = "https://ddbj.nig.ac.jp/problems/unexpected-token"
     unknown_field = "https://ddbj.nig.ac.jp/problems/unknown-field"
     field_not_available_in_cross_db = "https://ddbj.nig.ac.jp/problems/field-not-available-in-cross-db"
@@ -77,6 +74,8 @@ class DbPortalErrorType(str, Enum):
     invalid_operator_for_field = "https://ddbj.nig.ac.jp/problems/invalid-operator-for-field"
     nest_depth_exceeded = "https://ddbj.nig.ac.jp/problems/nest-depth-exceeded"
     missing_value = "https://ddbj.nig.ac.jp/problems/missing-value"
+    invalid_freetext_position = "https://ddbj.nig.ac.jp/problems/invalid-freetext-position"
+    duplicate_freetext = "https://ddbj.nig.ac.jp/problems/duplicate-freetext"
 
 
 ALLOWED_DB_PORTAL_SORTS: frozenset[str] = frozenset({"datePublished:desc", "datePublished:asc"})
@@ -84,29 +83,24 @@ ALLOWED_DB_PORTAL_PER_PAGE: frozenset[int] = frozenset({20, 50, 100})
 
 
 _Q_DESC = (
-    "Simple search keyword(s).  Comma-separated for multiple values; "
-    "double quotes for explicit phrase match; symbols (-, /, ., +, :) "
-    "trigger automatic phrase match.  "
-    "Internally wrapped into a ``FreeText`` AST node; when combined with "
-    "``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before "
-    "being compiled to the backend query."
-)
-
-_ADV_DESC = (
-    "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with "
-    "field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, "
-    '``organism:"Homo sapiens"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` '
-    "(case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, "
-    "``description``, ``organism``, ``date_published``, ``date_modified``, "
-    "``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  "
+    "Search query.  Bare word / quoted phrase / ``field:value`` / "
+    "``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single "
+    "expression.  Bare words and phrases are matched as free text against "
+    "indexed fields; ``field:value`` constrains to a specific field.  "
+    "Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, "
+    "``date_published``, ``date_modified``, ``date_created``, ``date``.  "
+    "Tier 2 (cross): ``submitter``, ``publication``.  "
     "Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / "
-    "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / "
-    "MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  "
-    "Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, "
-    "merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to "
-    "the backend query.  "
+    "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank "
+    "``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` "
+    "etc. / Taxonomy ``rank`` etc.  "
+    "Free text may only appear as the sole top-level term or directly under "
+    "a top-level AND (max one); placing it under OR / NOT or nested AND "
+    "yields 400 ``invalid-freetext-position``.  "
     "Errors surface as RFC 7807 problem details with a dedicated ``type`` URI "
-    "(``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+    "(``unexpected-token`` / ``unknown-field`` / "
+    "``field-not-available-in-cross-db`` / ``invalid-freetext-position`` / "
+    "``duplicate-freetext`` etc.)."
 )
 
 
@@ -114,18 +108,19 @@ class DbPortalCrossSearchQuery:
     """Query parameters for ``GET /db-portal/cross-search``.
 
     Cross-database search returning per-DB count and (when ``topHits>=1``)
-    a lightweight hits array.  Only ``q`` / ``adv`` / ``topHits`` are
-    accepted; any other query parameter (``db`` / ``cursor`` / ``page`` /
-    ``perPage`` / ``sort``) is rejected by the router with 400
-    ``unexpected-parameter`` so user typos surface early.  ``q`` and
-    ``adv`` can be combined: the router AND-joins them on the ES bool
-    query and on the Solr edismax ``q`` string.
+    a lightweight hits array.  Only ``q`` / ``topHits`` are accepted; any
+    other query parameter (``db`` / ``cursor`` / ``page`` / ``perPage`` /
+    ``sort``) is rejected by the router with 400 ``unexpected-parameter``
+    so user typos surface early.
     """
 
     def __init__(
         self,
-        q: str | None = Query(default=None, examples=["cancer"], description=_Q_DESC),
-        adv: str | None = Query(default=None, examples=["title:cancer"], description=_ADV_DESC),
+        q: str | None = Query(
+            default=None,
+            examples=["cancer AND organism:9606"],
+            description=_Q_DESC,
+        ),
         top_hits: int = Query(
             default=10,
             alias="topHits",
@@ -143,7 +138,6 @@ class DbPortalCrossSearchQuery:
         ),
     ) -> None:
         self.q = q
-        self.adv = adv
         self.top_hits = top_hits
 
 
@@ -153,15 +147,16 @@ class DbPortalSearchQuery:
     Single-database hits search.  ``db`` is required; the router returns
     400 ``missing-db`` when omitted (instead of FastAPI's default 422)
     so the response contract aligns with the cross-search endpoint's
-    ``unexpected-parameter`` slug.  ``q`` and ``adv`` can be combined:
-    the router AND-joins them on the ES bool query and on the Solr
-    edismax ``q`` string (Solr-backed DBs remain offset-only).
+    ``unexpected-parameter`` slug.
     """
 
     def __init__(
         self,
-        q: str | None = Query(default=None, examples=["cancer"], description=_Q_DESC),
-        adv: str | None = Query(default=None, examples=["title:cancer"], description=_ADV_DESC),
+        q: str | None = Query(
+            default=None,
+            examples=["cancer AND organism:9606"],
+            description=_Q_DESC,
+        ),
         db: DbPortalDb | None = Query(
             default=None,
             examples=["bioproject"],
@@ -215,7 +210,6 @@ class DbPortalSearchQuery:
                 ),
             )
         self.q = q
-        self.adv = adv
         self.db = db
         self.page = page
         self.per_page = per_page
@@ -711,9 +705,9 @@ class DbPortalHitsResponse(BaseModel):
 
 # === GET /db-portal/parse response schema ===
 #
-# SSOT: db-portal/docs/search-backends.md §スキーマ仕様 (L363-381).
-# `op` discriminator は全 7 値 (AND/OR/NOT/eq/contains/wildcard/between) が
-# 重複なしで単一 discriminator 成立。BoolOp.rules は再帰 union のため
+# SSOT: db-portal/docs/search-backends.md §スキーマ仕様.
+# `op` discriminator は全 8 値 (AND/OR/NOT/eq/contains/wildcard/between/free_text)
+# が重複なしで単一 discriminator 成立。BoolOp.rules は再帰 union のため
 # string forward ref + ``model_rebuild()`` で解決する。
 
 
@@ -744,6 +738,15 @@ class DbPortalParseLeafRange(BaseModel):
     to: str = Field(examples=["2024-12-31"], description="Range end (YYYY-MM-DD).")
 
 
+class DbPortalParseFreeText(BaseModel):
+    """Free-text leaf produced from bare word / quoted phrase in the query."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    op: Literal["free_text"] = Field(examples=["free_text"], description="Always 'free_text' for bare word / phrase.")
+    value: str = Field(examples=["cancer"], description="Free-text value (the bare word or unquoted phrase).")
+
+
 class DbPortalParseBoolOp(BaseModel):
     """Boolean node combining child clauses with AND / OR / NOT."""
 
@@ -753,13 +756,18 @@ class DbPortalParseBoolOp(BaseModel):
     # forward ref: ``DbPortalParseNode`` は本クラス定義後に evaluate されるので
     # ``from __future__ import annotations`` + ``model_rebuild()`` で解決する。
     rules: list[DbPortalParseNode] = Field(
-        examples=[[{"field": "title", "op": "contains", "value": "cancer"}]],
+        examples=[
+            [
+                {"op": "free_text", "value": "cancer"},
+                {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+            ],
+        ],
         description="Child nodes (NOT has exactly one).",
     )
 
 
 DbPortalParseNode = Annotated[
-    DbPortalParseBoolOp | DbPortalParseLeafValue | DbPortalParseLeafRange,
+    DbPortalParseBoolOp | DbPortalParseLeafValue | DbPortalParseLeafRange | DbPortalParseFreeText,
     Field(discriminator="op"),
 ]
 
@@ -772,6 +780,14 @@ class DbPortalParseResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     ast: DbPortalParseNode = Field(
-        examples=[{"field": "title", "op": "contains", "value": "cancer"}],
-        description="Parsed AST as SSOT query-tree JSON (search-backends.md §L363-381).",
+        examples=[
+            {
+                "op": "AND",
+                "rules": [
+                    {"op": "free_text", "value": "cancer"},
+                    {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                ],
+            },
+        ],
+        description="Parsed AST as SSOT query-tree JSON.",
     )

@@ -1,7 +1,7 @@
-// Advanced Search DSL (Lark LALR(1)).
-// SSOT: db-portal/docs/search-backends.md §パーサ実装 (L416-470)
-//       db-portal/docs/search.md §採用構文 (L670-689)
-// Unsupported on purpose: boost `^`, fuzzy `~`, regex `/.../`.
+// db-portal search query grammar (Lark LALR(1)).
+// SSOT: db-portal/docs/search-backends.md §パーサ実装
+//       db-portal/docs/search.md §採用構文
+// Unsupported on purpose: boost `^`, fuzzy `~`, regex `/.../`, bare wildcard.
 
 start: or_expr
 
@@ -10,8 +10,13 @@ and_expr: not_expr (AND not_expr)*
 not_expr: NOT atom   -> not_op
         | atom       -> atom_passthrough
 ?atom: field_clause
+     | free_text_atom
      | "(" or_expr ")"
-field_clause: FIELD ":" value
+// Field name and free-text token share the WORD terminal; the parser
+// distinguishes the two by 1-token lookahead on the following ``:``.
+field_clause: WORD ":" value
+free_text_atom: PHRASE -> ft_phrase
+              | WORD   -> ft_word
 
 value: PHRASE    -> v_phrase
      | RANGE     -> v_range
@@ -19,9 +24,11 @@ value: PHRASE    -> v_phrase
      | DATE      -> v_date
      | WORD      -> v_word
 
-AND: "AND"
-OR: "OR"
-NOT: "NOT"
+// AND / OR / NOT must outrank WORD so a bare ``NOT`` is recognised as the
+// operator instead of being absorbed into ``free_text_atom: WORD``.
+AND.10: "AND"
+OR.10: "OR"
+NOT.10: "NOT"
 
 PHRASE.5: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/
 RANGE.5: /\[[^\s\]]+\s+TO\s+[^\s\]]+\]/
@@ -30,7 +37,6 @@ DATE.4: /\d{4}-\d{2}-\d{2}/
 // ``*`` / ``?``.  Symbol-bearing tokens like ``HIF-1*`` / ``COVID-19*`` must
 // parse as wildcards so users can prefix-search gene / disease names.
 WILDCARD.3: /[^\s:()\[\]"{}^~\/]*[*?][^\s:()\[\]"{}^~\/]*/
-FIELD.2: /[a-z_]+/
 WORD.1: /[^\s:()\[\]"{}^~*?\/]+/
 
 %ignore /\s+/

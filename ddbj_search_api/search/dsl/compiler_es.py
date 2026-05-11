@@ -151,12 +151,12 @@ def compile_to_es(ast: Node) -> dict[str, Any]:
 
     Returns a bool / leaf dict suitable for embedding as ``{"query": <result>, "size": ...}``
     — matches the shape produced by :func:`ddbj_search_api.es.query.build_search_query` so
-    the router can swap simple-search and adv-search results through the same helpers.
+    the router can route all queries through the same helpers.
 
     ``FreeText`` ノードは ``compile_free_text`` のデフォルト fields + ``AND`` 操作子で
-    展開する。``BoolOp(AND, [adv_ast, FreeText(q)])`` のように handler が併用入力を
-    合成した AST では、FreeText 子の ``bool.must`` 中身を上位 ``bool.must`` に flatten
-    して旧 ``build_combined_es_query`` と等価な query を出力する。
+    展開する。トップレベル AND の直下に FreeText が混じった AST (``cancer AND
+    organism:9606`` 等) では、FreeText 子の ``bool.must`` 中身を上位 ``bool.must``
+    に flatten して単一 bool 句にまとめる。
     """
     return _compile_node(ast)
 

@@ -222,10 +222,10 @@ def compile_to_solr(ast: Node, *, dialect: SolrDialect) -> str:
     """Convert a validated AST to an edismax ``q`` string for the given Solr dialect.
 
     ``FreeText`` ノードは dialect 非依存の ``compile_free_text_solr`` で展開する.
-    ``BoolOp(AND, [adv_ast, FreeText(q)])`` のような併用合成 AST は、上位 AND が
-    既存ロジック ``"(" + " AND ".join(children_q) + ")"`` で結合するため
-    ``(<adv_compiled> AND "<q_token>" ...)`` 形式の単一外側括弧クエリになる
-    (旧 ``build_*_combined_params`` の ``({adv}) AND ({q})`` と edismax 評価上等価).
+    トップレベル AND 直下に FreeText が混じる AST では、AND が既存ロジック
+    ``"(" + " AND ".join(children_q) + ")"`` で結合するため
+    ``(<field_compiled> AND "<freetext_token>" ...)`` 形式の単一外側括弧クエリに
+    なる。
     """
     return _compile_node(ast, dialect=dialect)
 

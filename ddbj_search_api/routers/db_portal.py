@@ -2,25 +2,23 @@
 
 * ``GET /db-portal/cross-search`` — cross-database fan-out across 8 DBs
   (ES 6 + Solr 2) returning per-DB count and (when ``topHits>=1``) up
-  to ``topHits`` lightweight hits.  Accepts only ``q`` / ``adv`` /
-  ``topHits``; any other query parameter returns 400
-  ``unexpected-parameter``.  Tier 1/2 fields only.
+  to ``topHits`` lightweight hits.  Accepts only ``q`` / ``topHits``;
+  any other query parameter returns 400 ``unexpected-parameter``.
+  Tier 1/2 fields only.
 * ``GET /db-portal/search`` — db-specific hits envelope.  ``db`` is
-  required; omitting it returns 400 ``missing-db``.  Accepts ``q`` /
-  ``adv`` plus pagination (``page`` / ``perPage`` / ``cursor``) and
-  ``sort``.  ES for 6 DBs, Solr for ``trad`` / ``taxonomy``
-  (offset-only; ``cursor`` returns 400 ``cursor-not-supported``).
+  required; omitting it returns 400 ``missing-db``.  Accepts ``q``
+  plus pagination (``page`` / ``perPage`` / ``cursor``) and ``sort``.
+  ES for 6 DBs, Solr for ``trad`` / ``taxonomy`` (offset-only;
+  ``cursor`` returns 400 ``cursor-not-supported``).
 
-``q`` and ``adv`` may be specified together: the router AND-joins them
-on the ES ``bool.must`` and on the Solr edismax ``q`` string.  The
-status filter mode is OR-composed: ``include_suppressed`` whenever
-either side detects an accession exact match.
+Both endpoints share the same pipeline: parse ``q`` → validate → compile
+to ES/Solr.  Query errors (unknown-field, invalid-date-format, etc.)
+surface as 400 + RFC 7807 + dedicated type URI.  Cross-search fan-out
+uses per-backend ``asyncio.wait_for`` bounds and an overall
+``asyncio.wait`` deadline.
 
-Both endpoints share the DSL pipeline: parse → validate → compile to
-ES/Solr.  DSL errors (unknown-field, invalid-date-format, etc.) surface
-as 400 + RFC 7807 + dedicated type URI.  Cross-search fan-out uses
-per-backend ``asyncio.wait_for`` bounds and an overall ``asyncio.wait``
-deadline.
+Handlers never assemble AST nodes themselves; ``_parse_and_validate_query``
+is the sole entry point so cross-search and search stay in lock-step.
 """
 
 from __future__ import annotations
@@ -71,7 +69,6 @@ from ddbj_search_api.search.dsl import (
 from ddbj_search_api.search.dsl.accession_exact_match import (
     detect_accession_exact_match_in_ast,
 )
-from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText
 from ddbj_search_api.search.dsl.ast import Node as DslNode
 from ddbj_search_api.search.dsl.inspect import ast_has_field_clause
 from ddbj_search_api.solr import get_solr_client
@@ -193,8 +190,6 @@ def _validate_cursor_exclusivity(query: DbPortalSearchQuery) -> None:
         conflicting.append("page")
     if query.q is not None:
         conflicting.append("q")
-    if query.adv is not None:
-        conflicting.append("adv")
     if query.sort is not None:
         conflicting.append("sort")
     if conflicting:
@@ -230,7 +225,7 @@ def _map_httpx_error(exc: Exception) -> DbPortalCountError:
     return DbPortalCountError.unknown
 
 
-_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "adv", "topHits"})
+_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "topHits"})
 
 
 def _reject_unexpected_cross_params(request: Request) -> None:
@@ -255,22 +250,19 @@ def _reject_unexpected_cross_params(request: Request) -> None:
     )
 
 
-def _parse_and_validate_dsl(
-    adv: str,
+def _parse_and_validate_query(
+    q: str,
     db: DbPortalDb | None,
     config: AppConfig,
-) -> FieldClause | BoolOp:
-    """Parse and validate Advanced Search DSL.
+) -> DslNode:
+    """Parse and validate a search query string.
 
     ``mode`` is ``"cross"`` when ``db`` is None and ``"single"`` otherwise.
-    DSL errors are translated to ``DbPortalHTTPException`` (400 + dedicated
+    Query errors are translated to ``DbPortalHTTPException`` (400 + dedicated
     type URI) so the caller can return RFC 7807 problem details.
-
-    Returns ``FieldClause | BoolOp`` (Lark パーサは ``FreeText`` を生成しない)
-    のため、後続 ``_build_query_ast`` で adv_ast の ``position`` を安全に参照できる。
     """
     try:
-        ast = parse(adv, max_length=config.dsl_max_length)
+        ast = parse(q, max_length=config.dsl_max_length)
         validate(
             ast,
             mode="cross" if db is None else "single",
@@ -284,48 +276,14 @@ def _parse_and_validate_dsl(
             type_uri=DbPortalErrorType[exc.type.name],
             detail=exc.detail,
         ) from exc
-    # Lark パーサは FieldClause | BoolOp のみ返す (FreeText は handler 側で組む)
-    assert isinstance(ast, (FieldClause, BoolOp))
     return ast
-
-
-def _build_query_ast(
-    q: str | None,
-    adv_ast: FieldClause | BoolOp | None,
-) -> DslNode | None:
-    """``q`` と ``adv_ast`` を単一の AST に統合する。
-
-    - 両方 ``None`` (空白のみの ``q`` 含む): ``None`` を返す (handler 側で
-      ``match_all`` (ES) / ``*:*`` (Solr) として扱う)
-    - ``q`` のみ: ``FreeText(q)``
-    - ``adv_ast`` のみ: ``adv_ast`` をそのまま
-    - 併用: ``BoolOp(AND, children=(adv_ast, FreeText(q)))`` (Solr 出力順序の
-      整合のため ``adv`` を先頭、``q`` を後尾にする)
-
-    合成 ``BoolOp`` の ``position`` は ``adv_ast.position`` を継承する (この経路は
-    validator を再度通らないので参照されないが、安全側に有効な値を持たせる)。
-    """
-    normalized_q = q.strip() if q is not None else None
-    if not normalized_q:
-        normalized_q = None
-    if normalized_q is not None and adv_ast is not None:
-        return BoolOp(
-            op="AND",
-            children=(adv_ast, FreeText(q if q is not None else "")),
-            position=adv_ast.position,
-        )
-    if adv_ast is not None:
-        return adv_ast
-    if normalized_q is not None:
-        return FreeText(q if q is not None else "")
-    return None
 
 
 def _resolve_status_mode(ast: DslNode | None) -> StatusMode:
     """AST から ``status_mode`` を導出する.
 
     accession 完全一致 ([§ データ可視性](docs/db-portal-api-spec.md)) を満たす場合のみ
-    ``include_suppressed``、それ以外は ``public_only``。``ast=None`` (q / adv 両方
+    ``include_suppressed``、それ以外は ``public_only``。``ast=None`` (``q``
     未指定) は accession 一致しないので ``public_only``。
     """
     if ast is None:
@@ -336,10 +294,10 @@ def _resolve_status_mode(ast: DslNode | None) -> StatusMode:
 def _build_es_query_for_ast(ast: DslNode | None, status_mode: StatusMode) -> dict[str, Any]:
     """AST から ES query body を生成し、status filter を注入する.
 
-    ``ast=None`` (q / adv 両方未指定) は ``build_search_query(keywords=None, ...)``
+    ``ast=None`` (``q`` 未指定) は ``build_search_query(keywords=None, ...)``
     と同形式の ``{"bool": {"filter": [<status>]}}`` を返す (keyword 無し + filter のみ)。
     ``ast`` が空の ``match_all`` ラップで誤って ``must`` に ``match_all`` を残さないよう、
-    旧 build_search_query 経由の形式に合わせる。
+    build_search_query 経由の形式に合わせる。
     """
     if ast is None:
         return build_search_query(keywords=None, keyword_operator="AND", status_mode=status_mode)
@@ -460,7 +418,7 @@ async def _count_one_db_es(
 
 # === Cross-database fan-out (AST 経由 dispatch) ===
 #
-# q / adv / 併用 / 両方未指定 の 4 入力を ``_build_query_ast`` で AST に正規化し,
+# ``q`` を ``_parse_and_validate_query`` で AST に変換し,
 # ``_cross_search_dispatch`` が ES 6 DB + Solr 2 DB に並列発行する。詳細は
 # docs/db-portal-api-spec.md § 内部モデル参照。
 
@@ -473,7 +431,7 @@ async def _count_arsa_unified(
     *,
     with_uf: bool,
 ) -> DbPortalCount:
-    """ARSA cross-search の単一関数版 (旧 ``_count_arsa`` / ``_adv`` / ``_combined`` 統合)."""
+    """ARSA cross-search 用 ``count + top hits`` クエリ発行."""
     if not config.solr_arsa_base_url:
         return DbPortalCount(
             db=DbPortalDb.trad,
@@ -639,10 +597,9 @@ async def _cross_search_dispatch(
     ast: DslNode | None,
     top_hits: int,
 ) -> DbPortalCrossSearchResponse:
-    """AST 一本化後の cross-search 単一 dispatch.
+    """cross-search 単一 dispatch (AST → 8 DB fan-out).
 
-    旧 ``_cross_search`` / ``_adv_cross_search`` / ``_combined_cross_search`` を統合。
-    ``ast=None`` (q / adv 両方未指定) は ``match_all`` (ES) / ``*:*`` (Solr) でカウントだけ取る。
+    ``ast=None`` (``q`` 未指定) は ``match_all`` (ES) / ``*:*`` (Solr) でカウントだけ取る。
     """
     status_mode = _resolve_status_mode(ast)
     es_query_body = _build_es_query_for_ast(ast, status_mode)
@@ -698,7 +655,7 @@ async def _cross_search_dispatch(
 
 # === DB-specific hits (AST 経由 dispatch) ===
 #
-# q / adv / 併用 / 両方未指定 の 4 入力を ``_build_query_ast`` で AST に正規化し,
+# ``q`` を ``_parse_and_validate_query`` で AST に変換し,
 # ``_db_specific_search_dispatch`` が ES (offset / cursor は別 path) と
 # Solr 2 DB に振り分ける。cursor 経路は ``_db_specific_search_cursor`` 専用で
 # AST dispatch を通らない (cursor token に焼き込んだ ES query を decode して使う)。
@@ -712,7 +669,7 @@ async def _search_arsa_unified(
     *,
     with_uf: bool,
 ) -> DbPortalHitsResponse:
-    """ARSA db-specific search の単一関数版 (旧 ``_search_arsa`` / ``_adv`` / ``_combined`` 統合)."""
+    """ARSA db-specific search の hits 検索発行."""
     if not config.solr_arsa_base_url:
         raise HTTPException(
             status_code=502,
@@ -760,7 +717,7 @@ async def _search_txsearch_unified(
     *,
     with_uf: bool,
 ) -> DbPortalHitsResponse:
-    """TXSearch db-specific search の単一関数版 (旧 ``_search_txsearch`` 系 3 関数の統合)."""
+    """TXSearch db-specific search の hits 検索発行."""
     if not config.solr_txsearch_url:
         raise HTTPException(
             status_code=502,
@@ -849,15 +806,13 @@ async def _db_specific_search_dispatch(
     query: DbPortalSearchQuery,
     ast: DslNode | None,
 ) -> DbPortalHitsResponse:
-    """AST 一本化後の db-specific 単一 dispatch.
+    """db-specific 単一 dispatch (AST → 単一 backend).
 
-    旧 ``_db_specific_search`` / ``_adv_db_specific_search`` /
-    ``_combined_db_specific_search`` を統合 (cursor 経路を除く).
-
-    ``ast`` が ``BoolOp`` / ``FreeText`` を含むかで Solr ``uf`` 適用を決め
-    (handler が AST 全体を見る)、ES 側は inject_status_filter で
-    accession 解禁を決める。cursor + adv の組合せは handler で 400 を返す
-    既存ロジックを残すため、本 dispatch には cursor 経路を含めない。
+    ``ast`` が ``FieldClause`` を含むかで Solr ``uf`` 適用を決め (handler が
+    AST 全体を見る)、ES 側は inject_status_filter で accession 解禁を決める。
+    cursor 経路は ``_db_specific_search_cursor`` (cursor token に焼き込んだ
+    ES query を decode して使う) に分離されているため、本 dispatch には
+    含めない。
     """
     assert query.db is not None
     with_uf = ast is not None and ast_has_field_clause(ast)
@@ -961,13 +916,12 @@ async def _cross_search_handler(
 ) -> DbPortalCrossSearchResponse:
     """``GET /db-portal/cross-search``: cross-database count + top hits search.
 
-    ``q`` / ``adv`` / 併用 / 両方未指定 の 4 入力パターンを ``_build_query_ast``
-    で AST に正規化し、単一 ``_cross_search_dispatch`` に渡す。AST 一本化方針は
-    docs/db-portal-api-spec.md § 内部モデル参照。
+    ``q`` を Lark でパース → validator → ES/Solr compiler の単一 pipeline を通して
+    ``_cross_search_dispatch`` に渡す。``q`` 省略時は ``ast=None`` で全件 match_all
+    fan-out を行う。
     """
     _reject_unexpected_cross_params(request)
-    adv_ast = _parse_and_validate_dsl(query.adv, db=None, config=config) if query.adv is not None else None
-    ast = _build_query_ast(query.q, adv_ast)
+    ast = _parse_and_validate_query(query.q, db=None, config=config) if query.q else None
     return await _cross_search_dispatch(es_client, solr_client, config, ast, query.top_hits)
 
 
@@ -979,9 +933,9 @@ async def _db_search_handler(
 ) -> DbPortalHitsResponse:
     """``GET /db-portal/search``: db-specific hits search.
 
-    cursor 経路 (旧 ``_db_specific_search_cursor``) は cursor token に焼き込んだ
-    ES query を decode して継続する設計のため、AST dispatch には流さない。
-    cursor + adv / cursor + q は ``_validate_cursor_exclusivity`` で弾く。
+    cursor 経路 (``_db_specific_search_cursor``) は cursor token に焼き込んだ
+    ES query を decode して継続する設計のため、本 dispatch には流さない。
+    cursor + q は ``_validate_cursor_exclusivity`` (cursor 経路前段) で弾く。
     """
     if query.db is None:
         raise DbPortalHTTPException(
@@ -993,27 +947,7 @@ async def _db_search_handler(
                 "For cross-database count, use /db-portal/cross-search."
             ),
         )
-    # cursor 経路 (cursor が指定されており adv なし) は既存ロジックを維持。
-    # cursor + adv は cursor-not-supported で弾く (旧挙動踏襲).
     if query.cursor is not None:
-        if query.adv is not None:
-            if query.db in _SOLR_DBS:
-                raise DbPortalHTTPException(
-                    status_code=400,
-                    type_uri=DbPortalErrorType.cursor_not_supported,
-                    detail=(
-                        f"Cursor-based pagination is not supported for db='{query.db.value}'. "
-                        "Use 'page' + 'perPage' (offset-only) instead."
-                    ),
-                )
-            raise DbPortalHTTPException(
-                status_code=400,
-                type_uri=DbPortalErrorType.cursor_not_supported,
-                detail=(
-                    "Cursor-based pagination is not supported with 'adv'. "
-                    "Advanced Search uses offset pagination; omit 'cursor' to paginate."
-                ),
-            )
         if query.db in _SOLR_DBS:
             raise DbPortalHTTPException(
                 status_code=400,
@@ -1023,10 +957,9 @@ async def _db_search_handler(
                     "Use 'page' + 'perPage' (offset-only) instead."
                 ),
             )
+        _validate_cursor_exclusivity(query)
         return await _db_specific_search_cursor(es_client, query)
-    # offset 経路: q / adv / 併用 / 両方未指定 を AST に正規化して dispatch.
-    adv_ast = _parse_and_validate_dsl(query.adv, db=query.db, config=config) if query.adv is not None else None
-    ast = _build_query_ast(query.q, adv_ast)
+    ast = _parse_and_validate_query(query.q, db=query.db, config=config) if query.q else None
     return await _db_specific_search_dispatch(es_client, solr_client, config, query, ast)
 
 
@@ -1037,7 +970,7 @@ router.add_api_route(
     response_model=DbPortalCrossSearchResponse,
     responses={
         400: {
-            "description": ("Bad Request (unexpected parameter, DSL parse/validate error)."),
+            "description": ("Bad Request (unexpected parameter, query parse/validate error)."),
             "model": ProblemDetails,
         },
         422: {
@@ -1064,7 +997,7 @@ router.add_api_route(
         400: {
             "description": (
                 "Bad Request (missing-db, cursor exclusivity, "
-                "DSL parse/validate error, deep paging limit)."
+                "query parse/validate error, deep paging limit)."
             ),
             "model": ProblemDetails,
         },
@@ -1083,47 +1016,32 @@ router.add_api_route(
 )
 
 
-# === GET /db-portal/parse — DSL → GUI 逆パーサ ===
+# === GET /db-portal/parse — query → GUI 逆パーサ ===
 
 
 async def _parse_db_portal(
-    adv: str = Query(
+    q: str = Query(
         ...,
-        examples=["title:cancer"],
+        examples=["cancer AND organism:9606"],
         description=(
-            "Advanced Search DSL to parse into AST.  Same grammar as "
-            "``GET /db-portal/cross-search?adv=...`` / "
-            "``GET /db-portal/search?adv=...&db=<id>``.  Returned JSON tree "
-            "follows SSOT search-backends.md §L363-381 and is intended for "
-            "GUI state restoration from shared URLs."
+            "Search query to parse into AST.  Same grammar as "
+            "``GET /db-portal/cross-search?q=...`` / "
+            "``GET /db-portal/search?q=...&db=<id>``.  Returned JSON tree is "
+            "intended for GUI state restoration from shared URLs."
         ),
     ),
     db: DbPortalDb | None = Query(
         default=None,
         examples=["bioproject"],
         description=(
-            "Validator mode target.  Omit for cross-db mode (Tier 1 only); "
-            "specify a DB for single-db mode (Tier 1 + Tier 2/3 allowlist)."
+            "Validator mode target.  Omit for cross-db mode (Tier 1/2 only); "
+            "specify a DB for single-db mode (Tier 1/2/3 allowlist)."
         ),
     ),
     config: AppConfig = Depends(_get_config_dep),
 ) -> DbPortalParseResponse:
-    """Parse ``adv`` DSL and return the SSOT query-tree JSON for GUI restoration."""
-    try:
-        ast = parse(adv, max_length=config.dsl_max_length)
-        validate(
-            ast,
-            mode="cross" if db is None else "single",
-            db=db,
-            max_depth=config.dsl_max_depth,
-            max_nodes=config.dsl_max_nodes,
-        )
-    except DslError as exc:
-        raise DbPortalHTTPException(
-            status_code=400,
-            type_uri=DbPortalErrorType[exc.type.name],
-            detail=exc.detail,
-        ) from exc
+    """Parse the query and return the SSOT query-tree JSON for GUI restoration."""
+    ast = _parse_and_validate_query(q, db=db, config=config)
     return DbPortalParseResponse.model_validate({"ast": ast_to_json(ast)})
 
 
@@ -1134,15 +1052,15 @@ router.add_api_route(
     response_model=DbPortalParseResponse,
     responses={
         400: {
-            "description": "Bad Request (DSL parse/validate error).",
+            "description": "Bad Request (query parse/validate error).",
             "model": ProblemDetails,
         },
         422: {
-            "description": "Unprocessable Entity (missing adv, invalid db value).",
+            "description": "Unprocessable Entity (missing q, invalid db value).",
             "model": ProblemDetails,
         },
     },
-    summary="Parse Advanced Search DSL into the SSOT query-tree JSON for GUI state restoration.",
+    summary="Parse a search query into the SSOT query-tree JSON for GUI state restoration.",
     operation_id="parseDbPortal",
     tags=["db-portal"],
 )

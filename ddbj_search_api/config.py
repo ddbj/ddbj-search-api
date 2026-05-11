@@ -83,7 +83,7 @@ class AppConfig(BaseSettings):
     txsearch_timeout: float = 5.0
     cross_search_total_timeout: float = 20.0
 
-    # Advanced Search DSL limits (DoS / complexity guard).
+    # Search query limits (DoS / complexity guard).
     dsl_max_length: int = 4096
     dsl_max_depth: int = 5
     dsl_max_nodes: int = 512

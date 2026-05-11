@@ -1,4 +1,4 @@
-"""DSL エラー型.
+"""クエリパースエラー型.
 
 ``ProblemDetails`` schema は拡張せず、エラー位置情報 (column / length) は ``detail``
 文字列に自然言語で埋め込み、type URI slug で機械判別する。
@@ -12,7 +12,7 @@ TYPE_URI_PREFIX = "https://ddbj.nig.ac.jp/problems/"
 
 
 class ErrorType(str, Enum):
-    """DSL 実装で導入した 7 slug (``advanced-search-not-implemented`` は DSL 実装後に emit されない)."""
+    """クエリパース・検証・コンパイル段で発生するエラー slug."""
 
     unexpected_token = "unexpected-token"
     unknown_field = "unknown-field"
@@ -21,6 +21,8 @@ class ErrorType(str, Enum):
     invalid_operator_for_field = "invalid-operator-for-field"
     nest_depth_exceeded = "nest-depth-exceeded"
     missing_value = "missing-value"
+    invalid_freetext_position = "invalid-freetext-position"
+    duplicate_freetext = "duplicate-freetext"
 
 
 def type_uri(error_type: ErrorType) -> str:
@@ -28,7 +30,7 @@ def type_uri(error_type: ErrorType) -> str:
 
 
 class DslError(Exception):
-    """3 段階処理 (parse / validate / compile) で発生する全エラーの表現型."""
+    """parse / validate / compile の各段で発生する全エラーの表現型."""
 
     def __init__(self, *, type: ErrorType, detail: str, column: int, length: int) -> None:
         super().__init__(detail)

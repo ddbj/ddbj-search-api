@@ -1,6 +1,6 @@
-"""DSL parser (Stage 1: DSL text → AST).
+"""Query parser (Stage 1: query text → AST).
 
-Lark LALR(1) で ``grammar.lark`` を適用し、DSL 文字列を AST (``ast.Node``) に変換する。
+Lark LALR(1) で ``grammar.lark`` を適用し、クエリ文字列を AST (``ast.Node``) に変換する。
 Lark の ``propagate_positions=True`` + ``@v_args(meta=True)`` で ``Position`` を全ノードに付与。
 Lark 例外は ``DslError(unexpected_token)`` に統一変換する。
 """
@@ -20,7 +20,7 @@ from lark.exceptions import (
     UnexpectedToken,
 )
 
-from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Node, Position, Range
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Position, Range
 from ddbj_search_api.search.dsl.errors import DslError, ErrorType
 
 DEFAULT_MAX_LENGTH = 4096
@@ -99,6 +99,14 @@ class _AstTransformer(Transformer):  # type: ignore[type-arg]
     def v_word(self, meta: Any, tok: Token) -> tuple[str, str]:
         return ("word", str(tok))
 
+    def ft_phrase(self, meta: Any, tok: Token) -> FreeText:
+        raw = str(tok)
+        unescaped = _PHRASE_UNESCAPE.sub(lambda m: m.group(1), raw[1:-1])
+        return FreeText(value=unescaped, position=_position(meta))
+
+    def ft_word(self, meta: Any, tok: Token) -> FreeText:
+        return FreeText(value=str(tok), position=_position(meta))
+
 
 def _position(meta: Any) -> Position:
     column = getattr(meta, "column", None) or 1
@@ -108,7 +116,7 @@ def _position(meta: Any) -> Position:
 
 
 def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
-    """Parse a DSL string into an AST.
+    """Parse a query string into an AST.
 
     Raises:
         DslError(unexpected_token): on syntax errors, over-length input, or empty input.
@@ -117,7 +125,7 @@ def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
         raise DslError(
             type=ErrorType.unexpected_token,
             detail=(
-                f"DSL string too long: {len(dsl)} characters (max {max_length}). "
+                f"query string too long: {len(dsl)} characters (max {max_length}). "
                 "Shorten the query or split into multiple requests."
             ),
             column=max_length + 1,
@@ -126,7 +134,7 @@ def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
     if not dsl.strip():
         raise DslError(
             type=ErrorType.unexpected_token,
-            detail="empty DSL string",
+            detail="empty query string",
             column=1,
             length=1,
         )
@@ -155,7 +163,7 @@ def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
         col = getattr(e, "column", len(dsl) + 1) or (len(dsl) + 1)
         raise DslError(
             type=ErrorType.unexpected_token,
-            detail=f"unexpected end of DSL at column {col}",
+            detail=f"unexpected end of query at column {col}",
             column=col,
             length=1,
         ) from e
@@ -163,24 +171,24 @@ def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
         col = getattr(e, "column", 1) or 1
         raise DslError(
             type=ErrorType.unexpected_token,
-            detail=f"DSL parse error at column {col}",
+            detail=f"query parse error at column {col}",
             column=col,
             length=1,
         ) from e
     except LarkError as e:
         raise DslError(
             type=ErrorType.unexpected_token,
-            detail=f"DSL parse error: {e}",
+            detail=f"query parse error: {e}",
             column=1,
             length=1,
         ) from e
 
     transformer = _AstTransformer()
     ast: Any = transformer.transform(tree)
-    if not isinstance(ast, (FieldClause, BoolOp)):
+    if not isinstance(ast, (FreeText, FieldClause, BoolOp)):
         raise DslError(
             type=ErrorType.unexpected_token,
-            detail="DSL did not produce a valid AST",
+            detail="query did not produce a valid AST",
             column=1,
             length=1,
         )

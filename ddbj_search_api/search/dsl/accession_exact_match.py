@@ -1,6 +1,6 @@
 """AST レベルの accession 完全一致判定。
 
-`/db-portal/*` の handler で組み立てた AST を走査し、accession ID 完全一致を
+`/db-portal/*` の handler でパースした AST を走査し、accession ID 完全一致を
 表すノードが含まれていれば、その accession 文字列を返す。返り値が ``None`` 以外
 のとき、対象 DB の ``suppressed`` ステータスを ``include_suppressed`` で許可する。
 
@@ -9,14 +9,13 @@
 - AST のトップが ``FreeText(v)`` で ``is_accession_like(v.strip())`` を満たす
 - AST のトップが ``FieldClause(identifier, eq, v)`` で ``is_accession_like(v)`` を満たす
 - AST のトップが ``BoolOp(AND, children=...)`` で、**直下** の子のいずれかが上記 2 条件の
-  どちらかを満たす (``q`` + ``adv`` 併用時の合成 BoolOp に相当)
+  どちらかを満たす
 
 それ以外 (``BoolOp(OR, ...)``、``BoolOp(NOT, ...)``、ネスト AND の更に下、
 ワイルドカード、``identifier`` 以外のフィールド) はすべて ``None`` を返す。
 
-simple 経路 (``q``) 用の文字列ベース判定 (`search/accession.py` の
-``detect_accession_exact_match``) は ``/entries/*`` 系で残置されており、両者で
-``is_accession_like`` を共有する。
+``/entries/*`` 系の文字列ベース判定 (`search/accession.py` の
+``detect_accession_exact_match``) と ``is_accession_like`` を共有する。
 """
 
 from __future__ import annotations

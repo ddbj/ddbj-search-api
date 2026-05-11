@@ -1,4 +1,4 @@
-"""DSL validator (Stage 2: AST → 検証).
+"""クエリ AST validator (Stage 2: AST → 検証).
 
 チェック項目:
 1. フィールド名が allowlist (Tier 1/2/3) に含まれるか → unknown-field
@@ -8,13 +8,14 @@
 5. phrase 値が empty でないか → missing-value
 6. AND/OR/NOT のネスト深さが max_depth 以下、AST ノード総数が max_nodes 以下か → nest-depth-exceeded
    (max_depth は深さのみを抑えるため、`a OR b OR ... OR z` のような横幅も同 slug でガードする)
+7. FreeText の位置制約 (root 単独 or トップレベル AND 直下に最大 1 つ) → invalid-freetext-position / duplicate-freetext
 """
 
 from __future__ import annotations
 
 import datetime
 import re
-from typing import Literal, TypeAlias
+from typing import Literal, NoReturn, TypeAlias
 
 from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl.allowlist import (
@@ -48,6 +49,7 @@ def validate(
     _check_total_nodes(ast, max_nodes=max_nodes)
     _check_depth(ast, current=1, max_depth=max_depth)
     _check_nodes(ast, mode=mode)
+    _check_freetext_position(ast)
 
 
 def _count_nodes(node: Node) -> int:
@@ -220,3 +222,65 @@ def _ensure_iso_date(value: str, clause: FieldClause) -> None:
             column=clause.position.column,
             length=clause.position.length,
         ) from exc
+
+
+def _check_freetext_position(ast: Node) -> None:
+    """FreeText の位置制約を enforce.
+
+    OK: root が FreeText 単独 / トップレベル AND 直下に FreeText が最大 1 つ
+    NG: OR / NOT 配下 / ネスト深部 AND 配下 / トップレベル AND 直下に 2 つ以上
+    """
+    if isinstance(ast, FreeText):
+        return
+    if isinstance(ast, FieldClause):
+        return
+    # ast is BoolOp
+    if ast.op == "AND":
+        freetext_children = [c for c in ast.children if isinstance(c, FreeText)]
+        if len(freetext_children) >= 2:
+            duplicate = freetext_children[1]
+            _raise_duplicate_freetext(duplicate, ast)
+        for child in ast.children:
+            if isinstance(child, FreeText):
+                continue
+            _ensure_no_freetext(child)
+        return
+    _ensure_no_freetext(ast)
+
+
+def _ensure_no_freetext(node: Node) -> None:
+    if isinstance(node, FreeText):
+        _raise_invalid_freetext_position(node)
+    if isinstance(node, FieldClause):
+        return
+    for child in node.children:
+        _ensure_no_freetext(child)
+
+
+def _raise_invalid_freetext_position(node: FreeText) -> NoReturn:
+    col = node.position.column if node.position else 1
+    length = node.position.length if node.position else max(len(node.value), 1)
+    raise DslError(
+        type=ErrorType.invalid_freetext_position,
+        detail=(
+            f"free-text term {node.value!r} must appear directly under a top-level "
+            f"AND operator (or as the sole top-level term) at column {col} "
+            f"(length {length}). free text is not allowed under OR / NOT or nested AND."
+        ),
+        column=col,
+        length=length,
+    )
+
+
+def _raise_duplicate_freetext(node: FreeText, parent: BoolOp) -> NoReturn:
+    position = node.position or parent.position
+    raise DslError(
+        type=ErrorType.duplicate_freetext,
+        detail=(
+            f"multiple free-text terms in AND clause at column {position.column} "
+            f"(length {position.length}). combine them into a single phrase or "
+            "wrap one as a field clause."
+        ),
+        column=position.column,
+        length=position.length,
+    )
