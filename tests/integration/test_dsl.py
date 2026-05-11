@@ -30,10 +30,15 @@ class TestEsWildcardCaseInsensitive:
 
 
 class TestCursorQExclusivityEs:
-    """IT-DSL-02: cursor + q on ES-backed DB → 400 ``cursor-not-supported``."""
+    """IT-DSL-02: cursor + q on ES-backed DB → 400 (cursor exclusivity)."""
 
     def test_cursor_and_q_returns_400(self, app: TestClient) -> None:
-        """IT-DSL-02: 400 with the slug when cursor accompanies q."""
+        """IT-DSL-02: ES DB で cursor と q を併用すると about:blank (cursor exclusivity) で 400.
+
+        cursor は最初の検索で発行され、後続継続では cursor + db + perPage のみ受ける。
+        q を再送する経路は不正なので ``_validate_cursor_exclusivity`` が plain HTTPException
+        で 400 を返す (about:blank、Solr DB の ``cursor-not-supported`` slug とは区別)。
+        """
         resp = app.get(
             "/db-portal/search",
             params={
@@ -44,7 +49,8 @@ class TestCursorQExclusivityEs:
         )
         assert resp.status_code == 400
         body = resp.json()
-        assert "cursor-not-supported" in body.get("type", "")
+        assert body.get("type", "") == "about:blank"
+        assert "cursor" in body.get("detail", "").lower()
 
 
 class TestCursorQExclusivitySolr:
