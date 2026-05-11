@@ -299,11 +299,14 @@ class TestTier3FlatEnum:
         ("dsl", "db", "es_field", "value"),
         [
             ("project_type:BioProject", DbPortalDb.bioproject, "objectType", "BioProject"),
-            ("library_strategy:WGS", DbPortalDb.sra, "libraryStrategy", "WGS"),
-            ("library_source:GENOMIC", DbPortalDb.sra, "librarySource", "GENOMIC"),
-            ("library_layout:SINGLE", DbPortalDb.sra, "libraryLayout", "SINGLE"),
-            ("platform:ILLUMINA", DbPortalDb.sra, "platform", "ILLUMINA"),
-            ("study_type:Cohort", DbPortalDb.jga, "studyType", "Cohort"),
+            # text+keyword multi-field の enum 系は `.keyword` サブフィールドを使う
+            # (term query で analyzer 適用後 lowercase token と uppercase 値が一致しないため)
+            ("library_strategy:WGS", DbPortalDb.sra, "libraryStrategy.keyword", "WGS"),
+            ("library_source:GENOMIC", DbPortalDb.sra, "librarySource.keyword", "GENOMIC"),
+            ("library_layout:SINGLE", DbPortalDb.sra, "libraryLayout.keyword", "SINGLE"),
+            ("platform:ILLUMINA", DbPortalDb.sra, "platform.keyword", "ILLUMINA"),
+            ("study_type:Cohort", DbPortalDb.jga, "studyType.keyword", "Cohort"),
+            # keyword 単独 (multi-field でない) なので suffix 不要
             ("relevance:reference", DbPortalDb.bioproject, "relevance", "reference"),
             # db-portal sidebar 拡張で追加された Tier 3 enum
             ("package:MIGS.ba", DbPortalDb.biosample, "package.name", "MIGS.ba"),
@@ -311,9 +314,9 @@ class TestTier3FlatEnum:
             # SRA + JGA 共通 type (subtype 識別子)
             ("type:sra-experiment", DbPortalDb.sra, "type", "sra-experiment"),
             ("type:jga-dataset", DbPortalDb.jga, "type", "jga-dataset"),
-            # db-portal sidebar 第 2 弾: library_selection (sra-experiment INSDC controlled)
-            ("library_selection:RANDOM", DbPortalDb.sra, "librarySelection", "RANDOM"),
-            # db-portal sidebar 第 2 弾: accessibility (Tier 1 cross 可、enum=public-access/controlled-access)
+            # db-portal sidebar 第 2 弾: library_selection (sra-experiment INSDC controlled、multi-field)
+            ("library_selection:RANDOM", DbPortalDb.sra, "librarySelection.keyword", "RANDOM"),
+            # db-portal sidebar 第 2 弾: accessibility (Tier 1 cross 可、keyword 単独で suffix 不要)
             ("accessibility:public-access", DbPortalDb.bioproject, "accessibility", "public-access"),
         ],
     )
@@ -321,9 +324,9 @@ class TestTier3FlatEnum:
         assert _compile_single(dsl, db) == {"term": {es_field: value}}
 
     def test_enum_phrase_with_spaces(self) -> None:
-        """enum value に空白を含む場合 (VIRAL RNA) は phrase 経由."""
+        """enum value に空白を含む場合 (VIRAL RNA) は phrase 経由 (multi-field の .keyword)."""
         assert _compile_single('library_source:"VIRAL RNA"', DbPortalDb.sra) == {
-            "term": {"librarySource": "VIRAL RNA"},
+            "term": {"librarySource.keyword": "VIRAL RNA"},
         }
 
 
@@ -422,7 +425,7 @@ class TestTier3NotEnum:
 
     def test_not_platform(self) -> None:
         assert _compile_single("NOT platform:ILLUMINA", DbPortalDb.sra) == {
-            "bool": {"must_not": [{"term": {"platform": "ILLUMINA"}}]},
+            "bool": {"must_not": [{"term": {"platform.keyword": "ILLUMINA"}}]},
         }
 
     def test_not_nested_submitter(self) -> None:
@@ -445,8 +448,8 @@ class TestTier3BoolCombinations:
         assert _compile_single("library_strategy:WGS AND platform:ILLUMINA", DbPortalDb.sra) == {
             "bool": {
                 "must": [
-                    {"term": {"libraryStrategy": "WGS"}},
-                    {"term": {"platform": "ILLUMINA"}},
+                    {"term": {"libraryStrategy.keyword": "WGS"}},
+                    {"term": {"platform.keyword": "ILLUMINA"}},
                 ],
             },
         }
@@ -455,8 +458,8 @@ class TestTier3BoolCombinations:
         assert _compile_single("platform:ILLUMINA OR platform:PACBIO_SMRT", DbPortalDb.sra) == {
             "bool": {
                 "should": [
-                    {"term": {"platform": "ILLUMINA"}},
-                    {"term": {"platform": "PACBIO_SMRT"}},
+                    {"term": {"platform.keyword": "ILLUMINA"}},
+                    {"term": {"platform.keyword": "PACBIO_SMRT"}},
                 ],
                 "minimum_should_match": 1,
             },

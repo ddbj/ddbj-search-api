@@ -59,19 +59,24 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "submitter": _ESStrategy(kind="nested", path="organization", sub="organization.name"),
     "publication": _ESStrategy(kind="nested", path="publication", sub="publication.id"),
     # === Tier 3 flat ===
+    # SRA / GEA / MetaboBank の enum 系 (libraryStrategy 等) は ES mapping が text+keyword
+    # multi-field のため、term query には `.keyword` サブフィールドを使う必要がある
+    # (analyzer 適用後の lowercase token と uppercase 値が一致しないため)。
+    # text 型 (instrumentModel / libraryName / etc) は match_phrase で analyzer 経由する
+    # ので suffix 不要。keyword 単独 (objectType / relevance) も suffix 不要。
     "project_type": _ESStrategy(kind="flat", path="objectType"),
     "relevance": _ESStrategy(kind="flat", path="relevance"),
-    "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy"),
-    "library_source": _ESStrategy(kind="flat", path="librarySource"),
-    "library_layout": _ESStrategy(kind="flat", path="libraryLayout"),
+    "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy.keyword"),
+    "library_source": _ESStrategy(kind="flat", path="librarySource.keyword"),
+    "library_layout": _ESStrategy(kind="flat", path="libraryLayout.keyword"),
     # library_selection は sra-experiment のみ field 存在 (INSDC controlled vocab)
-    "library_selection": _ESStrategy(kind="flat", path="librarySelection"),
-    "platform": _ESStrategy(kind="flat", path="platform"),
+    "library_selection": _ESStrategy(kind="flat", path="librarySelection.keyword"),
+    "platform": _ESStrategy(kind="flat", path="platform.keyword"),
     "instrument_model": _ESStrategy(kind="flat", path="instrumentModel"),
     "library_name": _ESStrategy(kind="flat", path="libraryName"),
     "library_construction_protocol": _ESStrategy(kind="flat", path="libraryConstructionProtocol"),
     "analysis_type": _ESStrategy(kind="flat", path="analysisType"),
-    "study_type": _ESStrategy(kind="flat", path="studyType"),
+    "study_type": _ESStrategy(kind="flat", path="studyType.keyword"),
     "vendor": _ESStrategy(kind="flat", path="vendor"),
     "dataset_type": _ESStrategy(kind="flat", path="datasetType"),
     "experiment_type": _ESStrategy(kind="flat", path="experimentType"),

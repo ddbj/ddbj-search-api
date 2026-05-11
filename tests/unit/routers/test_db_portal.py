@@ -2214,8 +2214,8 @@ class TestDbPortalAdvTier2Tier3:
         body = mock_es_search_db_portal.call_args.args[2]
         # compiled query が term + term の AND になっている
         must = body["query"]["bool"]["must"]
-        assert {"term": {"libraryStrategy": "WGS"}} in must
-        assert {"term": {"platform": "ILLUMINA"}} in must
+        assert {"term": {"libraryStrategy.keyword": "WGS"}} in must
+        assert {"term": {"platform.keyword": "ILLUMINA"}} in must
 
     def test_tier3_bioproject_grant_agency_nested2(
         self,
@@ -2349,7 +2349,7 @@ class TestDbPortalAdvTier2Tier3:
         assert resp.status_code == 200
         body = mock_es_search_db_portal.call_args.args[2]
         body_bool = body["query"]["bool"]
-        assert body_bool["must_not"] == [{"term": {"platform": "ILLUMINA"}}]
+        assert body_bool["must_not"] == [{"term": {"platform.keyword": "ILLUMINA"}}]
         assert body_bool["filter"] == [{"term": {"status": "public"}}]
 
     def test_tier3_unknown_field_still_rejected(
