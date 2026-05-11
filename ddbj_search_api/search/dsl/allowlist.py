@@ -1,9 +1,9 @@
 """Tier-based field allowlist and operator matrix.
 
 3 段構成:
-- Tier 1 (横断可、8 field): identifier / text / organism / date 系の基本 field。
+- Tier 1 (横断可、9 field): identifier / text / organism / date 系の基本 field + accessibility。
 - Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
-- Tier 3 (単一 DB 指定必須、39 unique / per-DB 集計 45 field): DB 特化 field。
+- Tier 3 (単一 DB 指定必須、40 unique / per-DB 集計 46 field): DB 特化 field。
 
 SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス、
 db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
@@ -30,6 +30,9 @@ TIER1_FIELDS: frozenset[str] = frozenset(
         "date_modified",
         "date_created",
         "date",
+        # 全 ES backed 6 DB 共通 (public-access / controlled-access)。
+        # Solr backed (Trad / Taxonomy) には field 不在のため cross-mode で degenerate される。
+        "accessibility",
     },
 )
 
@@ -43,7 +46,7 @@ TIER2_FIELDS: frozenset[str] = frozenset(
 )
 
 # 単一 DB 選択時のみ使える Tier 3 (DB 特化 field)。
-# unique 39 field、ただし per-DB 集計は 45 (grant_agency / study_type / experiment_type / geo_loc_name /
+# unique 40 field、ただし per-DB 集計は 46 (grant_agency / study_type / experiment_type / geo_loc_name /
 # collection_date が 2 DB 間で shared、`type` も SRA / JGA で shared、計 +6 重複)。
 # SSOT: search-backends.md L560-575 Tier 3 DB 別フィールド。
 # 未 allowlist 化で保留中の候補 field: JGA principal_investigator / submitting_organization /
@@ -62,11 +65,12 @@ TIER3_FIELDS: frozenset[str] = frozenset(
         "collection_date",
         "package",
         "model",
-        # SRA 8 fields (subtype 別ヒット): library_* / platform / instrument_model は sra-experiment、
+        # SRA 9 fields (subtype 別ヒット): library_* / platform / instrument_model は sra-experiment、
         # analysis_type は sra-analysis、geo_loc_name / collection_date は sra-sample (BioSample 共通)
         "library_strategy",
         "library_source",
         "library_layout",
+        "library_selection",
         "platform",
         "instrument_model",
         "library_name",
@@ -115,6 +119,8 @@ FIELD_TYPES: dict[str, FieldType] = {
     "date_modified": "date",
     "date_created": "date",
     "date": "date",
+    # 全 ES backed 6 DB 共通 controlled vocab (public-access / controlled-access)
+    "accessibility": "enum",
     # === Tier 2 (cross, converter-normalized) ===
     "submitter": "text",
     "publication": "identifier",
@@ -138,6 +144,8 @@ FIELD_TYPES: dict[str, FieldType] = {
     "library_strategy": "enum",
     "library_source": "enum",
     "library_layout": "enum",
+    # library_selection は sra-experiment のみ field 存在、INSDC controlled vocab (RANDOM / PCR 等)
+    "library_selection": "enum",
     "platform": "enum",
     "instrument_model": "text",
     "library_name": "text",
@@ -225,6 +233,7 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "library_strategy": ("sra",),
     "library_source": ("sra",),
     "library_layout": ("sra",),
+    "library_selection": ("sra",),
     "platform": ("sra",),
     "instrument_model": ("sra",),
     "library_name": ("sra",),

@@ -2,12 +2,14 @@
 
 SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
 
-- Tier 1 は 6 flat + 2 or_flat (organism / date alias)。
+- Tier 1 は 7 flat (identifier/title/description/date_published/date_modified/date_created/accessibility)
+  + 2 or_flat (organism / date alias)。
 - Tier 2 は 2 nested (submitter: organization, publication: publication)。
-- Tier 3 (ES 対象) は 22 flat (BioProject project_type/relevance / BioSample 7
-  (host/strain/isolate/geo_loc_name/collection_date/package/model) / SRA 7 / JGA 3 /
-  MetaboBank shared 3 / SRA+JGA shared 1 (type)) + 1 double-nested
-  (grant_agency: grant → grant.agency)。
+- Tier 3 (ES 対象) は 23 flat (BioProject project_type/relevance / BioSample 7
+  (host/strain/isolate/geo_loc_name/collection_date/package/model) / SRA 8
+  (library_strategy/source/layout/selection/platform/instrument_model/library_name/
+  library_construction_protocol; analysis_type は別 path) / JGA 3 / MetaboBank shared 3 /
+  SRA+JGA shared 1 (type)) + 1 double-nested (grant_agency: grant → grant.agency)。
 - Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
 
 前提: validator で ``(field_type, value_kind)`` 互換性および cross-mode Tier 3 拒否は担保済。
@@ -50,6 +52,9 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "date_modified": _ESStrategy(kind="flat", path="dateModified"),
     "date_created": _ESStrategy(kind="flat", path="dateCreated"),
     "date": _ESStrategy(kind="or_flat", paths=("datePublished", "dateModified", "dateCreated")),
+    # 全 ES backed 6 DB 共通 controlled vocab。Solr backed (Trad / Taxonomy) には field 不在で
+    # cross-mode で degenerate (0 件) 自然に。
+    "accessibility": _ESStrategy(kind="flat", path="accessibility"),
     # === Tier 2 ===
     "submitter": _ESStrategy(kind="nested", path="organization", sub="organization.name"),
     "publication": _ESStrategy(kind="nested", path="publication", sub="publication.id"),
@@ -59,6 +64,8 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy"),
     "library_source": _ESStrategy(kind="flat", path="librarySource"),
     "library_layout": _ESStrategy(kind="flat", path="libraryLayout"),
+    # library_selection は sra-experiment のみ field 存在 (INSDC controlled vocab)
+    "library_selection": _ESStrategy(kind="flat", path="librarySelection"),
     "platform": _ESStrategy(kind="flat", path="platform"),
     "instrument_model": _ESStrategy(kind="flat", path="instrumentModel"),
     "library_name": _ESStrategy(kind="flat", path="libraryName"),

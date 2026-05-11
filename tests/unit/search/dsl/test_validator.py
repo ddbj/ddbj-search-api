@@ -29,6 +29,7 @@ class TestAllowedFields:
             "date_modified",
             "date_created",
             "date",
+            "accessibility",
         ],
     )
     def test_tier1_fields_accepted_in_cross_mode(self, field: str) -> None:
@@ -38,6 +39,8 @@ class TestAllowedFields:
             dsl = f"{field}:human"
         elif field.startswith("date"):
             dsl = f"{field}:2024-01-01"
+        elif field == "accessibility":
+            dsl = f"{field}:public-access"
         else:
             dsl = f"{field}:cancer"
         validate(parse(dsl), mode="cross")
@@ -290,6 +293,7 @@ class TestTier3CrossModeReject:
             ("library_strategy", "WGS"),
             ("library_source", "GENOMIC"),
             ("library_layout", "SINGLE"),
+            ("library_selection", "RANDOM"),
             ("platform", "ILLUMINA"),
             ("instrument_model", "NovaSeq"),
             ("library_name", "test_lib"),
@@ -558,6 +562,7 @@ _ENUM_FIELDS = [
     "package",
     "model",
     "type",
+    "library_selection",
 ]
 _ENUM_DBS: dict[str, DbPortalDb] = {
     "project_type": DbPortalDb.bioproject,
@@ -573,6 +578,7 @@ _ENUM_DBS: dict[str, DbPortalDb] = {
     "package": DbPortalDb.biosample,
     "model": DbPortalDb.biosample,
     "type": DbPortalDb.sra,
+    "library_selection": DbPortalDb.sra,
 }
 
 

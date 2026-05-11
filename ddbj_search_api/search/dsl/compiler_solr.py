@@ -52,6 +52,8 @@ _ARSA_UNAVAILABLE: frozenset[str] = frozenset(
         "date_modified",
         "date_created",
         "date",
+        # Tier 1 accessibility (Trad は INSDC 登録系で全 public、controlled-access 概念なし)
+        "accessibility",
         # Tier 2: ARSA に organization 相当 field なし
         "submitter",
         # Tier 3 ES-only: BioProject / SRA / JGA / GEA / MetaboBank 系
@@ -61,6 +63,7 @@ _ARSA_UNAVAILABLE: frozenset[str] = frozenset(
         "library_strategy",
         "library_source",
         "library_layout",
+        "library_selection",
         "platform",
         "instrument_model",
         "library_name",
@@ -77,6 +80,10 @@ _ARSA_UNAVAILABLE: frozenset[str] = frozenset(
         "isolate",
         "geo_loc_name",
         "collection_date",
+        "package",
+        "model",
+        # Tier 3 SRA + JGA 共通 (subtype 識別子)
+        "type",
         # Tier 3 Taxonomy-only: TXSearch 系
         "rank",
         "lineage",
@@ -120,6 +127,8 @@ _TXSEARCH_UNAVAILABLE: frozenset[str] = frozenset(
         "date_modified",
         "date_created",
         "date",
+        # Tier 1 accessibility (Taxonomy は分類学情報、accessibility 概念なし)
+        "accessibility",
         # Tier 2: TXSearch に organization / publication 相当 field なし
         "submitter",
         "publication",
@@ -130,6 +139,7 @@ _TXSEARCH_UNAVAILABLE: frozenset[str] = frozenset(
         "library_strategy",
         "library_source",
         "library_layout",
+        "library_selection",
         "platform",
         "instrument_model",
         "library_name",
@@ -146,6 +156,10 @@ _TXSEARCH_UNAVAILABLE: frozenset[str] = frozenset(
         "isolate",
         "geo_loc_name",
         "collection_date",
+        "package",
+        "model",
+        # Tier 3 SRA + JGA 共通 (subtype 識別子)
+        "type",
         # Tier 3 Trad-only
         "division",
         "molecular_type",

@@ -71,6 +71,9 @@ class TestArsaDate:
             "date_created:2024-01-01",
             "date:2024-01-01",
             "date:[2020-01-01 TO 2024-12-31]",
+            # accessibility は ES backed 6 DB 共通だが Trad (ARSA) は INSDC 登録系で全 public、
+            # accessibility field 不在のため degenerate
+            "accessibility:public-access",
         ],
     )
     def test_unavailable_date_fields_degenerate(self, dsl: str) -> None:
@@ -125,6 +128,8 @@ class TestTxSearchDegenerate:
             "date_created:2024-01-01",
             "date:2024-01-01",
             "date_published:[2020-01-01 TO 2024-12-31]",
+            # accessibility は Taxonomy 概念外、TXSearch field 不在で degenerate
+            "accessibility:public-access",
         ],
     )
     def test_unavailable_fields_degenerate(self, dsl: str) -> None:
@@ -205,12 +210,17 @@ class TestArsaTier3EsOnlyDegenerate:
         [
             ("project_type:BioProject", DbPortalDb.bioproject),
             ("library_strategy:WGS", DbPortalDb.sra),
+            ("library_selection:RANDOM", DbPortalDb.sra),
             ("platform:ILLUMINA", DbPortalDb.sra),
             ("instrument_model:NovaSeq", DbPortalDb.sra),
             ("study_type:Cohort", DbPortalDb.jga),
             ("experiment_type:ChIP-Seq", DbPortalDb.gea),
             ("submission_type:metabolite", DbPortalDb.metabobank),
             ("grant_agency:JSPS", DbPortalDb.bioproject),
+            # db-portal sidebar 拡張で追加された ES-only Tier 3
+            ("package:MIGS.ba", DbPortalDb.biosample),
+            ("model:HiSeq", DbPortalDb.biosample),
+            ("type:sra-experiment", DbPortalDb.sra),
         ],
     )
     def test_es_tier3_degenerates_on_arsa(self, dsl: str, db: DbPortalDb) -> None:
@@ -290,8 +300,13 @@ class TestTxSearchEsOnlyTier3Degenerate:
         [
             ("project_type:BioProject", DbPortalDb.bioproject),
             ("library_strategy:WGS", DbPortalDb.sra),
+            ("library_selection:RANDOM", DbPortalDb.sra),
             ("study_type:Cohort", DbPortalDb.jga),
             ("grant_agency:JSPS", DbPortalDb.bioproject),
+            # db-portal sidebar 拡張で追加された ES-only Tier 3
+            ("package:MIGS.ba", DbPortalDb.biosample),
+            ("model:HiSeq", DbPortalDb.biosample),
+            ("type:sra-experiment", DbPortalDb.sra),
         ],
     )
     def test_es_tier3_degenerates_on_txsearch(self, dsl: str, db: DbPortalDb) -> None:

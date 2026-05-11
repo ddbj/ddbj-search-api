@@ -311,6 +311,10 @@ class TestTier3FlatEnum:
             # SRA + JGA 共通 type (subtype 識別子)
             ("type:sra-experiment", DbPortalDb.sra, "type", "sra-experiment"),
             ("type:jga-dataset", DbPortalDb.jga, "type", "jga-dataset"),
+            # db-portal sidebar 第 2 弾: library_selection (sra-experiment INSDC controlled)
+            ("library_selection:RANDOM", DbPortalDb.sra, "librarySelection", "RANDOM"),
+            # db-portal sidebar 第 2 弾: accessibility (Tier 1 cross 可、enum=public-access/controlled-access)
+            ("accessibility:public-access", DbPortalDb.bioproject, "accessibility", "public-access"),
         ],
     )
     def test_enum_eq(self, dsl: str, db: DbPortalDb, es_field: str, value: str) -> None:

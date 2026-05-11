@@ -1,7 +1,7 @@
 """Tests for ddbj_search_api.search.dsl.allowlist.
 
-3 段構成の Tier 1/2/3 allowlist (55 field per DB 集計 = 49 unique; Tier 1 8 + Tier 2 2 +
-Tier 3 unique 39 / per-DB 45) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
+3 段構成の Tier 1/2/3 allowlist (57 field per DB 集計 = 51 unique; Tier 1 9 + Tier 2 2 +
+Tier 3 unique 40 / per-DB 46) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
 db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
 """
 
@@ -28,20 +28,25 @@ from ddbj_search_api.search.dsl.ast import ValueKind
 
 
 class TestTierFrozensets:
-    def test_tier1_has_8_fields(self) -> None:
-        assert len(TIER1_FIELDS) == 8
+    def test_tier1_has_9_fields(self) -> None:
+        assert len(TIER1_FIELDS) == 9
+
+    def test_tier1_includes_accessibility(self) -> None:
+        # accessibility は ES backed 6 DB 共通 (cross 可)、Solr backed (Trad / Taxonomy)
+        # では degenerate される (compiler_solr の _*_UNAVAILABLE)
+        assert "accessibility" in TIER1_FIELDS
 
     def test_tier2_has_2_fields(self) -> None:
         assert frozenset({"submitter", "publication"}) == TIER2_FIELDS
 
     def test_tier3_contains_expected_per_db_fields(self) -> None:
-        # Tier 3 unique 39 / per-DB 45。
-        # 内訳は BioProject 3、BioSample 7、SRA 8、JGA 3、GEA 0、MetaboBank 1、
-        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 38 件。GEA は experiment_type を
+        # Tier 3 unique 40 / per-DB 46。
+        # 内訳は BioProject 3、BioSample 7、SRA 9、JGA 3、GEA 0、MetaboBank 1、
+        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 39 件。GEA は experiment_type を
         # MetaboBank と共有するため 0。
         # 加えて shared が 6: grant_agency は BP と JGA で、study_type は JGA と MetaboBank で、
         # experiment_type は GEA と MetaboBank で、geo_loc_name と collection_date は BioSample と
-        # SRA-sample で共有、type は SRA と JGA で共有 → unique は 39、per-DB は 45。
+        # SRA-sample で共有、type は SRA と JGA で共有 → unique は 40、per-DB は 46。
         expected = {
             # BioProject 3 件
             "project_type",
@@ -56,11 +61,12 @@ class TestTierFrozensets:
             "collection_date",
             "package",
             "model",
-            # SRA 8 件。library_* / platform / instrument_model は sra-experiment、
-            # analysis_type は sra-analysis のみ field 存在
+            # SRA 9 件。library_* / platform / instrument_model は sra-experiment、
+            # analysis_type は sra-analysis のみ field 存在、library_selection は sra-experiment
             "library_strategy",
             "library_source",
             "library_layout",
+            "library_selection",
             "platform",
             "instrument_model",
             "library_name",
@@ -96,8 +102,8 @@ class TestTierFrozensets:
         }
         assert expected == TIER3_FIELDS
 
-    def test_tier3_unique_count_is_39(self) -> None:
-        assert len(TIER3_FIELDS) == 39
+    def test_tier3_unique_count_is_40(self) -> None:
+        assert len(TIER3_FIELDS) == 40
 
     def test_tiers_are_disjoint(self) -> None:
         assert frozenset() == TIER1_FIELDS & TIER2_FIELDS
@@ -144,6 +150,9 @@ class TestFieldTypesMapping:
             ("package", "enum"),
             ("model", "enum"),
             ("type", "enum"),
+            ("library_selection", "enum"),
+            # db-portal sidebar 拡張で追加された Tier 1 enum
+            ("accessibility", "enum"),
             # Tier 3 number
             ("sequence_length", "number"),
             # Tier 3 text
@@ -252,6 +261,7 @@ class TestTier3FieldDbs:
             ("library_strategy", ("sra",)),
             ("library_source", ("sra",)),
             ("library_layout", ("sra",)),
+            ("library_selection", ("sra",)),
             ("platform", ("sra",)),
             ("instrument_model", ("sra",)),
             ("library_name", ("sra",)),
