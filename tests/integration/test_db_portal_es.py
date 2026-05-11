@@ -47,26 +47,47 @@ class TestSearchMissingDb:
         assert "missing-db" in resp.json().get("type", "")
 
 
-class TestQAdvExclusivity:
-    """IT-DBPORTAL-15: q + adv combination → ``invalid-query-combination``."""
+class TestQAdvCombination:
+    """IT-DBPORTAL-15: q + adv coexistence → AND-joined result on both endpoints."""
 
-    def test_cross_search_returns_400(self, app: TestClient) -> None:
-        """IT-DBPORTAL-15: cross-search rejects q + adv."""
-        resp = app.get(
+    def test_cross_search_combined_is_subset_of_q_only(self, app: TestClient) -> None:
+        """IT-DBPORTAL-15: count(q + adv) <= count(q) per DB."""
+        q_only = app.get("/db-portal/cross-search", params={"q": "human", "topHits": 0})
+        assert q_only.status_code == 200
+        combined = app.get(
             "/db-portal/cross-search",
-            params={"q": "cancer", "adv": "title:cancer"},
+            params={"q": "human", "adv": "title:human", "topHits": 0},
         )
-        assert resp.status_code == 400
-        assert "invalid-query-combination" in resp.json().get("type", "")
+        assert combined.status_code == 200
+        q_counts = {d["db"]: d["count"] for d in q_only.json()["databases"]}
+        for entry in combined.json()["databases"]:
+            if entry["error"] is not None or entry["count"] is None:
+                continue
+            base = q_counts.get(entry["db"])
+            if base is None:
+                continue
+            assert entry["count"] <= base, (
+                f"AND-joined count exceeds q-only baseline on db={entry['db']!r}"
+            )
 
-    def test_search_returns_400(self, app: TestClient) -> None:
-        """IT-DBPORTAL-15: search rejects q + adv (same slug)."""
-        resp = app.get(
+    def test_search_combined_is_subset_of_q_only_on_es_db(self, app: TestClient) -> None:
+        """IT-DBPORTAL-15: ES-backed db-specific search AND-joins q with adv."""
+        q_only = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "cancer", "adv": "title:cancer"},
+            params={"db": "bioproject", "q": "human", "perPage": 20},
         )
-        assert resp.status_code == 400
-        assert "invalid-query-combination" in resp.json().get("type", "")
+        assert q_only.status_code == 200
+        combined = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": "human",
+                "adv": "title:human",
+                "perPage": 20,
+            },
+        )
+        assert combined.status_code == 200
+        assert combined.json()["total"] <= q_only.json()["total"]
 
 
 class TestSearchSortAllowlist:

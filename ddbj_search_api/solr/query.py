@@ -154,3 +154,68 @@ def build_txsearch_adv_params(
         "rows": str(rows),
         "wt": "json",
     }
+
+
+def build_arsa_combined_params(
+    *,
+    keywords: str,
+    adv_q: str,
+    page: int,
+    per_page: int,
+    sort: str | None,
+    shards: str | None,
+) -> dict[str, str]:
+    """Build Solr params for ARSA when both ``q`` and ``adv`` are present.
+
+    Emits ``q=({adv_compiled}) AND ({q_quoted})`` so edismax evaluates the
+    DSL clause and the simple-search phrase together with AND semantics.
+    The bare quoted tokens from ``q`` match the ``qf`` field set (same as
+    :func:`build_arsa_params`); the DSL clause references explicit fields
+    constrained by ``uf`` (same as :func:`build_arsa_adv_params`).
+    """
+    q_simple = _build_q_string(keywords)
+    q_combined = f"({adv_q}) AND ({q_simple})"
+    start, rows = _pagination_to_start_rows(page, per_page)
+    params: dict[str, str] = {
+        "q": q_combined,
+        "defType": "edismax",
+        "qf": _ARSA_QF,
+        "fl": _ARSA_FL,
+        "uf": _ARSA_ADV_UF,
+        "start": str(start),
+        "rows": str(rows),
+        "wt": "json",
+    }
+    if sort in _ARSA_SORT_ALLOWLIST:
+        params["sort"] = _ARSA_SORT_ALLOWLIST[sort]
+    if shards is not None and shards.strip():
+        params["shards"] = shards
+    return params
+
+
+def build_txsearch_combined_params(
+    *,
+    keywords: str,
+    adv_q: str,
+    page: int,
+    per_page: int,
+    sort: str | None,
+) -> dict[str, str]:
+    """Build Solr params for TXSearch when both ``q`` and ``adv`` are present.
+
+    See :func:`build_arsa_combined_params` for the AND-join semantics.
+    """
+    _ = sort
+    q_simple = _build_q_string(keywords)
+    q_combined = f"({adv_q}) AND ({q_simple})"
+    start, rows = _pagination_to_start_rows(page, per_page)
+    return {
+        "q": q_combined,
+        "defType": "edismax",
+        "qf": _TXSEARCH_QF,
+        "fl": _TXSEARCH_FL,
+        "uf": _TXSEARCH_ADV_UF,
+        "start": str(start),
+        "rows": str(rows),
+        "wt": "json",
+    }

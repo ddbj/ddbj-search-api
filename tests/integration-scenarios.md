@@ -1289,7 +1289,7 @@
 **不変条件**:
 - どの余剰パラメータでも 400 + `type` URI に `unexpected-parameter` slug
 
-**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search § 排他ルール`
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search § パラメータルール`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DBPORTAL-14: search の `missing-db` で 400
@@ -1299,17 +1299,20 @@
 **不変条件**:
 - 400 + `type` URI に `missing-db` slug
 
-**回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § 排他ルール`
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § パラメータルール`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
-### IT-DBPORTAL-15: q + adv 同時指定で `invalid-query-combination` 400
+### IT-DBPORTAL-15: q + adv 共存で AND 結合
 
 **endpoint**: `GET /db-portal/cross-search?q=...&adv=...` / `GET /db-portal/search?db=...&q=...&adv=...`
 
 **不変条件**:
-- 両 endpoint で 400 + `type` URI に `invalid-query-combination` slug (同 slug 共有)
+- 両 endpoint で 200 (排他制約なし)
+- `count(q + adv) <= count(q only)` かつ `count(q + adv) <= count(adv only)` (AND による subset 関係)
+- `hits` の各エントリが `q` 由来のマッチ field と `adv` 由来のマッチ条件の両方を同時に満たす
+- `q` または `adv` のいずれかが accession exact match のとき `suppressed` を許可 (OR 合成)
 
-**回帰元**: `docs/db-portal-api-spec.md § エラー`
+**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search § パラメータルール` / `§ /db-portal/search § パラメータルール` / `§ データ可視性 (status 制御)`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
 ### IT-DBPORTAL-16: search の sort allowlist

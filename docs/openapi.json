@@ -16347,7 +16347,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (q/adv exclusivity, unexpected parameter, DSL parse/validate error).",
+            "description": "Bad Request (unexpected parameter, DSL parse/validate error).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16550,7 +16550,7 @@
             }
           },
           "400": {
-            "description": "Bad Request (missing-db, q/adv exclusivity, cursor exclusivity, DSL parse/validate error, deep paging limit).",
+            "description": "Bad Request (missing-db, cursor exclusivity, DSL parse/validate error, deep paging limit).",
             "content": {
               "application/problem+json": {
                 "schema": {

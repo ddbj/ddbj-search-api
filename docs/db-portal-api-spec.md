@@ -25,10 +25,11 @@
 |-------|-----|
 | `q` のみ | 横断シンプル検索 (8 DB に並列発行。個別 timeout ES 10s / ARSA 15s / TXSearch 5s、全体 20s で早期打切り。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES) |
 | `adv` のみ | 横断 Advanced Search (DSL を Lark でパース → validator → ES/Solr にコンパイルして 8 DB 並列発行、Tier 1/2 のみ許容) |
+| `q` + `adv` | 両者を AND 結合して横断発行。ES は `bool.must` に `q` の `multi_match` と `compile_to_es(adv)` を並べる。Solr (ARSA / TXSearch) は edismax `q=({adv_compiled}) AND ({q_quoted})` を投げる。`adv` 側は Tier 1/2 のみ許容 (横断制約は共存時も維持) |
 
-排他ルール:
+パラメータルール:
 
-- `q` / `adv` のいずれか必須、両方指定で 400 `invalid-query-combination`
+- `q` / `adv` の指定パターンは「`q` のみ」「`adv` のみ」「両方」「両方とも省略 (= 全件 `match_all` 横断カウント)」の 4 通り。両方指定時は backend (ES / Solr) 上で AND 結合
 - `db` / `cursor` / `page` / `perPage` / `sort` は受け付けない (指定すると 400 `unexpected-parameter`)。横断はページネーションも DB 指定も持たないため、利用者の typo を早期に表面化させる
 - 横断モードで Tier 3 field を `adv` に含めると 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)
 
@@ -136,6 +137,7 @@ ES 6 DB (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank`) 
 - `withdrawn` / `private` は常に検索結果から除外
 - `q` (シンプル検索) のキーワードが単一のアクセッション ID と完全一致するとき、対象 DB の `suppressed` を許可。判定ルール (単一トークン、ワイルドカードなし、外側クオート剥がし、ddbj-search-converter の `ID_PATTERN_MAP` 完全一致) は `/entries/*` の判定関数 `detect_accession_exact_match` をそのまま再利用する
 - `adv` (Advanced Search DSL) は AST のトップが単一 `FieldClause` (`identifier` フィールド、`op=eq`) かつ value がアクセッション ID 完全一致のときのみ `suppressed` を許可。AND / OR / NOT でラップされたクエリ、ワイルドカード、`identifier` 以外のフィールドはすべて対象外 (`public_only` 固定)
+- `q` + `adv` 共存時は OR 合成: 上記 `q` 判定と `adv` 判定のいずれかが accession exact match と判断したら `suppressed` を許可 (`include_suppressed`)。両方とも非該当のときのみ `public_only`
 
 Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提。status filter は注入せず、レスポンスの `status` / `accessibility` は固定値 `"public"` / `"public-access"` で埋める ([§ `hits` lightweight schema](#hits-lightweight-schema))。
 
@@ -158,13 +160,14 @@ cursor pagination (ES 6 DB) は cursor token に最初の offset リクエスト
 | `q` + `db` (ES 対応 6 DB) | DB 指定シンプル検索 (`hits` envelope + cursor/offset pagination) |
 | `q` + `db=trad` / `db=taxonomy` | DB 指定シンプル検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却) |
 | `adv` + `db` | DB 指定 Advanced Search (DSL を対象バックエンドにコンパイル、hits envelope を返却) |
+| `q` + `adv` + `db` | 両者を AND 結合して `db` 指定検索。ES 6 DB は `bool.must` に `q` の `multi_match` と `compile_to_es(adv)` を並べる。Solr 2 DB (`trad` / `taxonomy`) は edismax `q=({adv_compiled}) AND ({q_quoted})` を投げ、`adv` モードと同様 offset-only (`cursor` 不可) |
 | `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は offset-only) |
-| `cursor` + `adv` | 400 (`cursor-not-supported` — adv は offset-only。`db` の値を問わず常に同じ slug) |
+| `cursor` + `adv` | 400 (`cursor-not-supported` — adv は offset-only。`db` の値を問わず常に同じ slug。`q` + `adv` 共存時も `adv` を含むため同じく拒否) |
 
-排他ルール:
+パラメータルール:
 
 - `db` 必須、未指定で 400 `missing-db`
-- `q` / `adv` のいずれか必須、両方指定で 400 `invalid-query-combination`
+- `q` / `adv` の指定パターンは「`q` のみ」「`adv` のみ」「両方」「両方とも省略 (= 当該 `db` の全件 `match_all` ヒット)」の 4 通り。両方指定時は backend (ES / Solr) 上で AND 結合
 - `cursor` 指定時の併用制限は本ページ「ページネーション」節を参照
 
 Trailing slash なし (`/db-portal/search`) が canonical。
@@ -310,7 +313,6 @@ organism:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (title
 
 | type URI (prefix `https://ddbj.nig.ac.jp/problems/` + slug) | HTTP | 条件 | 適用 endpoint | 備考 |
 |------|------|------|----------------|------|
-| `invalid-query-combination` | 400 | `q` と `adv` 同時指定 | 両 | — |
 | `unexpected-parameter` | 400 | `/db-portal/cross-search` に `db` / `cursor` / `page` / `perPage` / `sort` を指定 | cross-search | detail に余剰パラメータ名を埋め込み |
 | `missing-db` | 400 | `/db-portal/search` で `db` 未指定 | search | detail に許容 DB 一覧と「横断検索は `/db-portal/cross-search`」案内を埋め込み |
 | `advanced-search-not-implemented` | — | (未使用) | — | DSL 実装後は emit されない (enum は backward compat のため残置) |

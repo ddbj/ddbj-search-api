@@ -191,6 +191,40 @@ def inject_status_filter(
     }
 
 
+def build_combined_es_query(
+    *,
+    keywords: str,
+    adv_query: dict[str, Any],
+    status_mode: StatusMode,
+) -> dict[str, Any]:
+    """AND-join ``q``-derived multi_match clauses with a DSL-compiled ``adv`` clause.
+
+    Used by the db-portal routers when both ``q`` and ``adv`` are present.
+    The ``q`` side is built via :func:`build_search_query` with
+    ``status_mode=None`` so the status filter is not applied prematurely;
+    its ``bool.must`` clauses are extracted and placed alongside
+    ``adv_query`` under a new top-level ``bool.must``.  The status filter
+    is then injected once at the top level via :func:`inject_status_filter`.
+
+    ``adv_query`` is the dict produced by
+    :func:`ddbj_search_api.search.dsl.compile_to_es` (bool wrapper or
+    leaf clause); it is embedded as a single element of the top
+    ``bool.must`` so its internal ``should`` / ``must_not`` semantics are
+    preserved.
+
+    Caller invariant: ``keywords`` is non-empty (the q-only / adv-only
+    paths handle the degenerate cases).
+    """
+    q_query = build_search_query(
+        keywords=keywords,
+        keyword_operator="AND",
+        status_mode=None,
+    )
+    q_clauses: list[dict[str, Any]] = q_query.get("bool", {}).get("must", [])
+    combined: dict[str, Any] = {"bool": {"must": [*q_clauses, adv_query]}}
+    return inject_status_filter(combined, status_mode)
+
+
 def build_search_query(
     keywords: str | None = None,
     keyword_fields: str | list[str] | None = None,

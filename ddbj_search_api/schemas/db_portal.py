@@ -65,7 +65,6 @@ class DbPortalErrorType(str, Enum):
     not emitted by the DSL-backed router (slated for removal in a future cleanup PR).
     """
 
-    invalid_query_combination = "https://ddbj.nig.ac.jp/problems/invalid-query-combination"
     advanced_search_not_implemented = "https://ddbj.nig.ac.jp/problems/advanced-search-not-implemented"
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
     unexpected_parameter = "https://ddbj.nig.ac.jp/problems/unexpected-parameter"
@@ -112,9 +111,9 @@ class DbPortalCrossSearchQuery:
     a lightweight hits array.  Only ``q`` / ``adv`` / ``topHits`` are
     accepted; any other query parameter (``db`` / ``cursor`` / ``page`` /
     ``perPage`` / ``sort``) is rejected by the router with 400
-    ``unexpected-parameter`` so user typos surface early.  ``q`` / ``adv``
-    exclusivity is checked in the router with the ``invalid-query-combination``
-    type URI.
+    ``unexpected-parameter`` so user typos surface early.  ``q`` and
+    ``adv`` can be combined: the router AND-joins them on the ES bool
+    query and on the Solr edismax ``q`` string.
     """
 
     def __init__(
@@ -148,8 +147,9 @@ class DbPortalSearchQuery:
     Single-database hits search.  ``db`` is required; the router returns
     400 ``missing-db`` when omitted (instead of FastAPI's default 422)
     so the response contract aligns with the cross-search endpoint's
-    ``unexpected-parameter`` slug.  ``q`` / ``adv`` exclusivity is checked
-    in the router with the ``invalid-query-combination`` type URI.
+    ``unexpected-parameter`` slug.  ``q`` and ``adv`` can be combined:
+    the router AND-joins them on the ES bool query and on the Solr
+    edismax ``q`` string (Solr-backed DBs remain offset-only).
     """
 
     def __init__(

@@ -84,25 +84,19 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: base 5 + DSL 7 = 12 problem type URIs."""
+    """DbPortalErrorType: base 4 + DSL 7 = 11 problem type URIs."""
 
     def test_has_all_members(self) -> None:
-        # base 5 (invalid-query-combination, advanced-search-not-implemented,
-        # cursor-not-supported, unexpected-parameter, missing-db) + DSL 7 = 12.
+        # base 4 (advanced-search-not-implemented, cursor-not-supported,
+        # unexpected-parameter, missing-db) + DSL 7 = 11.
         # advanced_search_not_implemented stays for backward compatibility
         # until a later cleanup PR but is never emitted.
-        assert len(DbPortalErrorType) == 12
+        assert len(DbPortalErrorType) == 11
 
     def test_prefix_is_ddbj_problems(self) -> None:
         prefix = "https://ddbj.nig.ac.jp/problems/"
         for e in DbPortalErrorType:
             assert e.value.startswith(prefix)
-
-    def test_invalid_query_combination_uri(self) -> None:
-        assert (
-            DbPortalErrorType.invalid_query_combination.value
-            == "https://ddbj.nig.ac.jp/problems/invalid-query-combination"
-        )
 
     def test_advanced_search_not_implemented_uri(self) -> None:
         assert (

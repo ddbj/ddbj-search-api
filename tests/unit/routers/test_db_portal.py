@@ -68,27 +68,6 @@ class TestDbPortalQueryCombination:
     exercises the full Tier 1/2/3 allowlist.
     """
 
-    @pytest.mark.parametrize(
-        "endpoint, extra",
-        [
-            ("/db-portal/cross-search", {}),
-            ("/db-portal/search", {"db": "bioproject"}),
-        ],
-    )
-    def test_q_and_adv_together_returns_400(
-        self,
-        app_with_db_portal: TestClient,
-        endpoint: str,
-        extra: dict[str, str],
-    ) -> None:
-        resp = app_with_db_portal.get(
-            endpoint,
-            params={"q": "foo", "adv": "title:cancer", **extra},
-        )
-        assert resp.status_code == 400
-        body = resp.json()
-        assert body["type"] == DbPortalErrorType.invalid_query_combination.value
-
     def test_adv_parse_error_returns_400_unexpected_token_on_cross_search(
         self,
         app_with_db_portal: TestClient,
@@ -137,19 +116,6 @@ class TestDbPortalQueryCombination:
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.unexpected_token.value
-
-    def test_q_and_adv_with_db_returns_400_first(
-        self,
-        app_with_db_portal: TestClient,
-    ) -> None:
-        """Exclusivity check has priority over DSL parse on /db-portal/search."""
-        resp = app_with_db_portal.get(
-            "/db-portal/search",
-            params={"q": "foo", "adv": "bar", "db": "sra"},
-        )
-        assert resp.status_code == 400
-        body = resp.json()
-        assert body["type"] == DbPortalErrorType.invalid_query_combination.value
 
     @pytest.mark.parametrize(
         "endpoint, params",
@@ -1110,25 +1076,6 @@ class TestDbPortalCursorPBT:
 
 class TestDbPortalErrorFormat:
     """RFC 7807 + type URI + application/problem+json."""
-
-    def test_400_invalid_query_combination_shape(
-        self,
-        app_with_db_portal: TestClient,
-    ) -> None:
-        resp = app_with_db_portal.get(
-            "/db-portal/cross-search",
-            params={"q": "foo", "adv": "bar"},
-        )
-        assert resp.status_code == 400
-        assert resp.headers["content-type"].startswith("application/problem+json")
-        body = resp.json()
-        assert body["type"] == DbPortalErrorType.invalid_query_combination.value
-        assert body["title"] == "Bad Request"
-        assert body["status"] == 400
-        assert "detail" in body
-        assert body["instance"] == "/db-portal/cross-search"
-        assert "timestamp" in body
-        assert "requestId" in body
 
     def test_400_adv_invalid_dsl_shape(
         self,
@@ -2125,18 +2072,6 @@ class TestDbPortalAdvValidDispatch:
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
 
-    def test_adv_and_q_mutual_exclusion_preserved(
-        self,
-        app_with_db_portal: TestClient,
-    ) -> None:
-        resp = app_with_db_portal.get(
-            "/db-portal/search",
-            params={"q": "foo", "adv": "title:cancer", "db": "bioproject"},
-        )
-        assert resp.status_code == 400
-        assert resp.json()["type"] == DbPortalErrorType.invalid_query_combination.value
-
-
 # === Tier 2 / Tier 3 end-to-end ===
 
 
@@ -2925,3 +2860,189 @@ class TestDbPortalSolrNoStatusFilter:
         txsearch_params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
         assert _solr_params_have_no_status(arsa_params)
         assert _solr_params_have_no_status(txsearch_params)
+
+
+# === q + adv combination ===
+
+
+def _bioproject_es_body(mock: AsyncMock) -> dict[str, Any]:
+    """Pick the ES request body for the bioproject index."""
+    for call in mock.call_args_list:
+        index = call.args[1]
+        if index == "bioproject":
+            return call.args[2]
+    raise AssertionError("bioproject ES call was not captured")
+
+
+def _flatten_must(clause: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the leaves under a bool.must (or wrap a single leaf)."""
+    if "bool" in clause:
+        return list(clause["bool"].get("must", []))
+    return [clause]
+
+
+class TestQAdvCombination:
+    """q + adv coexistence: ES bool.must AND-join, Solr edismax AND-join,
+    OR-composed status_mode, and cursor + adv conflict preservation."""
+
+    def test_search_combined_es_bool_must_has_q_and_adv_clauses(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "human", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        bool_clause = body["query"]["bool"]
+        must = bool_clause["must"]
+        has_q = any(
+            isinstance(c, dict)
+            and "multi_match" in c
+            and c["multi_match"]["query"] == "human"
+            for c in must
+        )
+        has_adv = any(
+            isinstance(c, dict)
+            and "match_phrase" in c
+            and c["match_phrase"].get("title") == "cancer"
+            for c in must
+        )
+        assert has_q, f"q multi_match missing from bool.must: {must}"
+        assert has_adv, f"adv match_phrase missing from bool.must: {must}"
+        assert bool_clause["filter"] == [{"term": {"status": "public"}}]
+
+    def test_cross_search_combined_es_bool_must_has_q_and_adv_clauses(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "human", "adv": "title:cancer", "topHits": 0},
+        )
+        assert resp.status_code == 200
+        # Every ES call (6 DBs) shares the same combined query body — pick the first.
+        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        must = body["query"]["bool"]["must"]
+        has_q = any(
+            "multi_match" in c and c["multi_match"]["query"] == "human" for c in must
+        )
+        has_adv = any(
+            "match_phrase" in c and c["match_phrase"].get("title") == "cancer"
+            for c in must
+        )
+        assert has_q and has_adv
+
+    def test_combined_status_mode_with_q_accession_match(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """q が accession exact match → include_suppressed (OR 合成、q 起因)."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "PRJDB1234", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        assert body["query"]["bool"]["filter"] == [
+            {"terms": {"status": ["public", "suppressed"]}}
+        ]
+
+    def test_combined_status_mode_with_adv_identifier_match(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """adv 側のトップレベル identifier:<accession> → include_suppressed (OR 合成、adv 起因)."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer", "adv": "identifier:PRJDB1234"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        assert body["query"]["bool"]["filter"] == [
+            {"terms": {"status": ["public", "suppressed"]}}
+        ]
+
+    def test_combined_status_mode_neither_accession_match(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """両方とも非 accession → public_only (OR 合成の degenerate ケース)."""
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        assert body["query"]["bool"]["filter"] == [{"term": {"status": "public"}}]
+
+    def test_combined_arsa_q_is_and_joined(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        """ARSA combined q は `({adv}) AND ({q_quoted})` 形式。"""
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "trad", "q": "human", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        q = params["q"]
+        # adv の compiled クライアントは ARSA dialect (Definition / ReferenceTitle 等 にマップ)、
+        # q 側は phrase quoted。両者を AND で連結する固定 wrapper のみ検証する。
+        assert q.startswith("(") and ") AND (" in q and q.endswith(")")
+        assert '"human"' in q  # quoted q token
+        # uf は adv allowlist 由来。
+        assert "uf" in params
+
+    def test_combined_txsearch_q_is_and_joined(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        """TXSearch combined q も `({adv}) AND ({q_quoted})`。"""
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "taxonomy", "q": "human", "adv": "title:cancer"},
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        q = params["q"]
+        assert q.startswith("(") and ") AND (" in q and q.endswith(")")
+        assert '"human"' in q
+        assert "uf" in params
+
+    def test_cursor_with_q_and_adv_returns_400_cursor_not_supported(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """cursor + (q+adv) は引き続き 400 ``cursor-not-supported`` (adv branch で拒否)."""
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "cursor": "any-token",
+                "q": "human",
+                "adv": "title:cancer",
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.cursor_not_supported.value
