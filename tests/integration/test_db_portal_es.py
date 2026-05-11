@@ -47,70 +47,67 @@ class TestSearchMissingDb:
         assert "missing-db" in resp.json().get("type", "")
 
 
-class TestQAdvCombination:
-    """IT-DBPORTAL-15: q + adv coexistence → AND-joined result on both endpoints."""
+class TestQueryAndJoin:
+    """IT-DBPORTAL-15: ``q='X AND field:Y'`` → AND-joined result on both endpoints."""
 
-    def test_cross_search_combined_is_subset_of_q_only(self, app: TestClient) -> None:
-        """IT-DBPORTAL-15: count(q + adv) <= count(q) per DB."""
-        q_only = app.get("/db-portal/cross-search", params={"q": "human", "topHits": 0})
-        assert q_only.status_code == 200
+    def test_cross_search_and_join_is_subset_of_free_text_only(self, app: TestClient) -> None:
+        """IT-DBPORTAL-15: count(free_text AND field:value) <= count(free_text) per DB."""
+        free_text_only = app.get(
+            "/db-portal/cross-search",
+            params={"q": "human", "topHits": 0},
+        )
+        assert free_text_only.status_code == 200
         combined = app.get(
             "/db-portal/cross-search",
-            params={"q": "human", "adv": "title:human", "topHits": 0},
+            params={"q": "human AND title:human", "topHits": 0},
         )
         assert combined.status_code == 200
-        q_counts = {d["db"]: d["count"] for d in q_only.json()["databases"]}
+        baseline_counts = {d["db"]: d["count"] for d in free_text_only.json()["databases"]}
         for entry in combined.json()["databases"]:
             if entry["error"] is not None or entry["count"] is None:
                 continue
-            base = q_counts.get(entry["db"])
+            base = baseline_counts.get(entry["db"])
             if base is None:
                 continue
             assert entry["count"] <= base, (
-                f"AND-joined count exceeds q-only baseline on db={entry['db']!r}"
+                f"AND-joined count exceeds free-text-only baseline on db={entry['db']!r}"
             )
 
-    def test_search_combined_is_subset_of_q_only_on_es_db(self, app: TestClient) -> None:
-        """IT-DBPORTAL-15: ES-backed db-specific search AND-joins q with adv."""
-        q_only = app.get(
+    def test_search_and_join_is_subset_of_free_text_only_on_es_db(self, app: TestClient) -> None:
+        """IT-DBPORTAL-15: ES-backed db-specific search で AND-join が free-text-only の subset."""
+        free_text_only = app.get(
             "/db-portal/search",
             params={"db": "bioproject", "q": "human", "perPage": 20},
         )
-        assert q_only.status_code == 200
+        assert free_text_only.status_code == 200
         combined = app.get(
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "q": "human",
-                "adv": "title:human",
+                "q": "human AND title:human",
                 "perPage": 20,
             },
         )
         assert combined.status_code == 200
-        assert combined.json()["total"] <= q_only.json()["total"]
+        assert combined.json()["total"] <= free_text_only.json()["total"]
 
-    def test_search_combined_is_subset_of_adv_only_on_es_db(self, app: TestClient) -> None:
-        """AND 結合は q-only / adv-only 両方の subset (前後関係を両方で確認).
-
-        AST 一本化で ``BoolOp(AND, [adv_ast, FreeText(q)])`` の bool.must に各子の compile 結果が
-        並ぶ。``combined`` の total は q-only / adv-only いずれの上限も超えない。
-        """
-        adv_only = app.get(
+    def test_search_and_join_is_subset_of_field_only_on_es_db(self, app: TestClient) -> None:
+        """AND-join は free-text-only / field-only 両方の subset (前後関係を両方で確認)."""
+        field_only = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "adv": "title:human", "perPage": 20},
+            params={"db": "bioproject", "q": "title:human", "perPage": 20},
         )
-        assert adv_only.status_code == 200
+        assert field_only.status_code == 200
         combined = app.get(
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "q": "human",
-                "adv": "title:human",
+                "q": "human AND title:human",
                 "perPage": 20,
             },
         )
         assert combined.status_code == 200
-        assert combined.json()["total"] <= adv_only.json()["total"]
+        assert combined.json()["total"] <= field_only.json()["total"]
 
 
 class TestSearchSortAllowlist:
@@ -118,10 +115,10 @@ class TestSearchSortAllowlist:
 
     @pytest.mark.parametrize("sort", ["datePublished:desc", "datePublished:asc"])
     def test_documented_sort_succeeds(self, app: TestClient, sort: str) -> None:
-        """IT-DBPORTAL-16: documented sort form returns 200."""
+        """IT-DBPORTAL-16: documented sort form returns 200 (``q`` 省略 = match_all)."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "*", "sort": sort, "perPage": 20},
+            params={"db": "bioproject", "sort": sort, "perPage": 20},
         )
         assert resp.status_code == 200, sort
 
@@ -131,7 +128,6 @@ class TestSearchSortAllowlist:
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "q": "*",
                 "sort": "datePublished:desc",
                 "perPage": 20,
             },
@@ -149,7 +145,7 @@ class TestSearchSortAllowlist:
         """IT-DBPORTAL-16: anything outside the allowlist yields 422."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "*", "sort": sort, "perPage": 20},
+            params={"db": "bioproject", "sort": sort, "perPage": 20},
         )
         assert resp.status_code == 422, sort
 
@@ -176,7 +172,7 @@ class TestHardLimitReachedFlag:
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "adv": "identifier:PRJDB42131",
+                "q": "identifier:PRJDB42131",
                 "perPage": 20,
             },
         )
@@ -243,7 +239,7 @@ class TestUfAllowlistCompletenessBioSample:
         """IT-DBPORTAL-19: ``adv=geo_loc_name:Japan`` shrinks ``total`` vs a broad baseline."""
         adv_resp = app.get(
             "/db-portal/search",
-            params={"db": "biosample", "adv": "geo_loc_name:Japan", "perPage": 20},
+            params={"db": "biosample", "q": "geo_loc_name:Japan", "perPage": 20},
         )
         assert adv_resp.status_code == 200
         adv_total = adv_resp.json()["total"]
@@ -268,7 +264,7 @@ class TestUfAllowlistCompletenessSraAnalysis:
         """IT-DBPORTAL-20: ``adv=analysis_type:reference_alignment`` shrinks ``total`` vs a broad baseline."""
         adv_resp = app.get(
             "/db-portal/search",
-            params={"db": "sra", "adv": "analysis_type:reference_alignment", "perPage": 20},
+            params={"db": "sra", "q": "analysis_type:reference_alignment", "perPage": 20},
         )
         assert adv_resp.status_code == 200
         adv_total = adv_resp.json()["total"]

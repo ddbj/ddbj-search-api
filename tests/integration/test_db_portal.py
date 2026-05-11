@@ -24,7 +24,7 @@ class TestArsaMolecularType:
         """IT-DBPORTAL-01: at least one trad hit carries molecularType."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "*", "perPage": 20},
+            params={"db": "trad", "perPage": 20},
         )
         assert resp.status_code == 200
         hits = resp.json()["hits"]
@@ -41,7 +41,7 @@ class TestArsaSequenceLength:
         """IT-DBPORTAL-02: at least one trad hit carries sequenceLength."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "*", "perPage": 20},
+            params={"db": "trad", "perPage": 20},
         )
         assert resp.status_code == 200
         hits = resp.json()["hits"]
@@ -75,7 +75,7 @@ class TestSolrDescriptionAlwaysNull:
         """IT-DBPORTAL-04: every trad hit has description == null."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "*", "perPage": 20},
+            params={"db": "trad", "perPage": 20},
         )
         assert resp.status_code == 200
         for hit in resp.json()["hits"]:
@@ -85,7 +85,7 @@ class TestSolrDescriptionAlwaysNull:
         """IT-DBPORTAL-04: every taxonomy hit has description == null."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "taxonomy", "q": "*", "perPage": 20},
+            params={"db": "taxonomy", "perPage": 20},
         )
         assert resp.status_code == 200
         for hit in resp.json()["hits"]:
@@ -120,7 +120,7 @@ class TestSolrUfAllowlistCompleteness:
         # Solr DBs only accept perPage in {20, 50, 100} (IT-DBPORTAL-11).
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "adv": "division:BCT", "perPage": 20},
+            params={"db": "trad", "q": "division:BCT", "perPage": 20},
         )
         assert resp.status_code == 200
 

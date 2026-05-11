@@ -186,7 +186,7 @@ class TestDbPortalCrossSearchIdentifierLeaf:
         )
         resp = app.get(
             "/db-portal/cross-search",
-            params={"adv": f"identifier:{accession}", "topHits": 10},
+            params={"q": f"identifier:{accession}", "topHits": 10},
         )
         assert resp.status_code == 200
 
@@ -203,7 +203,7 @@ class TestDbPortalCrossSearchAndWrappedHidesSuppressed:
         resp = app.get(
             "/db-portal/cross-search",
             params={
-                "adv": f"identifier:{accession} AND title:cancer",
+                "q": f"identifier:{accession} AND title:cancer",
                 "topHits": 10,
             },
         )
@@ -248,7 +248,7 @@ class TestDbPortalSearchAdvLeafSuppressed:
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "adv": f"identifier:{accession}",
+                "q": f"identifier:{accession}",
                 "perPage": 20,
             },
         )
@@ -265,7 +265,7 @@ class TestDbPortalSearchSolrNoStatusFilter:
         """IT-STATUS-15: trad hits never carry hidden statuses."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "*", "perPage": 20},
+            params={"db": "trad", "perPage": 20},
         )
         assert resp.status_code == 200
         # The trad index has no non-public records, so the implementation
