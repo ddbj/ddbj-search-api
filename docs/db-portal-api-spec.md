@@ -17,6 +17,47 @@
 - Solr proxy (`db=trad` / `db=taxonomy`) は offset-only (Solr 4.4.0 に PIT 相当なし)、`cursor` 併用は 400 `cursor-not-supported`
 - 横断モードで Tier 3 field を使用すると 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)
 
+## 内部モデル (AST 一本化)
+
+`/db-portal/*` の handler はすべての入力 (`q` / `adv` / 両方併用) を**単一の AST に正規化**してから backend query に変換する。db-portal 側 [`docs/search.md § 検索の内部モデル`](https://github.com/ddbj/db-portal/blob/main/docs/search.md) / [`docs/search-backends.md § クエリ変換`](https://github.com/ddbj/db-portal/blob/main/docs/search-backends.md) と整合する SSOT。
+
+### AST ノード型 (`ddbj_search_api/search/dsl/ast.py`)
+
+- `FreeText(value: str)`: シンプル検索 `q` 由来の全文検索ノード。フィールド指定なし。Lark パーサからは生成されず、handler が `q` 文字列を直接ラップして作る。Position は持たない (DSL 文字列ではないため column 概念が無い)
+- `FieldClause(field, value_kind, value, position)`: `adv` DSL の `field:value` 形式 leaf。Lark パーサが生成
+- `BoolOp(op, children, position)`: `AND` / `OR` / `NOT` ノード。`adv` の `(...)` グルーピングと、handler が `q`+`adv` 併用時に組む合成ノードの両方が該当
+- `Node = FreeText | FieldClause | BoolOp`
+
+### 入力 → AST の組み立て (handler 内)
+
+| 入力 | AST |
+|---|---|
+| `q` のみ | `FreeText(q)` |
+| `adv` のみ | Lark パース → validator → `FieldClause` または `BoolOp` |
+| `q` + `adv` 併用 | `BoolOp(AND, children=(adv_ast, FreeText(q)))` (adv を先頭) |
+| いずれも省略 | `None` (handler 側で `match_all` (ES) / `*:*` (Solr) として扱う) |
+
+合成 `BoolOp` の `position` は adv 側 AST の `position` を継承する (validator は parse 直後の adv_ast にのみ適用されるため、合成 BoolOp 経路で position が参照されることはない)。
+
+### AST → backend query (compiler)
+
+- `compile_to_es(ast) -> dict`: ES bool query を生成。`FreeText` は `multi_match` (auto-phrase 適用) の集合、`FieldClause` は `_ES_FIELD_STRATEGY` (flat / or_flat / nested / nested2) で展開、`BoolOp` は `bool.must` / `bool.should` / `bool.must_not`
+- `compile_to_solr(ast, dialect)`: edismax `q` 文字列を生成。`FreeText` は各トークンを double-quote wrap した space-join、`FieldClause` は `_ARSA_FIELD_MAP` / `_TXSEARCH_FIELD_MAP` 経由 (degenerate は `(-*:*)`)、`BoolOp` は各子を `(...)` で括って `AND` / `OR` / `NOT` 結合
+
+`q` ショートカット経路 (旧 `build_search_query(keywords=...)` の直接呼び出し、`build_combined_es_query` / `build_*_combined_params` 等) は廃止され、すべての入力経路がこの compiler を通る。
+
+### `q` の auto-phrase 処理
+
+`q` 内の記号 (`-` `/` `.` `+` `:`) を含むトークンは backend に応じて自動 phrase 化される (例: `HIF-1` → `"HIF-1"` の phrase match)。これは AST 構築時ではなく **compiler 内**で行う (ES は standard analyzer の挙動、Solr は edismax メタ文字回避と、backend 固有のため)。AST 上の `FreeText.value` は生の入力文字列を保持する。
+
+### status filter (suppressed 解禁) は AST と独立
+
+`status` filter は ES `bool.filter` / Solr `fq` で AST と別レーンに注入する (compiler は AST しか触らない)。accession 完全一致による `suppressed` 解禁の判定ロジック ([§ データ可視性](#データ可視性-status-制御)) も AST 全体を見るが、生成された ES / Solr query への注入は filter 経由。
+
+### `/db-portal/parse` への影響
+
+[`/db-portal/parse`](#get-db-portalparse) は `adv` パラメータ専用のため、返却 AST に `FreeText` は登場しない (Lark パーサが生成しない)。レスポンス schema (`DbPortalParseResponse`) は変更なし。
+
 ## `GET /db-portal/cross-search`
 
 8 DB を横断したカウント + 上位ヒット検索。レスポンスは `DbPortalCrossSearchResponse` (常に 8 件、固定順序の `databases` 配列。各要素に count と上位ヒット (`hits`) を nested) のみ。ページネーション概念は持たない (DB 指定の本格検索は `/db-portal/search`)。
@@ -25,7 +66,7 @@
 |-------|-----|
 | `q` のみ | 横断シンプル検索 (8 DB に並列発行。個別 timeout ES 10s / ARSA 15s / TXSearch 5s、全体 20s で早期打切り。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES) |
 | `adv` のみ | 横断 Advanced Search (DSL を Lark でパース → validator → ES/Solr にコンパイルして 8 DB 並列発行、Tier 1/2 のみ許容) |
-| `q` + `adv` | 両者を AND 結合して横断発行。ES は `bool.must` に `q` の `multi_match` と `compile_to_es(adv)` を並べる。Solr (ARSA / TXSearch) は edismax `q=({adv_compiled}) AND ({q_quoted})` を投げる。`adv` 側は Tier 1/2 のみ許容 (横断制約は共存時も維持) |
+| `q` + `adv` | 両者を `BoolOp(AND, [adv_ast, FreeText(q)])` に統合して横断発行 (詳細は [§ 内部モデル](#内部モデル-ast-一本化))。ES は `bool.must` の中に各子の compile 結果が並び、Solr (ARSA / TXSearch) は edismax `q=({adv_compiled}) AND ({q_quoted})`。`adv` 側は Tier 1/2 のみ許容 (横断制約は共存時も維持) |
 
 パラメータルール:
 
@@ -135,9 +176,12 @@ Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており
 ES 6 DB (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank`) は ES ドキュメントの `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) を判定軸として可視性を制御する。仕様は `/entries/*` 系 ([api-spec.md § データ可視性 (status 制御)](api-spec.md#データ可視性-status-制御)) と揃える。
 
 - `withdrawn` / `private` は常に検索結果から除外
-- `q` (シンプル検索) のキーワードが単一のアクセッション ID と完全一致するとき、対象 DB の `suppressed` を許可。判定ルール (単一トークン、ワイルドカードなし、外側クオート剥がし、ddbj-search-converter の `ID_PATTERN_MAP` 完全一致) は `/entries/*` の判定関数 `detect_accession_exact_match` をそのまま再利用する
-- `adv` (Advanced Search DSL) は AST のトップが単一 `FieldClause` (`identifier` フィールド、`op=eq`) かつ value がアクセッション ID 完全一致のときのみ `suppressed` を許可。AND / OR / NOT でラップされたクエリ、ワイルドカード、`identifier` 以外のフィールドはすべて対象外 (`public_only` 固定)
-- `q` + `adv` 共存時は OR 合成: 上記 `q` 判定と `adv` 判定のいずれかが accession exact match と判断したら `suppressed` を許可 (`include_suppressed`)。両方とも非該当のときのみ `public_only`
+- accession 完全一致による `suppressed` 解禁は、handler が組み立てた AST ([§ 内部モデル](#内部モデル-ast-一本化)) を `detect_accession_exact_match_in_ast` で走査して判定する。以下のいずれかに該当すると `include_suppressed`、それ以外は `public_only` 固定:
+  - AST のトップが `FreeText(v)` で `v` がアクセッション ID 完全一致 (`is_accession_like(v)` true)
+  - AST のトップが `FieldClause(identifier, eq, v)` で `v` がアクセッション ID 完全一致 (ワイルドカード非含有)
+  - AST のトップが `BoolOp(AND, children=...)` で、**直下** 子のいずれかが上記 2 条件のどちらかを満たす (`q` + `adv` 併用時の合成 BoolOp に相当)
+- アクセッション ID の判定は ddbj-search-converter の `ID_PATTERN_MAP` 完全一致を用いる (`is_accession_like`)。`/entries/*` 系と同じ判定を共有
+- `BoolOp(OR, ...)` / `BoolOp(NOT, ...)` 配下、およびネスト AND の更に下に accession ID が現れても解禁対象外 (誤検出回避)
 
 Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提。status filter は注入せず、レスポンスの `status` / `accessibility` は固定値 `"public"` / `"public-access"` で埋める ([§ `hits` lightweight schema](#hits-lightweight-schema))。
 
@@ -160,7 +204,7 @@ cursor pagination (ES 6 DB) は cursor token に最初の offset リクエスト
 | `q` + `db` (ES 対応 6 DB) | DB 指定シンプル検索 (`hits` envelope + cursor/offset pagination) |
 | `q` + `db=trad` / `db=taxonomy` | DB 指定シンプル検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却) |
 | `adv` + `db` | DB 指定 Advanced Search (DSL を対象バックエンドにコンパイル、hits envelope を返却) |
-| `q` + `adv` + `db` | 両者を AND 結合して `db` 指定検索。ES 6 DB は `bool.must` に `q` の `multi_match` と `compile_to_es(adv)` を並べる。Solr 2 DB (`trad` / `taxonomy`) は edismax `q=({adv_compiled}) AND ({q_quoted})` を投げ、`adv` モードと同様 offset-only (`cursor` 不可) |
+| `q` + `adv` + `db` | 両者を `BoolOp(AND, [adv_ast, FreeText(q)])` に統合して `db` 指定検索 (詳細は [§ 内部モデル](#内部モデル-ast-一本化))。ES 6 DB は `bool.must` の中に各子の compile 結果が並び、Solr 2 DB (`trad` / `taxonomy`) は edismax `q=({adv_compiled}) AND ({q_quoted})` で `adv` モードと同様 offset-only (`cursor` 不可) |
 | `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は offset-only) |
 | `cursor` + `adv` | 400 (`cursor-not-supported` — adv は offset-only。`db` の値を問わず常に同じ slug。`q` + `adv` 共存時も `adv` を含むため同じく拒否) |
 

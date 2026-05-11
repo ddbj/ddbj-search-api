@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal
 
+from ddbj_search_api.search.dsl.compiler_es import compile_free_text
 from ddbj_search_api.search.phrase import (
     ES_AUTO_PHRASE_CHARS,
     parse_keywords_with_autophrase,
@@ -191,40 +192,6 @@ def inject_status_filter(
     }
 
 
-def build_combined_es_query(
-    *,
-    keywords: str,
-    adv_query: dict[str, Any],
-    status_mode: StatusMode,
-) -> dict[str, Any]:
-    """AND-join ``q``-derived multi_match clauses with a DSL-compiled ``adv`` clause.
-
-    Used by the db-portal routers when both ``q`` and ``adv`` are present.
-    The ``q`` side is built via :func:`build_search_query` with
-    ``status_mode=None`` so the status filter is not applied prematurely;
-    its ``bool.must`` clauses are extracted and placed alongside
-    ``adv_query`` under a new top-level ``bool.must``.  The status filter
-    is then injected once at the top level via :func:`inject_status_filter`.
-
-    ``adv_query`` is the dict produced by
-    :func:`ddbj_search_api.search.dsl.compile_to_es` (bool wrapper or
-    leaf clause); it is embedded as a single element of the top
-    ``bool.must`` so its internal ``should`` / ``must_not`` semantics are
-    preserved.
-
-    Caller invariant: ``keywords`` is non-empty (the q-only / adv-only
-    paths handle the degenerate cases).
-    """
-    q_query = build_search_query(
-        keywords=keywords,
-        keyword_operator="AND",
-        status_mode=None,
-    )
-    q_clauses: list[dict[str, Any]] = q_query.get("bool", {}).get("must", [])
-    combined: dict[str, Any] = {"bool": {"must": [*q_clauses, adv_query]}}
-    return inject_status_filter(combined, status_mode)
-
-
 def build_search_query(
     keywords: str | None = None,
     keyword_fields: str | list[str] | None = None,
@@ -332,17 +299,13 @@ def build_search_query(
     bool_query: dict[str, Any] = {}
 
     if keyword_list:
-        multi_matches = []
-        for text, is_phrase in keyword_list:
-            mm: dict[str, Any] = {"query": text, "fields": fields}
-            if is_phrase:
-                mm["type"] = "phrase"
-            multi_matches.append({"multi_match": mm})
-        if keyword_operator == "OR":
-            bool_query["should"] = multi_matches
-            bool_query["minimum_should_match"] = 1
-        else:
-            bool_query["must"] = multi_matches
+        # Keyword 構築を DSL の compile_free_text に委譲して AST 経路と単一実装に揃える
+        # (db-portal も entries / facets も同じ multi_match dict を出す)。
+        op_upper: Literal["AND", "OR"] = "OR" if keyword_operator == "OR" else "AND"
+        # keyword_list が non-empty な時点で keywords は non-None.
+        assert keywords is not None
+        free_text_dict = compile_free_text(keywords, operator=op_upper, fields=fields)
+        bool_query.update(free_text_dict["bool"])
 
     if filters:
         bool_query["filter"] = filters

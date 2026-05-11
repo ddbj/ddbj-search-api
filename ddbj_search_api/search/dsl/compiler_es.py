@@ -21,7 +21,13 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
-from ddbj_search_api.search.dsl.ast import FieldClause, Node, Range
+from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
+from ddbj_search_api.search.phrase import ES_AUTO_PHRASE_CHARS, parse_keywords_with_autophrase
+
+# シンプル検索 (q) を multi_match に展開するときのデフォルトフィールド集合.
+# db-portal handler は keyword_fields を渡さず常にこのデフォルトで検索する.
+# entries / facets は ``validate_keyword_fields`` の出力 (この集合の部分集合) を渡す.
+_FREE_TEXT_DEFAULT_FIELDS: tuple[str, ...] = ("identifier", "title", "name", "description")
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,21 +111,63 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
 }
 
 
+def compile_free_text(
+    value: str,
+    *,
+    operator: Literal["AND", "OR"] = "AND",
+    fields: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Convert a raw search keyword string (``q``) to an ES bool query.
+
+    ``value`` を auto-phrase 適用付きでトークン化し、各トークンを ``multi_match``
+    (記号含みは ``type=phrase``) に展開、``operator`` で ``bool.must`` /
+    ``bool.should`` を選ぶ。db-portal / entries / facets / AST 経路 (FreeText
+    ノード) で同じロジックを共有する。
+
+    ``fields`` を省略すると ``("identifier", "title", "name", "description")``
+    (db-portal / entries 共通のデフォルト) を使う。``value`` がトークン化後に
+    空となる場合は ``ValueError`` を raise する (呼び出し側で空入力を弾く前提)。
+    """
+    if fields is None:
+        used_fields: list[str] = list(_FREE_TEXT_DEFAULT_FIELDS)
+    else:
+        used_fields = list(fields)
+    tokens = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
+    if not tokens:
+        raise ValueError(f"empty free-text value (after tokenization): {value!r}")
+    multi_matches: list[dict[str, Any]] = []
+    for text, is_phrase in tokens:
+        mm: dict[str, Any] = {"query": text, "fields": used_fields}
+        if is_phrase:
+            mm["type"] = "phrase"
+        multi_matches.append({"multi_match": mm})
+    if operator == "OR":
+        return {"bool": {"should": multi_matches, "minimum_should_match": 1}}
+    return {"bool": {"must": multi_matches}}
+
+
 def compile_to_es(ast: Node) -> dict[str, Any]:
     """Convert a validated AST to an ES query body (value of the ``query`` key).
 
     Returns a bool / leaf dict suitable for embedding as ``{"query": <result>, "size": ...}``
     — matches the shape produced by :func:`ddbj_search_api.es.query.build_search_query` so
     the router can swap simple-search and adv-search results through the same helpers.
+
+    ``FreeText`` ノードは ``compile_free_text`` のデフォルト fields + ``AND`` 操作子で
+    展開する。``BoolOp(AND, [adv_ast, FreeText(q)])`` のように handler が併用入力を
+    合成した AST では、FreeText 子の ``bool.must`` 中身を上位 ``bool.must`` に flatten
+    して旧 ``build_combined_es_query`` と等価な query を出力する。
     """
     return _compile_node(ast)
 
 
 def _compile_node(node: Node) -> dict[str, Any]:
+    if isinstance(node, FreeText):
+        return compile_free_text(node.value)
     if isinstance(node, FieldClause):
         return _compile_leaf(node)
     if node.op == "AND":
-        return {"bool": {"must": [_compile_node(c) for c in node.children]}}
+        return {"bool": {"must": _compile_and_children(node.children)}}
     if node.op == "OR":
         return {
             "bool": {
@@ -129,6 +177,26 @@ def _compile_node(node: Node) -> dict[str, Any]:
         }
     # NOT
     return {"bool": {"must_not": [_compile_node(c) for c in node.children]}}
+
+
+def _compile_and_children(children: tuple[Node, ...]) -> list[dict[str, Any]]:
+    """AND の子ノードを compile し、FreeText 由来の ``bool.must`` を flatten する.
+
+    ``BoolOp(AND, [adv_ast, FreeText(q)])`` の出力を旧 ``build_combined_es_query``
+    が組んでいた ``bool.must=[<adv_compiled>, <freetext_multi_match_1>, ...]`` と
+    等価にするため、FreeText 子の ``bool.must`` の中身だけを取り出す。
+    OR / NOT 配下では flatten しない (bool 構造の意味が変わるため)。
+    """
+    clauses: list[dict[str, Any]] = []
+    for child in children:
+        compiled = _compile_node(child)
+        if isinstance(child, FreeText):
+            inner = compiled.get("bool", {}).get("must")
+            if isinstance(inner, list):
+                clauses.extend(inner)
+                continue
+        clauses.append(compiled)
+    return clauses
 
 
 def _compile_leaf(clause: FieldClause) -> dict[str, Any]:

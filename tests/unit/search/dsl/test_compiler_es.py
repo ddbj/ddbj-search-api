@@ -16,9 +16,11 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api.es.query import build_search_query
 from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import parse
-from ddbj_search_api.search.dsl.compiler_es import compile_to_es
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Position
+from ddbj_search_api.search.dsl.compiler_es import compile_free_text, compile_to_es
 from ddbj_search_api.search.dsl.validator import validate
 
 
@@ -537,3 +539,245 @@ class TestWildcardCaseInsensitive:
                 },
             },
         }
+
+
+class TestCompileFreeText:
+    """compile_free_text helper と FreeText AST 経由の compile が等価か.
+
+    旧 build_search_query の keyword 構築部 (es/query.py L325-350) と同じ
+    bool 構造を返すことを確認する。これが等価でないと entries.py / facets.py の
+    回帰、および AST 一本化後の db-portal handler の挙動差を生む。
+    """
+
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
+
+    def test_single_token_word_no_phrase(self) -> None:
+
+        assert compile_free_text("cancer") == {
+            "bool": {
+                "must": [
+                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                ],
+            },
+        }
+
+    def test_symbol_token_promoted_to_phrase(self) -> None:
+        """``HIF-1`` のようなハイフン含みトークンは ``type: phrase`` 付与."""
+
+        assert compile_free_text("HIF-1") == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "HIF-1",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_quoted_token_treated_as_phrase(self) -> None:
+        """double-quote で囲まれたトークンは ``type: phrase``."""
+
+        assert compile_free_text('"RNA Seq"') == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "RNA Seq",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_comma_separated_multiple_tokens_and(self) -> None:
+        """カンマ区切りは複数 multi_match に分解、``AND`` 操作子は ``bool.must``."""
+
+        result = compile_free_text("cancer, human")
+        assert result == {
+            "bool": {
+                "must": [
+                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                    {"multi_match": {"query": "human", "fields": self._DEFAULT_FIELDS}},
+                ],
+            },
+        }
+
+    def test_operator_or_uses_should_minimum_should_match(self) -> None:
+        """``OR`` 操作子は ``bool.should`` + ``minimum_should_match: 1``."""
+
+        assert compile_free_text("cancer, human", operator="OR") == {
+            "bool": {
+                "should": [
+                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                    {"multi_match": {"query": "human", "fields": self._DEFAULT_FIELDS}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
+
+    def test_custom_fields(self) -> None:
+
+        assert compile_free_text("cancer", fields=["title"]) == {
+            "bool": {
+                "must": [{"multi_match": {"query": "cancer", "fields": ["title"]}}],
+            },
+        }
+
+    def test_empty_value_raises(self) -> None:
+
+        with pytest.raises(ValueError, match="empty free-text value"):
+            compile_free_text("")
+
+    def test_whitespace_only_raises(self) -> None:
+
+        with pytest.raises(ValueError, match="empty free-text value"):
+            compile_free_text("   ")
+
+
+class TestCompileToEsFreeTextNode:
+    """``compile_to_es(FreeText(...))`` が ``compile_free_text`` のデフォルトと等価."""
+
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
+
+    def test_free_text_node_equals_compile_free_text(self) -> None:
+
+        node = FreeText("cancer")
+        assert compile_to_es(node) == compile_free_text("cancer")
+
+    def test_and_of_adv_and_free_text_flattens_multi_match(self) -> None:
+        """``BoolOp(AND, [adv_ast, FreeText(q)])`` で FreeText の bool.must が flatten される.
+
+        旧 build_combined_es_query が ``bool.must = [<adv_compiled>, <multi_match_1>, ...]``
+        を組んでいたのと等価な dict が出ること。
+        """
+
+        adv_ast = FieldClause(
+            field="organism",
+            value_kind="phrase",
+            value="Homo sapiens",
+            position=Position(column=1, length=24),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("cancer")),
+            position=Position(column=1, length=24),
+        )
+        result = compile_to_es(composite)
+        assert result == {
+            "bool": {
+                "must": [
+                    # adv_ast の compile 結果 (organism は or_flat: organism.name / organism.identifier)
+                    {
+                        "bool": {
+                            "should": [
+                                {"term": {"organism.name": "Homo sapiens"}},
+                                {"term": {"organism.identifier": "Homo sapiens"}},
+                            ],
+                            "minimum_should_match": 1,
+                        },
+                    },
+                    # FreeText の multi_match が flatten されて並ぶ
+                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                ],
+            },
+        }
+
+    def test_and_of_free_text_with_symbol_token_keeps_phrase_type(self) -> None:
+        """合成 BoolOp 経由でも auto-phrase が効くこと (HIF-1 で type=phrase)."""
+
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="cancer",
+            position=Position(column=1, length=12),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("HIF-1")),
+            position=Position(column=1, length=12),
+        )
+        result = compile_to_es(composite)
+        assert result == {
+            "bool": {
+                "must": [
+                    {"match_phrase": {"title": "cancer"}},
+                    {
+                        "multi_match": {
+                            "query": "HIF-1",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_or_of_free_text_does_not_flatten(self) -> None:
+        """OR 配下では FreeText の bool.must は flatten せず、bool wrapper が残る."""
+
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="cancer",
+            position=Position(column=1, length=12),
+        )
+        composite = BoolOp(
+            op="OR",
+            children=(adv_ast, FreeText("tumor")),
+            position=Position(column=1, length=12),
+        )
+        result = compile_to_es(composite)
+        assert result == {
+            "bool": {
+                "should": [
+                    {"match_phrase": {"title": "cancer"}},
+                    # FreeText の bool wrapper はそのまま (flatten しない)
+                    {
+                        "bool": {
+                            "must": [
+                                {"multi_match": {"query": "tumor", "fields": self._DEFAULT_FIELDS}},
+                            ],
+                        },
+                    },
+                ],
+                "minimum_should_match": 1,
+            },
+        }
+
+
+class TestCompileFreeTextMatchesBuildSearchQuery:
+    """compile_free_text の出力と build_search_query(keywords=...) の出力 (filter/status なし) が一致."""
+
+    @pytest.mark.parametrize(
+        "keywords",
+        ["cancer", "HIF-1", '"RNA Seq"', "cancer, human", "BRCA1/2"],
+    )
+    def test_and_operator(self, keywords: str) -> None:
+
+        expected = build_search_query(
+            keywords=keywords,
+            keyword_operator="AND",
+            status_mode=None,
+        )
+        actual = compile_free_text(keywords)
+        assert actual == expected
+
+    @pytest.mark.parametrize(
+        "keywords",
+        ["cancer", "HIF-1", "cancer, human"],
+    )
+    def test_or_operator(self, keywords: str) -> None:
+
+        expected = build_search_query(
+            keywords=keywords,
+            keyword_operator="OR",
+            status_mode=None,
+        )
+        actual = compile_free_text(keywords, operator="OR")
+        assert actual == expected

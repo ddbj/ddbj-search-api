@@ -16265,7 +16265,7 @@
           "db-portal"
         ],
         "summary": "DB Portal cross-database fan-out (count + top hits)",
-        "description": "``GET /db-portal/cross-search``: cross-database count + top hits search.",
+        "description": "``GET /db-portal/cross-search``: cross-database count + top hits search.\n\n``q`` / ``adv`` / 併用 / 両方未指定 の 4 入力パターンを ``_build_query_ast``\nで AST に正規化し、単一 ``_cross_search_dispatch`` に渡す。AST 一本化方針は\ndocs/db-portal-api-spec.md § 内部モデル参照。",
         "operationId": "crossSearchDbPortal",
         "parameters": [
           {
@@ -16281,13 +16281,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.",
+              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.",
               "examples": [
                 "cancer"
               ],
               "title": "Q"
             },
-            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match."
+            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query."
           },
           {
             "name": "adv",
@@ -16302,13 +16302,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
+              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
               "examples": [
                 "title:cancer"
               ],
               "title": "Adv"
             },
-            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
           },
           {
             "name": "topHits",
@@ -16385,7 +16385,7 @@
           "db-portal"
         ],
         "summary": "DB Portal db-specific hits search",
-        "description": "``GET /db-portal/search``: db-specific hits search.",
+        "description": "``GET /db-portal/search``: db-specific hits search.\n\ncursor 経路 (旧 ``_db_specific_search_cursor``) は cursor token に焼き込んだ\nES query を decode して継続する設計のため、AST dispatch には流さない。\ncursor + adv / cursor + q は ``_validate_cursor_exclusivity`` で弾く。",
         "operationId": "searchDbPortal",
         "parameters": [
           {
@@ -16401,13 +16401,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.",
+              "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.",
               "examples": [
                 "cancer"
               ],
               "title": "Q"
             },
-            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match."
+            "description": "Simple search keyword(s).  Comma-separated for multiple values; double quotes for explicit phrase match; symbols (-, /, ., +, :) trigger automatic phrase match.  Internally wrapped into a ``FreeText`` AST node; when combined with ``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query."
           },
           {
             "name": "adv",
@@ -16422,13 +16422,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
+              "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.).",
               "examples": [
                 "title:cancer"
               ],
               "title": "Adv"
             },
-            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
+            "description": "Advanced Search DSL.  Lark LALR(1)-parsed Lucene subset with field-prefixed leaves (``title:cancer``, ``date_published:[2020-01-01 TO 2024-12-31]``, ``organism:\"Homo sapiens\"``, ``identifier:PRJ*``) joined by ``AND``/``OR``/``NOT`` (case-sensitive, uppercase).  Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  Tier 2 (cross): ``submitter``, ``publication``.  Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to the backend query.  Errors surface as RFC 7807 problem details with a dedicated ``type`` URI (``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
           },
           {
             "name": "db",

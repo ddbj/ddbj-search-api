@@ -16,7 +16,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.search.dsl import DslError, ErrorType, parse
-from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Range
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Range
 
 
 class TestFieldClauseValueKinds:
@@ -194,7 +194,10 @@ class TestBoolOperators:
         assert inner.op == "OR"
 
 
-def _flatten_leaves(node: BoolOp | FieldClause) -> list[FieldClause]:
+def _flatten_leaves(node: Node) -> list[FieldClause]:
+    if isinstance(node, FreeText):
+        # Lark パーサからは FreeText が生成されないため、テスト helper では到達しない.
+        raise TypeError("FreeText nodes are not produced by the Lark parser")
     if isinstance(node, FieldClause):
         return [node]
     out: list[FieldClause] = []

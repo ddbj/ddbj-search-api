@@ -12,7 +12,12 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import parse
-from ddbj_search_api.search.dsl.compiler_solr import SolrDialect, compile_to_solr
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Position
+from ddbj_search_api.search.dsl.compiler_solr import (
+    SolrDialect,
+    compile_free_text_solr,
+    compile_to_solr,
+)
 from ddbj_search_api.search.dsl.validator import validate
 
 
@@ -357,3 +362,95 @@ class TestCompilerSolrPBT:
         result = _c(f"{field}:{word}", "txsearch")
         expected_field = {"title": "scientific_name", "description": "text"}[field]
         assert result == f'{expected_field}:"{word}"'
+
+
+class TestCompileFreeTextSolr:
+    """compile_free_text_solr が現状 solr/query.py:_build_q_string と等価か."""
+
+    def test_single_token(self) -> None:
+
+        assert compile_free_text_solr("cancer") == '"cancer"'
+
+    def test_multiple_tokens_space_joined(self) -> None:
+
+        assert compile_free_text_solr("cancer, human") == '"cancer" "human"'
+
+    def test_stray_quote_in_token_stripped(self) -> None:
+        """stray double-quote は tokenize_keywords が strip する (escape されない)."""
+
+        # 'say "hello"' は phrase で囲まれていないため、_split_raw_tokens では
+        # 1 トークンとして扱われ、stray ``"`` が strip された ``say hello`` が
+        # double-quote で wrap される
+        assert compile_free_text_solr('say "hello"') == '"say hello"'
+
+    def test_backslash_in_token_escaped(self) -> None:
+        """backslash は escape_solr_phrase で重ねられる."""
+
+        assert compile_free_text_solr("a\\b") == '"a\\\\b"'
+
+    def test_empty_value_returns_match_all(self) -> None:
+
+        assert compile_free_text_solr("") == "*:*"
+
+    def test_whitespace_only_returns_match_all(self) -> None:
+
+        assert compile_free_text_solr("   ") == "*:*"
+
+
+class TestCompileToSolrFreeTextNode:
+    """compile_to_solr(FreeText(...)) と AND 合成 AST の挙動."""
+
+    def test_free_text_node_alone(self) -> None:
+
+        assert compile_to_solr(FreeText("cancer"), dialect="arsa") == '"cancer"'
+        assert compile_to_solr(FreeText("cancer"), dialect="txsearch") == '"cancer"'
+
+    def test_and_of_adv_and_free_text_arsa(self) -> None:
+        """``BoolOp(AND, [adv_ast, FreeText(q)])`` で ``(<adv> AND <q_tokens>)`` 形式の単一括弧."""
+
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="leukemia",
+            position=Position(column=1, length=14),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("cancer")),
+            position=Position(column=1, length=14),
+        )
+        result = compile_to_solr(composite, dialect="arsa")
+        assert result == '(Definition:"leukemia" AND "cancer")'
+
+    def test_and_of_adv_and_free_text_txsearch(self) -> None:
+
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="Homo",
+            position=Position(column=1, length=10),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("sapiens")),
+            position=Position(column=1, length=10),
+        )
+        result = compile_to_solr(composite, dialect="txsearch")
+        assert result == '(scientific_name:"Homo" AND "sapiens")'
+
+    def test_and_of_adv_and_empty_free_text_falls_back_to_match_all(self) -> None:
+        """FreeText("") は ``*:*`` にフォールバック (handler は通常 q="" を None 化するが安全側)."""
+
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="cancer",
+            position=Position(column=1, length=12),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("")),
+            position=Position(column=1, length=12),
+        )
+        result = compile_to_solr(composite, dialect="arsa")
+        assert result == '(Definition:"cancer" AND *:*)'

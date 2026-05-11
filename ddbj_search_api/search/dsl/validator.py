@@ -24,7 +24,7 @@ from ddbj_search_api.search.dsl.allowlist import (
     TIER3_FIELD_DBS,
     TIER3_FIELDS,
 )
-from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Node, Range
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Range
 from ddbj_search_api.search.dsl.errors import DslError, ErrorType
 
 ValidationMode: TypeAlias = Literal["cross", "single"]
@@ -51,7 +51,7 @@ def validate(
 
 
 def _count_nodes(node: Node) -> int:
-    if isinstance(node, FieldClause):
+    if isinstance(node, FieldClause | FreeText):
         return 1
     return 1 + sum(_count_nodes(child) for child in node.children)
 
@@ -59,16 +59,19 @@ def _count_nodes(node: Node) -> int:
 def _check_total_nodes(node: Node, *, max_nodes: int) -> None:
     total = _count_nodes(node)
     if total > max_nodes:
+        # FreeText 単独ツリーは Position を持たないが、validator は Lark 由来の AST にのみ
+        # 適用される設計のため、実運用ではこの分岐に到達しない。安全側に column=1,length=0 で raise。
+        position = node.position if not isinstance(node, FreeText) else None
         raise DslError(
             type=ErrorType.nest_depth_exceeded,
             detail=(f"total node count {total} exceeds limit {max_nodes}"),
-            column=node.position.column,
-            length=node.position.length,
+            column=position.column if position else 1,
+            length=position.length if position else 0,
         )
 
 
 def _check_depth(node: Node, *, current: int, max_depth: int) -> None:
-    if isinstance(node, FieldClause):
+    if isinstance(node, FieldClause | FreeText):
         return
     if current > max_depth:
         raise DslError(
@@ -82,6 +85,8 @@ def _check_depth(node: Node, *, current: int, max_depth: int) -> None:
 
 
 def _check_nodes(node: Node, *, mode: ValidationMode) -> None:
+    if isinstance(node, FreeText):
+        return
     if isinstance(node, BoolOp):
         for child in node.children:
             _check_nodes(child, mode=mode)

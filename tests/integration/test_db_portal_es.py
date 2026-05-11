@@ -89,6 +89,29 @@ class TestQAdvCombination:
         assert combined.status_code == 200
         assert combined.json()["total"] <= q_only.json()["total"]
 
+    def test_search_combined_is_subset_of_adv_only_on_es_db(self, app: TestClient) -> None:
+        """AND 結合は q-only / adv-only 両方の subset (前後関係を両方で確認).
+
+        AST 一本化で ``BoolOp(AND, [adv_ast, FreeText(q)])`` の bool.must に各子の compile 結果が
+        並ぶ。``combined`` の total は q-only / adv-only いずれの上限も超えない。
+        """
+        adv_only = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "adv": "title:human", "perPage": 20},
+        )
+        assert adv_only.status_code == 200
+        combined = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": "human",
+                "adv": "title:human",
+                "perPage": 20,
+            },
+        )
+        assert combined.status_code == 200
+        assert combined.json()["total"] <= adv_only.json()["total"]
+
 
 class TestSearchSortAllowlist:
     """IT-DBPORTAL-16: sort accepts only documented values."""

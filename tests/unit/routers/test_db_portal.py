@@ -2535,12 +2535,17 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         for call in mock_es_search_db_portal.call_args_list:
             assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
 
-    def test_adv_and_with_identifier_uses_public_only(
+    def test_adv_and_with_identifier_allows_suppressed(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """AND ラップは AST top が BoolOp なので解放対象外。"""
+        """AND **直下** の child に identifier accession があれば解禁
+
+        (docs/db-portal-api-spec.md § データ可視性 (status 制御) の AST 走査ルール)。
+        旧 detect_accession_exact_match_in_ast は AST top が FieldClause のみ
+        対象だったが、AST 一本化で AND 直下子も対象に拡張された。
+        """
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
@@ -2548,7 +2553,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         )
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
-            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+            assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
 
     def test_adv_or_with_identifier_uses_public_only(
         self,
@@ -2870,7 +2875,8 @@ def _bioproject_es_body(mock: AsyncMock) -> dict[str, Any]:
     for call in mock.call_args_list:
         index = call.args[1]
         if index == "bioproject":
-            return call.args[2]
+            body: dict[str, Any] = call.args[2]
+            return body
     raise AssertionError("bioproject ES call was not captured")
 
 
@@ -2940,7 +2946,8 @@ class TestQAdvCombination:
             "match_phrase" in c and c["match_phrase"].get("title") == "cancer"
             for c in must
         )
-        assert has_q and has_adv
+        assert has_q
+        assert has_adv
 
     def test_combined_status_mode_with_q_accession_match(
         self,
@@ -2996,7 +3003,12 @@ class TestQAdvCombination:
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
-        """ARSA combined q は `({adv}) AND ({q_quoted})` 形式。"""
+        """ARSA combined q は AST 経由で ``(<adv_compiled> AND <q_quoted>)`` の単一括弧形式.
+
+        旧 ``build_arsa_combined_params`` の ``({adv}) AND ({q})`` 各子括弧形式から
+        AST 一本化で ``compile_to_solr(BoolOp(AND, [adv, FreeText(q)]))`` の
+        外側括弧 1 つに変わる (edismax 評価結果は等価)。
+        """
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
@@ -3005,11 +3017,13 @@ class TestQAdvCombination:
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         q = params["q"]
-        # adv の compiled クライアントは ARSA dialect (Definition / ReferenceTitle 等 にマップ)、
-        # q 側は phrase quoted。両者を AND で連結する固定 wrapper のみ検証する。
-        assert q.startswith("(") and ") AND (" in q and q.endswith(")")
+        # AST 経由で外側 1 つの括弧 + 内側 ``<adv> AND <q>``。
+        assert q.startswith("(")
+        assert q.endswith(")")
+        assert " AND " in q
+        assert 'Definition:"cancer"' in q  # adv compiled (ARSA dialect)
         assert '"human"' in q  # quoted q token
-        # uf は adv allowlist 由来。
+        # uf は adv 含む AST で付与される。
         assert "uf" in params
 
     def test_combined_txsearch_q_is_and_joined(
@@ -3017,7 +3031,7 @@ class TestQAdvCombination:
         app_with_db_portal: TestClient,
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
-        """TXSearch combined q も `({adv}) AND ({q_quoted})`。"""
+        """TXSearch combined q も ``(<adv_compiled> AND <q_quoted>)`` の単一括弧形式."""
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
@@ -3026,7 +3040,10 @@ class TestQAdvCombination:
         assert resp.status_code == 200
         params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
         q = params["q"]
-        assert q.startswith("(") and ") AND (" in q and q.endswith(")")
+        assert q.startswith("(")
+        assert q.endswith(")")
+        assert " AND " in q
+        assert 'scientific_name:"cancer"' in q  # adv compiled (TXSearch dialect)
         assert '"human"' in q
         assert "uf" in params
 

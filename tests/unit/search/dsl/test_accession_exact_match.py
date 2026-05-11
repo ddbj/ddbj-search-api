@@ -15,6 +15,7 @@ from ddbj_search_api.search.dsl.accession_exact_match import (
 from ddbj_search_api.search.dsl.ast import (
     BoolOp,
     FieldClause,
+    FreeText,
     Node,
     Position,
     Range,
@@ -100,11 +101,61 @@ class TestDetectAccessionExactMatchInAst:
         )
         assert detect_accession_exact_match_in_ast(ast) is None
 
-    def test_and_wrapper_returns_none(self) -> None:
-        """AND でラップされた単一 child でも対象外 (AST top が BoolOp なので)。"""
+    def test_and_with_single_identifier_child_returns_value(self) -> None:
+        """AND 直下に identifier accession があれば解禁 (q+adv 併用合成 BoolOp 相当)。"""
         ast = BoolOp(
             op="AND",
             children=(_identifier_clause("PRJDB1234"),),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) == "PRJDB1234"
+
+    def test_and_with_identifier_and_other_field_returns_value(self) -> None:
+        """``identifier:PRJDB1234 AND title:cancer`` で解禁。"""
+        ast = BoolOp(
+            op="AND",
+            children=(
+                _identifier_clause("PRJDB1234"),
+                FieldClause(field="title", value_kind="word", value="cancer", position=_POS),
+            ),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) == "PRJDB1234"
+
+    def test_and_with_other_field_and_identifier_returns_value(self) -> None:
+        """子の並び順に依存せず解禁する (q+adv の合成順序が変わっても同じ挙動)。"""
+        ast = BoolOp(
+            op="AND",
+            children=(
+                FieldClause(field="title", value_kind="word", value="cancer", position=_POS),
+                _identifier_clause("PRJDB1234"),
+            ),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) == "PRJDB1234"
+
+    def test_and_without_accession_returns_none(self) -> None:
+        """AND 直下に accession 完全一致 child が無ければ None。"""
+        ast = BoolOp(
+            op="AND",
+            children=(
+                FieldClause(field="title", value_kind="word", value="PRJDB1234", position=_POS),
+                FieldClause(field="organism", value_kind="word", value="9606", position=_POS),
+            ),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) is None
+
+    def test_nested_and_does_not_unwrap(self) -> None:
+        """ネスト AND の更に下にある accession は対象外 (誤検出回避)。"""
+        inner = BoolOp(
+            op="AND",
+            children=(_identifier_clause("PRJDB1234"),),
+            position=_POS,
+        )
+        ast = BoolOp(
+            op="AND",
+            children=(inner, FieldClause(field="title", value_kind="word", value="x", position=_POS)),
             position=_POS,
         )
         assert detect_accession_exact_match_in_ast(ast) is None
@@ -134,6 +185,76 @@ class TestDetectAccessionExactMatchInAst:
             field="date_published",
             value_kind="range",
             value=Range(from_="2024-01-01", to="2024-12-31"),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) is None
+
+
+class TestDetectAccessionExactMatchInAstFreeText:
+    """FreeText 単独 / AND 直下子としての挙動 (q-only / q+adv 併用に相当)。"""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("PRJDB1234", "PRJDB1234"),
+            ("DRA000001", "DRA000001"),
+            ("JGAS000001", "JGAS000001"),
+            ("SAMD00000001", "SAMD00000001"),
+        ],
+    )
+    def test_free_text_accession_returns_value(self, value: str, expected: str) -> None:
+        assert detect_accession_exact_match_in_ast(FreeText(value)) == expected
+
+    def test_free_text_accession_with_surrounding_whitespace(self) -> None:
+        """前後空白付きでも解禁 (strip 後で is_accession_like 判定)。"""
+        assert detect_accession_exact_match_in_ast(FreeText("  PRJDB1234  ")) == "PRJDB1234"
+
+    @pytest.mark.parametrize(
+        "value",
+        ["cancer", "PRJDB1234 cancer", "PRJDB", "", "  "],
+    )
+    def test_free_text_non_accession_returns_none(self, value: str) -> None:
+        """is_accession_like を満たさない (複数トークン / 空 / partial) は対象外。"""
+        assert detect_accession_exact_match_in_ast(FreeText(value)) is None
+
+    def test_and_of_field_clause_and_free_text_accession_returns_value(self) -> None:
+        """q+adv 併用合成: FreeText(accession) AND adv_ast でも解禁。"""
+        ast = BoolOp(
+            op="AND",
+            children=(
+                FieldClause(field="title", value_kind="word", value="cancer", position=_POS),
+                FreeText("PRJDB1234"),
+            ),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) == "PRJDB1234"
+
+    def test_and_of_free_text_accession_and_field_clause_accession(self) -> None:
+        """q=PRJDB1234 + adv=identifier:DRA000001 のような併用は最初に見つかった方を返す。"""
+        ast = BoolOp(
+            op="AND",
+            children=(
+                _identifier_clause("DRA000001"),
+                FreeText("PRJDB1234"),
+            ),
+            position=_POS,
+        )
+        # 走査順 (children 順) で最初にマッチしたものを返す: adv 先頭運用なので DRA が先
+        assert detect_accession_exact_match_in_ast(ast) == "DRA000001"
+
+    def test_or_with_free_text_accession_returns_none(self) -> None:
+        """OR 配下に accession があっても解禁しない。"""
+        ast = BoolOp(
+            op="OR",
+            children=(FreeText("PRJDB1234"), FreeText("cancer")),
+            position=_POS,
+        )
+        assert detect_accession_exact_match_in_ast(ast) is None
+
+    def test_not_with_free_text_accession_returns_none(self) -> None:
+        ast = BoolOp(
+            op="NOT",
+            children=(FreeText("PRJDB1234"),),
             position=_POS,
         )
         assert detect_accession_exact_match_in_ast(ast) is None

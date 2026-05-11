@@ -86,7 +86,10 @@ ALLOWED_DB_PORTAL_PER_PAGE: frozenset[int] = frozenset({20, 50, 100})
 _Q_DESC = (
     "Simple search keyword(s).  Comma-separated for multiple values; "
     "double quotes for explicit phrase match; symbols (-, /, ., +, :) "
-    "trigger automatic phrase match."
+    "trigger automatic phrase match.  "
+    "Internally wrapped into a ``FreeText`` AST node; when combined with "
+    "``adv``, merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before "
+    "being compiled to the backend query."
 )
 
 _ADV_DESC = (
@@ -99,6 +102,9 @@ _ADV_DESC = (
     "Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / "
     "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank ``experiment_type`` / "
     "MetaboBank ``submission_type`` / Trad ``division`` etc. / Taxonomy ``rank`` etc.  "
+    "Parsed into ``FieldClause`` / ``BoolOp`` AST nodes; when combined with ``q``, "
+    "merged into ``BoolOp(AND, [adv_ast, FreeText(q)])`` before being compiled to "
+    "the backend query.  "
     "Errors surface as RFC 7807 problem details with a dedicated ``type`` URI "
     "(``unexpected-token`` / ``unknown-field`` / ``field-not-available-in-cross-db`` etc.)."
 )

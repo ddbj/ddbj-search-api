@@ -1,15 +1,14 @@
 """Solr edismax query builder for ARSA and TXSearch.
 
-Pure functions that convert API parameters to Solr ``/select`` query
-params.  Keywords are always wrapped in double quotes because ARSA
-Solr 4.4.0 interprets bare tokens like ``HIF-1`` as NOT expressions
-(staging-measured: numFound jumped from 15050 quoted to 295M unquoted).
+handler が ``compile_to_solr`` 経由で生成した edismax ``q`` 文字列を受け取り、
+qf / fl / uf / sort / start / rows / shards を Solr ``/select`` リクエスト用の
+dict に組み立てる。q 文字列の組み立て自体は ``ddbj_search_api.search.dsl.compiler_solr``
+が担当する (auto-phrase / quote escape は ``compile_free_text_solr`` 経由)。
 """
 
 from __future__ import annotations
 
 from ddbj_search_api.search.dsl import arsa_uf_fields, txsearch_uf_fields
-from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
 
 _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^5 Organism^3 ReferenceTitle^2"
 # ``fl`` must include every source field that ``arsa_docs_to_hits`` reads;
@@ -19,7 +18,6 @@ _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^
 _ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,MolecularType,SequenceLength,Feature,score"
 _TXSEARCH_QF = "scientific_name^10 scientific_name_ex^20 common_name^5 synonym^3 japanese_name^5 text^0.1"
 _TXSEARCH_FL = "tax_id,scientific_name,common_name,japanese_name,rank,lineage,score"
-_DEFAULT_Q = "*:*"
 
 # ``uf`` (user fields) restricts edismax field references in the q string to
 # the DSL allowlist.  Derived from compile_to_solr's field map so the two
@@ -34,87 +32,27 @@ _ARSA_SORT_ALLOWLIST: dict[str, str] = {
 }
 
 
-def _build_q_string(keywords: str | None) -> str:
-    """Build the ``q`` parameter: all tokens quoted and space-joined."""
-    parsed = tokenize_keywords(keywords)
-    if not parsed:
-        return _DEFAULT_Q
-    return " ".join(f'"{escape_solr_phrase(t)}"' for t in parsed)
-
-
 def _pagination_to_start_rows(page: int, per_page: int) -> tuple[int, int]:
     return (max(0, (page - 1) * per_page), max(0, per_page))
 
 
-def build_arsa_params(
-    *,
-    keywords: str | None,
-    page: int,
-    per_page: int,
-    sort: str | None,
-    shards: str | None,
-) -> dict[str, str]:
-    """Build Solr query params for ARSA ``/collection1/select``.
-
-    ``shards`` (comma-separated ``host:port/solr/core`` list) is appended
-    only when non-empty, enabling distributed fan-out on staging/prod and
-    single-shard fallback in tests.
-    """
-    start, rows = _pagination_to_start_rows(page, per_page)
-    params: dict[str, str] = {
-        "q": _build_q_string(keywords),
-        "defType": "edismax",
-        "qf": _ARSA_QF,
-        "fl": _ARSA_FL,
-        "start": str(start),
-        "rows": str(rows),
-        "wt": "json",
-    }
-    if sort in _ARSA_SORT_ALLOWLIST:
-        params["sort"] = _ARSA_SORT_ALLOWLIST[sort]
-    if shards is not None and shards.strip():
-        params["shards"] = shards
-    return params
-
-
-def build_txsearch_params(
-    *,
-    keywords: str | None,
-    page: int,
-    per_page: int,
-    sort: str | None,
-) -> dict[str, str]:
-    """Build Solr query params for TXSearch ``/ncbi_taxonomy/select``.
-
-    ``sort`` is silently ignored (taxonomy has no date fields and the API
-    allowlist only exposes ``datePublished:*``).  Argument retained for
-    caller symmetry with :func:`build_arsa_params`.
-    """
-    _ = sort
-    start, rows = _pagination_to_start_rows(page, per_page)
-    return {
-        "q": _build_q_string(keywords),
-        "defType": "edismax",
-        "qf": _TXSEARCH_QF,
-        "fl": _TXSEARCH_FL,
-        "start": str(start),
-        "rows": str(rows),
-        "wt": "json",
-    }
-
-
-def build_arsa_adv_params(
+def build_arsa_request_params(
     *,
     q: str,
     page: int,
     per_page: int,
     sort: str | None,
     shards: str | None,
+    with_uf: bool,
 ) -> dict[str, str]:
-    """Build Solr params for ARSA when the caller already has a DSL-compiled ``q`` string.
+    """Build Solr query params for ARSA ``/collection1/select`` from a pre-compiled ``q`` string.
 
-    Same shape as :func:`build_arsa_params` except that ``q`` is passed through verbatim
-    and ``uf`` restricts referenceable fields to the DSL allowlist.
+    ``q`` は handler が :func:`ddbj_search_api.search.dsl.compile_to_solr` で生成した
+    edismax ``q`` 文字列 (FreeText 単独なら ``"..."`` 群、adv 含むなら
+    ``(<adv_compiled> AND "<token>"...)`` 等)。``with_uf`` が True のとき
+    ``uf`` (edismax allowlist) を付与する。AST 内に ``FieldClause`` (adv DSL leaf)
+    が含まれるかを handler 側で判定して渡す (
+    :func:`ddbj_search_api.search.dsl.inspect.ast_has_field_clause`)。
     """
     start, rows = _pagination_to_start_rows(page, per_page)
     params: dict[str, str] = {
@@ -122,11 +60,12 @@ def build_arsa_adv_params(
         "defType": "edismax",
         "qf": _ARSA_QF,
         "fl": _ARSA_FL,
-        "uf": _ARSA_ADV_UF,
-        "start": str(start),
-        "rows": str(rows),
-        "wt": "json",
     }
+    if with_uf:
+        params["uf"] = _ARSA_ADV_UF
+    params["start"] = str(start)
+    params["rows"] = str(rows)
+    params["wt"] = "json"
     if sort in _ARSA_SORT_ALLOWLIST:
         params["sort"] = _ARSA_SORT_ALLOWLIST[sort]
     if shards is not None and shards.strip():
@@ -134,88 +73,31 @@ def build_arsa_adv_params(
     return params
 
 
-def build_txsearch_adv_params(
+def build_txsearch_request_params(
     *,
     q: str,
     page: int,
     per_page: int,
     sort: str | None,
+    with_uf: bool,
 ) -> dict[str, str]:
-    """Build Solr params for TXSearch with a DSL-compiled ``q`` string."""
+    """Build Solr query params for TXSearch ``/ncbi_taxonomy/select`` from a pre-compiled ``q`` string.
+
+    ``sort`` は Taxonomy に日付フィールドが無いため silently ignored (caller symmetry
+    のため引数だけ受ける)。``with_uf`` の判定基準は
+    :func:`build_arsa_request_params` と同じ。
+    """
     _ = sort
     start, rows = _pagination_to_start_rows(page, per_page)
-    return {
+    params: dict[str, str] = {
         "q": q,
         "defType": "edismax",
         "qf": _TXSEARCH_QF,
         "fl": _TXSEARCH_FL,
-        "uf": _TXSEARCH_ADV_UF,
-        "start": str(start),
-        "rows": str(rows),
-        "wt": "json",
     }
-
-
-def build_arsa_combined_params(
-    *,
-    keywords: str,
-    adv_q: str,
-    page: int,
-    per_page: int,
-    sort: str | None,
-    shards: str | None,
-) -> dict[str, str]:
-    """Build Solr params for ARSA when both ``q`` and ``adv`` are present.
-
-    Emits ``q=({adv_compiled}) AND ({q_quoted})`` so edismax evaluates the
-    DSL clause and the simple-search phrase together with AND semantics.
-    The bare quoted tokens from ``q`` match the ``qf`` field set (same as
-    :func:`build_arsa_params`); the DSL clause references explicit fields
-    constrained by ``uf`` (same as :func:`build_arsa_adv_params`).
-    """
-    q_simple = _build_q_string(keywords)
-    q_combined = f"({adv_q}) AND ({q_simple})"
-    start, rows = _pagination_to_start_rows(page, per_page)
-    params: dict[str, str] = {
-        "q": q_combined,
-        "defType": "edismax",
-        "qf": _ARSA_QF,
-        "fl": _ARSA_FL,
-        "uf": _ARSA_ADV_UF,
-        "start": str(start),
-        "rows": str(rows),
-        "wt": "json",
-    }
-    if sort in _ARSA_SORT_ALLOWLIST:
-        params["sort"] = _ARSA_SORT_ALLOWLIST[sort]
-    if shards is not None and shards.strip():
-        params["shards"] = shards
+    if with_uf:
+        params["uf"] = _TXSEARCH_ADV_UF
+    params["start"] = str(start)
+    params["rows"] = str(rows)
+    params["wt"] = "json"
     return params
-
-
-def build_txsearch_combined_params(
-    *,
-    keywords: str,
-    adv_q: str,
-    page: int,
-    per_page: int,
-    sort: str | None,
-) -> dict[str, str]:
-    """Build Solr params for TXSearch when both ``q`` and ``adv`` are present.
-
-    See :func:`build_arsa_combined_params` for the AND-join semantics.
-    """
-    _ = sort
-    q_simple = _build_q_string(keywords)
-    q_combined = f"({adv_q}) AND ({q_simple})"
-    start, rows = _pagination_to_start_rows(page, per_page)
-    return {
-        "q": q_combined,
-        "defType": "edismax",
-        "qf": _TXSEARCH_QF,
-        "fl": _TXSEARCH_FL,
-        "uf": _TXSEARCH_ADV_UF,
-        "start": str(start),
-        "rows": str(rows),
-        "wt": "json",
-    }

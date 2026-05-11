@@ -21,10 +21,14 @@ from __future__ import annotations
 from typing import Literal, TypeAlias
 
 from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
-from ddbj_search_api.search.dsl.ast import FieldClause, Node, Range
-from ddbj_search_api.search.phrase import escape_solr_phrase
+from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
+from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
 
 SolrDialect: TypeAlias = Literal["arsa", "txsearch"]
+
+# シンプル検索 (q) がトークン化後に空となるとき edismax に投げる all-docs クエリ.
+# ARSA / TXSearch どちらも同値、handler 側で q=None 正規化される想定だが安全側にここでも対応.
+_FREE_TEXT_EMPTY_FALLBACK = "*:*"
 
 # === ARSA (Trad) field map ===
 
@@ -196,12 +200,39 @@ def txsearch_uf_fields() -> tuple[str, ...]:
     return tuple(sorted(seen))
 
 
+def compile_free_text_solr(value: str) -> str:
+    """シンプル検索 (``q``) を edismax ``q`` 文字列に変換する.
+
+    各トークンを ``escape_solr_phrase`` で escape して double-quote wrap し、
+    space-join する。``ARSA`` / ``TXSearch`` どちらも同形式で、dialect 依存しない。
+
+    括弧でくくらず素のトークン列を返す。``BoolOp`` 配下では上位 ``_compile_node`` が
+    AND/OR/NOT 結合時に外側括弧を付与する (現状の ``compile_to_solr`` の挙動を踏襲)。
+
+    入力がトークン化後に空 (None / "" / 空白のみ / カンマ区切り全部空) の場合は
+    edismax all-docs ``*:*`` を返す (現状 ``solr/query.py:_build_q_string`` 互換)。
+    """
+    tokens = tokenize_keywords(value)
+    if not tokens:
+        return _FREE_TEXT_EMPTY_FALLBACK
+    return " ".join(f'"{escape_solr_phrase(t)}"' for t in tokens)
+
+
 def compile_to_solr(ast: Node, *, dialect: SolrDialect) -> str:
-    """Convert a validated AST to an edismax ``q`` string for the given Solr dialect."""
+    """Convert a validated AST to an edismax ``q`` string for the given Solr dialect.
+
+    ``FreeText`` ノードは dialect 非依存の ``compile_free_text_solr`` で展開する.
+    ``BoolOp(AND, [adv_ast, FreeText(q)])`` のような併用合成 AST は、上位 AND が
+    既存ロジック ``"(" + " AND ".join(children_q) + ")"`` で結合するため
+    ``(<adv_compiled> AND "<q_token>" ...)`` 形式の単一外側括弧クエリになる
+    (旧 ``build_*_combined_params`` の ``({adv}) AND ({q})`` と edismax 評価上等価).
+    """
     return _compile_node(ast, dialect=dialect)
 
 
 def _compile_node(node: Node, *, dialect: SolrDialect) -> str:
+    if isinstance(node, FreeText):
+        return compile_free_text_solr(node.value)
     if isinstance(node, FieldClause):
         return _compile_leaf(node, dialect=dialect)
     children_q = [_compile_node(c, dialect=dialect) for c in node.children]

@@ -39,7 +39,6 @@ from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
     StatusMode,
-    build_combined_es_query,
     build_search_query,
     build_sort_with_tiebreaker,
     inject_status_filter,
@@ -61,7 +60,6 @@ from ddbj_search_api.schemas.db_portal import (
     _DbPortalHitAdapter,
     _DbPortalLightweightHitAdapter,
 )
-from ddbj_search_api.search.accession import detect_accession_exact_match
 from ddbj_search_api.search.dsl import (
     DslError,
     ast_to_json,
@@ -73,7 +71,9 @@ from ddbj_search_api.search.dsl import (
 from ddbj_search_api.search.dsl.accession_exact_match import (
     detect_accession_exact_match_in_ast,
 )
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText
 from ddbj_search_api.search.dsl.ast import Node as DslNode
+from ddbj_search_api.search.dsl.inspect import ast_has_field_clause
 from ddbj_search_api.solr import get_solr_client
 from ddbj_search_api.solr.client import arsa_search, txsearch_search
 from ddbj_search_api.solr.mappers import (
@@ -83,12 +83,8 @@ from ddbj_search_api.solr.mappers import (
     txsearch_response_to_envelope,
 )
 from ddbj_search_api.solr.query import (
-    build_arsa_adv_params,
-    build_arsa_combined_params,
-    build_arsa_params,
-    build_txsearch_adv_params,
-    build_txsearch_combined_params,
-    build_txsearch_params,
+    build_arsa_request_params,
+    build_txsearch_request_params,
 )
 
 logger = logging.getLogger(__name__)
@@ -263,12 +259,15 @@ def _parse_and_validate_dsl(
     adv: str,
     db: DbPortalDb | None,
     config: AppConfig,
-) -> DslNode:
+) -> FieldClause | BoolOp:
     """Parse and validate Advanced Search DSL.
 
     ``mode`` is ``"cross"`` when ``db`` is None and ``"single"`` otherwise.
     DSL errors are translated to ``DbPortalHTTPException`` (400 + dedicated
     type URI) so the caller can return RFC 7807 problem details.
+
+    Returns ``FieldClause | BoolOp`` (Lark パーサは ``FreeText`` を生成しない)
+    のため、後続 ``_build_query_ast`` で adv_ast の ``position`` を安全に参照できる。
     """
     try:
         ast = parse(adv, max_length=config.dsl_max_length)
@@ -285,7 +284,76 @@ def _parse_and_validate_dsl(
             type_uri=DbPortalErrorType[exc.type.name],
             detail=exc.detail,
         ) from exc
+    # Lark パーサは FieldClause | BoolOp のみ返す (FreeText は handler 側で組む)
+    assert isinstance(ast, (FieldClause, BoolOp))
     return ast
+
+
+def _build_query_ast(
+    q: str | None,
+    adv_ast: FieldClause | BoolOp | None,
+) -> DslNode | None:
+    """``q`` と ``adv_ast`` を単一の AST に統合する。
+
+    - 両方 ``None`` (空白のみの ``q`` 含む): ``None`` を返す (handler 側で
+      ``match_all`` (ES) / ``*:*`` (Solr) として扱う)
+    - ``q`` のみ: ``FreeText(q)``
+    - ``adv_ast`` のみ: ``adv_ast`` をそのまま
+    - 併用: ``BoolOp(AND, children=(adv_ast, FreeText(q)))`` (Solr 出力順序の
+      整合のため ``adv`` を先頭、``q`` を後尾にする)
+
+    合成 ``BoolOp`` の ``position`` は ``adv_ast.position`` を継承する (この経路は
+    validator を再度通らないので参照されないが、安全側に有効な値を持たせる)。
+    """
+    normalized_q = q.strip() if q is not None else None
+    if not normalized_q:
+        normalized_q = None
+    if normalized_q is not None and adv_ast is not None:
+        return BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText(q if q is not None else "")),
+            position=adv_ast.position,
+        )
+    if adv_ast is not None:
+        return adv_ast
+    if normalized_q is not None:
+        return FreeText(q if q is not None else "")
+    return None
+
+
+def _resolve_status_mode(ast: DslNode | None) -> StatusMode:
+    """AST から ``status_mode`` を導出する.
+
+    accession 完全一致 ([§ データ可視性](docs/db-portal-api-spec.md)) を満たす場合のみ
+    ``include_suppressed``、それ以外は ``public_only``。``ast=None`` (q / adv 両方
+    未指定) は accession 一致しないので ``public_only``。
+    """
+    if ast is None:
+        return "public_only"
+    return "include_suppressed" if detect_accession_exact_match_in_ast(ast) is not None else "public_only"
+
+
+def _build_es_query_for_ast(ast: DslNode | None, status_mode: StatusMode) -> dict[str, Any]:
+    """AST から ES query body を生成し、status filter を注入する.
+
+    ``ast=None`` (q / adv 両方未指定) は ``build_search_query(keywords=None, ...)``
+    と同形式の ``{"bool": {"filter": [<status>]}}`` を返す (keyword 無し + filter のみ)。
+    ``ast`` が空の ``match_all`` ラップで誤って ``must`` に ``match_all`` を残さないよう、
+    旧 build_search_query 経由の形式に合わせる。
+    """
+    if ast is None:
+        return build_search_query(keywords=None, keyword_operator="AND", status_mode=status_mode)
+    return inject_status_filter(compile_to_es(ast), status_mode)
+
+
+def _build_solr_q_for_ast(ast: DslNode | None, *, dialect: str) -> str:
+    """AST から Solr edismax ``q`` 文字列を生成する.
+
+    ``ast=None`` は ``*:*`` (all-docs)。dialect は ``"arsa"`` / ``"txsearch"``.
+    """
+    if ast is None:
+        return "*:*"
+    return compile_to_solr(ast, dialect=dialect)  # type: ignore[arg-type]
 
 
 # === Cross-database fan-out (count + optional top hits) ===
@@ -390,12 +458,22 @@ async def _count_one_db_es(
     return DbPortalCount(db=db, count=count, error=None, hits=hits)
 
 
-async def _count_arsa(
+# === Cross-database fan-out (AST 経由 dispatch) ===
+#
+# q / adv / 併用 / 両方未指定 の 4 入力を ``_build_query_ast`` で AST に正規化し,
+# ``_cross_search_dispatch`` が ES 6 DB + Solr 2 DB に並列発行する。詳細は
+# docs/db-portal-api-spec.md § 内部モデル参照。
+
+
+async def _count_arsa_unified(
     client: httpx.AsyncClient,
     config: AppConfig,
-    q: str | None,
+    q_string: str,
     top_hits: int,
+    *,
+    with_uf: bool,
 ) -> DbPortalCount:
+    """ARSA cross-search の単一関数版 (旧 ``_count_arsa`` / ``_adv`` / ``_combined`` 統合)."""
     if not config.solr_arsa_base_url:
         return DbPortalCount(
             db=DbPortalDb.trad,
@@ -403,12 +481,13 @@ async def _count_arsa(
             error=DbPortalCountError.unknown,
             hits=_empty_hits_or_none(top_hits),
         )
-    params = build_arsa_params(
-        keywords=q,
+    params = build_arsa_request_params(
+        q=q_string,
         page=1,
         per_page=top_hits,
         sort=None,
         shards=config.solr_arsa_shards,
+        with_uf=with_uf,
     )
     try:
         resp = await asyncio.wait_for(
@@ -461,12 +540,15 @@ async def _count_arsa(
     return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
 
 
-async def _count_txsearch(
+async def _count_txsearch_unified(
     client: httpx.AsyncClient,
     config: AppConfig,
-    q: str | None,
+    q_string: str,
     top_hits: int,
+    *,
+    with_uf: bool,
 ) -> DbPortalCount:
+    """TXSearch cross-search の単一関数版 (旧 ``_count_txsearch`` 系 3 関数の統合)."""
     if not config.solr_txsearch_url:
         return DbPortalCount(
             db=DbPortalDb.taxonomy,
@@ -474,11 +556,12 @@ async def _count_txsearch(
             error=DbPortalCountError.unknown,
             hits=_empty_hits_or_none(top_hits),
         )
-    params = build_txsearch_params(
-        keywords=q,
+    params = build_txsearch_request_params(
+        q=q_string,
         page=1,
         per_page=top_hits,
         sort=None,
+        with_uf=with_uf,
     )
     try:
         resp = await asyncio.wait_for(
@@ -530,50 +613,56 @@ async def _count_txsearch(
     return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None, hits=hits)
 
 
-async def _count_one_db(
+async def _count_one_db_unified(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
     db: DbPortalDb,
     es_query_body: dict[str, Any],
-    q: str | None,
+    arsa_q: str,
+    txsearch_q: str,
     top_hits: int,
+    *,
+    with_uf: bool,
 ) -> DbPortalCount:
-    """Run one search (count + optional top hits) and map errors to a DbPortalCount."""
     if db == DbPortalDb.trad:
-        return await _count_arsa(solr_client, config, q, top_hits)
+        return await _count_arsa_unified(solr_client, config, arsa_q, top_hits, with_uf=with_uf)
     if db == DbPortalDb.taxonomy:
-        return await _count_txsearch(solr_client, config, q, top_hits)
+        return await _count_txsearch_unified(solr_client, config, txsearch_q, top_hits, with_uf=with_uf)
     return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
 
 
-async def _cross_search(
+async def _cross_search_dispatch(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
-    q: str | None,
+    ast: DslNode | None,
     top_hits: int,
 ) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database search (count + optional top hits).
+    """AST 一本化後の cross-search 単一 dispatch.
 
-    All 8 DBs fan out via ``asyncio.create_task``; ``asyncio.wait`` with
-    ``ALL_COMPLETED`` + ``cross_search_total_timeout`` collects them.
-    Per-backend timeouts are applied inside each ``_count_one_db_*``
-    via ``asyncio.wait_for``.  Tasks still pending at the total deadline
-    are cancelled and surfaced as ``error=timeout`` in the response,
-    preserving the partial-success policy (200 as long as any DB
-    returned a count; 502 only when every DB failed).
-
-    ``top_hits=0`` returns count-only (each ``DbPortalCount.hits=None``);
-    ``top_hits>=1`` returns up to ``top_hits`` lightweight hits per DB.
+    旧 ``_cross_search`` / ``_adv_cross_search`` / ``_combined_cross_search`` を統合。
+    ``ast=None`` (q / adv 両方未指定) は ``match_all`` (ES) / ``*:*`` (Solr) でカウントだけ取る。
     """
-    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
-    status_mode: StatusMode = "include_suppressed" if detect_accession_exact_match(q) is not None else "public_only"
-    query_body = build_search_query(keywords=q, keyword_operator="AND", status_mode=status_mode)
+    status_mode = _resolve_status_mode(ast)
+    es_query_body = _build_es_query_for_ast(ast, status_mode)
+    arsa_q = _build_solr_q_for_ast(ast, dialect="arsa")
+    txsearch_q = _build_solr_q_for_ast(ast, dialect="txsearch")
+    with_uf = ast is not None and ast_has_field_clause(ast)
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
         task = asyncio.create_task(
-            _count_one_db(es_client, solr_client, config, db, query_body, q, top_hits),
+            _count_one_db_unified(
+                es_client,
+                solr_client,
+                config,
+                db,
+                es_query_body,
+                arsa_q,
+                txsearch_q,
+                top_hits,
+                with_uf=with_uf,
+            ),
         )
         task_map[task] = db
     done, pending = await asyncio.wait(
@@ -607,497 +696,35 @@ async def _cross_search(
     return DbPortalCrossSearchResponse(databases=databases)
 
 
-# === Advanced Search DSL cross-db count ===
+# === DB-specific hits (AST 経由 dispatch) ===
+#
+# q / adv / 併用 / 両方未指定 の 4 入力を ``_build_query_ast`` で AST に正規化し,
+# ``_db_specific_search_dispatch`` が ES (offset / cursor は別 path) と
+# Solr 2 DB に振り分ける。cursor 経路は ``_db_specific_search_cursor`` 専用で
+# AST dispatch を通らない (cursor token に焼き込んだ ES query を decode して使う)。
 
 
-async def _count_arsa_adv(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    q_string: str,
-    top_hits: int,
-) -> DbPortalCount:
-    if not config.solr_arsa_base_url:
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    params = build_arsa_adv_params(
-        q=q_string,
-        page=1,
-        per_page=top_hits,
-        sort=None,
-        shards=config.solr_arsa_shards,
-    )
-    try:
-        resp = await asyncio.wait_for(
-            arsa_search(
-                client,
-                base_url=config.solr_arsa_base_url,
-                core=config.solr_arsa_core,
-                params=params,
-            ),
-            timeout=config.arsa_timeout,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "db-portal adv cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
-            config.arsa_timeout,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.timeout,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal adv cross-search failed for db=trad (ARSA): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=error,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    try:
-        count = int(resp["response"]["numFound"])
-    except (KeyError, TypeError, ValueError):
-        logger.warning("db-portal adv cross-search: unexpected ARSA response shape")
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    hits: list[DbPortalLightweightHit] | None = None
-    if top_hits > 0:
-        docs = (resp.get("response") or {}).get("docs") or []
-        hits = arsa_docs_to_lightweight_hits(docs)
-    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
-
-
-async def _count_txsearch_adv(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    q_string: str,
-    top_hits: int,
-) -> DbPortalCount:
-    if not config.solr_txsearch_url:
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    params = build_txsearch_adv_params(
-        q=q_string,
-        page=1,
-        per_page=top_hits,
-        sort=None,
-    )
-    try:
-        resp = await asyncio.wait_for(
-            txsearch_search(
-                client,
-                url=config.solr_txsearch_url,
-                params=params,
-            ),
-            timeout=config.txsearch_timeout,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "db-portal adv cross-search timed out for db=taxonomy (TXSearch, txsearch_timeout=%.2fs)",
-            config.txsearch_timeout,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=DbPortalCountError.timeout,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal adv cross-search failed for db=taxonomy (TXSearch): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=error,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    try:
-        count = int(resp["response"]["numFound"])
-    except (KeyError, TypeError, ValueError):
-        logger.warning("db-portal adv cross-search: unexpected TXSearch response shape")
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    hits: list[DbPortalLightweightHit] | None = None
-    if top_hits > 0:
-        docs = (resp.get("response") or {}).get("docs") or []
-        hits = txsearch_docs_to_lightweight_hits(docs)
-    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None, hits=hits)
-
-
-async def _count_one_db_adv(
-    es_client: httpx.AsyncClient,
-    solr_client: httpx.AsyncClient,
-    config: AppConfig,
-    db: DbPortalDb,
-    es_query_body: dict[str, Any],
-    arsa_q: str,
-    txsearch_q: str,
-    top_hits: int,
-) -> DbPortalCount:
-    if db == DbPortalDb.trad:
-        return await _count_arsa_adv(solr_client, config, arsa_q, top_hits)
-    if db == DbPortalDb.taxonomy:
-        return await _count_txsearch_adv(solr_client, config, txsearch_q, top_hits)
-    return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
-
-
-async def _adv_cross_search(
-    es_client: httpx.AsyncClient,
-    solr_client: httpx.AsyncClient,
-    config: AppConfig,
-    ast: DslNode,
-    top_hits: int,
-) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database adv search (count + optional top hits).
-
-    Compiles the AST once per backend dialect, then fans out 8 DBs via
-    ``asyncio.create_task`` with ``ALL_COMPLETED`` + ``cross_search_total_timeout``.
-    Partial-success policy (200 unless every DB failed) matches the simple-search flow.
-    """
-    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
-    status_mode: StatusMode = (
-        "include_suppressed" if detect_accession_exact_match_in_ast(ast) is not None else "public_only"
-    )
-    es_query_body = inject_status_filter(compile_to_es(ast), status_mode)
-    arsa_q = compile_to_solr(ast, dialect="arsa")
-    txsearch_q = compile_to_solr(ast, dialect="txsearch")
-    task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
-    for db in _DB_ORDER:
-        task = asyncio.create_task(
-            _count_one_db_adv(
-                es_client,
-                solr_client,
-                config,
-                db,
-                es_query_body,
-                arsa_q,
-                txsearch_q,
-                top_hits,
-            ),
-        )
-        task_map[task] = db
-    done, pending = await asyncio.wait(
-        task_map.keys(),
-        timeout=config.cross_search_total_timeout,
-        return_when=asyncio.ALL_COMPLETED,
-    )
-    results: dict[DbPortalDb, DbPortalCount] = {}
-    for task in done:
-        results[task_map[task]] = task.result()
-    for task in pending:
-        task.cancel()
-        db = task_map[task]
-        logger.warning(
-            "db-portal adv cross-search hit total timeout for db=%s (cancelled, total_timeout=%.2fs)",
-            db.value,
-            config.cross_search_total_timeout,
-        )
-        results[db] = DbPortalCount(
-            db=db,
-            count=None,
-            error=DbPortalCountError.timeout,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    databases = [results[db] for db in _DB_ORDER]
-    if all(item.error is not None for item in databases):
-        raise HTTPException(
-            status_code=502,
-            detail="All databases failed to respond.",
-        )
-    return DbPortalCrossSearchResponse(databases=databases)
-
-
-# === Combined q + adv cross-db search ===
-
-
-async def _count_arsa_combined(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    q: str,
-    adv_q: str,
-    top_hits: int,
-) -> DbPortalCount:
-    if not config.solr_arsa_base_url:
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    params = build_arsa_combined_params(
-        keywords=q,
-        adv_q=adv_q,
-        page=1,
-        per_page=top_hits,
-        sort=None,
-        shards=config.solr_arsa_shards,
-    )
-    try:
-        resp = await asyncio.wait_for(
-            arsa_search(
-                client,
-                base_url=config.solr_arsa_base_url,
-                core=config.solr_arsa_core,
-                params=params,
-            ),
-            timeout=config.arsa_timeout,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "db-portal combined cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
-            config.arsa_timeout,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.timeout,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal combined cross-search failed for db=trad (ARSA): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=error,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    try:
-        count = int(resp["response"]["numFound"])
-    except (KeyError, TypeError, ValueError):
-        logger.warning("db-portal combined cross-search: unexpected ARSA response shape")
-        return DbPortalCount(
-            db=DbPortalDb.trad,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    hits: list[DbPortalLightweightHit] | None = None
-    if top_hits > 0:
-        docs = (resp.get("response") or {}).get("docs") or []
-        hits = arsa_docs_to_lightweight_hits(docs)
-    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
-
-
-async def _count_txsearch_combined(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    q: str,
-    adv_q: str,
-    top_hits: int,
-) -> DbPortalCount:
-    if not config.solr_txsearch_url:
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    params = build_txsearch_combined_params(
-        keywords=q,
-        adv_q=adv_q,
-        page=1,
-        per_page=top_hits,
-        sort=None,
-    )
-    try:
-        resp = await asyncio.wait_for(
-            txsearch_search(
-                client,
-                url=config.solr_txsearch_url,
-                params=params,
-            ),
-            timeout=config.txsearch_timeout,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "db-portal combined cross-search timed out for db=taxonomy (TXSearch, txsearch_timeout=%.2fs)",
-            config.txsearch_timeout,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=DbPortalCountError.timeout,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal combined cross-search failed for db=taxonomy (TXSearch): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=error,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    try:
-        count = int(resp["response"]["numFound"])
-    except (KeyError, TypeError, ValueError):
-        logger.warning("db-portal combined cross-search: unexpected TXSearch response shape")
-        return DbPortalCount(
-            db=DbPortalDb.taxonomy,
-            count=None,
-            error=DbPortalCountError.unknown,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    hits: list[DbPortalLightweightHit] | None = None
-    if top_hits > 0:
-        docs = (resp.get("response") or {}).get("docs") or []
-        hits = txsearch_docs_to_lightweight_hits(docs)
-    return DbPortalCount(db=DbPortalDb.taxonomy, count=count, error=None, hits=hits)
-
-
-async def _count_one_db_combined(
-    es_client: httpx.AsyncClient,
-    solr_client: httpx.AsyncClient,
-    config: AppConfig,
-    db: DbPortalDb,
-    es_query_body: dict[str, Any],
-    q: str,
-    arsa_adv_q: str,
-    txsearch_adv_q: str,
-    top_hits: int,
-) -> DbPortalCount:
-    if db == DbPortalDb.trad:
-        return await _count_arsa_combined(solr_client, config, q, arsa_adv_q, top_hits)
-    if db == DbPortalDb.taxonomy:
-        return await _count_txsearch_combined(solr_client, config, q, txsearch_adv_q, top_hits)
-    return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
-
-
-async def _combined_cross_search(
-    es_client: httpx.AsyncClient,
-    solr_client: httpx.AsyncClient,
-    config: AppConfig,
-    q: str,
-    ast: DslNode,
-    top_hits: int,
-) -> DbPortalCrossSearchResponse:
-    """Parallel cross-database search AND-joining ``q`` and ``adv``.
-
-    ES backends combine the q ``multi_match`` clauses with the DSL-
-    compiled bool clause via :func:`build_combined_es_query`.  Solr
-    backends combine the DSL-compiled edismax string with the quoted
-    ``q`` tokens via ``({adv}) AND ({q})``.
-
-    ``status_mode`` is OR-composed: ``include_suppressed`` if either
-    ``q`` or ``adv`` matches the accession exact-match rule
-    (docs/db-portal-api-spec.md § データ可視性).
-    """
-    q_accession = detect_accession_exact_match(q)
-    adv_accession = detect_accession_exact_match_in_ast(ast)
-    status_mode: StatusMode = (
-        "include_suppressed"
-        if (q_accession is not None or adv_accession is not None)
-        else "public_only"
-    )
-    es_query_body = build_combined_es_query(
-        keywords=q,
-        adv_query=compile_to_es(ast),
-        status_mode=status_mode,
-    )
-    arsa_adv_q = compile_to_solr(ast, dialect="arsa")
-    txsearch_adv_q = compile_to_solr(ast, dialect="txsearch")
-    task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
-    for db in _DB_ORDER:
-        task = asyncio.create_task(
-            _count_one_db_combined(
-                es_client,
-                solr_client,
-                config,
-                db,
-                es_query_body,
-                q,
-                arsa_adv_q,
-                txsearch_adv_q,
-                top_hits,
-            ),
-        )
-        task_map[task] = db
-    done, pending = await asyncio.wait(
-        task_map.keys(),
-        timeout=config.cross_search_total_timeout,
-        return_when=asyncio.ALL_COMPLETED,
-    )
-    results: dict[DbPortalDb, DbPortalCount] = {}
-    for task in done:
-        results[task_map[task]] = task.result()
-    for task in pending:
-        task.cancel()
-        db = task_map[task]
-        logger.warning(
-            "db-portal combined cross-search hit total timeout for db=%s (cancelled, total_timeout=%.2fs)",
-            db.value,
-            config.cross_search_total_timeout,
-        )
-        results[db] = DbPortalCount(
-            db=db,
-            count=None,
-            error=DbPortalCountError.timeout,
-            hits=_empty_hits_or_none(top_hits),
-        )
-    databases = [results[db] for db in _DB_ORDER]
-    if all(item.error is not None for item in databases):
-        raise HTTPException(
-            status_code=502,
-            detail="All databases failed to respond.",
-        )
-    return DbPortalCrossSearchResponse(databases=databases)
-
-
-# === Advanced Search DSL db-specific hits ===
-
-
-async def _search_arsa_adv(
+async def _search_arsa_unified(
     client: httpx.AsyncClient,
     config: AppConfig,
     query: DbPortalSearchQuery,
     q_string: str,
+    *,
+    with_uf: bool,
 ) -> DbPortalHitsResponse:
+    """ARSA db-specific search の単一関数版 (旧 ``_search_arsa`` / ``_adv`` / ``_combined`` 統合)."""
     if not config.solr_arsa_base_url:
         raise HTTPException(
             status_code=502,
             detail="ARSA backend is not configured.",
         )
-    params = build_arsa_adv_params(
+    params = build_arsa_request_params(
         q=q_string,
         page=query.page,
         per_page=query.per_page,
         sort=query.sort,
         shards=config.solr_arsa_shards,
+        with_uf=with_uf,
     )
     try:
         resp = await arsa_search(
@@ -1109,7 +736,7 @@ async def _search_arsa_adv(
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
-            "db-portal adv db-specific search failed for db=trad (ARSA): %s (error=%s)",
+            "db-portal db-specific search failed for db=trad (ARSA): %s (error=%s)",
             type(exc).__name__,
             error.value,
         )
@@ -1125,22 +752,26 @@ async def _search_arsa_adv(
     )
 
 
-async def _search_txsearch_adv(
+async def _search_txsearch_unified(
     client: httpx.AsyncClient,
     config: AppConfig,
     query: DbPortalSearchQuery,
     q_string: str,
+    *,
+    with_uf: bool,
 ) -> DbPortalHitsResponse:
+    """TXSearch db-specific search の単一関数版 (旧 ``_search_txsearch`` 系 3 関数の統合)."""
     if not config.solr_txsearch_url:
         raise HTTPException(
             status_code=502,
             detail="TXSearch backend is not configured.",
         )
-    params = build_txsearch_adv_params(
+    params = build_txsearch_request_params(
         q=q_string,
         page=query.page,
         per_page=query.per_page,
         sort=query.sort,
+        with_uf=with_uf,
     )
     try:
         resp = await txsearch_search(
@@ -1151,7 +782,7 @@ async def _search_txsearch_adv(
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
-            "db-portal adv db-specific search failed for db=taxonomy (TXSearch): %s (error=%s)",
+            "db-portal db-specific search failed for db=taxonomy (TXSearch): %s (error=%s)",
             type(exc).__name__,
             error.value,
         )
@@ -1167,12 +798,16 @@ async def _search_txsearch_adv(
     )
 
 
-async def _db_specific_search_es_adv(
+async def _db_specific_search_es_unified(
     client: httpx.AsyncClient,
     query: DbPortalSearchQuery,
     es_query_body: dict[str, Any],
 ) -> DbPortalHitsResponse:
-    """ES hits envelope for adv + db (offset-only; cursor + adv is blocked upstream)."""
+    """ES hits envelope (offset mode).
+
+    cursor 経路は ``_db_specific_search_cursor`` (cursor token に焼き込んだ
+    query を decode して使う) に分離されているため、こちらは offset のみ扱う。
+    """
     assert query.db is not None
     _validate_deep_paging(query.page, query.per_page)
     sort_body = build_sort_with_tiebreaker(query.sort)
@@ -1207,347 +842,45 @@ async def _db_specific_search_es_adv(
     )
 
 
-async def _adv_db_specific_search(
+async def _db_specific_search_dispatch(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
     config: AppConfig,
     query: DbPortalSearchQuery,
-    ast: DslNode,
+    ast: DslNode | None,
 ) -> DbPortalHitsResponse:
-    assert query.db is not None
-    if query.db in _SOLR_DBS:
-        if query.cursor is not None:
-            raise DbPortalHTTPException(
-                status_code=400,
-                type_uri=DbPortalErrorType.cursor_not_supported,
-                detail=(
-                    f"Cursor-based pagination is not supported for db='{query.db.value}'. "
-                    "Use 'page' + 'perPage' (offset-only) instead."
-                ),
-            )
-        _validate_deep_paging(query.page, query.per_page)
-        if query.db == DbPortalDb.trad:
-            return await _search_arsa_adv(
-                solr_client,
-                config,
-                query,
-                compile_to_solr(ast, dialect="arsa"),
-            )
-        return await _search_txsearch_adv(
-            solr_client,
-            config,
-            query,
-            compile_to_solr(ast, dialect="txsearch"),
-        )
-    # ES DB: cursor + adv is blocked by _validate_cursor_exclusivity (adv in conflict list).
-    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
-    status_mode: StatusMode = (
-        "include_suppressed" if detect_accession_exact_match_in_ast(ast) is not None else "public_only"
-    )
-    return await _db_specific_search_es_adv(
-        es_client,
-        query,
-        inject_status_filter(compile_to_es(ast), status_mode),
-    )
+    """AST 一本化後の db-specific 単一 dispatch.
 
+    旧 ``_db_specific_search`` / ``_adv_db_specific_search`` /
+    ``_combined_db_specific_search`` を統合 (cursor 経路を除く).
 
-# === Combined q + adv db-specific hits ===
-
-
-async def _search_arsa_combined(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    query: DbPortalSearchQuery,
-    q: str,
-    adv_q: str,
-) -> DbPortalHitsResponse:
-    if not config.solr_arsa_base_url:
-        raise HTTPException(
-            status_code=502,
-            detail="ARSA backend is not configured.",
-        )
-    params = build_arsa_combined_params(
-        keywords=q,
-        adv_q=adv_q,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-        shards=config.solr_arsa_shards,
-    )
-    try:
-        resp = await arsa_search(
-            client,
-            base_url=config.solr_arsa_base_url,
-            core=config.solr_arsa_core,
-            params=params,
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal combined db-specific search failed for db=trad (ARSA): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"ARSA upstream failure: {error.value}",
-        ) from exc
-    return arsa_response_to_envelope(
-        resp,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-    )
-
-
-async def _search_txsearch_combined(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    query: DbPortalSearchQuery,
-    q: str,
-    adv_q: str,
-) -> DbPortalHitsResponse:
-    if not config.solr_txsearch_url:
-        raise HTTPException(
-            status_code=502,
-            detail="TXSearch backend is not configured.",
-        )
-    params = build_txsearch_combined_params(
-        keywords=q,
-        adv_q=adv_q,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-    )
-    try:
-        resp = await txsearch_search(
-            client,
-            url=config.solr_txsearch_url,
-            params=params,
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal combined db-specific search failed for db=taxonomy (TXSearch): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"TXSearch upstream failure: {error.value}",
-        ) from exc
-    return txsearch_response_to_envelope(
-        resp,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-    )
-
-
-async def _combined_db_specific_search(
-    es_client: httpx.AsyncClient,
-    solr_client: httpx.AsyncClient,
-    config: AppConfig,
-    query: DbPortalSearchQuery,
-    ast: DslNode,
-) -> DbPortalHitsResponse:
-    """AND-join ``q`` and ``adv`` for a db-specific hits search.
-
-    Caller guarantees ``query.q is not None`` and ``query.adv is not
-    None``.  ``cursor`` + ``adv`` is blocked upstream
-    (``cursor-not-supported``); this path is offset-only on both ES and
-    Solr backends.  ``status_mode`` is OR-composed from the ``q`` and
-    ``adv`` accession exact-match checks.
+    ``ast`` が ``BoolOp`` / ``FreeText`` を含むかで Solr ``uf`` 適用を決め
+    (handler が AST 全体を見る)、ES 側は inject_status_filter で
+    accession 解禁を決める。cursor + adv の組合せは handler で 400 を返す
+    既存ロジックを残すため、本 dispatch には cursor 経路を含めない。
     """
     assert query.db is not None
-    assert query.q is not None
-    q_accession = detect_accession_exact_match(query.q)
-    adv_accession = detect_accession_exact_match_in_ast(ast)
-    status_mode: StatusMode = (
-        "include_suppressed"
-        if (q_accession is not None or adv_accession is not None)
-        else "public_only"
-    )
+    with_uf = ast is not None and ast_has_field_clause(ast)
     if query.db in _SOLR_DBS:
         _validate_deep_paging(query.page, query.per_page)
         if query.db == DbPortalDb.trad:
-            return await _search_arsa_combined(
+            return await _search_arsa_unified(
                 solr_client,
                 config,
                 query,
-                query.q,
-                compile_to_solr(ast, dialect="arsa"),
+                _build_solr_q_for_ast(ast, dialect="arsa"),
+                with_uf=with_uf,
             )
-        return await _search_txsearch_combined(
+        return await _search_txsearch_unified(
             solr_client,
             config,
             query,
-            query.q,
-            compile_to_solr(ast, dialect="txsearch"),
+            _build_solr_q_for_ast(ast, dialect="txsearch"),
+            with_uf=with_uf,
         )
-    es_query_body = build_combined_es_query(
-        keywords=query.q,
-        adv_query=compile_to_es(ast),
-        status_mode=status_mode,
-    )
-    return await _db_specific_search_es_adv(es_client, query, es_query_body)
-
-
-# === DB-specific hits search ===
-
-
-async def _db_specific_search(
-    es_client: httpx.AsyncClient,
-    solr_client: httpx.AsyncClient,
-    config: AppConfig,
-    query: DbPortalSearchQuery,
-) -> DbPortalHitsResponse:
-    if query.db in _SOLR_DBS:
-        if query.cursor is not None:
-            assert query.db is not None
-            raise DbPortalHTTPException(
-                status_code=400,
-                type_uri=DbPortalErrorType.cursor_not_supported,
-                detail=(
-                    f"Cursor-based pagination is not supported for db='{query.db.value}'. "
-                    "Use 'page' + 'perPage' (offset-only) instead."
-                ),
-            )
-        _validate_deep_paging(query.page, query.per_page)
-        if query.db == DbPortalDb.trad:
-            return await _search_arsa(solr_client, config, query)
-        return await _search_txsearch(solr_client, config, query)
-    if query.cursor is not None:
-        return await _db_specific_search_cursor(es_client, query)
-    return await _db_specific_search_offset(es_client, query)
-
-
-async def _search_arsa(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    query: DbPortalSearchQuery,
-) -> DbPortalHitsResponse:
-    if not config.solr_arsa_base_url:
-        raise HTTPException(
-            status_code=502,
-            detail="ARSA backend is not configured.",
-        )
-    params = build_arsa_params(
-        keywords=query.q,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-        shards=config.solr_arsa_shards,
-    )
-    try:
-        resp = await arsa_search(
-            client,
-            base_url=config.solr_arsa_base_url,
-            core=config.solr_arsa_core,
-            params=params,
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal db-specific search failed for db=trad (ARSA): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"ARSA upstream failure: {error.value}",
-        ) from exc
-    return arsa_response_to_envelope(
-        resp,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-    )
-
-
-async def _search_txsearch(
-    client: httpx.AsyncClient,
-    config: AppConfig,
-    query: DbPortalSearchQuery,
-) -> DbPortalHitsResponse:
-    if not config.solr_txsearch_url:
-        raise HTTPException(
-            status_code=502,
-            detail="TXSearch backend is not configured.",
-        )
-    params = build_txsearch_params(
-        keywords=query.q,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-    )
-    try:
-        resp = await txsearch_search(
-            client,
-            url=config.solr_txsearch_url,
-            params=params,
-        )
-    except Exception as exc:
-        error = _map_httpx_error(exc)
-        logger.warning(
-            "db-portal db-specific search failed for db=taxonomy (TXSearch): %s (error=%s)",
-            type(exc).__name__,
-            error.value,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"TXSearch upstream failure: {error.value}",
-        ) from exc
-    return txsearch_response_to_envelope(
-        resp,
-        page=query.page,
-        per_page=query.per_page,
-        sort=query.sort,
-    )
-
-
-async def _db_specific_search_offset(
-    client: httpx.AsyncClient,
-    query: DbPortalSearchQuery,
-) -> DbPortalHitsResponse:
-    assert query.db is not None
-    _validate_deep_paging(query.page, query.per_page)
-    # status filter 仕様は docs/db-portal-api-spec.md § データ可視性 (status 制御)。
-    # cursor 経路は CursorPayload.query 経由で本 query を焼き込み、後続継続でも同じ status_mode を保つ。
-    status_mode: StatusMode = (
-        "include_suppressed" if detect_accession_exact_match(query.q) is not None else "public_only"
-    )
-    es_query = build_search_query(keywords=query.q, keyword_operator="AND", status_mode=status_mode)
-    sort_body = build_sort_with_tiebreaker(query.sort)
-    from_, size = pagination_to_from_size(query.page, query.per_page)
-    body: dict[str, Any] = {
-        "query": es_query,
-        "from": from_,
-        "size": size,
-        "sort": sort_body,
-    }
-    es_resp = await es_search(client, _db_to_index(query.db), body)
-    raw_hits = es_resp["hits"]["hits"]
-    total = int(es_resp["hits"]["total"]["value"])
-    hits = [_hit_from_source(h) for h in raw_hits]
-    next_cursor, has_next = compute_next_cursor(
-        raw_hits=raw_hits,
-        size=size,
-        total=total,
-        offset=from_,
-        sort_with_tiebreaker=sort_body,
-        query=es_query,
-        pit_id=None,
-    )
-    return DbPortalHitsResponse(  # type: ignore[call-arg]
-        total=total,
-        hits=hits,
-        hard_limit_reached=(total >= _DEEP_PAGING_LIMIT),
-        page=query.page,
-        per_page=query.per_page,
-        next_cursor=next_cursor,
-        has_next=has_next,
-    )
+    status_mode = _resolve_status_mode(ast)
+    es_query_body = _build_es_query_for_ast(ast, status_mode)
+    return await _db_specific_search_es_unified(es_client, query, es_query_body)
 
 
 async def _db_specific_search_cursor(
@@ -1626,16 +959,16 @@ async def _cross_search_handler(
     solr_client: httpx.AsyncClient = Depends(get_solr_client),
     config: AppConfig = Depends(_get_config_dep),
 ) -> DbPortalCrossSearchResponse:
-    """``GET /db-portal/cross-search``: cross-database count + top hits search."""
+    """``GET /db-portal/cross-search``: cross-database count + top hits search.
+
+    ``q`` / ``adv`` / 併用 / 両方未指定 の 4 入力パターンを ``_build_query_ast``
+    で AST に正規化し、単一 ``_cross_search_dispatch`` に渡す。AST 一本化方針は
+    docs/db-portal-api-spec.md § 内部モデル参照。
+    """
     _reject_unexpected_cross_params(request)
-    ast = _parse_and_validate_dsl(query.adv, db=None, config=config) if query.adv is not None else None
-    if query.q is not None and ast is not None:
-        return await _combined_cross_search(
-            es_client, solr_client, config, query.q, ast, query.top_hits,
-        )
-    if ast is not None:
-        return await _adv_cross_search(es_client, solr_client, config, ast, query.top_hits)
-    return await _cross_search(es_client, solr_client, config, query.q, query.top_hits)
+    adv_ast = _parse_and_validate_dsl(query.adv, db=None, config=config) if query.adv is not None else None
+    ast = _build_query_ast(query.q, adv_ast)
+    return await _cross_search_dispatch(es_client, solr_client, config, ast, query.top_hits)
 
 
 async def _db_search_handler(
@@ -1644,7 +977,12 @@ async def _db_search_handler(
     solr_client: httpx.AsyncClient = Depends(get_solr_client),
     config: AppConfig = Depends(_get_config_dep),
 ) -> DbPortalHitsResponse:
-    """``GET /db-portal/search``: db-specific hits search."""
+    """``GET /db-portal/search``: db-specific hits search.
+
+    cursor 経路 (旧 ``_db_specific_search_cursor``) は cursor token に焼き込んだ
+    ES query を decode して継続する設計のため、AST dispatch には流さない。
+    cursor + adv / cursor + q は ``_validate_cursor_exclusivity`` で弾く。
+    """
     if query.db is None:
         raise DbPortalHTTPException(
             status_code=400,
@@ -1655,8 +993,10 @@ async def _db_search_handler(
                 "For cross-database count, use /db-portal/cross-search."
             ),
         )
-    if query.adv is not None:
-        if query.cursor is not None:
+    # cursor 経路 (cursor が指定されており adv なし) は既存ロジックを維持。
+    # cursor + adv は cursor-not-supported で弾く (旧挙動踏襲).
+    if query.cursor is not None:
+        if query.adv is not None:
             if query.db in _SOLR_DBS:
                 raise DbPortalHTTPException(
                     status_code=400,
@@ -1674,13 +1014,20 @@ async def _db_search_handler(
                     "Advanced Search uses offset pagination; omit 'cursor' to paginate."
                 ),
             )
-        ast = _parse_and_validate_dsl(query.adv, db=query.db, config=config)
-        if query.q is not None:
-            return await _combined_db_specific_search(
-                es_client, solr_client, config, query, ast,
+        if query.db in _SOLR_DBS:
+            raise DbPortalHTTPException(
+                status_code=400,
+                type_uri=DbPortalErrorType.cursor_not_supported,
+                detail=(
+                    f"Cursor-based pagination is not supported for db='{query.db.value}'. "
+                    "Use 'page' + 'perPage' (offset-only) instead."
+                ),
             )
-        return await _adv_db_specific_search(es_client, solr_client, config, query, ast)
-    return await _db_specific_search(es_client, solr_client, config, query)
+        return await _db_specific_search_cursor(es_client, query)
+    # offset 経路: q / adv / 併用 / 両方未指定 を AST に正規化して dispatch.
+    adv_ast = _parse_and_validate_dsl(query.adv, db=query.db, config=config) if query.adv is not None else None
+    ast = _build_query_ast(query.q, adv_ast)
+    return await _db_specific_search_dispatch(es_client, solr_client, config, query, ast)
 
 
 router.add_api_route(
