@@ -962,12 +962,58 @@ async def _db_search_handler(
     return await _db_specific_search_dispatch(es_client, solr_client, config, query, ast)
 
 
+_CROSS_SEARCH_EXAMPLE: dict[str, Any] = {
+    "databases": [
+        {
+            "db": "trad",
+            "count": None,
+            "error": "timeout",
+            "hits": [],
+        },
+        {
+            "db": "sra",
+            "count": 1234,
+            "error": None,
+            "hits": [
+                {
+                    "identifier": "DRR123456",
+                    "type": "sra-run",
+                    "url": "https://ddbj.nig.ac.jp/search/entry/sra-run/DRR123456",
+                    "title": "Whole-genome sequencing of Homo sapiens",
+                    "description": None,
+                    "organism": {"identifier": "9606", "name": "Homo sapiens"},
+                    "status": "public",
+                    "accessibility": "public-access",
+                    "dateCreated": "2024-01-01",
+                    "dateModified": "2024-06-01",
+                    "datePublished": "2024-01-15",
+                    "isPartOf": "sra",
+                },
+            ],
+        },
+        {"db": "bioproject", "count": 567, "error": None, "hits": []},
+        {"db": "biosample", "count": 890, "error": None, "hits": []},
+        {"db": "jga", "count": 12, "error": None, "hits": []},
+        {"db": "gea", "count": 34, "error": None, "hits": []},
+        {"db": "metabobank", "count": 5, "error": None, "hits": []},
+        {"db": "taxonomy", "count": 12, "error": None, "hits": []},
+    ],
+}
+
+
 router.add_api_route(
     "/db-portal/cross-search",
     _cross_search_handler,
     methods=["GET"],
     response_model=DbPortalCrossSearchResponse,
     responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": _CROSS_SEARCH_EXAMPLE,
+                },
+            },
+        },
         400: {
             "description": ("Bad Request (unexpected parameter, query parse/validate error)."),
             "model": ProblemDetails,
@@ -994,12 +1040,67 @@ router.add_api_route(
 )
 
 
+_SEARCH_HIT_EXAMPLE: dict[str, Any] = {
+    "identifier": "PRJDB1234",
+    "type": "bioproject",
+    "title": "Whole-genome sequencing of Homo sapiens",
+    "description": "Reference genome assembly with deep coverage.",
+    "organism": {"identifier": "9606", "name": "Homo sapiens"},
+    "datePublished": "2024-01-15",
+    "dateModified": "2024-06-01",
+    "dateCreated": "2024-01-01",
+    "url": "https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1234",
+    "sameAs": [],
+    "dbXrefs": None,
+    "status": "public",
+    "accessibility": "public-access",
+    "projectType": "BioProject",
+    "organization": [],
+    "publication": [],
+    "grant": [],
+    "externalLink": [],
+    "relevance": ["Medical"],
+}
+
+
 router.add_api_route(
     "/db-portal/search",
     _db_search_handler,
     methods=["GET"],
     response_model=DbPortalHitsResponse,
     responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "offset_mode": {
+                            "summary": "Offset mode (first page, more results pending)",
+                            "value": {
+                                "total": 1234,
+                                "hits": [_SEARCH_HIT_EXAMPLE],
+                                "hardLimitReached": False,
+                                "page": 1,
+                                "perPage": 20,
+                                "nextCursor": "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456",
+                                "hasNext": True,
+                            },
+                        },
+                        "cursor_mode": {
+                            "summary": "Cursor mode (continued, last page)",
+                            "value": {
+                                "total": 1234,
+                                "hits": [_SEARCH_HIT_EXAMPLE],
+                                "hardLimitReached": False,
+                                "page": None,
+                                "perPage": 20,
+                                "nextCursor": None,
+                                "hasNext": False,
+                            },
+                        },
+                    },
+                },
+            },
+        },
         400: {
             "description": (
                 "Bad Request (missing-db, cursor exclusivity, "

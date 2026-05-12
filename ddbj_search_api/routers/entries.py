@@ -60,6 +60,72 @@ from ddbj_search_api.search.accession import detect_accession_exact_match
 from ddbj_search_api.utils import parse_facets
 
 _LIST_ENTRIES_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "content": {
+            "application/json": {
+                "example": {
+                    "pagination": {
+                        "page": 1,
+                        "perPage": 10,
+                        "total": 1234,
+                        "nextCursor": None,
+                        "hasNext": True,
+                    },
+                    "items": [
+                        {
+                            "identifier": "PRJDB1234",
+                            "type": "bioproject",
+                            "url": "https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1234",
+                            "title": "Whole-genome sequencing of Homo sapiens",
+                            "description": "Reference genome assembly with deep coverage.",
+                            "organism": {"identifier": "9606", "name": "Homo sapiens"},
+                            "status": "public",
+                            "accessibility": "public-access",
+                            "datePublished": "2024-01-15",
+                            "dateModified": "2024-06-01",
+                            "dateCreated": "2024-01-01",
+                            "dbXrefs": [
+                                {
+                                    "identifier": "SAMD00012345",
+                                    "type": "biosample",
+                                    "url": "https://ddbj.nig.ac.jp/search/entry/biosample/SAMD00012345",
+                                },
+                            ],
+                            "dbXrefsCount": {"biosample": 5, "sra-experiment": 12},
+                        },
+                        {
+                            "identifier": "PRJDB1235",
+                            "type": "bioproject",
+                            "url": "https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1235",
+                            "title": "Transcriptome analysis of Mus musculus liver",
+                            "description": "RNA-seq across 10 tissue samples.",
+                            "organism": {"identifier": "10090", "name": "Mus musculus"},
+                            "status": "public",
+                            "accessibility": "public-access",
+                            "datePublished": "2024-02-20",
+                            "dateModified": "2024-02-20",
+                            "dateCreated": "2024-02-20",
+                            "dbXrefs": [],
+                            "dbXrefsCount": {},
+                        },
+                    ],
+                    "facets": {
+                        "type": [
+                            {"value": "bioproject", "count": 1234},
+                            {"value": "biosample", "count": 567},
+                        ],
+                        "organism": [
+                            {"value": "9606", "count": 1000, "label": "Homo sapiens"},
+                            {"value": "10090", "count": 234, "label": "Mus musculus"},
+                        ],
+                        "accessibility": [
+                            {"value": "public-access", "count": 1234},
+                        ],
+                    },
+                },
+            },
+        },
+    },
     400: {
         "description": (
             "Bad Request (deep paging limit exceeded, cursor combined with mutually exclusive params, "

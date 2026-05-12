@@ -29,8 +29,11 @@ from tests._factories import (
     make_sra_dict,
 )
 
-_ROLE_VALUES: tuple[str, ...] = get_args(OrganizationRole)
-_ORG_TYPE_VALUES: tuple[str, ...] = get_args(OrganizationType)
+# ``OrganizationRole`` / ``OrganizationType`` are ``Annotated[Literal[...], Field(...)]``
+# so ``get_args`` returns ``(Literal[...], FieldInfo(...))``; unwrap one
+# layer to reach the underlying enum values.
+_ROLE_VALUES: tuple[str, ...] = get_args(get_args(OrganizationRole)[0])
+_ORG_TYPE_VALUES: tuple[str, ...] = get_args(get_args(OrganizationType)[0])
 
 # === Publication ===
 

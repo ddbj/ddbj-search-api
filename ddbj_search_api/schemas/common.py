@@ -48,7 +48,14 @@ DB_TYPE_DISPLAY: dict[DbType, str] = {
 
 
 class Pagination(BaseModel):
-    """Pagination metadata (supports both offset and cursor modes)."""
+    """Pagination metadata (supports both offset and cursor modes).
+
+    Two schema-level examples are attached: the first represents offset
+    mode (``page=1``, ``nextCursor`` populated, ``hasNext=true``), the
+    second represents cursor mode on the last page (``page=null``,
+    ``nextCursor=null``, ``hasNext=false``). OpenAPI 3.1 schema-level
+    examples cannot carry labels, so the order is the contract.
+    """
 
     # Examples are attached to the schema in ``main.custom_openapi`` because
     # Pydantic strips ``None`` values from ``json_schema_extra`` examples,

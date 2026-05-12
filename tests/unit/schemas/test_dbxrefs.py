@@ -12,7 +12,10 @@ from pydantic import ValidationError
 
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
 
-_XREF_TYPE_VALUES: list[str] = list(get_args(XrefType))
+# ``XrefType`` is ``Annotated[Literal[...], Field(...)]`` so ``get_args``
+# returns ``(Literal[...], FieldInfo(...))``; unwrap one layer to reach
+# the underlying enum values.
+_XREF_TYPE_VALUES: list[str] = list(get_args(get_args(XrefType)[0]))
 
 xref_strategy = st.builds(
     Xref,

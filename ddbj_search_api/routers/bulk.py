@@ -203,7 +203,11 @@ async def _generate_bulk_ndjson(
                 "application/x-ndjson": {
                     "schema": {
                         "type": "string",
-                        "description": ("One JSON object per line (NDJSON). Each line is an entry document."),
+                        "description": (
+                            "One JSON object per line (NDJSON). Each line is an entry document. "
+                            "Missing or hidden (private / withdrawn) ids are silently skipped in NDJSON mode; "
+                            "the `notFound` array is only available in `format=json` mode."
+                        ),
                     },
                 },
             },

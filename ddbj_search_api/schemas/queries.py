@@ -403,7 +403,7 @@ class BioProjectExtraQuery:
             pattern=_OBJECT_TYPES_PATTERN,
             examples=["BioProject,UmbrellaBioProject"],
             description=(
-                "Filter by BioProject objectType (comma-separated). "
+                "Term filter on objectType.keyword (comma-separated values are OR'd). "
                 "Allowed: BioProject, UmbrellaBioProject. "
                 "Specifying both is equivalent to omitting the filter."
             ),

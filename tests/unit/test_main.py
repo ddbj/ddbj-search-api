@@ -13,6 +13,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from openapi_spec_validator import validate as validate_openapi_spec
 
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.main import create_app
@@ -266,6 +267,265 @@ class TestOpenAPIRequiredArrayFields:
         target = schema["components"]["schemas"][schema_name]
         required = target.get("required", [])
         assert field in required, f"OpenAPI schema {schema_name}: required does not include {field}"
+
+
+# === OpenAPI descriptions on converter-origin schemas ===
+
+
+_CONVERTER_ENTITY_SCHEMAS: tuple[str, ...] = (
+    "BioProject",
+    "BioSample",
+    "SRA",
+    "JGA",
+    "GEA",
+    "MetaboBank",
+)
+
+_CONVERTER_NESTED_SCHEMAS: tuple[str, ...] = (
+    "Distribution",
+    "Organism",
+    "Organization",
+    "Publication",
+    "Grant",
+    "ExternalLink",
+    "Xref",
+    "BioSamplePackage",
+)
+
+_CONVERTER_SCHEMAS: tuple[str, ...] = _CONVERTER_ENTITY_SCHEMAS + _CONVERTER_NESTED_SCHEMAS
+
+# Enum-bearing fields whose description must spell out the value semantics
+# (rather than just labelling the field). Limited to enums with small
+# value spaces where listing each value's meaning is feasible; broader
+# enums (`Xref.type` with 21 values, `Organization.organizationType`)
+# carry a categorical description instead.
+_CONVERTER_ENUM_DESCRIPTION_KEYWORDS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("Organization", "role", ("owner", "broker")),
+    ("Publication", "dbType", ("pubmed", "doi")),
+    ("Distribution", "encodingFormat", ("JSON", "FASTQ")),
+    ("BioProject", "objectType", ("UmbrellaBioProject",)),
+]
+
+
+class TestOpenAPIConverterDescriptions:
+    """Converter-origin schemas surface description + ``additionalProperties`` so TS codegen produces JSDoc.
+
+    These assertions catch regressions where a future converter refactor
+    drops a ``Field(description=...)`` or unwraps the ``properties:
+    dict[str, Any]`` blob back into bare ``Any``.
+    """
+
+    @pytest.fixture(scope="class")
+    def schema(self) -> dict[str, Any]:
+        return create_app(AppConfig()).openapi()
+
+    @pytest.mark.parametrize("schema_name", _CONVERTER_SCHEMAS)
+    def test_schema_level_description_present(
+        self,
+        schema: dict[str, Any],
+        schema_name: str,
+    ) -> None:
+        target = schema["components"]["schemas"][schema_name]
+        assert target.get("description"), f"{schema_name}: schema-level description missing"
+
+    @pytest.mark.parametrize("schema_name", _CONVERTER_SCHEMAS)
+    def test_every_field_has_description(
+        self,
+        schema: dict[str, Any],
+        schema_name: str,
+    ) -> None:
+        target = schema["components"]["schemas"][schema_name]
+        missing = [
+            field_name
+            for field_name, field_schema in target.get("properties", {}).items()
+            if not field_schema.get("description")
+        ]
+        assert not missing, f"{schema_name}: fields missing description: {missing}"
+
+    @pytest.mark.parametrize("schema_name", _CONVERTER_ENTITY_SCHEMAS)
+    def test_properties_opaque_blob_has_additional_properties_and_description(
+        self,
+        schema: dict[str, Any],
+        schema_name: str,
+    ) -> None:
+        properties_field = schema["components"]["schemas"][schema_name]["properties"]["properties"]
+        assert properties_field.get("additionalProperties") is True, (
+            f"{schema_name}.properties: missing additionalProperties=true (TS codegen falls back to opaque)"
+        )
+        assert properties_field.get("description"), (
+            f"{schema_name}.properties: missing description (round-trip blob would look unintentional)"
+        )
+
+    @pytest.mark.parametrize(
+        ("schema_name", "field_name", "required_substrings"),
+        [
+            (schema_name, field_name, required_substrings)
+            for schema_name, field_name, required_substrings in _CONVERTER_ENUM_DESCRIPTION_KEYWORDS
+        ],
+    )
+    def test_enum_field_description_contains_value_semantics(
+        self,
+        schema: dict[str, Any],
+        schema_name: str,
+        field_name: str,
+        required_substrings: tuple[str, ...],
+    ) -> None:
+        # Enum-typed fields are emitted either inline ($ref) or with their
+        # description on the parent property.  Inspect both layers.
+        property_schema = schema["components"]["schemas"][schema_name]["properties"][field_name]
+        descriptions: list[str] = []
+        if "description" in property_schema:
+            descriptions.append(property_schema["description"])
+        for layer in property_schema.get("anyOf", []):
+            if "description" in layer:
+                descriptions.append(layer["description"])
+            ref = layer.get("$ref")
+            if ref:
+                ref_name = ref.rsplit("/", 1)[-1]
+                ref_schema = schema["components"]["schemas"].get(ref_name, {})
+                if "description" in ref_schema:
+                    descriptions.append(ref_schema["description"])
+        if "$ref" in property_schema:
+            ref_name = property_schema["$ref"].rsplit("/", 1)[-1]
+            ref_schema = schema["components"]["schemas"].get(ref_name, {})
+            if "description" in ref_schema:
+                descriptions.append(ref_schema["description"])
+        combined = " ".join(descriptions)
+        missing = [s for s in required_substrings if s not in combined]
+        assert not missing, (
+            f"{schema_name}.{field_name}: enum description missing keywords {missing}. "
+            f"Combined description: {combined!r}"
+        )
+
+
+# === OpenAPI 3.1 spec compliance ===
+
+
+class TestOpenAPISpecCompliance:
+    """``openapi-spec-validator`` accepts the generated schema as a valid OpenAPI 3.1 document."""
+
+    def test_spec_validates(self) -> None:
+        spec = create_app(AppConfig()).openapi()
+        validate_openapi_spec(spec)  # raises OpenAPIValidationError on any structural issue
+
+
+# === OpenAPI response examples on flagship endpoints ===
+
+
+_EXAMPLE_ENDPOINTS: list[tuple[str, str]] = [
+    ("/entries/", "get"),
+    ("/entries/{type}/{id}", "get"),
+    ("/db-portal/cross-search", "get"),
+    ("/db-portal/search", "get"),
+]
+
+
+class TestOpenAPIResponseExamples:
+    """Flagship endpoints carry an operation-level example on their 200 response.
+
+    Without these, Swagger UI ``Try it out`` falls back to schema-only
+    rendering and the response body shape is hard to grasp at a glance.
+    """
+
+    @pytest.fixture(scope="class")
+    def schema(self) -> dict[str, Any]:
+        return create_app(AppConfig()).openapi()
+
+    @pytest.mark.parametrize(("path", "method"), _EXAMPLE_ENDPOINTS)
+    def test_200_has_example(
+        self,
+        schema: dict[str, Any],
+        path: str,
+        method: str,
+    ) -> None:
+        operation = schema["paths"][path][method]
+        json_body = operation["responses"]["200"]["content"]["application/json"]
+        has_single = "example" in json_body
+        has_named = "examples" in json_body and bool(json_body["examples"])
+        assert has_single or has_named, (
+            f"{method.upper()} {path}: 200 response has neither 'example' nor 'examples' on application/json"
+        )
+
+
+# === OpenAPI type-specific query semantics labels ===
+
+
+_QUERY_SEMANTICS_ENDPOINTS_PARAMS: list[tuple[str, str]] = [
+    # BioProject
+    ("/entries/bioproject/", "objectTypes"),
+    ("/entries/bioproject/", "externalLinkLabel"),
+    ("/entries/bioproject/", "projectType"),
+    # BioSample
+    ("/entries/biosample/", "derivedFromId"),
+    ("/entries/biosample/", "host"),
+    ("/entries/biosample/", "strain"),
+    ("/entries/biosample/", "geoLocName"),
+    # SRA-experiment (carries the full SRA filter set)
+    ("/entries/sra-experiment/", "libraryStrategy"),
+    ("/entries/sra-experiment/", "libraryName"),
+    ("/entries/sra-experiment/", "derivedFromId"),
+    # JGA-study
+    ("/entries/jga-study/", "studyType"),
+    ("/entries/jga-study/", "vendor"),
+    ("/entries/jga-study/", "externalLinkLabel"),
+    # GEA / MetaboBank
+    ("/entries/gea/", "experimentType"),
+    ("/entries/metabobank/", "studyType"),
+]
+
+_QUERY_SEMANTICS_LABELS = ("Term filter", "Text match", "Nested filter")
+
+
+class TestOpenAPIQuerySemantics:
+    """Type-specific search parameters surface their backend semantics label.
+
+    Every type-specific param description starts with one of
+    ``Term filter`` / ``Text match`` / ``Nested filter`` so downstream
+    consumers can distinguish exact-match vs analyzed vs nested behaviour
+    from the OpenAPI description alone.
+    """
+
+    @pytest.fixture(scope="class")
+    def schema(self) -> dict[str, Any]:
+        return create_app(AppConfig()).openapi()
+
+    @pytest.mark.parametrize(("path", "param_name"), _QUERY_SEMANTICS_ENDPOINTS_PARAMS)
+    def test_param_description_carries_semantics_label(
+        self,
+        schema: dict[str, Any],
+        path: str,
+        param_name: str,
+    ) -> None:
+        operation = schema["paths"][path]["get"]
+        params = {p["name"]: p for p in operation.get("parameters", [])}
+        assert param_name in params, f"GET {path}: parameter '{param_name}' not in OpenAPI spec"
+        description = params[param_name].get("description", "")
+        assert any(label in description for label in _QUERY_SEMANTICS_LABELS), (
+            f"GET {path} parameter '{param_name}': description missing semantics label "
+            f"({_QUERY_SEMANTICS_LABELS}). Got: {description!r}"
+        )
+
+
+# === OpenAPI bulk NDJSON description ===
+
+
+class TestOpenAPINdjsonDescription:
+    """Bulk NDJSON response description spells out the notFound discrepancy.
+
+    NDJSON skips missing / hidden ids silently; without explicit mention
+    callers expect the JSON-mode ``notFound`` array to also appear.
+    """
+
+    def test_ndjson_description_mentions_not_found_skip(self) -> None:
+        schema = create_app(AppConfig()).openapi()
+        ndjson = schema["paths"]["/entries/{type}/bulk"]["post"]["responses"]["200"]["content"][
+            "application/x-ndjson"
+        ]["schema"]
+        description = ndjson.get("description", "")
+        assert "notFound" in description, f"NDJSON schema description must mention notFound. Got: {description!r}"
+        assert "silently skipped" in description or "skipped" in description, (
+            f"NDJSON schema description must mention that missing/hidden ids are skipped. Got: {description!r}"
+        )
 
 
 # === Lifespan: Solr client ===

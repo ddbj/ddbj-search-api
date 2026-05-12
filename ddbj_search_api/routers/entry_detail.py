@@ -436,6 +436,69 @@ async def get_dbxrefs_full(
 # Registered last: catch-all for bare IDs (no extension).
 
 
+_DETAIL_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "content": {
+            "application/json": {
+                "example": {
+                    "identifier": "PRJDB1234",
+                    "properties": {},
+                    "distribution": [
+                        {
+                            "type": "DataDownload",
+                            "encodingFormat": "JSON",
+                            "contentUrl": (
+                                "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJDB1234.json"
+                            ),
+                        },
+                    ],
+                    "isPartOf": "bioproject",
+                    "type": "bioproject",
+                    "objectType": "BioProject",
+                    "name": "PRJDB1234",
+                    "url": "https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB1234",
+                    "organism": {"identifier": "9606", "name": "Homo sapiens"},
+                    "title": "Whole-genome sequencing of Homo sapiens",
+                    "description": "Reference genome assembly with deep coverage.",
+                    "projectType": ["genome sequencing"],
+                    "relevance": ["Medical"],
+                    "organization": [
+                        {
+                            "name": "DDBJ",
+                            "abbreviation": "DDBJ",
+                            "role": "submitter",
+                            "organizationType": "institute",
+                            "department": None,
+                            "url": None,
+                        },
+                    ],
+                    "publication": [],
+                    "grant": [],
+                    "externalLink": [],
+                    "dbXrefs": [
+                        {
+                            "identifier": "SAMD00012345",
+                            "type": "biosample",
+                            "url": "https://ddbj.nig.ac.jp/search/entry/biosample/SAMD00012345",
+                        },
+                    ],
+                    "parentBioProjects": [],
+                    "childBioProjects": [],
+                    "sameAs": [],
+                    "status": "public",
+                    "accessibility": "public-access",
+                    "dateCreated": "2024-01-01",
+                    "dateModified": "2024-06-01",
+                    "datePublished": "2024-01-15",
+                    "dbXrefsCount": {"biosample": 5, "sra-experiment": 12},
+                },
+            },
+        },
+    },
+    **_DETAIL_ERRORS,
+}
+
+
 @router.get(
     "/entries/{type}/{id}",
     response_model=DetailResponse,
@@ -450,7 +513,7 @@ async def get_dbxrefs_full(
         "SraDetailResponse, or JgaDetailResponse."
     ),
     operation_id="getEntryDetail",
-    responses=_DETAIL_ERRORS,
+    responses=_DETAIL_RESPONSES,
 )
 async def get_entry_detail(
     type: DbType = Path(description="Database type."),

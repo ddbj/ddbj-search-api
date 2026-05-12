@@ -35,6 +35,7 @@ tests = [
     "ruff",
     "mypy",
     "hypothesis",
+    "openapi-spec-validator",
 ]
 
 [project.scripts]
