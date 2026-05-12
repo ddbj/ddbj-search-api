@@ -18,7 +18,11 @@ router = APIRouter(tags=["Service Info"])
     "/service-info",
     response_model=ServiceInfoResponse,
     summary="Get service information",
-    description=("Returns service metadata including name, version, and Elasticsearch connectivity status."),
+    description=(
+        "Service metadata (name / version / description) plus Elasticsearch reachability. "
+        "Returns 200 regardless of Elasticsearch health; the `elasticsearch` field reports the actual state. "
+        "Intended for liveness probes and deploy verification."
+    ),
     operation_id="getServiceInfo",
 )
 async def get_service_info(

@@ -264,11 +264,18 @@ async def _traverse_downward(
     operation_id="getUmbrellaTree",
     responses={
         404: {
-            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "description": (
+                "Not Found (entry does not exist, or is withdrawn / private). "
+                "The detail message is a fixed string identical to the missing-entry case."
+            ),
             "model": ProblemDetails,
         },
         422: {
             "description": "Unprocessable Entity (path validation error).",
+            "model": ProblemDetails,
+        },
+        500: {
+            "description": "Internal Server Error (Elasticsearch unreachable, or traversal depth exceeded).",
             "model": ProblemDetails,
         },
     },

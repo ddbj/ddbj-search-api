@@ -9,7 +9,7 @@
 `IT-{機能}-{連番 2 桁}` の形式で振る。例: `IT-DSL-01`, `IT-STATUS-03`, `IT-DBPORTAL-12`。
 
 - 機能ごとに連番をリセット
-- 削除したシナリオの ID は **再利用しない** (履歴互換性)
+- 削除したシナリオの ID は **再利用しない**
 - 機能名は固定リスト (下記カテゴリ): `CORE`, `SEARCH`, `DETAIL`, `BULK`, `FACETS`, `UMBRELLA`, `DSL`, `DBPORTAL`, `STATUS`, `DBLINK`
 - IT 1 件 = test 関数 1 件 (parametrize で複数ケースを 1 関数に展開してよい)。test 関数の docstring に `IT-XXX-NN` を明記して双方向にトレース可能にする
 
@@ -40,7 +40,7 @@
 | 正常系 | 主要パス、sameAs フォールバック、alias ヒット、DSL 各演算子 | 全カテゴリ |
 | 境界値 | ページネーション境界、cursor 期限、`perPage` 上下限、`topHits` 上下限、`hardLimitReached` 閾値、DSL ネスト深さ上限 | SEARCH / DBPORTAL / BULK / DSL |
 | 異常系 | 422 (Pydantic) / 400 (業務エラー) / 404 / 500 / 502、RFC 7807 形式、DSL 7 slug | 全カテゴリ |
-| status filter | `withdrawn` / `private` 常に除外、`suppressed` はアクセッション完全一致 (q) または single leaf `identifier:` eq (adv) のみ解放 | DETAIL / SEARCH / BULK / UMBRELLA / FACETS / STATUS / DBPORTAL |
+| status filter | `withdrawn` / `private` 常に除外、`suppressed` は `q` がアクセッション完全一致 (free text) または single leaf `identifier:` eq のときのみ解放 | DETAIL / SEARCH / BULK / UMBRELLA / FACETS / STATUS / DBPORTAL |
 | Solr 依存 | ARSA (8-shard fan-out) / TXSearch、cursor 非対応 | DBPORTAL / STATUS の Solr 部分のみ (`@pytest.mark.staging_only`) |
 
 ---
@@ -930,30 +930,30 @@
 
 ### IT-DSL-01: ES wildcard が `case_insensitive: true` で大文字小文字を吸収
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=title:cancer*` ↔ `?adv=title:Cancer*`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=title:cancer*` ↔ `?q=title:Cancer*`
 
 **不変条件**:
 - 両クエリの `total` が一致 (case 違いに依存しない)
 - `keyword` 系フィールドでも tokenized text でも対称に動く
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
 
-### IT-DSL-02: cursor + adv 同時指定で `cursor-not-supported` 400 (ES DB)
+### IT-DSL-02: cursor + field clause 含む `q` で `cursor-not-supported` 400 (ES DB)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=title:cancer&cursor=<token>`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=title:cancer&cursor=<token>`
 
 **不変条件**:
 - `status_code == 400`
 - `type` URI が `cursor-not-supported` slug を含む
-- adv は offset-only
+- `field:value` を含む `q` は offset-only
 
 **回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
-### IT-DSL-03: cursor + adv 同時指定で `cursor-not-supported` 400 (Solr DB) — staging_only
+### IT-DSL-03: cursor + field clause 含む `q` で `cursor-not-supported` 400 (Solr DB) — staging_only
 
-**endpoint**: `GET /db-portal/search?db=trad&adv=title:cancer&cursor=<token>` (`@pytest.mark.staging_only`)
+**endpoint**: `GET /db-portal/search?db=trad&q=title:cancer&cursor=<token>` (`@pytest.mark.staging_only`)
 
 **不変条件**:
 - ES と同じ slug `cursor-not-supported`
@@ -964,7 +964,7 @@
 
 ### IT-DSL-04: `/db-portal/parse` が DSL を AST JSON に変換
 
-**endpoint**: `GET /db-portal/parse?adv=title:cancer AND organism.name:human&db=bioproject`
+**endpoint**: `GET /db-portal/parse?q=title:cancer AND organism.name:human&db=bioproject`
 
 **不変条件**:
 - `status_code == 200`
@@ -987,30 +987,30 @@
 
 ### IT-DSL-06: grammar が symbol 含み wildcard を受理
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=title:HIF-1*` / `?adv=title:COVID-19*`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=title:HIF-1*` / `?q=title:COVID-19*`
 
 **不変条件**:
 - `status_code == 200` (parse error にならない)
 - `total >= 0` で検索が動く
 - 同じく `?` (single char) も受理
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`
 
 ### IT-DSL-07: `/db-portal/parse` cross-mode (db 省略) で Tier 3 拒否
 
-**endpoint**: `GET /db-portal/parse?adv=<Tier 3 field>:value` (db 省略 = cross-mode)
+**endpoint**: `GET /db-portal/parse?q=<Tier 3 field>:value` (db 省略 = cross-mode)
 
 **不変条件**:
 - `status_code == 400`
 - `type` URI が `field-not-available-in-cross-db` slug
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier`
 **関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
 
 ### IT-DSL-08: DSL syntax error で 400 `unexpected-token`
 
-**endpoint**: `GET /db-portal/parse?adv=title:::cancer` (壊れた DSL)
+**endpoint**: `GET /db-portal/parse?q=title:::cancer` (壊れた DSL)
 
 **不変条件**:
 - `status_code == 400`
@@ -1023,73 +1023,73 @@
 
 ### IT-DSL-09: allowlist 外フィールドで 400 `unknown-field`
 
-**endpoint**: `GET /db-portal/parse?adv=__not_a_field__:value&db=bioproject`
+**endpoint**: `GET /db-portal/parse?q=__not_a_field__:value&db=bioproject`
 
 **不変条件**:
 - `status_code == 400`
 - `type` URI が `unknown-field` slug
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法`
 
 **関連 unit テスト**: `tests/unit/search/dsl/test_allowlist.py`
 
 ### IT-DSL-10: between 範囲検索 (date)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=date_published:[a TO b]`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=date_published:[a TO b]`
 
 **不変条件**:
 - 200 で 1 日範囲 `total` <= 5 年範囲 `total` (drift 非依存の相対不変)
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 演算子マトリクス`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 演算子マトリクス`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
 
 ### IT-DSL-11: phrase 検索 (text)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=title:"whole genome"`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=title:"whole genome"`
 
 **不変条件**:
 - 200 で phrase の `total` <= `title:whole AND title:genome` の `total` (順序固定で厳しい)
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 演算子マトリクス`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 演算子マトリクス`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`
 
 ### IT-DSL-12: AND/OR/NOT 優先度・grouping
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=<expr>`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=<expr>`
 
 **不変条件**:
 - `A AND B` の `total` <= `A OR B` の `total`
 - `A AND NOT B` の `total` <= `A` 単独の `total`
 - 異なる grouping (`(A OR B) AND C` vs `A OR (B AND C)`) で `total` が異なる
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_compiler_es.py`
 
 ### IT-DSL-13: enum 演算子 (`project_type`)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=project_type:<value>`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=project_type:<value>`
 
 **不変条件**:
 - `BioProject` / `UmbrellaBioProject` 単独 `total` の和が OR 結合 `total` と一致 (enum 排他)
 - enum 違反値 (`Foobar` 等) はパース成功 + ES 側で `total == 0`
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
 
 ### IT-DSL-14: 2 段 nested (`grant_agency`)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=grant_agency:NIH`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=grant_agency:NIH`
 
 **不変条件**:
 - 200 (silent 5xx 化しない)
 - `grant_agency:NIH AND title:cancer` の `total` <= `grant_agency:NIH` 単独
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3 § BioProject`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3 § BioProject`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
 
 ### IT-DSL-15: invalid-date-format で 400
 
-**endpoint**: `GET /db-portal/parse?adv=<impossible date>`
+**endpoint**: `GET /db-portal/parse?q=<impossible date>`
 
 **不変条件**:
 - 構文上は date リテラルだが日付として無効な値 (例: `2024-02-30`) で 400 + `type` URI に `invalid-date-format` slug
@@ -1100,46 +1100,46 @@
 
 ### IT-DSL-16: invalid-operator-for-field で 400
 
-**endpoint**: `GET /db-portal/parse?adv=<type/operator mismatch>`
+**endpoint**: `GET /db-portal/parse?q=<type/operator mismatch>`
 
 **不変条件**:
 - date に wildcard、identifier に between 等の不整合で 400 + `type` URI に `invalid-operator-for-field` slug
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 演算子マトリクス`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 演算子マトリクス`
 **関連 unit テスト**: `tests/unit/search/dsl/test_validator.py`
 
 ### IT-DSL-17: nest-depth-exceeded で 400
 
-**endpoint**: `GET /db-portal/parse?adv=<深さ N のネスト>`
+**endpoint**: `GET /db-portal/parse?q=<深さ N のネスト>`
 
 **不変条件**:
 - 深さ 5 で 200、深さ 6 で 400 + `type` URI に `nest-depth-exceeded` slug
 - ノード総数上限 (`dsl_max_nodes`、default 512) 超過も同 slug を流用 (深さは OK でも横幅 `a OR b OR ... OR z` で爆発する経路をガード)。default config では parser の DSL 長さ上限 4096 文字制限内に収まり再現困難なため、ノード総数経路は unit でカバー
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_validator.py` (TestNestDepth, TestNestNodes)
 
 ### IT-DSL-18: missing-value で 400
 
-**endpoint**: `GET /db-portal/parse?adv=title:""` / `?adv=title:''`
+**endpoint**: `GET /db-portal/parse?q=title:""` / `?q=title:''`
 
 **不変条件**:
 - 明示空ダブルクオート (`title:""`) と明示空シングルクオート (`title:''`) のどちらも 400 + `type` URI に `missing-value` slug
-- grammar の PHRASE は double / single quote 両対応 (対称、`q=` 側のキーワード検索と一貫)
+- grammar の PHRASE は double / single quote 両対応 (対称、`/entries/*` 系のキーワード検索 (`keywords` パラメータ) と一貫)
 
 **回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_validator.py`
 
 ### IT-DSL-19: single quote phrase は double quote と同等
 
-**endpoint**: `GET /db-portal/parse?adv=organism:'Homo sapiens'` ↔ `?adv=organism:"Homo sapiens"`
+**endpoint**: `GET /db-portal/parse?q=organism:'Homo sapiens'` ↔ `?q=organism:"Homo sapiens"`
 
 **不変条件**:
 - `/db-portal/parse`: single / double quote の phrase が同一の AST (`{op: eq, field, value}`) を返す
 - `/db-portal/search`: 同一クエリで `total` が一致 (quote 種別はバックエンドの match に影響しない)
-- `q=` 側 (キーワード検索) との一貫性: `phrase.py` の `tokenize_keywords` が `'...'` も phrase として扱うのと同等
+- `/entries/*` 系の `keywords` パラメータの phrase 扱いとも一貫 (`'...'` も phrase として扱う)
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py` (TestFieldClauseValueKinds, TestPhraseEscaping)
 
 ### IT-DSL-20: organism phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止)
@@ -1151,7 +1151,7 @@
 - 小文字 phrase `organism:"homo sapiens"` でも同等に `total >= 1000` (`organism.name` は text + standard analyzer なので大文字小文字に寛容)
 - term クエリだと analyzer mismatch (tokenize 後の lowercase token と単一値が不一致) で 0 件に戻るので、`match_phrase` 経由の正常実装が回帰すると本シナリオが破綻する
 
-**回帰元**: `docs/db-portal-api-spec.md § Tier 1 organism`、`ddbj_search_api/search/dsl/compiler_es.py § _compile_organism`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 1 organism`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestOrganismField)
 
 ---
@@ -1214,15 +1214,15 @@
 **回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (taxonomy)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
-### IT-DBPORTAL-06: adv Tier 3 field の uf allowlist 完全性
+### IT-DBPORTAL-06: Tier 3 field の uf allowlist 完全性 (Solr backend)
 
-**endpoint**: `GET /db-portal/search?db=trad&adv=division:BCT` (compile_to_solr 経由)
+**endpoint**: `GET /db-portal/search?db=trad&q=division:BCT` (Solr compiler 経由)
 
 **不変条件**:
 - `status_code == 200` かつ `total > 0` (allowlist を通って division で実フィルタが効いている)
-- 同 `q=*` (フィルタなし) との `total` 比で `adv=division:BCT` の方が小さい (silent wrong-field match で全件 fallback すると等しくなる)
+- 同 `q=*` (フィルタなし) との `total` 比で `q=division:BCT` の方が小さい (silent wrong-field match で全件 fallback すると等しくなる)
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_solr.py`, `tests/unit/solr/test_query.py`
 
 ### IT-DBPORTAL-07: cross-search の 8 DB fan-out (count + topHits)
@@ -1314,19 +1314,6 @@
 **回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § パラメータルール`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
-### IT-DBPORTAL-15: q + adv 共存で AND 結合
-
-**endpoint**: `GET /db-portal/cross-search?q=...&adv=...` / `GET /db-portal/search?db=...&q=...&adv=...`
-
-**不変条件**:
-- 両 endpoint で 200 (排他制約なし)
-- `count(q + adv) <= count(q only)` かつ `count(q + adv) <= count(adv only)` (AND による subset 関係)
-- `hits` の各エントリが `q` 由来のマッチ field と `adv` 由来のマッチ条件の両方を同時に満たす
-- `q` または `adv` のいずれかが accession exact match のとき `suppressed` を許可 (OR 合成)
-
-**回帰元**: `docs/db-portal-api-spec.md § /db-portal/cross-search § パラメータルール` / `§ /db-portal/search § パラメータルール` / `§ データ可視性 (status 制御)`
-**関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
-
 ### IT-DBPORTAL-16: search の sort allowlist
 
 **endpoint**: `GET /db-portal/search?db=bioproject&q=*&sort=<value>`
@@ -1355,31 +1342,31 @@
 
 **不変条件**:
 - 2 ページ目 `hits` の identifier 集合が 1 ページ目と排他
-- `cursor` + 検索条件 (`q` / `adv` / `sort` / `page`) 併用で 400 (排他ルール)
+- `cursor` + 検索条件 (`q` / `sort` / `page`) 併用で 400 (排他ルール)
 
 **回帰元**: `docs/db-portal-api-spec.md § /db-portal/search § ページネーション`
 **関連 unit テスト**: `tests/unit/test_cursor.py`, `tests/unit/routers/test_db_portal.py`
 
 ### IT-DBPORTAL-19: BioSample Tier 3 (geo_loc_name) の uf allowlist 完全性
 
-**endpoint**: `GET /db-portal/search?db=biosample&adv=geo_loc_name:Japan&perPage=20` (compile_to_es 経由)
+**endpoint**: `GET /db-portal/search?db=biosample&q=geo_loc_name:Japan&perPage=20` (ES compiler 経由)
 
 **不変条件**:
 - `status_code == 200` かつ `total > 0` (allowlist を通って `geoLocName` で実フィルタが効いている)
-- 同 `q=cancer` (broad keyword baseline) との `total` 比で `adv=geo_loc_name:Japan` の方が小さい (silent wrong-field match で baseline 相当に膨らむ regression を弾く)
+- 同 `q=cancer` (broad keyword baseline) との `total` 比で `q=geo_loc_name:Japan` の方が小さい (silent wrong-field match で baseline 相当に膨らむ regression を弾く)
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`, `tests/unit/search/dsl/test_allowlist.py`
 
 ### IT-DBPORTAL-20: SRA Tier 3 (analysis_type) の uf allowlist 完全性
 
-**endpoint**: `GET /db-portal/search?db=sra&adv=analysis_type:reference_alignment&perPage=20` (compile_to_es 経由、sra-analysis のみヒット)
+**endpoint**: `GET /db-portal/search?db=sra&q=analysis_type:reference_alignment&perPage=20` (ES compiler 経由、sra-analysis のみヒット)
 
 **不変条件**:
 - `status_code == 200` かつ `total > 0` (allowlist を通って `analysisType` で実フィルタが効いている)
-- 同 `q=cancer` (broad keyword baseline) との `total` 比で `adv=analysis_type:reference_alignment` の方が小さい
+- 同 `q=cancer` (broad keyword baseline) との `total` 比で `q=analysis_type:reference_alignment` の方が小さい
 
-**回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § Tier 3`
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`, `tests/unit/search/dsl/test_allowlist.py`
 
 ---
@@ -1479,26 +1466,26 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **不変条件**:
 - 対象 ES DB の hits に suppressed accession が含まれる
 - 他の ES DB の count / hits は普通に public のみ
-- アクセッション完全一致判定が `q` でも `adv` でも同じ規則
+- アクセッション完全一致判定は `q` (free text 形式・field clause 形式の両方) で一貫した規則
 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/search/test_accession.py`
 
-### IT-STATUS-11: `/db-portal/cross-search?adv=identifier:<accession>` (single leaf eq) で suppressed が出る
+### IT-STATUS-11: `/db-portal/cross-search?q=identifier:<accession>` (single leaf eq) で suppressed が出る
 
-**endpoint**: `GET /db-portal/cross-search?adv=identifier:<suppressed_accession>&topHits=10`
+**endpoint**: `GET /db-portal/cross-search?q=identifier:<suppressed_accession>&topHits=10`
 
 **不変条件**:
 - 対象 ES DB の hits に suppressed が含まれる
-- adv AST のトップが単一 `FieldClause` (`identifier`, `op=eq`) のときのみ解放
+- `q` の AST のトップが単一 `FieldClause` (`identifier`, `op=eq`) のときのみ解放
 - 他の field (例: `title:`) では解放されない
 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性` (AST 判定ルール)
 **関連 unit テスト**: `tests/unit/search/dsl/test_accession_exact_match.py`
 
-### IT-STATUS-12: `/db-portal/cross-search?adv=identifier:<acc> AND title:<word>` (AND ラップ) で suppressed が出ない
+### IT-STATUS-12: `/db-portal/cross-search?q=identifier:<acc> AND title:<word>` (AND ラップ) で suppressed が出ない
 
-**endpoint**: `GET /db-portal/cross-search?adv=identifier:<suppressed_accession> AND title:<word>&topHits=10`
+**endpoint**: `GET /db-portal/cross-search?q=identifier:<suppressed_accession> AND title:<word>&topHits=10`
 
 **不変条件**:
 - AND ラップは解放対象外なので、suppressed は hits に出ない
@@ -1519,13 +1506,13 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/test_cursor.py`
 
-### IT-STATUS-14: `/db-portal/search?db=<es_db>&adv=identifier:<accession>` で suppressed (offset 経路、cursor 不可)
+### IT-STATUS-14: `/db-portal/search?db=<es_db>&q=identifier:<accession>` で suppressed (offset 経路、cursor 不可)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&adv=identifier:<suppressed_accession>`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=identifier:<suppressed_accession>`
 
 **不変条件**:
 - 1 ページ目に suppressed が出る (offset 経路)
-- cursor + adv 同時指定で 400 (IT-DSL-02)
+- cursor + field clause 含む `q` 同時指定で 400 (IT-DSL-02)
 - 2 ページ目以降は `page` で取得 (deep paging 制限内)
 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性`

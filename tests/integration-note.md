@@ -41,16 +41,16 @@ ES / Solr のデータは converter の更新で件数が変わる。固定値 a
 assert total == 26537  # 来月にはずれる
 
 # 件数 drift に強い (OK)
-r_lower = fetch("adv=title:cancer*&db=bioproject")
-r_upper = fetch("adv=title:Cancer*&db=bioproject")
+r_lower = fetch("q=title:cancer*&db=bioproject")
+r_upper = fetch("q=title:Cancer*&db=bioproject")
 assert r_lower["total"] == r_upper["total"]  # case-insensitive で値は何でも良い
 assert r_lower["total"] > 0                  # 「何かヒットしている」の最小保証
 ```
 
 ```python
 # 相対比較で regression を検出する例
-total_all = fetch("adv=title:*&db=trad")["total"]
-total_bct = fetch("adv=division:BCT&db=trad")["total"]
+total_all = fetch("q=title:*&db=trad")["total"]
+total_bct = fetch("q=division:BCT&db=trad")["total"]
 assert total_bct < total_all / 2  # 全件 fallback (regression) を弾く
 ```
 
@@ -88,13 +88,11 @@ markers = [
 | コマンド | 含まれるシナリオ | 用途 |
 |---------|----------------|------|
 | `pytest tests/integration/` | 全シナリオ (Solr 含む) | staging 環境 (default) |
-| `pytest tests/integration/ -m "not staging_only"` | Solr 抜き | CI 統合時 (Future work、Solr が無い環境) |
+| `pytest tests/integration/ -m "not staging_only"` | Solr 抜き | Solr が利用できない環境での確認 |
 | `pytest tests/integration/ -m staging_only` | Solr のみ | 限定確認 (ARSA / TXSearch の整合性チェック) |
 
 ## CI
 
 現状の `uv run pytest` は `testpaths = ["tests/unit"]` で unit のみ実行する。integration は手動 (`uv run pytest tests/integration/`)。
-
-GitHub Actions で integration を回すなら ES service container を `services:` で起動する必要があるが、データを投入する仕組み (converter の bring-up + 最小データセット) が要るので Future work。
 
 unit の coverage は `pyproject.toml` の addopts で常に計測され、`tests/htmlcov/` に出力される。integration は coverage 計測対象外として扱う (実 ES の挙動を見るのが目的のため)。

@@ -58,7 +58,10 @@ class DbLinksResponse(BaseModel):
                 },
             ],
         ],
-        description="Related entries (sorted by type, then identifier).",
+        description=(
+            "Related entries (sorted deterministically by type ascending, then identifier ascending). "
+            "Empty list when no related entries exist (still returns 200)."
+        ),
     )
 
 
@@ -79,7 +82,11 @@ class DbLinksQuery:
         target: str | None = Query(
             default=None,
             examples=["biosample,sra-experiment"],
-            description="Filter by target accession type(s), comma-separated.",
+            description=(
+                "Filter by target accession type(s), comma-separated. "
+                "Values must be AccessionType (same allowlist as GET /dblink/). "
+                "Unknown types return 422; non-existent target with valid type returns 200 + empty dbXrefs."
+            ),
         ),
     ) -> None:
         self.target: list[AccessionType] | None = None
@@ -123,7 +130,11 @@ class DbLinksCountsResponseItem(BaseModel):
     type: AccessionType = Field(examples=["biosample"], description="Accession type.")
     counts: dict[str, int] = Field(
         examples=[{"sra-experiment": 3, "bioproject": 1}],
-        description="Per-type linked accession counts.",
+        description=(
+            "Per-type linked accession counts. "
+            "Keys are AccessionType values; absent type means zero links. "
+            "Returns empty dict for accessions with no links (not 404)."
+        ),
     )
 
 

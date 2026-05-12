@@ -59,6 +59,10 @@ _FACETS_ERRORS: dict[int | str, dict[str, Any]] = {
         "description": "Unprocessable Entity (parameter validation error).",
         "model": ProblemDetails,
     },
+    500: {
+        "description": "Internal Server Error (Elasticsearch unreachable).",
+        "model": ProblemDetails,
+    },
 }
 
 

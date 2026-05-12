@@ -13,7 +13,11 @@ class BulkRequest(BaseModel):
         min_length=1,
         max_length=1000,
         examples=[["PRJDB1", "PRJDB2"]],
-        description="List of entry identifiers to retrieve (1-1000).",
+        description=(
+            "List of entry identifiers to retrieve (1-1000). "
+            "Duplicates are deduplicated server-side; each id is returned at most once "
+            "either in 'entries' or 'notFound'."
+        ),
     )
 
 
@@ -26,10 +30,17 @@ class BulkResponse(BaseModel):
 
     entries: list[BioProject | BioSample | SRA | JGA] = Field(
         examples=[[{"identifier": "PRJDB1", "type": "bioproject", "title": "Example BioProject"}]],
-        description="Found entries (raw ES documents).",
+        description=(
+            "Found entries (raw ES documents). "
+            "'public' and 'suppressed' entries are returned here; "
+            "'private' and missing ids are listed under notFound."
+        ),
     )
     not_found: list[str] = Field(
         alias="notFound",
         examples=[["PRJDB_INVALID"]],
-        description="IDs that were not found.",
+        description=(
+            "IDs that were not found (missing or hidden by visibility filter: 'private' / 'withdrawn'). "
+            "Always satisfies len(entries) + len(notFound) == len(set(ids))."
+        ),
     )

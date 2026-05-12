@@ -171,7 +171,11 @@ class DbPortalSearchQuery:
         page: int = Query(
             default=1,
             ge=1,
-            description="Page number (1-based).",
+            description=(
+                "Page number (1-based).  Combined with perPage, "
+                "page * perPage must be <= 10000 (deep paging limit; "
+                "exceeding returns 400)."
+            ),
         ),
         per_page: int = Query(
             default=20,
@@ -182,7 +186,12 @@ class DbPortalSearchQuery:
         cursor: str | None = Query(
             default=None,
             examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
-            description="Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min).",
+            description=(
+                "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). "
+                "When specified, q / sort / page must use their defaults (db and perPage may be combined). "
+                "Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only "
+                "and return 400 'cursor-not-supported' if cursor is supplied."
+            ),
         ),
         sort: Literal["datePublished:asc", "datePublished:desc"] | None = Query(
             default=None,

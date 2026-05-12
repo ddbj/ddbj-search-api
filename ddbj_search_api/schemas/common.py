@@ -61,7 +61,10 @@ class Pagination(BaseModel):
         description="Current page number (1-based). Null in cursor mode.",
     )
     per_page: int = Field(alias="perPage", examples=[10], description="Items per page.")
-    total: int = Field(examples=[1234], description="Total number of matching items.")
+    total: int = Field(
+        examples=[1234],
+        description="Total number of matching items (exact count via track_total_hits=true on Elasticsearch).",
+    )
     next_cursor: str | None = Field(
         alias="nextCursor",
         examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
@@ -341,7 +344,12 @@ class ProblemDetails(BaseModel):
     type: str = Field(
         default="about:blank",
         examples=["about:blank"],
-        description="Problem type URI.",
+        description=(
+            "Problem type URI (RFC 7807). "
+            "Generic errors use 'about:blank'; endpoint-specific failures use "
+            "'https://ddbj.nig.ac.jp/problems/<slug>' (e.g. 'cursor-not-supported', "
+            "'unknown-field'). URI need not be dereferenceable; it functions as an identifier."
+        ),
     )
     title: str = Field(examples=["Not Found"], description="Short human-readable summary.")
     status: int = Field(examples=[404], description="HTTP status code.")

@@ -25,14 +25,25 @@ class UmbrellaTreeResponse(BaseModel):
     """
 
     query: str = Field(
-        description="Resolved primary identifier of the requested BioProject.",
+        description=(
+            "Resolved primary identifier of the requested BioProject. "
+            "Always the primary accession even if the request used a sameAs secondary id."
+        ),
         examples=["PRJDB1234"],
     )
     roots: list[str] = Field(
-        description="Root BioProject accessions (parentBioProjects is empty).",
+        description=(
+            "Root BioProject accessions (entries whose parentBioProjects list is empty). "
+            "Deterministically sorted. Orphan input returns a single-element list containing the query itself."
+        ),
         examples=[["PRJDB0001"]],
     )
     edges: list[UmbrellaTreeEdge] = Field(
         examples=[[{"parent": "PRJDB0001", "child": "PRJDB1234"}]],
-        description="Unique (parent, child) pairs covering the reachable subgraph.",
+        description=(
+            "Unique (parent, child) pairs covering the reachable subgraph. "
+            "Deterministically sorted (parent ascending, then child ascending). "
+            "Duplicates from DAG multi-path traversals are deduplicated. "
+            "Dangling edges (parent or child missing from the bioproject index) are dropped."
+        ),
     )

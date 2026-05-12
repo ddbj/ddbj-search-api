@@ -70,6 +70,10 @@ _LIST_ENTRIES_RESPONSES: dict[int | str, dict[str, Any]] = {
         "description": "Unprocessable Entity (parameter validation error).",
         "model": ProblemDetails,
     },
+    500: {
+        "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
+        "model": ProblemDetails,
+    },
 }
 
 logger = logging.getLogger(__name__)

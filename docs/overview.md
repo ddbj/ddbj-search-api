@@ -42,7 +42,7 @@ API サーバーは converter と同一の Docker network (`ddbj-search-network-
 
 ES は全文検索・フィルタ・ファセット集計・エントリー本体を担う。`dbXrefs` (関連 ID リスト) は別途 DuckDB に持つ。
 
-理由: 1 エントリーあたり dbXrefs は数千〜数千万件にもなり、ES の nested フィールドで持つとインデックスサイズも検索負荷も悪化する。逆引き (関連 ID → 元エントリー) も必要なため、関連を専用 DuckDB に正規化して持たせている。
+理由: 1 エントリーあたりの dbXrefs は ES の nested フィールドで保持するには件数が多すぎる規模になり得る (インデックスサイズ・検索負荷の両面で悪化する)。加えて逆引き (関連 ID → 元エントリー) も必要なため、関連は専用 DuckDB に正規化して持たせている。
 
 エンドポイント別の dbXrefs 扱い・切り詰めポリシー・tail injection の振る舞いは [api-spec.md § dbXrefs](api-spec.md) を参照。
 

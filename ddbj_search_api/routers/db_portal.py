@@ -983,6 +983,13 @@ router.add_api_route(
         },
     },
     summary="DB Portal cross-database fan-out (count + top hits)",
+    description=(
+        "Fan-out search across 8 databases (6 Elasticsearch + 2 Solr). "
+        "Per-backend timeouts and a global timeout enforce partial-failure tolerance: "
+        "individual DB errors surface in `databases[i].error` while the response stays 200. "
+        "All-DB failure returns 502. Pagination concepts (db / cursor / page / perPage / sort) "
+        "are rejected with 400 `unexpected-parameter`; use /db-portal/search for paginated single-DB queries."
+    ),
     operation_id="crossSearchDbPortal",
     tags=["db-portal"],
 )
@@ -1011,6 +1018,12 @@ router.add_api_route(
         },
     },
     summary="DB Portal db-specific hits search",
+    description=(
+        "Single-database hits search with pagination. `db` is required (400 `missing-db` if omitted). "
+        "Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=trad / db=taxonomy) "
+        "and queries containing field clauses are offset-only (400 `cursor-not-supported` if cursor is supplied). "
+        "Cross-database counts go through /db-portal/cross-search instead."
+    ),
     operation_id="searchDbPortal",
     tags=["db-portal"],
 )

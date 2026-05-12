@@ -30,11 +30,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -44,11 +44,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -63,13 +63,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -84,13 +84,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -416,11 +416,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -428,11 +428,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -447,7 +447,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -495,11 +495,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -509,11 +509,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -528,13 +528,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -549,13 +549,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -923,11 +923,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -935,11 +935,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -954,7 +954,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1002,11 +1002,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -1016,11 +1016,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -1035,13 +1035,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -1056,13 +1056,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -1492,11 +1492,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -1504,11 +1504,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -1523,7 +1523,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1571,11 +1571,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -1585,11 +1585,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -1604,13 +1604,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -1625,13 +1625,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -2187,11 +2187,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -2199,11 +2199,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -2218,7 +2218,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2266,11 +2266,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -2280,11 +2280,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -2299,13 +2299,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -2320,13 +2320,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -2882,11 +2882,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -2894,11 +2894,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -2913,7 +2913,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2961,11 +2961,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -2975,11 +2975,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -2994,13 +2994,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -3015,13 +3015,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -3577,11 +3577,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -3589,11 +3589,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -3608,7 +3608,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3656,11 +3656,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -3670,11 +3670,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -3689,13 +3689,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -3710,13 +3710,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -4272,11 +4272,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -4284,11 +4284,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -4303,7 +4303,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4351,11 +4351,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -4365,11 +4365,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -4384,13 +4384,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -4405,13 +4405,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -4967,11 +4967,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -4979,11 +4979,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -4998,7 +4998,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5046,11 +5046,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -5060,11 +5060,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -5079,13 +5079,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -5100,13 +5100,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -5662,11 +5662,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -5674,11 +5674,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -5693,7 +5693,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5741,11 +5741,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -5755,11 +5755,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -5774,13 +5774,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -5795,13 +5795,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -6189,11 +6189,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -6201,11 +6201,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -6220,7 +6220,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6268,11 +6268,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -6282,11 +6282,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -6301,13 +6301,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -6322,13 +6322,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -6716,11 +6716,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -6728,11 +6728,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -6747,7 +6747,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6795,11 +6795,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -6809,11 +6809,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -6828,13 +6828,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -6849,13 +6849,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -7243,11 +7243,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -7255,11 +7255,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -7274,7 +7274,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7322,11 +7322,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -7336,11 +7336,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -7355,13 +7355,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -7376,13 +7376,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -7770,11 +7770,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -7782,11 +7782,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -7801,7 +7801,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7849,11 +7849,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -7863,11 +7863,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -7882,13 +7882,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -7903,13 +7903,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -8234,11 +8234,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -8246,11 +8246,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -8265,7 +8265,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8313,11 +8313,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead.",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based). Combined with perPage, must satisfy page * perPage <= 10000 (deep paging limit; exceeding it returns 400). For deeper paging, use cursor instead."
           },
           {
             "name": "perPage",
@@ -8327,11 +8327,11 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "description": "Items per page (1-100).",
+              "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000.",
               "default": 10,
               "title": "Perpage"
             },
-            "description": "Items per page (1-100)."
+            "description": "Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."
           },
           {
             "name": "cursor",
@@ -8346,13 +8346,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination.",
+              "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates).",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination."
+            "description": "Cursor token for cursor-based pagination. Opaque HMAC-signed string returned in the previous response's nextCursor. When specified, almost all search/filter parameters and 'page' must use their defaults; exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. PIT lifetime is 5 minutes after first use; expired tokens return 400. Tokens become invalid across server restarts (signing key regenerates)."
           },
           {
             "name": "keywords",
@@ -8367,13 +8367,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -8740,11 +8740,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -8752,11 +8752,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -8771,7 +8771,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8874,7 +8874,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8940,7 +8940,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable, or traversal depth exceeded).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8950,7 +8950,7 @@
             }
           },
           "404": {
-            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private). The detail message is a fixed string identical to the missing-entry case.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9054,7 +9054,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9064,7 +9064,7 @@
             }
           },
           "404": {
-            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private). The detail message is a fixed string identical to the missing-entry case, so hidden status cannot be inferred from the response.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9168,7 +9168,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9178,7 +9178,7 @@
             }
           },
           "404": {
-            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private). The detail message is a fixed string identical to the missing-entry case, so hidden status cannot be inferred from the response.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9243,7 +9243,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9253,7 +9253,7 @@
             }
           },
           "404": {
-            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private). The detail message is a fixed string identical to the missing-entry case, so hidden status cannot be inferred from the response.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9313,11 +9313,11 @@
               "type": "integer",
               "maximum": 1000,
               "minimum": 0,
-              "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount.",
+              "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation).",
               "default": 100,
               "title": "Dbxrefslimit"
             },
-            "description": "Maximum number of dbXrefs to return per type (0-1000). Use 0 to omit dbXrefs but still get dbXrefsCount."
+            "description": "Maximum number of dbXrefs to return per related type (0-1000). The limit applies per type, not globally. Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
           },
           {
             "name": "includeDbXrefs",
@@ -9325,11 +9325,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried.",
+              "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence.",
               "default": true,
               "title": "Includedbxrefs"
             },
-            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+            "description": "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried. When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
           }
         ],
         "responses": {
@@ -9383,7 +9383,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9393,7 +9393,7 @@
             }
           },
           "404": {
-            "description": "Not Found (entry does not exist, or is withdrawn / private).",
+            "description": "Not Found (entry does not exist, or is withdrawn / private). The detail message is a fixed string identical to the missing-entry case, so hidden status cannot be inferred from the response.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9437,13 +9437,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -9707,7 +9707,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9761,13 +9761,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -10073,7 +10073,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10127,13 +10127,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -10501,7 +10501,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10555,13 +10555,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -11055,7 +11055,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11109,13 +11109,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -11609,7 +11609,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11663,13 +11663,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -12163,7 +12163,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12217,13 +12217,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -12717,7 +12717,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12771,13 +12771,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -13271,7 +13271,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13325,13 +13325,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -13825,7 +13825,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13879,13 +13879,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -14211,7 +14211,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14265,13 +14265,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -14597,7 +14597,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14651,13 +14651,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -14983,7 +14983,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15037,13 +15037,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -15369,7 +15369,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15423,13 +15423,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -15692,7 +15692,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15746,13 +15746,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Search keywords (comma-separated for multiple).",
+              "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope.",
               "examples": [
                 "cancer"
               ],
               "title": "Keywords"
             },
-            "description": "Search keywords (comma-separated for multiple)."
+            "description": "Search keywords (comma-separated for multiple). Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). When the value is a single token that matches an INSDC accession ID exactly, 'suppressed' entries are included in the search scope."
           },
           {
             "name": "keywordFields",
@@ -16057,7 +16057,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (Elasticsearch unreachable).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16164,13 +16164,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by target accession type(s), comma-separated.",
+              "description": "Filter by target accession type(s), comma-separated. Values must be AccessionType (same allowlist as GET /dblink/). Unknown types return 422; non-existent target with valid type returns 200 + empty dbXrefs.",
               "examples": [
                 "biosample,sra-experiment"
               ],
               "title": "Target"
             },
-            "description": "Filter by target accession type(s), comma-separated."
+            "description": "Filter by target accession type(s), comma-separated. Values must be AccessionType (same allowlist as GET /dblink/). Unknown types return 422; non-existent target with valid type returns 200 + empty dbXrefs."
           }
         ],
         "responses": {
@@ -16185,7 +16185,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (DuckDB file missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16237,7 +16237,7 @@
             }
           },
           "500": {
-            "description": "Internal Server Error.",
+            "description": "Internal Server Error (DuckDB file missing).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16265,7 +16265,7 @@
           "db-portal"
         ],
         "summary": "DB Portal cross-database fan-out (count + top hits)",
-        "description": "``GET /db-portal/cross-search``: cross-database count + top hits search.\n\n``q`` を Lark でパース → validator → ES/Solr compiler の単一 pipeline を通して\n``_cross_search_dispatch`` に渡す。``q`` 省略時は ``ast=None`` で全件 match_all\nfan-out を行う。",
+        "description": "Fan-out search across 8 databases (6 Elasticsearch + 2 Solr). Per-backend timeouts and a global timeout enforce partial-failure tolerance: individual DB errors surface in `databases[i].error` while the response stays 200. All-DB failure returns 502. Pagination concepts (db / cursor / page / perPage / sort) are rejected with 400 `unexpected-parameter`; use /db-portal/search for paginated single-DB queries.",
         "operationId": "crossSearchDbPortal",
         "parameters": [
           {
@@ -16364,7 +16364,7 @@
           "db-portal"
         ],
         "summary": "DB Portal db-specific hits search",
-        "description": "``GET /db-portal/search``: db-specific hits search.\n\ncursor 経路 (``_db_specific_search_cursor``) は cursor token に焼き込んだ\nES query を decode して継続する設計のため、本 dispatch には流さない。\ncursor + q は ``_validate_cursor_exclusivity`` (cursor 経路前段) で弾く。",
+        "description": "Single-database hits search with pagination. `db` is required (400 `missing-db` if omitted). Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only (400 `cursor-not-supported` if cursor is supplied). Cross-database counts go through /db-portal/cross-search instead.",
         "operationId": "searchDbPortal",
         "parameters": [
           {
@@ -16416,11 +16416,11 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "description": "Page number (1-based).",
+              "description": "Page number (1-based).  Combined with perPage, page * perPage must be <= 10000 (deep paging limit; exceeding returns 400).",
               "default": 1,
               "title": "Page"
             },
-            "description": "Page number (1-based)."
+            "description": "Page number (1-based).  Combined with perPage, page * perPage must be <= 10000 (deep paging limit; exceeding returns 400)."
           },
           {
             "name": "perPage",
@@ -16452,13 +16452,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min).",
+              "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). When specified, q / sort / page must use their defaults (db and perPage may be combined). Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only and return 400 'cursor-not-supported' if cursor is supplied.",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min)."
+            "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). When specified, q / sort / page must use their defaults (db and perPage may be combined). Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only and return 400 'cursor-not-supported' if cursor is supplied."
           },
           {
             "name": "sort",
@@ -16635,7 +16635,7 @@
           "Service Info"
         ],
         "summary": "Get service information",
-        "description": "Returns service metadata including name, version, and Elasticsearch connectivity status.",
+        "description": "Service metadata (name / version / description) plus Elasticsearch reachability. Returns 200 regardless of Elasticsearch health; the `elasticsearch` field reports the actual state. Intended for liveness probes and deploy verification.",
         "operationId": "getServiceInfo",
         "responses": {
           "200": {
@@ -17125,7 +17125,14 @@
               "type": "integer"
             },
             "type": "object",
-            "title": "Dbxrefscount"
+            "title": "Dbxrefscount",
+            "description": "Cross-reference counts per related type. The values are the totals before dbXrefsLimit truncation, so callers can detect when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint.",
+            "examples": [
+              {
+                "biosample": 5,
+                "sra-experiment": 12
+              }
+            ]
           }
         },
         "type": "object",
@@ -17865,7 +17872,14 @@
               "type": "integer"
             },
             "type": "object",
-            "title": "Dbxrefscount"
+            "title": "Dbxrefscount",
+            "description": "Cross-reference counts per related type. The values are the totals before dbXrefsLimit truncation, so callers can detect when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint.",
+            "examples": [
+              {
+                "biosample": 5,
+                "sra-experiment": 12
+              }
+            ]
           }
         },
         "type": "object",
@@ -18187,7 +18201,7 @@
             "maxItems": 1000,
             "minItems": 1,
             "title": "Ids",
-            "description": "List of entry identifiers to retrieve (1-1000).",
+            "description": "List of entry identifiers to retrieve (1-1000). Duplicates are deduplicated server-side; each id is returned at most once either in 'entries' or 'notFound'.",
             "examples": [
               [
                 "PRJDB1",
@@ -18224,7 +18238,7 @@
             },
             "type": "array",
             "title": "Entries",
-            "description": "Found entries (raw ES documents).",
+            "description": "Found entries (raw ES documents). 'public' and 'suppressed' entries are returned here; 'private' and missing ids are listed under notFound.",
             "examples": [
               [
                 {
@@ -18241,7 +18255,7 @@
             },
             "type": "array",
             "title": "Notfound",
-            "description": "IDs that were not found.",
+            "description": "IDs that were not found (missing or hidden by visibility filter: 'private' / 'withdrawn'). Always satisfies len(entries) + len(notFound) == len(set(ids)).",
             "examples": [
               [
                 "PRJDB_INVALID"
@@ -18364,7 +18378,7 @@
             },
             "type": "object",
             "title": "Counts",
-            "description": "Per-type linked accession counts.",
+            "description": "Per-type linked accession counts. Keys are AccessionType values; absent type means zero links. Returns empty dict for accessions with no links (not 404).",
             "examples": [
               {
                 "bioproject": 1,
@@ -18405,7 +18419,7 @@
             },
             "type": "array",
             "title": "Dbxrefs",
-            "description": "Related entries (sorted by type, then identifier).",
+            "description": "Related entries (sorted deterministically by type ascending, then identifier ascending). Empty list when no related entries exist (still returns 200).",
             "examples": [
               [
                 {
@@ -22045,7 +22059,7 @@
             },
             "type": "array",
             "title": "Dbxrefs",
-            "description": "All cross-references for the entry.",
+            "description": "All cross-references for the entry (no truncation). Returned via streaming from DuckDB; may contain references to non-public entries (withdrawn / private accessions) since the underlying edge table is not status-filtered.",
             "examples": [
               [
                 {
@@ -23185,7 +23199,14 @@
               "type": "integer"
             },
             "type": "object",
-            "title": "Dbxrefscount"
+            "title": "Dbxrefscount",
+            "description": "Cross-reference counts per related type. The values are the totals before dbXrefsLimit truncation, so callers can detect when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint.",
+            "examples": [
+              {
+                "biosample": 5,
+                "sra-experiment": 12
+              }
+            ]
           }
         },
         "type": "object",
@@ -23823,7 +23844,14 @@
               "type": "integer"
             },
             "type": "object",
-            "title": "Dbxrefscount"
+            "title": "Dbxrefscount",
+            "description": "Cross-reference counts per related type. The values are the totals before dbXrefsLimit truncation, so callers can detect when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint.",
+            "examples": [
+              {
+                "biosample": 5,
+                "sra-experiment": 12
+              }
+            ]
           }
         },
         "type": "object",
@@ -24433,7 +24461,14 @@
               "type": "integer"
             },
             "type": "object",
-            "title": "Dbxrefscount"
+            "title": "Dbxrefscount",
+            "description": "Cross-reference counts per related type. The values are the totals before dbXrefsLimit truncation, so callers can detect when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint.",
+            "examples": [
+              {
+                "biosample": 5,
+                "sra-experiment": 12
+              }
+            ]
           }
         },
         "type": "object",
@@ -24831,7 +24866,7 @@
           "total": {
             "type": "integer",
             "title": "Total",
-            "description": "Total number of matching items.",
+            "description": "Total number of matching items (exact count via track_total_hits=true on Elasticsearch).",
             "examples": [
               1234
             ]
@@ -24892,7 +24927,7 @@
           "type": {
             "type": "string",
             "title": "Type",
-            "description": "Problem type URI.",
+            "description": "Problem type URI (RFC 7807). Generic errors use 'about:blank'; endpoint-specific failures use 'https://ddbj.nig.ac.jp/problems/<slug>' (e.g. 'cursor-not-supported', 'unknown-field'). URI need not be dereferenceable; it functions as an identifier.",
             "default": "about:blank",
             "examples": [
               "about:blank"
@@ -25397,7 +25432,7 @@
               "unavailable"
             ],
             "title": "Elasticsearch",
-            "description": "Elasticsearch status: 'ok' or 'unavailable'.",
+            "description": "Elasticsearch reachability: 'ok' when the cluster responds to a ping, 'unavailable' otherwise.  The endpoint itself always returns 200; this field communicates ES health.",
             "examples": [
               "ok"
             ]
@@ -25697,7 +25732,14 @@
               "type": "integer"
             },
             "type": "object",
-            "title": "Dbxrefscount"
+            "title": "Dbxrefscount",
+            "description": "Cross-reference counts per related type. The values are the totals before dbXrefsLimit truncation, so callers can detect when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint.",
+            "examples": [
+              {
+                "biosample": 5,
+                "sra-experiment": 12
+              }
+            ]
           }
         },
         "type": "object",
@@ -26067,7 +26109,7 @@
           "query": {
             "type": "string",
             "title": "Query",
-            "description": "Resolved primary identifier of the requested BioProject.",
+            "description": "Resolved primary identifier of the requested BioProject. Always the primary accession even if the request used a sameAs secondary id.",
             "examples": [
               "PRJDB1234"
             ]
@@ -26078,7 +26120,7 @@
             },
             "type": "array",
             "title": "Roots",
-            "description": "Root BioProject accessions (parentBioProjects is empty).",
+            "description": "Root BioProject accessions (entries whose parentBioProjects list is empty). Deterministically sorted. Orphan input returns a single-element list containing the query itself.",
             "examples": [
               [
                 "PRJDB0001"
@@ -26091,7 +26133,7 @@
             },
             "type": "array",
             "title": "Edges",
-            "description": "Unique (parent, child) pairs covering the reachable subgraph.",
+            "description": "Unique (parent, child) pairs covering the reachable subgraph. Deterministically sorted (parent ascending, then child ascending). Duplicates from DAG multi-path traversals are deduplicated. Dangling edges (parent or child missing from the bioproject index) are dropped.",
             "examples": [
               [
                 {

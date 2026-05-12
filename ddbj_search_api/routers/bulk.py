@@ -216,6 +216,10 @@ async def _generate_bulk_ndjson(
             "description": "Unprocessable Entity (parameter validation error).",
             "model": ProblemDetails,
         },
+        500: {
+            "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
+            "model": ProblemDetails,
+        },
     },
 )
 async def bulk_entries(

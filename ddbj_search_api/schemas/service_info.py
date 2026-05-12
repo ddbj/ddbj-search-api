@@ -35,5 +35,9 @@ class ServiceInfoResponse(BaseModel):
     )
     elasticsearch: ElasticsearchStatus = Field(
         examples=["ok"],
-        description="Elasticsearch status: 'ok' or 'unavailable'.",
+        description=(
+            "Elasticsearch reachability: 'ok' when the cluster responds to a ping, "
+            "'unavailable' otherwise.  The endpoint itself always returns 200; "
+            "this field communicates ES health."
+        ),
     )

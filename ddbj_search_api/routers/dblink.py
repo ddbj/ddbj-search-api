@@ -58,6 +58,10 @@ def list_types() -> DbLinksTypesResponse:
             "description": "Unprocessable Entity (invalid {type} or target).",
             "model": ProblemDetails,
         },
+        500: {
+            "description": "Internal Server Error (DuckDB file missing).",
+            "model": ProblemDetails,
+        },
     },
 )
 async def get_links(
@@ -131,6 +135,10 @@ async def get_links(
     responses={
         422: {
             "description": "Unprocessable Entity (empty / oversized items, invalid type).",
+            "model": ProblemDetails,
+        },
+        500: {
+            "description": "Internal Server Error (DuckDB file missing).",
             "model": ProblemDetails,
         },
     },

@@ -39,11 +39,19 @@ router = APIRouter(tags=["Entry Detail"])
 
 _DETAIL_ERRORS: dict[int | str, dict[str, Any]] = {
     404: {
-        "description": "Not Found (entry does not exist, or is withdrawn / private).",
+        "description": (
+            "Not Found (entry does not exist, or is withdrawn / private). "
+            "The detail message is a fixed string identical to the missing-entry case, "
+            "so hidden status cannot be inferred from the response."
+        ),
         "model": ProblemDetails,
     },
     422: {
         "description": "Unprocessable Entity (parameter validation error).",
+        "model": ProblemDetails,
+    },
+    500: {
+        "description": "Internal Server Error (Elasticsearch unreachable or DuckDB missing).",
         "model": ProblemDetails,
     },
 }

@@ -90,19 +90,34 @@ class PaginationQuery:
         page: int = Query(
             default=1,
             ge=1,
-            description="Page number (1-based).",
+            description=(
+                "Page number (1-based). "
+                "Combined with perPage, must satisfy page * perPage <= 10000 "
+                "(deep paging limit; exceeding it returns 400). "
+                "For deeper paging, use cursor instead."
+            ),
         ),
         per_page: int = Query(
             default=10,
             ge=1,
             le=100,
             alias="perPage",
-            description="Items per page (1-100).",
+            description=(
+                "Items per page (1-100). "
+                "Combined with page, must satisfy page * perPage <= 10000."
+            ),
         ),
         cursor: str | None = Query(
             default=None,
             examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
-            description="Cursor token for cursor-based pagination.",
+            description=(
+                "Cursor token for cursor-based pagination. "
+                "Opaque HMAC-signed string returned in the previous response's nextCursor. "
+                "When specified, almost all search/filter parameters and 'page' must use their defaults; "
+                "exceptions are perPage / dbXrefsLimit / includeDbXrefs which may be combined. "
+                "PIT lifetime is 5 minutes after first use; expired tokens return 400. "
+                "Tokens become invalid across server restarts (signing key regenerates)."
+            ),
         ),
     ):
         self.page = page
@@ -121,7 +136,13 @@ class SearchFilterQuery:
         keywords: str | None = Query(
             default=None,
             examples=["cancer"],
-            description="Search keywords (comma-separated for multiple).",
+            description=(
+                "Search keywords (comma-separated for multiple). "
+                "Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). "
+                "Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). "
+                "When the value is a single token that matches an INSDC accession ID exactly, "
+                "'suppressed' entries are included in the search scope."
+            ),
         ),
         keyword_fields: str | None = Query(
             default=None,
@@ -302,15 +323,19 @@ class DbXrefsLimitQuery:
             le=1000,
             alias="dbXrefsLimit",
             description=(
-                "Maximum number of dbXrefs to return per type (0-1000). "
-                "Use 0 to omit dbXrefs but still get dbXrefsCount."
+                "Maximum number of dbXrefs to return per related type (0-1000). "
+                "The limit applies per type, not globally; an entry with 200 biosample + 50 sra-study "
+                "and dbXrefsLimit=100 returns 100 + 50 = 150 dbXrefs total. "
+                "Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
             ),
         ),
         include_db_xrefs: bool = Query(
             default=True,
             alias="includeDbXrefs",
             description=(
-                "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+                "Include dbXrefs and dbXrefsCount from DuckDB. "
+                "When false, both are omitted and DuckDB is not queried. "
+                "When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
             ),
         ),
     ):
@@ -708,15 +733,18 @@ class EntryDetailQuery:
             le=1000,
             alias="dbXrefsLimit",
             description=(
-                "Maximum number of dbXrefs to return per type (0-1000). "
-                "Use 0 to omit dbXrefs but still get dbXrefsCount."
+                "Maximum number of dbXrefs to return per related type (0-1000). "
+                "The limit applies per type, not globally. "
+                "Use 0 to omit dbXrefs but still get dbXrefsCount (per-type aggregation)."
             ),
         ),
         include_db_xrefs: bool = Query(
             default=True,
             alias="includeDbXrefs",
             description=(
-                "Include dbXrefs and dbXrefsCount from DuckDB. When false, both are omitted and DuckDB is not queried."
+                "Include dbXrefs and dbXrefsCount from DuckDB. "
+                "When false, both are omitted and DuckDB is not queried. "
+                "When combined with dbXrefsLimit, includeDbXrefs=false takes precedence."
             ),
         ),
     ):

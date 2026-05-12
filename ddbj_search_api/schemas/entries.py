@@ -38,7 +38,15 @@ class BioProjectDetailResponse(BioProject):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+    db_xrefs_count: DbXrefsCount = Field(
+        alias="dbXrefsCount",
+        examples=[{"biosample": 5, "sra-experiment": 12}],
+        description=(
+            "Cross-reference counts per related type. "
+            "The values are the totals before dbXrefsLimit truncation, so callers can detect "
+            "when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint."
+        ),
+    )
 
 
 class BioSampleDetailResponse(BioSample):
@@ -46,7 +54,15 @@ class BioSampleDetailResponse(BioSample):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+    db_xrefs_count: DbXrefsCount = Field(
+        alias="dbXrefsCount",
+        examples=[{"biosample": 5, "sra-experiment": 12}],
+        description=(
+            "Cross-reference counts per related type. "
+            "The values are the totals before dbXrefsLimit truncation, so callers can detect "
+            "when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint."
+        ),
+    )
 
 
 class SraDetailResponse(SRA):
@@ -54,7 +70,15 @@ class SraDetailResponse(SRA):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+    db_xrefs_count: DbXrefsCount = Field(
+        alias="dbXrefsCount",
+        examples=[{"biosample": 5, "sra-experiment": 12}],
+        description=(
+            "Cross-reference counts per related type. "
+            "The values are the totals before dbXrefsLimit truncation, so callers can detect "
+            "when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint."
+        ),
+    )
 
 
 class JgaDetailResponse(JGA):
@@ -62,7 +86,15 @@ class JgaDetailResponse(JGA):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+    db_xrefs_count: DbXrefsCount = Field(
+        alias="dbXrefsCount",
+        examples=[{"biosample": 5, "sra-experiment": 12}],
+        description=(
+            "Cross-reference counts per related type. "
+            "The values are the totals before dbXrefsLimit truncation, so callers can detect "
+            "when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint."
+        ),
+    )
 
 
 class GeaDetailResponse(GEA):
@@ -70,7 +102,15 @@ class GeaDetailResponse(GEA):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+    db_xrefs_count: DbXrefsCount = Field(
+        alias="dbXrefsCount",
+        examples=[{"biosample": 5, "sra-experiment": 12}],
+        description=(
+            "Cross-reference counts per related type. "
+            "The values are the totals before dbXrefsLimit truncation, so callers can detect "
+            "when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint."
+        ),
+    )
 
 
 class MetaboBankDetailResponse(MetaboBank):
@@ -78,7 +118,15 @@ class MetaboBankDetailResponse(MetaboBank):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    db_xrefs_count: DbXrefsCount = Field(alias="dbXrefsCount")
+    db_xrefs_count: DbXrefsCount = Field(
+        alias="dbXrefsCount",
+        examples=[{"biosample": 5, "sra-experiment": 12}],
+        description=(
+            "Cross-reference counts per related type. "
+            "The values are the totals before dbXrefsLimit truncation, so callers can detect "
+            "when the returned 'dbXrefs' list has been clipped and need the dedicated dbxrefs endpoint."
+        ),
+    )
 
 
 DetailResponse = (

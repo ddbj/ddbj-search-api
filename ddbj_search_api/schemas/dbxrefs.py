@@ -20,5 +20,9 @@ class DbXrefsFullResponse(BaseModel):
                 },
             ],
         ],
-        description="All cross-references for the entry.",
+        description=(
+            "All cross-references for the entry (no truncation). "
+            "Returned via streaming from DuckDB; may contain references to non-public entries "
+            "(withdrawn / private accessions) since the underlying edge table is not status-filtered."
+        ),
     )
