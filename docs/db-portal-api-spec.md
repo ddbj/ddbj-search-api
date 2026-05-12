@@ -197,8 +197,8 @@ cursor pagination (ES 6 DB) は cursor token に最初の offset リクエスト
 | `q` + `db` (ES 対応 6 DB) | DB 指定検索 (`hits` envelope + cursor/offset pagination)。クエリは Lark でパース → validator → ES bool query にコンパイル |
 | `q` + `db=trad` / `db=taxonomy` | DB 指定検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却)。クエリは edismax `q` 文字列にコンパイル |
 | `q` 省略 + `db` | 当該 `db` の全件 `match_all` ヒット |
-| `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は offset-only) |
-| `cursor` + `q` に `field:value` 等を含む | 400 (`cursor-not-supported` — `field:value` を含むクエリは offset-only。`db` の値を問わず常に同じ slug) |
+| `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は cursor 非対応、offset-only) |
+| `cursor` + `q` / `sort` / `page>1` (ES 6 DB) | 400 `about:blank` (cursor 排他違反、[§ ページネーション](#ページネーション)参照) |
 
 パラメータルール:
 
@@ -215,7 +215,7 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 - `db` (required): 値は `trad`, `sra`, `bioproject`, `biosample`, `jga`, `gea`, `metabobank`, `taxonomy` のいずれか。未指定で 400 `missing-db`
 - `q`: Tier 1/2/3 全フィールド許容。文法は本ページ「クエリ文法」節
 - `perPage`: 許容値は `20`, `50`, `100` のみ (他は 422)
-- `cursor`: HMAC 署名付き opaque トークン、PIT 5 分。ES 6 DB のみ対応 (Solr proxy 2 DB および `field:value` を含む `q` は cursor 不可: 400 `cursor-not-supported`)。排他ルールはページネーション節を参照
+- `cursor`: HMAC 署名付き opaque トークン、PIT 5 分。ES 6 DB のみ対応。Solr proxy 2 DB (`db=trad` / `db=taxonomy`) は cursor 非対応: 400 `cursor-not-supported`。ES DB で `q` / `sort` / `page>1` と同時指定した場合は cursor 排他違反: 400 `about:blank` ([§ ページネーション](#ページネーション))
 - `sort`: 許容値は `datePublished:desc`, `datePublished:asc`, または省略 (relevance = score desc + identifier tiebreaker)。他値は 422
 
 ### レスポンス (`DbPortalHitsResponse`)
@@ -363,7 +363,7 @@ organism:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (title
 |------|------|------|----------------|------|
 | `unexpected-parameter` | 400 | `/db-portal/cross-search` に `db` / `cursor` / `page` / `perPage` / `sort` を指定 | cross-search | detail に余剰パラメータ名を埋め込み |
 | `missing-db` | 400 | `/db-portal/search` で `db` 未指定 | search | detail に許容 DB 一覧と「横断検索は `/db-portal/cross-search`」案内を埋め込み |
-| `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は offset-only)。`field:value` を含むクエリ + `cursor` も `db` の値を問わず常にこの slug | search | — |
+| `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は cursor 非対応、offset-only) | search | — |
 | `unexpected-token` | 400 | 構文エラー (非対応構文 / 過長クエリ / 空入力 含む) | 両 | クエリ |
 | `unknown-field` | 400 | allowlist 外フィールド。`detail` に column 位置と候補一覧を埋め込み | 両 | クエリ |
 | `field-not-available-in-cross-db` | 400 | 横断モードで Tier 3 フィールド使用。`detail` に候補 DB を列挙 (例: `use db=sra or db=gea`) | cross-search | クエリ |

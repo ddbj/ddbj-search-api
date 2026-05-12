@@ -16364,7 +16364,7 @@
           "db-portal"
         ],
         "summary": "DB Portal db-specific hits search",
-        "description": "Single-database hits search with pagination. `db` is required (400 `missing-db` if omitted). Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only (400 `cursor-not-supported` if cursor is supplied). Cross-database counts go through /db-portal/cross-search instead.",
+        "description": "Single-database hits search with pagination. `db` is required (400 `missing-db` if omitted). Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=trad / db=taxonomy) are offset-only (400 `cursor-not-supported` if cursor is supplied). On ES DBs, `cursor` cannot be combined with `q` / `sort` / `page>1` (400 `about:blank`, cursor exclusivity). Cross-database counts go through /db-portal/cross-search instead.",
         "operationId": "searchDbPortal",
         "parameters": [
           {
@@ -16452,13 +16452,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). When specified, q / sort / page must use their defaults (db and perPage may be combined). Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only and return 400 'cursor-not-supported' if cursor is supplied.",
+              "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). When specified, q / sort / page must use their defaults (db and perPage may be combined). Combining cursor with q / sort / page>1 on ES DBs returns 400 'about:blank' (cursor exclusivity). Solr-backed DBs (db=trad / db=taxonomy) are cursor-incompatible and return 400 'cursor-not-supported' if cursor is supplied.",
               "examples": [
                 "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"
               ],
               "title": "Cursor"
             },
-            "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). When specified, q / sort / page must use their defaults (db and perPage may be combined). Solr-backed DBs (db=trad / db=taxonomy) and queries containing field clauses are offset-only and return 400 'cursor-not-supported' if cursor is supplied."
+            "description": "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). When specified, q / sort / page must use their defaults (db and perPage may be combined). Combining cursor with q / sort / page>1 on ES DBs returns 400 'about:blank' (cursor exclusivity). Solr-backed DBs (db=trad / db=taxonomy) are cursor-incompatible and return 400 'cursor-not-supported' if cursor is supplied."
           },
           {
             "name": "sort",

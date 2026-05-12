@@ -1020,7 +1020,8 @@ router.add_api_route(
     description=(
         "Single-database hits search with pagination. `db` is required (400 `missing-db` if omitted). "
         "Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=trad / db=taxonomy) "
-        "and queries containing field clauses are offset-only (400 `cursor-not-supported` if cursor is supplied). "
+        "are offset-only (400 `cursor-not-supported` if cursor is supplied). "
+        "On ES DBs, `cursor` cannot be combined with `q` / `sort` / `page>1` (400 `about:blank`, cursor exclusivity). "
         "Cross-database counts go through /db-portal/cross-search instead."
     ),
     operation_id="searchDbPortal",

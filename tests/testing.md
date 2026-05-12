@@ -23,7 +23,7 @@
 
 ## ディレクトリ構成
 
-`tests/` は `ddbj_search_api/` のディレクトリ構造をミラーする。共通 fixture は `unit/conftest.py` と `integration/conftest.py`、PBT カスタムストラテジーは `unit/strategies.py` に集約。新しいモジュールを作ったら同じ階層にテストファイルを追加する。
+`tests/` は `ddbj_search_api/` のディレクトリ構造をミラーする。共通 fixture は `unit/conftest.py` と `integration/conftest.py`、PBT カスタムストラテジーは `unit/strategies.py` に集約。Pydantic モデルの synthetic instance ビルダーは `tests/_factories.py`、必須 list フィールドの enumeration は `tests/_required_list_fields.py` に集約し、unit / integration 双方で再利用する。新しいモジュールを作ったら同じ階層にテストファイルを追加する。
 
 ## 命名規則
 

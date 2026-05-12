@@ -939,25 +939,27 @@
 **回帰元**: `docs/db-portal-api-spec.md § クエリ文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
 
-### IT-DSL-02: cursor + field clause 含む `q` で `cursor-not-supported` 400 (ES DB)
+### IT-DSL-02: cursor + `q` で cursor 排他違反 400 (ES DB)
 
 **endpoint**: `GET /db-portal/search?db=bioproject&q=title:cancer&cursor=<token>`
 
 **不変条件**:
 - `status_code == 400`
-- `type` URI が `cursor-not-supported` slug を含む
-- `field:value` を含む `q` は offset-only
+- `type` URI が `about:blank` (cursor 排他違反は `q` / `sort` / `page>1` と同列の plain HTTPException)
+- `q` の `field:value` の有無で slug は分岐しない (`_validate_cursor_exclusivity` は `q is not None` で一律拒否)
+- Solr DB の `cursor-not-supported` slug (IT-DSL-03) とは区別される
 
-**回帰元**: `docs/db-portal-api-spec.md § エラー`
+**回帰元**: `docs/db-portal-api-spec.md § ページネーション`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
-### IT-DSL-03: cursor + field clause 含む `q` で `cursor-not-supported` 400 (Solr DB) — staging_only
+### IT-DSL-03: cursor + Solr DB で `cursor-not-supported` 400 — staging_only
 
 **endpoint**: `GET /db-portal/search?db=trad&q=title:cancer&cursor=<token>` (`@pytest.mark.staging_only`)
 
 **不変条件**:
-- ES と同じ slug `cursor-not-supported`
+- `type` URI が `cursor-not-supported` slug (`q` の有無 / field clause の有無に関係なく Solr DB + cursor で発火)
 - Solr DB は cursor 非対応 (offset-only)
+- IT-DSL-02 (ES DB の `about:blank`) と slug が異なる
 
 **回帰元**: `docs/db-portal-api-spec.md § エラー`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
@@ -1512,7 +1514,7 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 
 **不変条件**:
 - 1 ページ目に suppressed が出る (offset 経路)
-- cursor + field clause 含む `q` 同時指定で 400 (IT-DSL-02)
+- cursor + `q` 同時指定で 400 `about:blank` (IT-DSL-02)
 - 2 ページ目以降は `page` で取得 (deep paging 制限内)
 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性`
