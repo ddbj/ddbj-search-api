@@ -16,9 +16,9 @@ from fastapi import HTTPException, Query
 from ddbj_search_api.es.query import VALID_FACET_FIELDS
 from ddbj_search_api.schemas.common import DbType
 
-# Patterns expressed in OpenAPI for client codegen / docs.  Server-side
-# semantic validation is still performed below (e.g. unknown-type lookup
-# in TypesFilterQuery) so that legacy detail messages are preserved.
+# Patterns expressed in OpenAPI for client codegen / docs.  Semantic
+# validation that emits a custom detail message (e.g. unknown-type lookup
+# in TypesFilterQuery) is performed in addition to the pattern check.
 _KEYWORD_FIELDS_PATTERN = r"^(identifier|title|name|description)(,(identifier|title|name|description))*$"
 _DB_TYPES_PATTERN = (
     r"^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|"

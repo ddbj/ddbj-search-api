@@ -7,16 +7,6 @@ from hypothesis import strategies as st
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.dblink import AccessionType
 
-# ``ddbj_search_api.search.phrase`` is the SSOT for the auto-phrase trigger
-# sets; re-exported below under the legacy ``*_TRIGGERS`` aliases so existing
-# callers keep working without drifting from the production constants.
-from ddbj_search_api.search.phrase import (
-    ES_AUTO_PHRASE_CHARS as ES_AUTO_PHRASE_TRIGGERS,
-)
-from ddbj_search_api.search.phrase import (
-    SOLR_AUTO_PHRASE_CHARS as SOLR_AUTO_PHRASE_TRIGGERS,
-)
-
 # === DbType ===
 
 db_type_values: list[str] = [e.value for e in DbType]
@@ -70,11 +60,7 @@ valid_accession_id = st.text(
 
 bioproject_accession = st.from_regex(r"PRJ(DB|NA|EB)[0-9]{1,7}", fullmatch=True)
 
-# === Auto-phrase triggers (re-exported above from the production module) ===
-
 __all__ = [
-    "ES_AUTO_PHRASE_TRIGGERS",
-    "SOLR_AUTO_PHRASE_TRIGGERS",
     "accession_type_values",
     "alphanumeric_no_trigger",
     "bioproject_accession",

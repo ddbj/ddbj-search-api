@@ -99,7 +99,7 @@ class TestBoolSerialization:
         }
 
     def test_ssot_sample_nested(self) -> None:
-        # SSOT search-backends.md L363-381 のサンプル相当
+        # SSOT search-backends.md §AST フォーマット のサンプル相当
         dsl = 'organism:"Homo sapiens" AND date:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)'
         assert _j(dsl) == {
             "op": "AND",

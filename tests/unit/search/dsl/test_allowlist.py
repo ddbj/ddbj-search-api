@@ -146,12 +146,10 @@ class TestFieldTypesMapping:
             ("division", "enum"),
             ("molecular_type", "enum"),
             ("rank", "enum"),
-            # db-portal sidebar 拡張で追加された Tier 3 enum
             ("package", "enum"),
             ("model", "enum"),
             ("type", "enum"),
             ("library_selection", "enum"),
-            # db-portal sidebar 拡張で追加された Tier 1 enum
             ("accessibility", "enum"),
             # Tier 3 number
             ("sequence_length", "number"),

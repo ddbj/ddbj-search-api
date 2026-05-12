@@ -98,7 +98,6 @@ class TestParseFacetsOptionalSemantics:
             "experimentType",
             "studyType",
             "submissionType",
-            # db-portal sidebar 拡張で追加された 6 facet
             "relevance",
             "package",
             "model",

@@ -1,13 +1,12 @@
 """Integration tests for IT-UMBRELLA-* scenarios.
 
 GET /entries/bioproject/{accession}/umbrella-tree. Returns the parent /
-child DAG. ``MAX_DEPTH=10`` overrun (was IT-UMBRELLA-04), hidden-node
-exclusion (was IT-UMBRELLA-06), and BioProject sameAs fallback (was
-IT-UMBRELLA-08) are not exercised here because (a) deeper-than-10
-chains do not exist in the staging input, (b) ``withdrawn`` entries
-never reach ES, and (c) BioProject ``sameAs`` only carries external
-cross-refs — see api-spec.md § データ可視性 / § sameAs and the unit
-suite for the depth cap.
+child DAG. ``MAX_DEPTH=10`` overrun, hidden-node exclusion, and
+BioProject sameAs fallback are not exercised here because (a)
+deeper-than-10 chains do not exist in the staging input, (b)
+``withdrawn`` entries never reach ES, and (c) BioProject ``sameAs``
+only carries external cross-refs — see api-spec.md § データ可視性 /
+§ sameAs and the unit suite for the depth cap.
 
 See ``tests/integration-scenarios.md § IT-UMBRELLA-*``.
 """

@@ -32,6 +32,7 @@ from ddbj_search_api.es.query import (
     resolve_requested_facets,
     validate_keyword_fields,
 )
+from ddbj_search_api.routers._helpers import is_jga, is_sra
 from ddbj_search_api.routers._query_validation import (
     TYPE_GROUP_FILTERS_DESC,
     entries_allowed_query_params,
@@ -239,7 +240,6 @@ async def _do_search(
     db_xrefs_limit: int,
     filters: TypeSpecificFilters,
     is_cross_type: bool = False,
-    db_type: str | None = None,
     requested_facets: list[str] | None = None,
     include_db_xrefs: bool = True,
 ) -> Any:
@@ -274,7 +274,6 @@ async def _do_search(
         db_xrefs_limit=db_xrefs_limit,
         filters=filters,
         is_cross_type=is_cross_type,
-        db_type=db_type,
         requested_facets=requested_facets,
         include_db_xrefs=include_db_xrefs,
     )
@@ -289,7 +288,6 @@ async def _do_search_offset(
     db_xrefs_limit: int,
     filters: TypeSpecificFilters,
     is_cross_type: bool = False,
-    db_type: str | None = None,
     requested_facets: list[str] | None = None,
     include_db_xrefs: bool = True,
 ) -> Any:
@@ -633,14 +631,6 @@ router.add_api_route(
 # === GET /entries/{type}/ (type-specific search) ===
 
 
-def _is_sra(db_type: DbType) -> bool:
-    return db_type.value.startswith("sra-")
-
-
-def _is_jga(db_type: DbType) -> bool:
-    return db_type.value.startswith("jga-")
-
-
 _TypeExtraQuery = (
     BioProjectExtraQuery | BioSampleExtraQuery | SraExtraQuery | JgaExtraQuery | GeaExtraQuery | MetaboBankExtraQuery
 )
@@ -688,7 +678,6 @@ async def _run_type_search(
         db_xrefs_limit=db_xrefs.db_xrefs_limit,
         filters=filters,
         is_cross_type=False,
-        db_type=db_type.value,
         requested_facets=requested_facets,
         include_db_xrefs=db_xrefs.include_db_xrefs,
     )
@@ -749,7 +738,7 @@ def _make_type_search_handler(db_type: DbType) -> Any:
                 db_type=db_type,
             )
 
-    elif _is_sra(db_type):
+    elif is_sra(db_type):
 
         async def _handler(  # type: ignore[misc]
             request: Request,
@@ -773,7 +762,7 @@ def _make_type_search_handler(db_type: DbType) -> Any:
                 db_type=db_type,
             )
 
-    elif _is_jga(db_type):
+    elif is_jga(db_type):
 
         async def _handler(  # type: ignore[misc]
             request: Request,

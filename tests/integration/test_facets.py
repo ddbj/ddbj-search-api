@@ -146,7 +146,7 @@ class TestOpenAPIFacetsSchema:
     """IT-FACETS-06: the published OpenAPI Facets schema dropped ``status``."""
 
     def test_facets_schema_has_no_status(self, app: TestClient) -> None:
-        """IT-FACETS-06: ``status`` is no longer a Facets property (commit 40196f7)."""
+        """IT-FACETS-06: ``status`` is not exposed as a Facets property."""
         spec = app.get("/openapi.json").json()
         schemas = spec.get("components", {}).get("schemas", {})
         facets_schema = schemas.get("Facets")
@@ -273,7 +273,6 @@ class TestOrganismFacetBucketShape:
             assert total >= count, (bucket, total)
 
     def test_organism_name_still_rejected_with_422(self, app: TestClient) -> None:
-        """IT-FACETS-10: 旧仕様で動いていた ``?organism=<scientific name>`` が
-        引き続き 422 で蹴られること (`_ORGANISM_PATTERN = ^\\d+$`)。"""
+        """IT-FACETS-10: ``?organism=<scientific name>`` は 422 で蹴られる (`_ORGANISM_PATTERN = ^\\d+$`)。"""
         resp = app.get("/entries/", params={"organism": "Homo sapiens"})
         assert resp.status_code == 422

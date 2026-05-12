@@ -211,7 +211,6 @@ class TestArsaTier3EsOnlyDegenerate:
             "experiment_type:ChIP-Seq",
             "submission_type:metabolite",
             "grant_agency:JSPS",
-            # db-portal sidebar 拡張で追加された ES-only Tier 3
             "package:MIGS.ba",
             "model:HiSeq",
             "type:sra-experiment",
@@ -297,7 +296,6 @@ class TestTxSearchEsOnlyTier3Degenerate:
             "library_selection:RANDOM",
             "study_type:Cohort",
             "grant_agency:JSPS",
-            # db-portal sidebar 拡張で追加された ES-only Tier 3
             "package:MIGS.ba",
             "model:HiSeq",
             "type:sra-experiment",
@@ -354,7 +352,7 @@ class TestCompilerSolrPBT:
 
 
 class TestCompileFreeTextSolr:
-    """compile_free_text_solr が現状 solr/query.py:_build_q_string と等価か."""
+    """compile_free_text_solr: トークンを quote / space-join して edismax ``q`` を返す."""
 
     def test_single_token(self) -> None:
 

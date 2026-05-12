@@ -1,6 +1,6 @@
 """DSL compiler for Elasticsearch (Stage 3a: AST → ES bool query dict).
 
-SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
+SSOT: search-backends.md §バックエンド変換.
 
 - Tier 1 は 7 flat (identifier/title/description/date_published/date_modified/date_created/accessibility)
   + 1 or_flat (date alias)
@@ -106,8 +106,7 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     # SRA + JGA 共通 (subtype 識別子。SRA: sra-submission..sra-analysis、JGA: jga-study..jga-policy)
     "type": _ESStrategy(kind="flat", path="type"),
     # === Tier 3 double-nested ===
-    # BioProject / JGA 共通: grant[].agency[].name。GUI 側で bioproject_grant_agency /
-    # jga_grant_agency の ID 区別あり、DSL 名は `grant_agency` 統一 (search-backends.md L551)。
+    # BioProject / JGA 共通: grant[].agency[].name。DSL 名は `grant_agency` で統一。
     "grant_agency": _ESStrategy(
         kind="nested2",
         path="grant",
@@ -189,9 +188,8 @@ def _compile_node(node: Node) -> dict[str, Any]:
 def _compile_and_children(children: tuple[Node, ...]) -> list[dict[str, Any]]:
     """AND の子ノードを compile し、FreeText 由来の ``bool.must`` を flatten する.
 
-    ``BoolOp(AND, [adv_ast, FreeText(q)])`` の出力を旧 ``build_combined_es_query``
-    が組んでいた ``bool.must=[<adv_compiled>, <freetext_multi_match_1>, ...]`` と
-    等価にするため、FreeText 子の ``bool.must`` の中身だけを取り出す。
+    AND 直下では FreeText が生成する ``bool.must=[multi_match_1, ...]`` をそのまま
+    親 AND の clauses に展開し、入れ子の bool wrapper を 1 段減らす。
     OR / NOT 配下では flatten しない (bool 構造の意味が変わるため)。
     """
     clauses: list[dict[str, Any]] = []

@@ -1,8 +1,8 @@
 """Tests for ddbj_search_api.search.dsl.validator (Stage 2).
 
 SSOT:
-- search.md §演算子とフィールドの組み合わせ (L225-236)
-- search-backends.md §値のバリデーション (L400-414)
+- search.md §演算子とフィールドの組み合わせ
+- search-backends.md §値のバリデーション
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import DslError, ErrorType, parse
 from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS
 from ddbj_search_api.search.dsl.validator import DEFAULT_MAX_NODES, validate
@@ -225,12 +224,12 @@ class TestMode:
         validate(parse("title:cancer"), mode="cross")
 
     def test_single_mode_with_tier1_accepted(self) -> None:
-        validate(parse("title:cancer"), mode="single", db=DbPortalDb.bioproject)
+        validate(parse("title:cancer"), mode="single")
 
     def test_single_mode_unknown_field_still_rejected(self) -> None:
         ast = parse("foo:bar")
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.bioproject)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.unknown_field
 
 
@@ -414,13 +413,13 @@ class TestTier3SingleModeAccepted:
         ],
     )
     def test_single_mode_accepts_tier3(self, field: str, value: str) -> None:
-        validate(parse(f"{field}:{value}"), mode="single", db=DbPortalDb.bioproject)
+        validate(parse(f"{field}:{value}"), mode="single")
 
     def test_sequence_length_range_accepted_in_single_mode(self) -> None:
-        validate(parse("sequence_length:[100 TO 5000]"), mode="single", db=DbPortalDb.trad)
+        validate(parse("sequence_length:[100 TO 5000]"), mode="single")
 
     def test_sequence_length_eq_accepted_in_single_mode(self) -> None:
-        validate(parse("sequence_length:1000"), mode="single", db=DbPortalDb.trad)
+        validate(parse("sequence_length:1000"), mode="single")
 
 
 class TestEnumValueKindCompat:
@@ -442,7 +441,7 @@ class TestEnumValueKindCompat:
         ],
     )
     def test_enum_word_or_phrase_accepted(self, dsl: str) -> None:
-        validate(parse(dsl), mode="single", db=DbPortalDb.bioproject)
+        validate(parse(dsl), mode="single")
 
     @pytest.mark.parametrize(
         "dsl",
@@ -458,7 +457,7 @@ class TestEnumValueKindCompat:
     def test_enum_wildcard_range_date_rejected(self, dsl: str) -> None:
         ast = parse(dsl)
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.bioproject)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
 
@@ -466,10 +465,10 @@ class TestNumberValueKindCompat:
     """number 型フィールド (sequence_length) は word / range のみ accept。"""
 
     def test_number_eq_accepted(self) -> None:
-        validate(parse("sequence_length:5000"), mode="single", db=DbPortalDb.trad)
+        validate(parse("sequence_length:5000"), mode="single")
 
     def test_number_range_accepted(self) -> None:
-        validate(parse("sequence_length:[100 TO 5000]"), mode="single", db=DbPortalDb.trad)
+        validate(parse("sequence_length:[100 TO 5000]"), mode="single")
 
     @pytest.mark.parametrize(
         "dsl",
@@ -482,7 +481,7 @@ class TestNumberValueKindCompat:
     def test_number_phrase_wildcard_date_rejected(self, dsl: str) -> None:
         ast = parse(dsl)
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.trad)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
 
@@ -492,23 +491,23 @@ class TestNumberDigitValidation:
     def test_non_digit_word_rejected(self) -> None:
         ast = parse("sequence_length:abc")
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.trad)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
     def test_non_digit_range_from_rejected(self) -> None:
         ast = parse("sequence_length:[abc TO 5000]")
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.trad)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
     def test_non_digit_range_to_rejected(self) -> None:
         ast = parse("sequence_length:[100 TO xyz]")
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.trad)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
     def test_digit_range_accepted(self) -> None:
-        validate(parse("sequence_length:[100 TO 5000]"), mode="single", db=DbPortalDb.trad)
+        validate(parse("sequence_length:[100 TO 5000]"), mode="single")
 
 
 class TestValidatorPBT:
@@ -558,30 +557,11 @@ _ENUM_FIELDS = [
     "division",
     "molecular_type",
     "rank",
-    # db-portal sidebar 拡張で追加された Tier 3 enum
     "package",
     "model",
     "type",
     "library_selection",
 ]
-_ENUM_DBS: dict[str, DbPortalDb] = {
-    "project_type": DbPortalDb.bioproject,
-    "relevance": DbPortalDb.bioproject,
-    "library_strategy": DbPortalDb.sra,
-    "library_source": DbPortalDb.sra,
-    "library_layout": DbPortalDb.sra,
-    "platform": DbPortalDb.sra,
-    "study_type": DbPortalDb.jga,
-    "division": DbPortalDb.trad,
-    "molecular_type": DbPortalDb.trad,
-    "rank": DbPortalDb.taxonomy,
-    "package": DbPortalDb.biosample,
-    "model": DbPortalDb.biosample,
-    "type": DbPortalDb.sra,
-    "library_selection": DbPortalDb.sra,
-}
-
-
 class TestTier3PBT:
     """hypothesis PBT: enum / number field x value_kind の互換性."""
 
@@ -600,8 +580,7 @@ class TestTier3PBT:
     )
     @settings(max_examples=40, deadline=None)
     def test_enum_word_always_accepted(self, field: str, value: str) -> None:
-        db = _ENUM_DBS[field]
-        validate(parse(f"{field}:{value}"), mode="single", db=db)
+        validate(parse(f"{field}:{value}"), mode="single")
 
     @given(
         field=st.sampled_from(_ENUM_FIELDS),
@@ -613,10 +592,9 @@ class TestTier3PBT:
     )
     @settings(max_examples=30, deadline=None)
     def test_enum_wildcard_always_rejected(self, field: str, suffix: str) -> None:
-        db = _ENUM_DBS[field]
         ast = parse(f"{field}:{suffix}*")
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=db)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
     @given(
@@ -624,7 +602,7 @@ class TestTier3PBT:
     )
     @settings(max_examples=40, deadline=None)
     def test_number_digit_value_accepted(self, value: int) -> None:
-        validate(parse(f"sequence_length:{value}"), mode="single", db=DbPortalDb.trad)
+        validate(parse(f"sequence_length:{value}"), mode="single")
 
     @given(
         low=st.integers(min_value=0, max_value=500_000),
@@ -635,7 +613,6 @@ class TestTier3PBT:
         validate(
             parse(f"sequence_length:[{low} TO {high}]"),
             mode="single",
-            db=DbPortalDb.trad,
         )
 
     @given(
@@ -649,7 +626,7 @@ class TestTier3PBT:
     def test_number_non_digit_rejected(self, value: str) -> None:
         ast = parse(f"sequence_length:{value}")
         with pytest.raises(DslError) as exc_info:
-            validate(ast, mode="single", db=DbPortalDb.trad)
+            validate(ast, mode="single")
         assert exc_info.value.type == ErrorType.invalid_operator_for_field
 
     @given(field=st.sampled_from(sorted(set(_ENUM_FIELDS) | {"sequence_length"})))

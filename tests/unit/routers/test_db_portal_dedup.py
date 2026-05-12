@@ -112,7 +112,7 @@ class TestDedupLightweightHitsExamples:
         assert _dedup_lightweight_hits([hit, hit], 0) == []
 
     def test_dedup_lightweight_hits_keeps_subtype_variants_as_distinct(self) -> None:
-        """同 identifier でも type が違えば別 hit として保持 (spec L265 subtype 分散)."""
+        """同 identifier でも type が違えば別 hit として保持 (db-portal-api-spec.md § subtype 分散)."""
         study = DbPortalLightweightHit(identifier="JGAS000001", type="jga-study")
         dataset = DbPortalLightweightHit(identifier="JGAS000001", type="jga-dataset")
         result = _dedup_lightweight_hits([study, dataset], 5)

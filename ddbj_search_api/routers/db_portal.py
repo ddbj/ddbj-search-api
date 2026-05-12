@@ -266,7 +266,6 @@ def _parse_and_validate_query(
         validate(
             ast,
             mode="cross" if db is None else "single",
-            db=db,
             max_depth=config.dsl_max_depth,
             max_nodes=config.dsl_max_nodes,
         )
@@ -506,7 +505,7 @@ async def _count_txsearch_unified(
     *,
     with_uf: bool,
 ) -> DbPortalCount:
-    """TXSearch cross-search の単一関数版 (旧 ``_count_txsearch`` 系 3 関数の統合)."""
+    """TXSearch cross-search のカウントとライト hits を取得する."""
     if not config.solr_txsearch_url:
         return DbPortalCount(
             db=DbPortalDb.taxonomy,

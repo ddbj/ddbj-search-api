@@ -22,12 +22,7 @@ from ddbj_search_api.search.phrase import (
     parse_keywords_with_autophrase,
     tokenize_keywords,
 )
-from tests.unit.strategies import (
-    ES_AUTO_PHRASE_TRIGGERS,
-    SOLR_AUTO_PHRASE_TRIGGERS,
-    alphanumeric_no_trigger,
-    text_with_trigger,
-)
+from tests.unit.strategies import alphanumeric_no_trigger, text_with_trigger
 
 # ===================================================================
 # Trigger char set 構成
@@ -303,28 +298,28 @@ class TestPhrasePBT:
             assert len(text) > 0
             assert isinstance(is_phrase, bool)
 
-    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_TRIGGERS))
+    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_CHARS))
     def test_no_es_trigger_means_not_phrase(self, text: str) -> None:
         assert has_auto_phrase_trigger(text, ES_AUTO_PHRASE_CHARS) is False
         assert parse_keywords_with_autophrase(text, ES_AUTO_PHRASE_CHARS) == [
             (text, False),
         ]
 
-    @given(text=text_with_trigger(ES_AUTO_PHRASE_TRIGGERS))
+    @given(text=text_with_trigger(ES_AUTO_PHRASE_CHARS))
     def test_es_trigger_present_means_phrase(self, text: str) -> None:
         assert has_auto_phrase_trigger(text, ES_AUTO_PHRASE_CHARS) is True
         assert parse_keywords_with_autophrase(text, ES_AUTO_PHRASE_CHARS) == [
             (text, True),
         ]
 
-    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_TRIGGERS))
+    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_CHARS))
     def test_quoted_text_always_phrase(self, text: str) -> None:
         assert parse_keywords_with_autophrase(
             f'"{text}"',
             ES_AUTO_PHRASE_CHARS,
         ) == [(text, True)]
 
-    @given(text=text_with_trigger(SOLR_AUTO_PHRASE_TRIGGERS))
+    @given(text=text_with_trigger(SOLR_AUTO_PHRASE_CHARS))
     def test_solr_trigger_present(self, text: str) -> None:
         assert has_auto_phrase_trigger(text, SOLR_AUTO_PHRASE_CHARS) is True
 

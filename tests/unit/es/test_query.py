@@ -25,11 +25,8 @@ from ddbj_search_api.es.query import (
     resolve_requested_facets,
     validate_keyword_fields,
 )
-from tests.unit.strategies import (
-    ES_AUTO_PHRASE_TRIGGERS,
-    alphanumeric_no_trigger,
-    text_with_trigger,
-)
+from ddbj_search_api.search.phrase import ES_AUTO_PHRASE_CHARS
+from tests.unit.strategies import alphanumeric_no_trigger, text_with_trigger
 
 # ===================================================================
 # pagination_to_from_size
@@ -677,7 +674,6 @@ class TestBuildFacetAggs:
             ("experimentType", "experimentType.keyword"),
             ("studyType", "studyType.keyword"),
             ("submissionType", "submissionType.keyword"),
-            # db-portal sidebar 拡張で追加された 6 facet
             # relevance / model は ES mapping が keyword 単独 (text+keyword multi-field ではない)
             # なので suffix `.keyword` を付けない
             ("relevance", "relevance"),
@@ -743,7 +739,6 @@ class TestBuildFacetAggsPBT:
                     "experimentType",
                     "studyType",
                     "submissionType",
-                    # db-portal sidebar 拡張で追加された 6 facet
                     "relevance",
                     "package",
                     "model",
@@ -1252,12 +1247,12 @@ class TestParseKeywordsAutoPhraseEdgeCases:
 class TestParseKeywordsAutoPhrasePBT:
     """Property-based tests for auto-phrase detection."""
 
-    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_TRIGGERS))
+    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_CHARS))
     def test_alphanumeric_without_trigger_is_not_phrase(self, text: str) -> None:
         """Any alphanumeric text without trigger chars → is_phrase=False."""
         assert _parse_keywords(text) == [(text, False)]
 
-    @given(text=text_with_trigger(ES_AUTO_PHRASE_TRIGGERS))
+    @given(text=text_with_trigger(ES_AUTO_PHRASE_CHARS))
     def test_text_containing_trigger_is_phrase(self, text: str) -> None:
         """Any text containing a trigger char → is_phrase=True."""
         result = _parse_keywords(text)
@@ -1266,7 +1261,7 @@ class TestParseKeywordsAutoPhrasePBT:
         assert returned_text == text
         assert is_phrase is True
 
-    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_TRIGGERS))
+    @given(text=alphanumeric_no_trigger(ES_AUTO_PHRASE_CHARS))
     def test_quoted_alphanumeric_is_always_phrase(self, text: str) -> None:
         """Explicit quote always produces phrase, even without trigger chars."""
         assert _parse_keywords(f'"{text}"') == [(text, True)]

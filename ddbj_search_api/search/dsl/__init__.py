@@ -2,7 +2,7 @@
 
 3-stage pipeline:
 1. ``parse(q)`` → ``ast.Node`` (Stage 1).
-2. ``validate(ast, mode, db)`` → raise ``DslError`` on violation (Stage 2).
+2. ``validate(ast, mode)`` → raise ``DslError`` on violation (Stage 2).
 3. ``compile_to_es(ast)`` / ``compile_to_solr(ast, dialect)`` → backend query (Stage 3).
 
 Error model: ``DslError(type, detail, column, length)``. ``type_uri(error_type)`` maps

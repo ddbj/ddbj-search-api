@@ -219,7 +219,6 @@ class TestFacets:
         assert facets.accessibility is None
         assert facets.type is None
         assert facets.object_type is None
-        # db-portal sidebar 拡張で追加された 6 facet も同様に optional
         assert facets.relevance is None
         assert facets.package is None
         assert facets.model is None
@@ -228,9 +227,8 @@ class TestFacets:
         assert facets.dataset_type is None
 
     def test_new_facets_serialization_uses_camelcase_alias(self) -> None:
-        """db-portal 拡張 facet (libraryLayout / analysisType / datasetType) は
-        camelCase alias で serialize される。relevance / package / model は alias 無し
-        (snake_case と camelCase が同形)。"""
+        """libraryLayout / analysisType / datasetType は camelCase alias で serialize される。
+        relevance / package / model は alias 無し (snake_case と camelCase が同形)。"""
         facets = Facets(
             relevance=[FacetBucket(value="Medical", count=10)],
             package=[FacetBucket(value="MIGS.ba", count=20)],

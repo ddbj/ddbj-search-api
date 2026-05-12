@@ -14,11 +14,11 @@ from ddbj_search_api.solr.query import (
     build_txsearch_request_params,
 )
 
-# === Unified request params (AST 経由 handler が呼ぶ新 API) ===
+# === Unified request params ===
 
 
 class TestBuildArsaRequestParams:
-    """compile_to_solr 経由で生成した ``q`` を Solr params に組み立てる新 API."""
+    """compile_to_solr で生成した ``q`` を ARSA Solr params に組み立てる."""
 
     def test_q_passed_through(self) -> None:
         p = build_arsa_request_params(
@@ -40,7 +40,7 @@ class TestBuildArsaRequestParams:
         assert "PrimaryAccessionNumber" in p["fl"]
 
     def test_without_uf_omits_param(self) -> None:
-        """FreeText 単独 (with_uf=False) では uf を付けない (現状 build_arsa_params 互換)."""
+        """FreeText 単独 (with_uf=False) では uf を付けない."""
         p = build_arsa_request_params(
             q='"cancer"', page=1, per_page=20, sort=None, shards=None, with_uf=False,
         )

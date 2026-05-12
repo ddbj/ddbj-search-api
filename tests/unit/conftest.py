@@ -51,11 +51,7 @@ def get_es_search_body(mock: AsyncMock, call_index: int = -1) -> dict[str, Any]:
 
     Assumes the mocked function uses the ``es_search(client, index, body)``
     positional signature. ``call_index`` selects which call (default
-    ``-1`` = the most recent); negative values count from the end. Reading
-    from a single helper insulates tests against future keyword-only
-    parameter migrations of ``es_search`` and avoids the
-    ``call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]``
-    boilerplate that previously appeared in 60+ places.
+    ``-1`` = the most recent); negative values count from the end.
     """
     call = mock.call_args_list[call_index]
     if "body" in call.kwargs:
@@ -314,8 +310,8 @@ def mock_es_ping() -> collections.abc.Iterator[AsyncMock]:
     Default: ``return_value=True`` so /service-info reports
     ``elasticsearch=ok``. Tests that need to simulate ES down should
     override ``mock_es_ping.return_value = False``. Consumers must take
-    this fixture as an argument; the previous autouse activation was
-    masking tests that silently relied on ``elasticsearch=ok``.
+    this fixture as an argument explicitly so that the dependency on
+    ``elasticsearch=ok`` is visible at the test signature level.
     """
     with patch(
         "ddbj_search_api.routers.service_info.es_ping",

@@ -37,77 +37,12 @@ TIER1_FIELDS: frozenset[str] = frozenset(
 )
 
 # 横断検索で使える Tier 2 (converter 側で正規化済の field)。
-# SSOT: search-backends.md L546-554 Tier 2 共通フィールド。
 TIER2_FIELDS: frozenset[str] = frozenset(
     {
         "submitter",
         "publication",
     },
 )
-
-# 単一 DB 選択時のみ使える Tier 3 (DB 特化 field)。
-# unique 40 field、ただし per-DB 集計は 46 (grant_agency / study_type / experiment_type / geo_loc_name /
-# collection_date が 2 DB 間で shared、`type` も SRA / JGA で shared、計 +6 重複)。
-# SSOT: search-backends.md L560-575 Tier 3 DB 別フィールド。
-# 未 allowlist 化で保留中の候補 field: JGA principal_investigator / submitting_organization /
-# BioProject project_type の INSDC 値域 / Taxonomy japanese_name (staging TXSearch に field 不在)。
-TIER3_FIELDS: frozenset[str] = frozenset(
-    {
-        # BioProject (3): grant_agency は JGA と共通
-        "project_type",
-        "grant_agency",
-        "relevance",
-        # BioSample (7): geo_loc_name / collection_date は SRA-sample と共通
-        "host",
-        "strain",
-        "isolate",
-        "geo_loc_name",
-        "collection_date",
-        "package",
-        "model",
-        # SRA 9 fields (subtype 別ヒット): library_* / platform / instrument_model は sra-experiment、
-        # analysis_type は sra-analysis、geo_loc_name / collection_date は sra-sample (BioSample 共通)
-        "library_strategy",
-        "library_source",
-        "library_layout",
-        "library_selection",
-        "platform",
-        "instrument_model",
-        "library_name",
-        "library_construction_protocol",
-        "analysis_type",
-        # JGA (4): study_type は MetaboBank と共通、grant_agency は BioProject と共通、
-        # vendor は jga-study、dataset_type は jga-dataset
-        "study_type",
-        "vendor",
-        "dataset_type",
-        # SRA / JGA 共通 (1): subtype 識別子。db-portal sidebar UI で subtype 絞込みに使う
-        "type",
-        # GEA (1) + MetaboBank (3): experiment_type は両方で共通
-        "experiment_type",
-        # MetaboBank exclusive
-        "submission_type",
-        # Trad (5) — ARSA
-        "division",
-        "molecular_type",
-        "sequence_length",
-        "feature_gene_name",
-        "reference_journal",
-        # Taxonomy (10) — TXSearch。japanese_name は staging TXSearch に field 不在のため allowlist 外
-        "rank",
-        "lineage",
-        "kingdom",
-        "phylum",
-        "class",
-        "order",
-        "family",
-        "genus",
-        "species",
-        "common_name",
-    },
-)
-
-ALL_ALLOWED_FIELDS: frozenset[str] = TIER1_FIELDS | TIER2_FIELDS | TIER3_FIELDS
 
 FIELD_TYPES: dict[str, FieldType] = {
     # === Tier 1 (cross) ===
@@ -150,8 +85,8 @@ FIELD_TYPES: dict[str, FieldType] = {
     "instrument_model": "text",
     "library_name": "text",
     "library_construction_protocol": "text",
-    # analysis_type / dataset_type は controlled vocab に近い使われ方をするが、converter で
-    # Literal 制約を外して free string 化された経緯 (commit 16e0b30) があり、API 側でも text で開放。
+    # analysis_type / dataset_type は controlled vocab に近い使われ方をするが、converter 側で
+    # free string として受けるため、API 側でも text 型で開放する。
     "analysis_type": "text",
     # === Tier 3 JGA ===
     "study_type": "enum",
@@ -162,7 +97,7 @@ FIELD_TYPES: dict[str, FieldType] = {
     # 値域 validation は ES 側に委譲、未知値は 0 件で返る。
     "type": "enum",
     # === Tier 3 GEA / MetaboBank ===
-    # experiment_type は spec L562 で SRA 同等の enum 想定だが、converter 実装は list[str]。
+    # experiment_type は spec 上 SRA 同等の enum 想定だが、converter 実装は list[str]。
     # ここでは text 型として開放し、enum 値域検証は converter 側での正規化完了後に導入する。
     "experiment_type": "text",
     "submission_type": "text",
@@ -210,9 +145,8 @@ OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
 }
 
 # Tier 3 field → 使用可能な DbPortalDb 値の tuple (cross-mode 拒否時の detail 文字列用)。
-# SSOT: search-backends.md L530-575 のバックエンドマッピング表。
 # 複数 DB 共通の field (grant_agency / study_type / experiment_type / geo_loc_name / collection_date)
-# は候補 DB を列挙して提示する。
+# は候補 DB を列挙して提示する。Tier 3 のフィールド集合 (``TIER3_FIELDS``) はこの dict のキーから導出する。
 TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     # BioProject-only
     "project_type": ("bioproject",),
@@ -268,6 +202,10 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "species": ("taxonomy",),
     "common_name": ("taxonomy",),
 }
+
+TIER3_FIELDS: frozenset[str] = frozenset(TIER3_FIELD_DBS)
+
+ALL_ALLOWED_FIELDS: frozenset[str] = TIER1_FIELDS | TIER2_FIELDS | TIER3_FIELDS
 
 
 def field_tier(field: str) -> Tier | None:

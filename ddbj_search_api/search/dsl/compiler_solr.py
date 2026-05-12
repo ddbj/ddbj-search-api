@@ -1,6 +1,6 @@
 """DSL compiler for Solr edismax q string (Stage 3b).
 
-SSOT: search-backends.md §バックエンド変換 (L520, L542-543, L560-575).
+SSOT: search-backends.md §バックエンド変換.
 
 Dialect:
 - ``arsa``: ARSA (Solr 4.4.0)。Tier 1 (``PrimaryAccessionNumber`` / ``Definition`` /
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias
 
-from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
+from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS, FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
 from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
 
@@ -50,57 +50,7 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "reference_journal": ("ReferenceJournal",),
 }
 
-_ARSA_UNAVAILABLE: frozenset[str] = frozenset(
-    {
-        # Tier 1 日付 alias
-        "date_modified",
-        "date_created",
-        "date",
-        # Tier 1 accessibility (Trad は INSDC 登録系で全 public、controlled-access 概念なし)
-        "accessibility",
-        # Tier 2: ARSA に organization 相当 field なし
-        "submitter",
-        # Tier 3 ES-only: BioProject / SRA / JGA / GEA / MetaboBank 系
-        "project_type",
-        "grant_agency",
-        "relevance",
-        "library_strategy",
-        "library_source",
-        "library_layout",
-        "library_selection",
-        "platform",
-        "instrument_model",
-        "library_name",
-        "library_construction_protocol",
-        "analysis_type",
-        "study_type",
-        "vendor",
-        "dataset_type",
-        "experiment_type",
-        "submission_type",
-        # Tier 3 BioSample-only (converter 0.3.0 で top-level 化、ES のみ)
-        "host",
-        "strain",
-        "isolate",
-        "geo_loc_name",
-        "collection_date",
-        "package",
-        "model",
-        # Tier 3 SRA + JGA 共通 (subtype 識別子)
-        "type",
-        # Tier 3 Taxonomy-only: TXSearch 系
-        "rank",
-        "lineage",
-        "kingdom",
-        "phylum",
-        "class",
-        "order",
-        "family",
-        "genus",
-        "species",
-        "common_name",
-    },
-)
+_ARSA_UNAVAILABLE: frozenset[str] = ALL_ALLOWED_FIELDS - frozenset(_ARSA_FIELD_MAP)
 
 # === TXSearch (Taxonomy) field map ===
 
@@ -123,55 +73,7 @@ _TXSEARCH_FIELD_MAP: dict[str, tuple[str, ...]] = {
     # japanese_name は staging TXSearch の schema luke で field 不在のため allowlist 外
 }
 
-_TXSEARCH_UNAVAILABLE: frozenset[str] = frozenset(
-    {
-        # Tier 1: organism + 日付 (Taxonomy は日付概念なし、organism 自体が Taxonomy)
-        "organism",
-        "date_published",
-        "date_modified",
-        "date_created",
-        "date",
-        # Tier 1 accessibility (Taxonomy は分類学情報、accessibility 概念なし)
-        "accessibility",
-        # Tier 2: TXSearch に organization / publication 相当 field なし
-        "submitter",
-        "publication",
-        # Tier 3 ES-only
-        "project_type",
-        "grant_agency",
-        "relevance",
-        "library_strategy",
-        "library_source",
-        "library_layout",
-        "library_selection",
-        "platform",
-        "instrument_model",
-        "library_name",
-        "library_construction_protocol",
-        "analysis_type",
-        "study_type",
-        "vendor",
-        "dataset_type",
-        "experiment_type",
-        "submission_type",
-        # Tier 3 BioSample-only (converter 0.3.0 で top-level 化、ES のみ)
-        "host",
-        "strain",
-        "isolate",
-        "geo_loc_name",
-        "collection_date",
-        "package",
-        "model",
-        # Tier 3 SRA + JGA 共通 (subtype 識別子)
-        "type",
-        # Tier 3 Trad-only
-        "division",
-        "molecular_type",
-        "sequence_length",
-        "feature_gene_name",
-        "reference_journal",
-    },
-)
+_TXSEARCH_UNAVAILABLE: frozenset[str] = ALL_ALLOWED_FIELDS - frozenset(_TXSEARCH_FIELD_MAP)
 
 _NO_MATCH_LITERAL = "(-*:*)"
 
@@ -210,7 +112,7 @@ def compile_free_text_solr(value: str) -> str:
     AND/OR/NOT 結合時に外側括弧を付与する (現状の ``compile_to_solr`` の挙動を踏襲)。
 
     入力がトークン化後に空 (None / "" / 空白のみ / カンマ区切り全部空) の場合は
-    edismax all-docs ``*:*`` を返す (現状 ``solr/query.py:_build_q_string`` 互換)。
+    edismax all-docs ``*:*`` を返す。
     """
     tokens = tokenize_keywords(value)
     if not tokens:

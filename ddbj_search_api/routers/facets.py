@@ -21,6 +21,7 @@ from ddbj_search_api.es.query import (
     resolve_requested_facets,
     validate_keyword_fields,
 )
+from ddbj_search_api.routers._helpers import is_jga, is_sra
 from ddbj_search_api.routers._query_validation import (
     TYPE_GROUP_FILTERS_DESC,
     extra_to_filters,
@@ -179,14 +180,6 @@ router.add_api_route(
 # --- GET /facets/{type} (type-specific) ---
 
 
-def _is_sra(db_type: DbType) -> bool:
-    return db_type.value.startswith("sra-")
-
-
-def _is_jga(db_type: DbType) -> bool:
-    return db_type.value.startswith("jga-")
-
-
 def _make_type_facets_handler(db_type: DbType) -> Any:
     """Factory: create a type-specific facets handler.
 
@@ -238,7 +231,7 @@ def _make_type_facets_handler(db_type: DbType) -> Any:
                 db_type=db_type.value,
             )
 
-    elif _is_sra(db_type):
+    elif is_sra(db_type):
 
         async def _handler(  # type: ignore[misc]
             request: Request,
@@ -259,7 +252,7 @@ def _make_type_facets_handler(db_type: DbType) -> Any:
                 db_type=db_type.value,
             )
 
-    elif _is_jga(db_type):
+    elif is_jga(db_type):
 
         async def _handler(  # type: ignore[misc]
             request: Request,

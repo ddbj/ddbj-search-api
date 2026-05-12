@@ -8,6 +8,7 @@ from typing import Any, cast
 from ddbj_search_converter.jsonl.utils import to_xref
 from ddbj_search_converter.schema import XrefType
 
+from ddbj_search_api.es.query import _FACET_AGG_SPECS
 from ddbj_search_api.schemas.common import FacetBucket, Facets, OrganismFacetBucket
 
 logger = logging.getLogger(__name__)
@@ -76,30 +77,10 @@ def parse_facets(aggregations: dict[str, Any]) -> Facets:
         agg = aggregations[agg_name]
         return [FacetBucket(value=b["key"], count=b["doc_count"]) for b in agg.get("buckets", [])]
 
+    payload: dict[str, Any] = {name: _optional(name) for name in _FACET_AGG_SPECS if name != "organism"}
+    payload["organism"] = _optional_organism(aggregations)
     # Use ``model_validate`` so the dict keys can match the public alias
     # names (camelCase) that the Facets schema exposes — keeping the
     # Python attribute names (snake_case) here would force a long list of
     # ``# type: ignore[call-arg]`` annotations against the Pydantic plugin.
-    return Facets.model_validate(
-        {
-            "type": _optional("type"),
-            "organism": _optional_organism(aggregations),
-            "accessibility": _optional("accessibility"),
-            "objectType": _optional("objectType"),
-            "libraryStrategy": _optional("libraryStrategy"),
-            "librarySource": _optional("librarySource"),
-            "librarySelection": _optional("librarySelection"),
-            "platform": _optional("platform"),
-            "instrumentModel": _optional("instrumentModel"),
-            "experimentType": _optional("experimentType"),
-            "studyType": _optional("studyType"),
-            "submissionType": _optional("submissionType"),
-            # db-portal sidebar 拡張で追加された 6 facet
-            "relevance": _optional("relevance"),
-            "package": _optional("package"),
-            "model": _optional("model"),
-            "libraryLayout": _optional("libraryLayout"),
-            "analysisType": _optional("analysisType"),
-            "datasetType": _optional("datasetType"),
-        }
-    )
+    return Facets.model_validate(payload)

@@ -17,7 +17,6 @@ import datetime
 import re
 from typing import Literal, NoReturn, TypeAlias
 
-from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl.allowlist import (
     ALL_ALLOWED_FIELDS,
     FIELD_TYPES,
@@ -41,7 +40,6 @@ def validate(
     ast: Node,
     *,
     mode: ValidationMode,
-    db: DbPortalDb | None = None,
     max_depth: int = DEFAULT_MAX_DEPTH,
     max_nodes: int = DEFAULT_MAX_NODES,
 ) -> None:

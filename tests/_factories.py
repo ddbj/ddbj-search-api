@@ -1,17 +1,8 @@
 """Test data factories for the converter entry types.
 
-Tests in ``tests/unit/schemas/test_entries.py`` and
-``tests/unit/schemas/test_converter_contract.py`` previously each
-maintained their own ``_BIOPROJECT_BASE`` / ``_BIOSAMPLE_MIN`` /
-``_SRA_BASE`` (etc.) constants — six type families, two copies per
-file. When the converter schema added or renamed a required field,
-every duplicate had to be updated by hand and silent drift was hard to
-detect. The factories below replace those constants and centralise the
-required-field set, so a schema change touches one location only.
-
-The required *list* fields stay in :mod:`tests._required_list_fields`
-(used by other tests too). The scalar / optional fields are defined
-inline here.
+The required *list* fields are sourced from :mod:`tests._required_list_fields`
+(also consumed by other tests). The scalar / optional fields are defined
+inline here so a single schema change touches one location only.
 """
 
 from __future__ import annotations

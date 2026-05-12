@@ -2531,8 +2531,7 @@ class TestDbPortalCrossSearchAdvStatusFilter:
         """AND **直下** の child に identifier accession があれば解禁
 
         (docs/db-portal-api-spec.md § データ可視性 (status 制御) の AST 走査ルール)。
-        旧 detect_accession_exact_match_in_ast は AST top が FieldClause のみ
-        対象だったが、AST 一本化で AND 直下子も対象に拡張された。
+        AST top の FieldClause だけでなく AND 直下の子も走査対象。
         """
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(

@@ -316,7 +316,6 @@ class TestTier3FlatEnum:
             ("study_type:Cohort", "studyType.keyword", "Cohort"),
             # keyword 単独 (multi-field でない) なので suffix 不要
             ("relevance:reference", "relevance", "reference"),
-            # db-portal sidebar 拡張で追加された Tier 3 enum
             ("package:MIGS.ba", "package.name", "MIGS.ba"),
             ("model:HiSeq", "model", "HiSeq"),
             # SRA + JGA 共通 type (subtype 識別子)
@@ -543,12 +542,7 @@ class TestWildcardCaseInsensitive:
 
 
 class TestCompileFreeText:
-    """compile_free_text helper と FreeText AST 経由の compile が等価か.
-
-    旧 build_search_query の keyword 構築部 (es/query.py L325-350) と同じ
-    bool 構造を返すことを確認する。これが等価でないと entries.py / facets.py の
-    回帰、および AST 一本化後の db-portal handler の挙動差を生む。
-    """
+    """compile_free_text helper と FreeText AST 経由の compile が等価か."""
 
     _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
 
@@ -652,11 +646,7 @@ class TestCompileToEsFreeTextNode:
         assert compile_to_es(node) == compile_free_text("cancer")
 
     def test_and_of_adv_and_free_text_flattens_multi_match(self) -> None:
-        """``BoolOp(AND, [adv_ast, FreeText(q)])`` で FreeText の bool.must が flatten される.
-
-        旧 build_combined_es_query が ``bool.must = [<adv_compiled>, <multi_match_1>, ...]``
-        を組んでいたのと等価な dict が出ること。
-        """
+        """``BoolOp(AND, [adv_ast, FreeText(q)])`` で FreeText の bool.must を flatten する."""
 
         adv_ast = FieldClause(
             field="organism",

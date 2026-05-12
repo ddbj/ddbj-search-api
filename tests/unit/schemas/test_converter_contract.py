@@ -1,15 +1,6 @@
 """ddbj-search-converter の schema contract regression test.
 
 converter 側の schema/field 変更を api 側で早期検知するための test。
-主に以下を確認する:
-
-- Publication 再設計 (e 接頭辞撤廃、status 廃止、Reference → reference)
-- Grant.agency が list[Organization] 型に統一
-- Organization 共通型の role / organizationType Literal
-- BioSample.attributes 撤廃、model が list[str] にフラット化
-- SRA の Literal 撤廃 (libraryLayout / platform / analysisType / librarySource が free string 系に)
-- JGA の新 field 追加
-- BioProject / BioSample の isPartOf が lowercase Literal
 """
 
 from __future__ import annotations
@@ -45,7 +36,7 @@ _ORG_TYPE_VALUES: tuple[str, ...] = get_args(OrganizationType)
 
 
 class TestPublicationContract:
-    """Publication 再設計: e 接頭辞撤廃 / status 廃止 / reference lowercase."""
+    """Publication: dbType は小文字 enum / status field 不在 / reference は小文字 field 名."""
 
     @pytest.mark.parametrize("value", ["pubmed", "doi", "pmc", "other"])
     def test_new_dbtype_values_accepted(self, value: str) -> None:
@@ -70,7 +61,7 @@ class TestPublicationContract:
 
 
 class TestGrantContract:
-    """Grant.agency が list[Organization]: 旧 Agency 型は廃止."""
+    """Grant.agency は list[Organization] のみ受け入れる."""
 
     def test_agency_accepts_list_of_organization(self) -> None:
         grant = Grant(
@@ -223,7 +214,7 @@ _BIOPROJECT_MIN: dict[str, Any] = make_bioproject_dict()
 
 
 class TestIsPartOfLowercase:
-    """isPartOf Literal が lowercase 統一: capitalize 旧値は拒否."""
+    """isPartOf Literal は lowercase 値のみ受け入れる (capitalize 値は拒否)."""
 
     def test_bioproject_lowercase_accepted(self) -> None:
         bp = BioProject(**_BIOPROJECT_MIN)

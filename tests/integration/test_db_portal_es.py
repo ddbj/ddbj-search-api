@@ -162,7 +162,7 @@ class TestHardLimitReachedFlag:
         assert resp.status_code == 200
         body = resp.json()
         # ``cancer`` covers tens of thousands of bioproject docs; the flag
-        # must be true once total >= 10000 (api-spec.md / spec L201).
+        # must be true once total >= 10000 (api-spec.md § hardLimitReached).
         assert body["total"] >= 10000
         assert body["hardLimitReached"] is True
 
