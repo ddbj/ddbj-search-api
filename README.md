@@ -17,10 +17,12 @@ ddbj-search-converter 側で Elasticsearch (`ddbj-search-es-dev`) が `ddbj-sear
 ```bash
 cp env.dev .env
 docker network create ddbj-search-network-dev || true
-docker compose up -d --build
-docker compose exec app uv sync --extra tests
-docker compose exec app ddbj_search_api
+docker compose -f compose.yml -f compose.dev.yml up -d --build
+docker compose -f compose.yml -f compose.dev.yml exec app uv sync --extra tests
+docker compose -f compose.yml -f compose.dev.yml exec app ddbj_search_api
 ```
+
+`compose.dev.yml` は dev のみで 8080 を host に publish する override。`-f compose.yml -f compose.dev.yml` を毎回付けるのが面倒なら、シェルで `alias dc='docker compose -f compose.yml -f compose.dev.yml'` を設定するのが便利。staging / production は `compose.override.podman.yml` を使う ([docs/deployment.md](docs/deployment.md) 参照)。
 
 別ターミナルで動作確認:
 

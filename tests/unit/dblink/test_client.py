@@ -18,6 +18,7 @@ from ddbj_search_api.dblink.client import (
     _reset_cache,
     count_linked_ids,
     count_linked_ids_bulk,
+    get_linked_ids_bulk,
     get_linked_ids_limited,
     get_linked_ids_limited_bulk,
     iter_linked_ids,
@@ -631,6 +632,122 @@ class TestGetLinkedIdsLimitedBulkDbMissing:
 
         with pytest.raises(FileNotFoundError, match="DuckDB file not found"):
             get_linked_ids_limited_bulk(missing, [("bioproject", "PRJDB100")], limit=10)
+
+
+# --- get_linked_ids_bulk (unlimited bulk) ---
+
+
+class TestGetLinkedIdsBulkNormal:
+    """``get_linked_ids_bulk`` returns every linked row per entry, no cap."""
+
+    def test_single_entry_returns_all_rows(self, tmp_path: Path) -> None:
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(
+            db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD002"),
+                ("bioproject", "PRJDB100", "biosample", "SAMD003"),
+                ("bioproject", "PRJDB100", "sra-study", "DRP001"),
+            ],
+        )
+        result = get_linked_ids_bulk(db, [("bioproject", "PRJDB100")])
+        assert len(result[("bioproject", "PRJDB100")]) == 4
+
+    def test_no_per_type_cap(self, tmp_path: Path) -> None:
+        """Unlike the ``_limited`` variant, no ROW_NUMBER cap is applied."""
+        db = tmp_path.joinpath("test.duckdb")
+        rows = [("bioproject", "PRJDB100", "biosample", f"SAMD{i:04d}") for i in range(50)]
+        _create_test_db(db, rows)
+        result = get_linked_ids_bulk(db, [("bioproject", "PRJDB100")])
+        assert len(result[("bioproject", "PRJDB100")]) == 50
+
+    def test_multiple_entries_each_independent(self, tmp_path: Path) -> None:
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(
+            db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB200", "sra-study", "DRP001"),
+                ("bioproject", "PRJDB200", "sra-study", "DRP002"),
+            ],
+        )
+        result = get_linked_ids_bulk(
+            db,
+            [("bioproject", "PRJDB100"), ("bioproject", "PRJDB200")],
+        )
+        assert result[("bioproject", "PRJDB100")] == [("biosample", "SAMD001")]
+        assert sorted(result[("bioproject", "PRJDB200")]) == [
+            ("sra-study", "DRP001"),
+            ("sra-study", "DRP002"),
+        ]
+
+    def test_entry_not_in_db_maps_to_empty_list(self, tmp_path: Path) -> None:
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(db, [])
+        result = get_linked_ids_bulk(db, [("bioproject", "PRJDB100")])
+        assert result == {("bioproject", "PRJDB100"): []}
+
+    def test_empty_entries(self, tmp_path: Path) -> None:
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(db, [])
+        result = get_linked_ids_bulk(db, [])
+        assert result == {}
+
+    def test_duplicate_entries_deduplicated(self, tmp_path: Path) -> None:
+        """Duplicate inputs map to a single output entry."""
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(db, [("bioproject", "PRJDB1", "biosample", "SAMD1")])
+        result = get_linked_ids_bulk(
+            db,
+            [("bioproject", "PRJDB1"), ("bioproject", "PRJDB1")],
+        )
+        assert list(result.keys()) == [("bioproject", "PRJDB1")]
+
+    def test_result_sorted_by_type_then_accession(self, tmp_path: Path) -> None:
+        """Output list is deterministic: sorted by (linked_type, linked_accession)."""
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(
+            db,
+            [
+                ("bioproject", "PRJDB1", "sra-study", "DRP999"),
+                ("bioproject", "PRJDB1", "biosample", "SAMD002"),
+                ("bioproject", "PRJDB1", "biosample", "SAMD001"),
+            ],
+        )
+        result = get_linked_ids_bulk(db, [("bioproject", "PRJDB1")])
+        assert result[("bioproject", "PRJDB1")] == [
+            ("biosample", "SAMD001"),
+            ("biosample", "SAMD002"),
+            ("sra-study", "DRP999"),
+        ]
+
+
+class TestGetLinkedIdsBulkConsistency:
+    """Bulk-unlimited results match individual ``iter_linked_ids``."""
+
+    def test_matches_iter_linked_ids(self, tmp_path: Path) -> None:
+        db = tmp_path.joinpath("test.duckdb")
+        _create_test_db(
+            db,
+            [
+                ("bioproject", "PRJDB100", "biosample", "SAMD001"),
+                ("bioproject", "PRJDB100", "sra-study", "DRP001"),
+                ("bioproject", "PRJDB200", "sra-study", "DRP002"),
+            ],
+        )
+        entries = [("bioproject", "PRJDB100"), ("bioproject", "PRJDB200")]
+        bulk_result = get_linked_ids_bulk(db, entries)
+        for entry_type, entry_id in entries:
+            individual = sorted(iter_linked_ids(db, entry_type, entry_id))
+            assert sorted(bulk_result[(entry_type, entry_id)]) == individual
+
+
+class TestGetLinkedIdsBulkDbMissing:
+    def test_raises_file_not_found(self, tmp_path: Path) -> None:
+        missing = tmp_path.joinpath("does_not_exist.duckdb")
+        with pytest.raises(FileNotFoundError, match="DuckDB file not found"):
+            get_linked_ids_bulk(missing, [("bioproject", "PRJDB100")])
 
 
 # --- count_linked_ids ---

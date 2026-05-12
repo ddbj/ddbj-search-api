@@ -6,6 +6,7 @@ DuckDB functions, verifying the full request → response flow.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -16,6 +17,8 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.cursor import CursorPayload, encode_cursor
+from ddbj_search_api.routers.entries import _CURSOR_EXCLUSIVE_FILTER_FIELDS
+from ddbj_search_api.schemas.queries import TypeSpecificFilters
 from tests.unit.conftest import get_es_search_body, get_es_search_index, make_es_search_response
 from tests.unit.strategies import db_type_values, valid_per_page
 
@@ -1312,6 +1315,24 @@ class TestCursorExclusivity:
         )
         assert resp.status_code == 400
         assert param in resp.json()["detail"]
+
+    def test_filter_field_dict_covers_all_typespecific_fields(self) -> None:
+        """Regression: adding a field to TypeSpecificFilters auto-extends the cursor check.
+
+        ``_CURSOR_EXCLUSIVE_FILTER_FIELDS`` is derived from
+        ``dataclasses.fields(TypeSpecificFilters)`` at module load. If that
+        derivation breaks (e.g. someone copy-pastes the dict back to a
+        hand-maintained literal), this test catches the drift before a new
+        type-specific filter silently slips past the cursor exclusivity
+        guard.
+        """
+        field_names = {f.name for f in dataclasses.fields(TypeSpecificFilters)}
+        assert set(_CURSOR_EXCLUSIVE_FILTER_FIELDS.keys()) == field_names
+        # Every alias is camelCase: at most one digit/letter run per
+        # segment, no underscores, lowercase first letter.
+        for alias in _CURSOR_EXCLUSIVE_FILTER_FIELDS.values():
+            assert "_" not in alias
+            assert alias[0].islower() or alias[0].isdigit()
 
 
 class TestCursorOffsetMode:

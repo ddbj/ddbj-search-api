@@ -16,6 +16,7 @@ from ddbj_search_api.es.client import (
     es_get_identifier,
     es_get_source_stream,
     es_head_exists,
+    es_mget_source,
     es_open_pit,
     es_resolve_same_as,
     es_search,
@@ -598,3 +599,123 @@ class TestEsSearchWithPit:
 
         with pytest.raises(httpx.HTTPStatusError):
             await es_search_with_pit(mock_client, {"query": {"match_all": {}}})
+
+
+# ===================================================================
+# es_mget_source
+# ===================================================================
+
+
+class TestEsMgetSource:
+    """es_mget_source sends POST /{index}/_mget with docs[]."""
+
+    @pytest.mark.asyncio
+    async def test_empty_ids_short_circuits(self, mock_client: AsyncMock) -> None:
+        """Empty ids returns ``{}`` without hitting ES."""
+        result = await es_mget_source(mock_client, "bioproject", [])
+        assert result == {}
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_found_sources(self, mock_client: AsyncMock) -> None:
+        es_response = {
+            "docs": [
+                {"_id": "PRJDB1", "found": True, "_source": {"identifier": "PRJDB1"}},
+                {"_id": "PRJDB2", "found": True, "_source": {"identifier": "PRJDB2"}},
+            ],
+        }
+        mock_client.post.return_value = _mock_response(es_response)
+        result = await es_mget_source(mock_client, "bioproject", ["PRJDB1", "PRJDB2"])
+        assert result == {
+            "PRJDB1": {"identifier": "PRJDB1"},
+            "PRJDB2": {"identifier": "PRJDB2"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_not_found_maps_to_none(self, mock_client: AsyncMock) -> None:
+        es_response = {
+            "docs": [
+                {"_id": "PRJDB1", "found": True, "_source": {"identifier": "PRJDB1"}},
+                {"_id": "MISSING", "found": False},
+            ],
+        }
+        mock_client.post.return_value = _mock_response(es_response)
+        result = await es_mget_source(mock_client, "bioproject", ["PRJDB1", "MISSING"])
+        assert result["PRJDB1"] == {"identifier": "PRJDB1"}
+        assert result["MISSING"] is None
+
+    @pytest.mark.asyncio
+    async def test_includes_endpoint_path(self, mock_client: AsyncMock) -> None:
+        mock_client.post.return_value = _mock_response({"docs": []})
+        await es_mget_source(mock_client, "biosample", ["SAMD1"])
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "/biosample/_mget"
+
+    @pytest.mark.asyncio
+    async def test_source_includes_in_per_doc_projection(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        """``source_includes`` lands in ``_source.includes`` for every doc."""
+        mock_client.post.return_value = _mock_response({"docs": []})
+        await es_mget_source(
+            mock_client,
+            "bioproject",
+            ["PRJDB1", "PRJDB2"],
+            source_includes=["status"],
+        )
+        sent_body = mock_client.post.call_args.kwargs["json"]
+        for doc in sent_body["docs"]:
+            assert doc["_source"] == {"includes": ["status"]}
+
+    @pytest.mark.asyncio
+    async def test_source_excludes_in_per_doc_projection(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        """``source_excludes`` lands in ``_source.excludes`` for every doc."""
+        mock_client.post.return_value = _mock_response({"docs": []})
+        await es_mget_source(
+            mock_client,
+            "bioproject",
+            ["PRJDB1"],
+            source_excludes=["dbXrefs"],
+        )
+        sent_body = mock_client.post.call_args.kwargs["json"]
+        assert sent_body["docs"][0]["_source"] == {"excludes": ["dbXrefs"]}
+
+    @pytest.mark.asyncio
+    async def test_includes_and_excludes_combined(
+        self,
+        mock_client: AsyncMock,
+    ) -> None:
+        """Both projections can be passed at once."""
+        mock_client.post.return_value = _mock_response({"docs": []})
+        await es_mget_source(
+            mock_client,
+            "bioproject",
+            ["PRJDB1"],
+            source_includes=["identifier", "title"],
+            source_excludes=["dbXrefs"],
+        )
+        sent_body = mock_client.post.call_args.kwargs["json"]
+        source_filter = sent_body["docs"][0]["_source"]
+        assert source_filter == {
+            "includes": ["identifier", "title"],
+            "excludes": ["dbXrefs"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_no_projection_omits_source_key(self, mock_client: AsyncMock) -> None:
+        """Without includes/excludes, no ``_source`` key is added."""
+        mock_client.post.return_value = _mock_response({"docs": []})
+        await es_mget_source(mock_client, "bioproject", ["PRJDB1"])
+        sent_body = mock_client.post.call_args.kwargs["json"]
+        assert "_source" not in sent_body["docs"][0]
+
+    @pytest.mark.asyncio
+    async def test_raises_on_http_error(self, mock_client: AsyncMock) -> None:
+        response = _mock_response({}, status_code=500)
+        mock_client.post.return_value = response
+        with pytest.raises(httpx.HTTPStatusError):
+            await es_mget_source(mock_client, "bioproject", ["PRJDB1"])

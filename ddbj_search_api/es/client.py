@@ -242,12 +242,19 @@ async def es_mget_source(
     index: str,
     ids: list[str],
     source_includes: list[str] | None = None,
+    source_excludes: list[str] | None = None,
 ) -> dict[str, dict[str, Any] | None]:
     """Batch fetch ``_source`` for multiple document IDs via ``_mget``.
 
     Returns a dict mapping each requested id to its ``_source`` dict,
     or ``None`` when the document was not found.  Empty ``ids``
     short-circuits to an empty dict without hitting ES.
+
+    ``source_includes`` / ``source_excludes`` map to ES's per-doc
+    ``_source.includes`` / ``_source.excludes`` projection.  Passing both
+    is permitted (excludes wins per ES semantics).  This is how the bulk
+    endpoint fetches every visible doc body in one round trip while
+    skipping the large ``dbXrefs`` array (re-injected from DuckDB).
     """
     if not ids:
         return {}
@@ -255,8 +262,13 @@ async def es_mget_source(
     docs: list[dict[str, Any]] = []
     for id_ in ids:
         doc: dict[str, Any] = {"_id": id_}
-        if source_includes is not None:
-            doc["_source"] = {"includes": source_includes}
+        if source_includes is not None or source_excludes is not None:
+            source_filter: dict[str, Any] = {}
+            if source_includes is not None:
+                source_filter["includes"] = source_includes
+            if source_excludes is not None:
+                source_filter["excludes"] = source_excludes
+            doc["_source"] = source_filter
         docs.append(doc)
 
     response = await client.post(f"/{index}/_mget", json={"docs": docs})

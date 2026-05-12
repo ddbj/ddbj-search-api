@@ -188,9 +188,12 @@ class DbPortalSearchQuery:
             examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
             description=(
                 "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). "
-                "When specified, q / sort / page must use their defaults (db and perPage may be combined). "
-                "Combining cursor with q / sort / page>1 on ES DBs returns 400 'about:blank' (cursor exclusivity). "
-                "Solr-backed DBs (db=trad / db=taxonomy) are cursor-incompatible and return 400 'cursor-not-supported' if cursor is supplied."
+                "When specified, q / sort / page must use their defaults "
+                "(db and perPage may be combined). "
+                "Combining cursor with q / sort / page>1 on ES DBs returns 400 "
+                "'about:blank' (cursor exclusivity). "
+                "Solr-backed DBs (db=trad / db=taxonomy) are cursor-incompatible "
+                "and return 400 'cursor-not-supported' if cursor is supplied."
             ),
         ),
         sort: Literal["datePublished:asc", "datePublished:desc"] | None = Query(

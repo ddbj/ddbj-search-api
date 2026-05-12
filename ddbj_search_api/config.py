@@ -121,7 +121,14 @@ class AppConfig(BaseSettings):
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments."""
+    """Parse CLI arguments.
+
+    Debug mode is *not* a CLI argument: it is derived from
+    :data:`AppConfig.env` (``Env.dev`` -> debug on), which in turn comes
+    from ``DDBJ_SEARCH_ENV`` in the per-environment ``env.{dev,staging,
+    production}`` files. Keeping debug under one env-driven source avoids
+    a CLI flag that would silently disagree with the deployment env.
+    """
     parser = argparse.ArgumentParser(description="DDBJ Search API Server")
     parser.add_argument(
         "--host",
@@ -133,12 +140,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Bind port (default: from env or 8080).",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        default=None,
-        help="Enable debug mode (reload, verbose logging).",
     )
 
     return parser.parse_args()

@@ -15,7 +15,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.search.dsl import DslError, ErrorType, parse
+from ddbj_search_api.search.dsl import DslError, ErrorType, parse, validate
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Range
 
 
@@ -135,6 +135,48 @@ class TestFieldClauseValueKinds:
         assert isinstance(ast.value, Range)
         assert ast.value.from_ == "AAA"
         assert ast.value.to == "ZZZ"
+
+
+def _parse_then_validate(dsl: str) -> None:
+    """Run the full parse + validate pipeline.
+
+    ``pytest.raises`` expects a single statement inside its ``with``
+    block, so the parse-then-validate flow is factored into this helper.
+    """
+    ast = parse(dsl)
+    # If the parser accepted the input (e.g. because the metachar split
+    # the token into WORD + WILDCARD and somehow parsed anyway), the
+    # validator must catch it as a backstop.
+    validate(ast, mode="cross")
+
+
+class TestWildcardCharacterClass:
+    """Solr / Lucene metacharacters must not appear in a wildcard token.
+
+    The grammar's WILDCARD class is narrowed to ``[A-Za-z0-9_\\-.*?]`` so a
+    misuse like ``title:foo+bar*`` cannot escape to the Solr edismax ``q``
+    string with operator-bearing characters. Whatever the exact failure
+    mode (``unexpected-token`` from the grammar or ``invalid-operator-
+    for-field`` from the validator fallback), the parse pipeline must
+    reject the input.
+    """
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "title:foo+bar*",
+            "title:foo|bar*",
+            "title:foo&bar*",
+            "title:foo!bar*",
+            "title:foo<bar*",
+            "title:foo>bar*",
+            "title:foo=bar*",
+            "title:foo\\bar*",
+        ],
+    )
+    def test_lucene_metachars_in_wildcard_rejected(self, dsl: str) -> None:
+        with pytest.raises(DslError):
+            _parse_then_validate(dsl)
 
 
 class TestBoolOperators:

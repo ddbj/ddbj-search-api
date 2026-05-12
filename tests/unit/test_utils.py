@@ -173,9 +173,7 @@ class TestParseFacetsOrganism:
     def test_value_is_tax_id_string(self) -> None:
         """value should carry the TaxID (string) so callers can re-inject
         it into ``?organism=`` (which validates against ``^\\d+$``)."""
-        facets = parse_facets(
-            _aggregations(organism=[_organism_bucket("562", 1232567, "Escherichia coli")])
-        )
+        facets = parse_facets(_aggregations(organism=[_organism_bucket("562", 1232567, "Escherichia coli")]))
         assert facets.organism is not None
         assert facets.organism[0].value == "562"
         assert facets.organism[0].label == "Escherichia coli"
@@ -231,17 +229,13 @@ class TestParseFacetsOrganism:
         bucket still satisfies ``OrganismFacetBucket`` (label required),
         and a warning is emitted."""
         with caplog.at_level(logging.WARNING, logger="ddbj_search_api.utils"):
-            facets = parse_facets(
-                _aggregations(organism=[_organism_bucket("99999", 3, name=None)])
-            )
+            facets = parse_facets(_aggregations(organism=[_organism_bucket("99999", 3, name=None)]))
         assert facets.organism is not None
         assert facets.organism[0].value == "99999"
         # Fallback: label == value when sub-agg is empty.
         assert facets.organism[0].label == "99999"
         # Warning surface for downstream investigation.
-        assert any(
-            "no organism.name sub-bucket" in record.getMessage() for record in caplog.records
-        )
+        assert any("no organism.name sub-bucket" in record.getMessage() for record in caplog.records)
 
     def test_missing_name_key_treated_as_empty_sub_agg(self) -> None:
         """Defensive: if ES ever omits the ``name`` sub-agg key entirely

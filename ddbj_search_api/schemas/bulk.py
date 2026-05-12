@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from ddbj_search_converter.schema import JGA, SRA, BioProject, BioSample
 from pydantic import BaseModel, Field
+
+from ddbj_search_api.schemas.entries import EntryResponse
 
 
 class BulkRequest(BaseModel):
@@ -28,19 +29,19 @@ class BulkResponse(BaseModel):
     ``notFound`` lists IDs that could not be found.
     """
 
-    entries: list[BioProject | BioSample | SRA | JGA] = Field(
+    entries: list[EntryResponse] = Field(
         examples=[[{"identifier": "PRJDB1", "type": "bioproject", "title": "Example BioProject"}]],
         description=(
             "Found entries (raw ES documents). "
             "'public' and 'suppressed' entries are returned here; "
-            "'private' and missing ids are listed under notFound."
+            "'withdrawn', 'private', and missing ids are listed under notFound."
         ),
     )
     not_found: list[str] = Field(
         alias="notFound",
         examples=[["PRJDB_INVALID"]],
         description=(
-            "IDs that were not found (missing or hidden by visibility filter: 'private' / 'withdrawn'). "
+            "IDs that were not found (missing or hidden by visibility filter: 'withdrawn' / 'private'). "
             "Always satisfies len(entries) + len(notFound) == len(set(ids))."
         ),
     )

@@ -9,6 +9,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api import cursor as cursor_module
 from ddbj_search_api.cursor import CursorPayload, _sign, decode_cursor, encode_cursor
 
 # === Fixtures ===
@@ -150,6 +151,60 @@ class TestCursorSignature:
 
         with pytest.raises(ValueError, match="signature mismatch"):
             decode_cursor(bad_token)
+
+
+class TestCursorSecretFromEnv:
+    """The signing secret reads ``DDBJ_SEARCH_API_CURSOR_SECRET`` when set.
+
+    Multi-worker deployments rely on a shared env-provided secret so a
+    cursor signed by one worker can be verified by another. Without that
+    env var, each process generates its own random secret on first use.
+    """
+
+    def test_env_secret_used_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_CURSOR_SECRET", "shared-test-secret-x" * 4)
+        cursor_module._reset_secret_for_tests()
+        try:
+            payload = _make_payload(pit_id="env-test")
+            token = encode_cursor(payload)
+
+            # A second "process" sees the same env, so verification succeeds.
+            cursor_module._reset_secret_for_tests()
+            decoded = decode_cursor(token)
+            assert decoded.pit_id == "env-test"
+        finally:
+            cursor_module._reset_secret_for_tests()
+
+    def test_random_secret_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DDBJ_SEARCH_API_CURSOR_SECRET", raising=False)
+        cursor_module._reset_secret_for_tests()
+        try:
+            secret_a = cursor_module._get_secret()
+            assert len(secret_a) == 32
+
+            # A "fresh process" without the env produces a different random key.
+            cursor_module._reset_secret_for_tests()
+            secret_b = cursor_module._get_secret()
+            assert secret_a != secret_b
+        finally:
+            cursor_module._reset_secret_for_tests()
+
+    def test_env_secret_makes_signatures_deterministic(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Two cold-started 'processes' sharing the env produce identical signatures."""
+        monkeypatch.setenv("DDBJ_SEARCH_API_CURSOR_SECRET", "deterministic-key-1234567890ab")
+        try:
+            cursor_module._reset_secret_for_tests()
+            sig_a = _sign(b"hello")
+
+            cursor_module._reset_secret_for_tests()
+            sig_b = _sign(b"hello")
+
+            assert sig_a == sig_b
+        finally:
+            cursor_module._reset_secret_for_tests()
 
 
 # === Decode error tests ===

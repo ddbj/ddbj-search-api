@@ -18,11 +18,19 @@ degenerate は leaf を ``(-*:*)`` (no-match リテラル) に置換。ツリー
 
 from __future__ import annotations
 
+import re
 from typing import Literal, TypeAlias
 
 from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS, FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
 from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
+
+# Wildcard values flow into the edismax ``q`` string unquoted (Solr does not
+# evaluate wildcards inside phrases).  The validator already rejects values
+# containing characters outside this set, but we re-assert here so an
+# accidentally hand-built AST that bypasses the validator can never produce
+# a Solr query with Lucene metacharacters.
+_SOLR_SAFE_WILDCARD_RE = re.compile(r"^[A-Za-z0-9_\-.*?]+$")
 
 SolrDialect: TypeAlias = Literal["arsa", "txsearch"]
 
@@ -181,6 +189,11 @@ def _basic_leaf(solr_field: str, clause: FieldClause) -> str:
         formatted = _format_date_for_solr(value) if field_type == "date" else value
         return f"{solr_field}:{formatted}"
     if clause.value_kind == "wildcard":
+        if not _SOLR_SAFE_WILDCARD_RE.match(value):
+            raise RuntimeError(
+                f"wildcard value {value!r} for field {clause.field!r} reached the Solr compiler "
+                "with unsafe characters; this means the validator was bypassed.",
+            )
         return f"{solr_field}:{value}"
     # word / phrase は両方 quote (Solr edismax metachar 解釈回避)
     escaped = escape_solr_phrase(value)

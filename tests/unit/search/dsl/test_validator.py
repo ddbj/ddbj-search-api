@@ -147,6 +147,85 @@ class TestMissingValue:
         assert exc_info.value.type == ErrorType.missing_value
 
 
+class TestWildcardConstraints:
+    """Leading wildcard, lone wildcard, and short prefixes are rejected.
+
+    Defence against ES wildcard scans of the entire term dictionary; the
+    grammar narrows the character class, the validator rejects shape, and
+    the Solr compiler asserts. Failures surface as
+    ``invalid-operator-for-field`` (no new slug, per project policy).
+    """
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "identifier:*",  # lone *
+            "identifier:?",  # lone ?
+            "identifier:*foo",  # leading *
+            "identifier:?foo",  # leading ?
+            "title:*cancer",  # leading * on text
+            "title:f*",  # 1-char prefix
+            "identifier:a*",  # 1-char prefix
+            "identifier:a?bc",  # 1-char prefix with ? at pos 1
+        ],
+    )
+    def test_short_or_leading_wildcards_rejected(self, dsl: str) -> None:
+        ast = parse(dsl)
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "identifier:ab*",  # 2-char prefix (boundary)
+            "identifier:PRJ*",
+            "identifier:PRJDB*",
+            "title:canc*",
+            "title:can?er",
+            "title:HIF-1*",  # symbol-bearing prefix still works
+            "title:COVID-19*",
+            "identifier:abc.def*",
+        ],
+    )
+    def test_safe_wildcards_accepted(self, dsl: str) -> None:
+        ast = parse(dsl)
+        validate(ast, mode="cross")
+
+    # Strategy is restricted to ASCII alphanumerics so the generated value
+    # stays inside the grammar's narrowed WILDCARD character class
+    # (``[A-Za-z0-9_\\-.]``). Non-ASCII letters would be rejected at the
+    # parse stage, which would short-circuit the property we want to test
+    # (the validator's prefix-length check).
+    _WILDCARD_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+    @given(
+        prefix=st.text(
+            alphabet=_WILDCARD_ALPHABET,
+            min_size=2,
+            max_size=8,
+        ),
+    )
+    @settings(max_examples=30)
+    def test_pbt_prefix_of_length_2_or_more_with_trailing_star_accepted(self, prefix: str) -> None:
+        ast = parse(f"identifier:{prefix}*")
+        validate(ast, mode="cross")
+
+    @given(
+        suffix=st.text(
+            alphabet=_WILDCARD_ALPHABET,
+            min_size=1,
+            max_size=8,
+        ),
+    )
+    @settings(max_examples=30)
+    def test_pbt_leading_wildcard_always_rejected(self, suffix: str) -> None:
+        ast = parse(f"identifier:*{suffix}")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert exc_info.value.type == ErrorType.invalid_operator_for_field
+
+
 class TestNestDepth:
     def test_depth_5_accepted(self) -> None:
         # 5 iteration で 5 BoolOp ネスト → max_depth=5 の境界で accept
@@ -562,6 +641,8 @@ _ENUM_FIELDS = [
     "type",
     "library_selection",
 ]
+
+
 class TestTier3PBT:
     """hypothesis PBT: enum / number field x value_kind の互換性."""
 

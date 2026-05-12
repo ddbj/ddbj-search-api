@@ -102,10 +102,7 @@ class PaginationQuery:
             ge=1,
             le=100,
             alias="perPage",
-            description=(
-                "Items per page (1-100). "
-                "Combined with page, must satisfy page * perPage <= 10000."
-            ),
+            description=("Items per page (1-100). Combined with page, must satisfy page * perPage <= 10000."),
         ),
         cursor: str | None = Query(
             default=None,

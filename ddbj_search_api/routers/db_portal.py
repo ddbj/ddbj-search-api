@@ -1103,8 +1103,7 @@ router.add_api_route(
         },
         400: {
             "description": (
-                "Bad Request (missing-db, cursor exclusivity, "
-                "query parse/validate error, deep paging limit)."
+                "Bad Request (missing-db, cursor exclusivity, query parse/validate error, deep paging limit)."
             ),
             "model": ProblemDetails,
         },

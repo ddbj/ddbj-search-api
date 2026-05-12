@@ -2,6 +2,14 @@
 
 Tests cover routing, request validation, JSON/NDJSON response formats,
 ES interaction, error handling, and property-based invariants.
+
+The bulk router calls ``es_mget_source`` twice per request:
+  1. visibility check  (kwargs: ``source_includes=["status"]``)
+  2. body fetch        (kwargs: ``source_excludes=["dbXrefs"]``)
+
+and one ``get_linked_ids_bulk`` for all visible ids' dbXrefs.  Tests
+mock both externals; the visibility call is distinguished from the
+body call by inspecting ``source_includes``.
 """
 
 from __future__ import annotations
@@ -19,32 +27,13 @@ from hypothesis import strategies as st
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.main import create_app
-from tests.unit.conftest import make_mock_stream_response
 from tests.unit.strategies import db_type_values, short_id
-
-
-@pytest.fixture(autouse=True)
-def _mock_bulk_duckdb() -> Any:
-    """Mock DuckDB iter_linked_ids and DBLINK_DB_PATH in bulk router."""
-    with (
-        patch(
-            "ddbj_search_api.routers.bulk.iter_linked_ids",
-            side_effect=lambda *_args, **_kwargs: iter([]),
-        ),
-        patch(
-            "ddbj_search_api.routers.bulk.DBLINK_DB_PATH",
-            MagicMock(exists=MagicMock(return_value=True)),
-        ),
-    ):
-        yield
-
 
 # === Helpers ===
 
 
 def _make_source(id_: str) -> dict[str, Any]:
-    """Build a minimal ES _source document."""
-
+    """Build a minimal ES _source document for tests."""
     return {
         "identifier": id_,
         "type": "bioproject",
@@ -62,7 +51,6 @@ def _bulk_post(
     params = {}
     if format_ is not None:
         params["format"] = format_
-
     return client.post(
         f"/entries/{db_type}/bulk",
         json={"ids": ids},
@@ -70,23 +58,45 @@ def _bulk_post(
     )
 
 
-def _setup_found_and_not_found(
+def _make_mget_side_effect(
+    statuses: dict[str, str | None],
+    bodies: dict[str, dict[str, Any]] | None = None,
+) -> object:
+    """Build an ``es_mget_source`` side_effect from id -> status / body maps.
+
+    The router's first call uses ``source_includes=["status"]`` (we
+    return ``{"status": <s>}``); the second uses ``source_excludes=
+    ["dbXrefs"]`` (we return the body from ``bodies`` or
+    ``_make_source(id_)``).  ``status=None`` or absent means missing.
+    """
+    bodies = bodies or {}
+
+    async def _se(
+        _client: object,
+        _index: str,
+        ids: list[str],
+        **kwargs: object,
+    ) -> dict[str, dict[str, Any] | None]:
+        if kwargs.get("source_includes") == ["status"]:
+            return {id_: (None if statuses.get(id_) is None else {"status": statuses[id_]}) for id_ in ids}
+        # Body fetch: visible ids only (router filters with visibility map)
+        return {id_: bodies.get(id_, _make_source(id_)) for id_ in ids}
+
+    return _se
+
+
+def _set_found_and_not_found(
     mock: AsyncMock,
     found_ids: list[str],
     not_found_ids: list[str],
+    bodies: dict[str, dict[str, Any]] | None = None,
 ) -> None:
-    """Configure mock to return found entries for found_ids, None for not_found_ids."""
-    found_set = set(found_ids)
-
-    async def _side_effect(_client: Any, _index: str, id_: str, **kwargs: Any) -> Any:
-        if id_ in found_set:
-            source = _make_source(id_)
-
-            return make_mock_stream_response(json.dumps(source).encode())
-
-        return None
-
-    mock.side_effect = _side_effect
+    """Configure ``mock_es_mget_source_bulk`` so ``found_ids`` are public
+    and ``not_found_ids`` are missing.
+    """
+    statuses: dict[str, str | None] = dict.fromkeys(found_ids, "public")
+    statuses.update(dict.fromkeys(not_found_ids))
+    mock.side_effect = _make_mget_side_effect(statuses, bodies)
 
 
 # === Routing ===
@@ -187,14 +197,10 @@ class TestBulkJsonResponse:
     def test_all_found_returns_entries_and_empty_not_found(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         ids = ["PRJDB001", "PRJDB002"]
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            ids,
-            [],
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, ids, [])
         resp = _bulk_post(app_with_bulk, ids)
         assert resp.status_code == 200
         data = resp.json()
@@ -206,15 +212,11 @@ class TestBulkJsonResponse:
     def test_partial_not_found(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         found = ["PRJDB001"]
         not_found = ["MISSING001", "MISSING002"]
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            found,
-            not_found,
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, found, not_found)
         resp = _bulk_post(app_with_bulk, found + not_found)
         data = resp.json()
         assert len(data["entries"]) == 1
@@ -223,11 +225,11 @@ class TestBulkJsonResponse:
     def test_all_not_found(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         """All IDs missing: entries=[], notFound=[all]."""
         ids = ["MISSING001", "MISSING002"]
-        # mock default is None (not found)
+        _set_found_and_not_found(mock_es_mget_source_bulk, [], ids)
         resp = _bulk_post(app_with_bulk, ids)
         data = resp.json()
         assert data["entries"] == []
@@ -247,54 +249,30 @@ class TestBulkJsonResponse:
         resp = _bulk_post(app_with_bulk, ["TEST001"])
         assert "application/json" in resp.headers["content-type"]
 
-    def test_dbxrefs_from_duckdb(
+    def test_dbxrefs_empty_when_duckdb_returns_nothing(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
-        """Bulk returns dbXrefs from DuckDB (no truncation, no dbXrefsCount)."""
-        source = {
-            "identifier": "PRJDB001",
-            "type": "bioproject",
-        }
-
-        async def _side_effect(_c: Any, _i: str, _id: str, **kwargs: Any) -> Any:
-            return make_mock_stream_response(json.dumps(source).encode())
-
-        mock_es_get_source_stream_bulk.side_effect = _side_effect
+        """With the default empty DuckDB mock, dbXrefs is `[]`."""
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB001"], [])
         resp = _bulk_post(app_with_bulk, ["PRJDB001"])
         data = resp.json()
-        # With empty DuckDB mock, dbXrefs is empty
         assert data["entries"][0]["dbXrefs"] == []
         assert "dbXrefsCount" not in data["entries"][0]
 
-    def test_dbxrefs_from_duckdb_with_data(
+    def test_dbxrefs_populated_from_duckdb_bulk(
         self,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        app_with_bulk: TestClient,
         mock_es_mget_source_bulk: AsyncMock,
+        mock_dblink_bulk: MagicMock,
     ) -> None:
-        """Bulk returns actual dbXrefs when DuckDB returns results."""
-        source = {
-            "identifier": "PRJDB001",
-            "type": "bioproject",
+        """Bulk returns dbXrefs from the DuckDB bulk query."""
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB001"], [])
+        mock_dblink_bulk.return_value = {
+            ("bioproject", "PRJDB001"): [("biosample", "SAMD001")],
         }
-
-        async def _side_effect(_c: Any, _i: str, _id: str, **kwargs: Any) -> Any:
-            return make_mock_stream_response(json.dumps(source).encode())
-
-        mock_es_get_source_stream_bulk.side_effect = _side_effect
-
-        config = AppConfig()
-        with patch(
-            "ddbj_search_api.routers.bulk.iter_linked_ids",
-            side_effect=lambda *_args, **_kwargs: iter([("biosample", "SAMD001")]),
-        ):
-            fake_client = AsyncMock(spec=httpx.AsyncClient)
-            application = create_app(config)
-            application.dependency_overrides[get_es_client] = lambda: fake_client
-            client = TestClient(application, raise_server_exceptions=False)
-            resp = _bulk_post(client, ["PRJDB001"])
-
+        resp = _bulk_post(app_with_bulk, ["PRJDB001"])
         data = resp.json()
         assert len(data["entries"][0]["dbXrefs"]) == 1
         assert data["entries"][0]["dbXrefs"][0]["identifier"] == "SAMD001"
@@ -310,27 +288,19 @@ class TestBulkNdjsonResponse:
     def test_content_type_is_ndjson(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            ["PRJDB001"],
-            [],
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB001"], [])
         resp = _bulk_post(app_with_bulk, ["PRJDB001"], format_="ndjson")
         assert "application/x-ndjson" in resp.headers["content-type"]
 
     def test_one_entry_per_line(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         ids = ["PRJDB001", "PRJDB002", "PRJDB003"]
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            ids,
-            [],
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, ids, [])
         resp = _bulk_post(app_with_bulk, ids, format_="ndjson")
         lines = resp.text.strip().split("\n")
         assert len(lines) == 3
@@ -341,21 +311,13 @@ class TestBulkNdjsonResponse:
     def test_not_found_skipped(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         """IDs not found are silently skipped in NDJSON output."""
         found = ["PRJDB001"]
         not_found = ["MISSING001", "MISSING002"]
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            found,
-            not_found,
-        )
-        resp = _bulk_post(
-            app_with_bulk,
-            found + not_found,
-            format_="ndjson",
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, found, not_found)
+        resp = _bulk_post(app_with_bulk, found + not_found, format_="ndjson")
         lines = resp.text.strip().split("\n")
         assert len(lines) == 1
         assert json.loads(lines[0])["identifier"] == "PRJDB001"
@@ -363,14 +325,10 @@ class TestBulkNdjsonResponse:
     def test_each_line_is_valid_json(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         ids = ["PRJDB001", "PRJDB002"]
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            ids,
-            [],
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, ids, [])
         resp = _bulk_post(app_with_bulk, ids, format_="ndjson")
         for line in resp.text.strip().split("\n"):
             parsed = json.loads(line)
@@ -386,13 +344,11 @@ class TestBulkNdjsonResponse:
     def test_all_not_found_returns_empty_body(
         self,
         app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         """All IDs missing: empty NDJSON output."""
-        resp = _bulk_post(
-            app_with_bulk,
-            ["MISSING001"],
-            format_="ndjson",
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, [], ["MISSING001"])
+        resp = _bulk_post(app_with_bulk, ["MISSING001"], format_="ndjson")
         assert resp.text == ""
 
 
@@ -405,22 +361,75 @@ class TestBulkEsInteraction:
     def test_calls_with_correct_index(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["TEST001"], [])
         _bulk_post(app_with_bulk, ["TEST001"], db_type="biosample")
-        call_args = mock_es_get_source_stream_bulk.call_args
-        assert call_args[0][1] == "biosample"
+        # Every call must target the biosample index.
+        for call in mock_es_mget_source_bulk.call_args_list:
+            args = call.args
+            kwargs = call.kwargs
+            index = kwargs.get("index", args[1] if len(args) >= 2 else None)
+            assert index == "biosample"
 
-    def test_calls_per_id(
+    def test_mget_called_twice_per_request(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
+        """Visibility + 1 body chunk for small N (<= 50 ids)."""
         ids = ["A001", "A002", "A003"]
+        _set_found_and_not_found(mock_es_mget_source_bulk, ids, [])
         _bulk_post(app_with_bulk, ids)
-        assert mock_es_get_source_stream_bulk.call_count == 3
-        called_ids = [call[0][2] for call in mock_es_get_source_stream_bulk.call_args_list]
-        assert called_ids == ids
+        assert mock_es_mget_source_bulk.await_count == 2
+
+    def test_mget_chunked_above_chunk_size(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+    ) -> None:
+        """N=51 visible ids -> 1 visibility + 2 body chunks = 3 mget calls."""
+        ids = [f"PRJDB{i:04d}" for i in range(51)]
+        _set_found_and_not_found(mock_es_mget_source_bulk, ids, [])
+        _bulk_post(app_with_bulk, ids)
+        # 1 visibility + ceil(51 / 50) = 2 body chunks
+        assert mock_es_mget_source_bulk.await_count == 3
+
+    def test_visibility_call_uses_source_includes_status(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+    ) -> None:
+        """The first call narrows the projection to ``status`` only."""
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB1"], [])
+        _bulk_post(app_with_bulk, ["PRJDB1"])
+        first_call = mock_es_mget_source_bulk.call_args_list[0]
+        assert first_call.kwargs.get("source_includes") == ["status"]
+
+    def test_body_call_uses_source_excludes_dbxrefs(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+    ) -> None:
+        """The body call drops ``dbXrefs`` so we don't pull it from ES twice."""
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB1"], [])
+        _bulk_post(app_with_bulk, ["PRJDB1"])
+        body_calls = [
+            c for c in mock_es_mget_source_bulk.call_args_list if c.kwargs.get("source_excludes") == ["dbXrefs"]
+        ]
+        assert len(body_calls) >= 1
+
+    def test_visibility_passes_all_ids_in_one_call(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+    ) -> None:
+        ids = ["PRJDB1", "PRJDB2", "PRJDB3"]
+        _set_found_and_not_found(mock_es_mget_source_bulk, ids, [])
+        _bulk_post(app_with_bulk, ids)
+        first_call = mock_es_mget_source_bulk.call_args_list[0]
+        passed_ids = first_call.kwargs.get("ids", first_call.args[2] if len(first_call.args) >= 3 else None)
+        assert passed_ids == ids
 
 
 # === ES error handling ===
@@ -429,36 +438,50 @@ class TestBulkEsInteraction:
 class TestBulkEsError:
     """ES errors during streaming propagate as exceptions.
 
-    Since Bulk API uses StreamingResponse, errors occur after the
-    HTTP 200 header has been sent, so they cannot be converted to a
-    500 status code.  The connection is broken instead.
+    Since Bulk API uses StreamingResponse, errors that happen after the
+    visibility check (i.e. during body fetch) occur after the HTTP 200
+    header has been sent, so they cannot be converted to a 500 status.
+    The connection is broken instead.
     """
 
-    def test_es_error_raises_during_streaming(
+    def test_body_fetch_error_raises_during_streaming(
         self,
-        mock_es_mget_source_bulk: AsyncMock,
+        mock_dblink_bulk: MagicMock,
     ) -> None:
-        """visibility check に成功した後、streaming 中に ES が落ちた場合は exception
-        が伝播する。``mock_es_mget_source_bulk`` で visibility check は public に
-        透過させ、その後の ``es_get_source_stream`` でだけ ES down を再現する。"""
+        """First call succeeds (visibility), second call (body) raises."""
         config = AppConfig()
+        call_count = {"n": 0}
+
+        async def _side_effect(
+            _client: object,
+            _index: str,
+            ids: list[str],
+            **kwargs: object,
+        ) -> dict[str, dict[str, Any] | None]:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # visibility passes
+                return {id_: {"status": "public"} for id_ in ids}
+            # body fetch fails
+            raise RuntimeError("ES down")
+
         with patch(
-            "ddbj_search_api.routers.bulk.es_get_source_stream",
+            "ddbj_search_api.routers.bulk.es_mget_source",
             new_callable=AsyncMock,
         ) as mock:
-            mock.side_effect = Exception("ES down")
+            mock.side_effect = _side_effect
             fake_client = AsyncMock(spec=httpx.AsyncClient)
             application = create_app(config)
             application.dependency_overrides[get_es_client] = lambda: fake_client
             client = TestClient(application, raise_server_exceptions=True)
-            with pytest.raises(Exception, match="ES down"):
+            with pytest.raises(RuntimeError, match="ES down"):
                 client.post(
                     "/entries/bioproject/bulk",
                     json={"ids": ["TEST001"]},
                 )
 
 
-# === PBT ===
+# === Duplicate handling ===
 
 
 class TestBulkDuplicateIds:
@@ -467,31 +490,59 @@ class TestBulkDuplicateIds:
     def test_duplicate_ids_collapse_to_one(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         """Duplicate IDs are deduplicated (api-spec.md § Bulk API)."""
-        _setup_found_and_not_found(
-            mock_es_get_source_stream_bulk,
-            ["PRJDB001"],
-            [],
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB001"], [])
         resp = _bulk_post(app_with_bulk, ["PRJDB001", "PRJDB001"])
         data = resp.json()
         assert len(data["entries"]) == 1
         assert data["entries"][0]["identifier"] == "PRJDB001"
 
 
-@pytest.fixture
-def pbt_bulk_client() -> TestClient:
-    """TestClient for PBT tests, created once and reused.
+# === Race condition (delete between visibility check and body fetch) ===
 
-    Note: _mock_bulk_duckdb autouse fixture handles DuckDB mocking.
-    """
+
+class TestBulkRaceCondition:
+    """A doc deleted after visibility but before body fetch ends in notFound."""
+
+    def test_race_deleted_doc_moves_to_not_found(
+        self,
+        app_with_bulk: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
+    ) -> None:
+        async def _side_effect(
+            _client: object,
+            _index: str,
+            ids: list[str],
+            **kwargs: object,
+        ) -> dict[str, dict[str, Any] | None]:
+            if kwargs.get("source_includes") == ["status"]:
+                # All public
+                return {id_: {"status": "public"} for id_ in ids}
+            # Body fetch: PRJDB002 vanished
+            return {
+                "PRJDB001": _make_source("PRJDB001"),
+                "PRJDB002": None,
+            }
+
+        mock_es_mget_source_bulk.side_effect = _side_effect
+        resp = _bulk_post(app_with_bulk, ["PRJDB001", "PRJDB002"])
+        data = resp.json()
+        assert [e["identifier"] for e in data["entries"]] == ["PRJDB001"]
+        assert data["notFound"] == ["PRJDB002"]
+
+
+# === PBT ===
+
+
+@pytest.fixture
+def pbt_bulk_client(mock_dblink_bulk: MagicMock) -> TestClient:
+    """TestClient reused across hypothesis examples."""
     config = AppConfig()
     fake_client = AsyncMock(spec=httpx.AsyncClient)
     application = create_app(config)
     application.dependency_overrides[get_es_client] = lambda: fake_client
-
     return TestClient(application, raise_server_exceptions=False)
 
 
@@ -510,25 +561,24 @@ class TestBulkPBT:
     def test_entries_plus_not_found_equals_ids(
         self,
         pbt_bulk_client: TestClient,
-        mock_es_mget_source_bulk: AsyncMock,
         found: list[str],
         not_found: list[str],
     ) -> None:
         """len(entries) + len(notFound) == len(ids) (JSON format)."""
-        # Deduplicate to avoid collisions between found and not_found
         all_ids = list(dict.fromkeys(found + not_found))
         if not all_ids:
-            # BulkRequest enforces min_length=1; skip the trivially empty draw.
-            return
+            return  # BulkRequest enforces min_length=1
         found_set = set(found)
         actual_found = [x for x in all_ids if x in found_set]
         actual_not_found = [x for x in all_ids if x not in found_set]
 
+        statuses: dict[str, str | None] = dict.fromkeys(actual_found, "public")
+        statuses.update(dict.fromkeys(actual_not_found))
         with patch(
-            "ddbj_search_api.routers.bulk.es_get_source_stream",
+            "ddbj_search_api.routers.bulk.es_mget_source",
             new_callable=AsyncMock,
         ) as mock:
-            _setup_found_and_not_found(mock, actual_found, actual_not_found)
+            mock.side_effect = _make_mget_side_effect(statuses)
             resp = _bulk_post(pbt_bulk_client, all_ids)
             data = resp.json()
             assert len(data["entries"]) + len(data["notFound"]) == len(all_ids)
@@ -543,63 +593,46 @@ class TestBulkIncludeDbXrefs:
     def test_include_db_xrefs_false_skips_duckdb(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
+        mock_dblink_bulk: MagicMock,
     ) -> None:
         """includeDbXrefs=false omits dbXrefs and skips DuckDB."""
-        source = _make_source("PRJDB1")
-        mock_es_get_source_stream_bulk.return_value = make_mock_stream_response(
-            json.dumps(source).encode(),
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB1"], [])
+        resp = app_with_bulk.post(
+            "/entries/bioproject/bulk?includeDbXrefs=false",
+            json={"ids": ["PRJDB1"]},
         )
-
-        with patch(
-            "ddbj_search_api.routers.bulk.iter_linked_ids",
-        ) as mock_duckdb:
-            resp = app_with_bulk.post(
-                "/entries/bioproject/bulk?includeDbXrefs=false",
-                json={"ids": ["PRJDB1"]},
-            )
-
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["entries"]) == 1
         assert "dbXrefs" not in data["entries"][0]
-        mock_duckdb.assert_not_called()
+        mock_dblink_bulk.assert_not_called()
 
     def test_include_db_xrefs_false_ndjson(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
+        mock_dblink_bulk: MagicMock,
     ) -> None:
         """includeDbXrefs=false works with NDJSON format."""
-        source = _make_source("PRJDB1")
-        mock_es_get_source_stream_bulk.return_value = make_mock_stream_response(
-            json.dumps(source).encode(),
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB1"], [])
+        resp = app_with_bulk.post(
+            "/entries/bioproject/bulk?includeDbXrefs=false&format=ndjson",
+            json={"ids": ["PRJDB1"]},
         )
-
-        with patch(
-            "ddbj_search_api.routers.bulk.iter_linked_ids",
-        ) as mock_duckdb:
-            resp = app_with_bulk.post(
-                "/entries/bioproject/bulk?includeDbXrefs=false&format=ndjson",
-                json={"ids": ["PRJDB1"]},
-            )
-
         assert resp.status_code == 200
         line = resp.text.strip()
         entry = json.loads(line)
         assert "dbXrefs" not in entry
-        mock_duckdb.assert_not_called()
+        mock_dblink_bulk.assert_not_called()
 
     def test_include_db_xrefs_default_true(
         self,
         app_with_bulk: TestClient,
-        mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         """Default includeDbXrefs=true includes dbXrefs."""
-        source = _make_source("PRJDB1")
-        mock_es_get_source_stream_bulk.return_value = make_mock_stream_response(
-            json.dumps(source).encode(),
-        )
+        _set_found_and_not_found(mock_es_mget_source_bulk, ["PRJDB1"], [])
         resp = _bulk_post(app_with_bulk, ["PRJDB1"])
         assert resp.status_code == 200
         data = resp.json()
@@ -609,38 +642,16 @@ class TestBulkIncludeDbXrefs:
 # === Status gating (docs/api-spec.md § データ可視性) ===
 
 
-def _make_mget_side_effect(statuses: dict[str, str | None]) -> object:
-    """Build an ``es_mget_source`` side_effect from an id → status map.
-
-    ``None`` means the document is missing; any other value is treated
-    as the document's ``status`` field.
-    """
-
-    async def _se(
-        _client: object,
-        _index: str,
-        ids: list[str],
-        **_kwargs: object,
-    ) -> dict[str, dict[str, str] | None]:
-        out: dict[str, dict[str, str] | None] = {}
-        for id_ in ids:
-            status = statuses.get(id_)
-            out[id_] = None if status is None else {"status": status}
-        return out
-
-    return _se
-
-
 class TestBulkStatusGating:
-    """Bulk API の status filter: public/suppressed のみ entries に出力、
-    withdrawn/private/missing は notFound (JSON) / skip (NDJSON)。
+    """Bulk API の status filter:
+    public/suppressed のみ entries に出力、withdrawn/private/missing は
+    notFound (JSON) / skip (NDJSON)。
     """
 
     def test_json_mixed_statuses(
         self,
         app_with_bulk: TestClient,
         mock_es_mget_source_bulk: AsyncMock,
-        mock_es_get_source_stream_bulk: AsyncMock,
     ) -> None:
         mock_es_mget_source_bulk.side_effect = _make_mget_side_effect(
             {
@@ -651,12 +662,6 @@ class TestBulkStatusGating:
                 "PRJDB_MISSING": None,
             },
         )
-
-        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
-            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
-
-        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
-
         resp = _bulk_post(
             app_with_bulk,
             [
@@ -681,7 +686,6 @@ class TestBulkStatusGating:
         self,
         app_with_bulk: TestClient,
         mock_es_mget_source_bulk: AsyncMock,
-        mock_es_get_source_stream_bulk: AsyncMock,
     ) -> None:
         mock_es_mget_source_bulk.side_effect = _make_mget_side_effect(
             {
@@ -690,12 +694,6 @@ class TestBulkStatusGating:
                 "PRJDB_PRIVATE": "private",
             },
         )
-
-        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
-            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
-
-        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
-
         resp = _bulk_post(
             app_with_bulk,
             ["PRJDB_PUBLIC", "PRJDB_WITHDRAWN", "PRJDB_PRIVATE"],
@@ -706,40 +704,30 @@ class TestBulkStatusGating:
         returned_ids = [json.loads(line)["identifier"] for line in lines]
         assert returned_ids == ["PRJDB_PUBLIC"]
 
-    def test_mget_called_with_all_ids(
+    def test_body_fetch_only_passes_visible_ids(
         self,
         app_with_bulk: TestClient,
         mock_es_mget_source_bulk: AsyncMock,
-        mock_es_get_source_stream_bulk: AsyncMock,
     ) -> None:
-        """es_mget_source は一括で全 ID を 1 回で取得する (ラウンドトリップ節約)。"""
+        """Visibility filter happens before body fetch.
 
-        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
-            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
-
-        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
-
-        ids = ["PRJDB1", "PRJDB2", "PRJDB3"]
-        resp = _bulk_post(app_with_bulk, ids)
-        assert resp.status_code == 200
-        mock_es_mget_source_bulk.assert_awaited_once()
-        call_args = mock_es_mget_source_bulk.call_args
-        passed_ids = call_args[0][2] if len(call_args[0]) >= 3 else call_args.kwargs["ids"]
-        assert passed_ids == ids
-
-    def test_mget_uses_status_only_source_includes(
-        self,
-        app_with_bulk: TestClient,
-        mock_es_mget_source_bulk: AsyncMock,
-        mock_es_get_source_stream_bulk: AsyncMock,
-    ) -> None:
-        """es_mget_source は軽量化のため ``status`` のみを含める。"""
-
-        async def _stream_side_effect(_c: object, _i: str, id_: str, **_k: object) -> object:
-            return make_mock_stream_response(json.dumps(_make_source(id_)).encode())
-
-        mock_es_get_source_stream_bulk.side_effect = _stream_side_effect
-
-        _bulk_post(app_with_bulk, ["PRJDB1"])
-        kwargs = mock_es_mget_source_bulk.call_args.kwargs
-        assert kwargs.get("source_includes") == ["status"]
+        Tells the chunked-mget body call only the visible ids; hidden
+        ids never reach the second `_mget` because they're already in
+        ``not_found``.
+        """
+        mock_es_mget_source_bulk.side_effect = _make_mget_side_effect(
+            {
+                "PRJDB_PUBLIC": "public",
+                "PRJDB_WITHDRAWN": "withdrawn",
+            },
+        )
+        _bulk_post(app_with_bulk, ["PRJDB_PUBLIC", "PRJDB_WITHDRAWN"])
+        body_calls = [
+            c for c in mock_es_mget_source_bulk.call_args_list if c.kwargs.get("source_excludes") == ["dbXrefs"]
+        ]
+        assert len(body_calls) == 1
+        passed_ids = body_calls[0].kwargs.get(
+            "ids",
+            body_calls[0].args[2] if len(body_calls[0].args) >= 3 else None,
+        )
+        assert passed_ids == ["PRJDB_PUBLIC"]

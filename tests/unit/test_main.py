@@ -518,9 +518,9 @@ class TestOpenAPINdjsonDescription:
 
     def test_ndjson_description_mentions_not_found_skip(self) -> None:
         schema = create_app(AppConfig()).openapi()
-        ndjson = schema["paths"]["/entries/{type}/bulk"]["post"]["responses"]["200"]["content"][
-            "application/x-ndjson"
-        ]["schema"]
+        ndjson = schema["paths"]["/entries/{type}/bulk"]["post"]["responses"]["200"]["content"]["application/x-ndjson"][
+            "schema"
+        ]
         description = ndjson.get("description", "")
         assert "notFound" in description, f"NDJSON schema description must mention notFound. Got: {description!r}"
         assert "silently skipped" in description or "skipped" in description, (

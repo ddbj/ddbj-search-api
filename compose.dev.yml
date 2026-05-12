@@ -1,0 +1,11 @@
+# Dev-only override: publish 8080 to the host so the README quick-start
+# (`curl http://localhost:8080/search/api/...`) works.
+#
+# Apply with `-f compose.yml -f compose.dev.yml`. See README and
+# docs/development.md for the full command.  staging / production use
+# `compose.override.podman.yml` as `compose.override.yml` and do NOT publish
+# this port (nginx terminates upstream).
+services:
+  app:
+    ports:
+      - "8080:8080"

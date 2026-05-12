@@ -35,6 +35,15 @@ DEFAULT_MAX_NODES = 512
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DIGIT_RE = re.compile(r"^\d+$")
 
+# Minimum literal characters that must precede the first wildcard marker.
+# Guards against ``field:*`` and ``field:?`` (lone wildcard) and against
+# ``field:a*`` style 1-character prefix queries that still force ES to scan
+# nearly every term.  Two characters is a balance: long enough to keep ES
+# wildcard cost bounded, short enough that legitimate accession prefixes
+# (e.g. ``PRJDB*``) still work.
+_MIN_WILDCARD_LITERAL_LEN = 2
+_WILDCARD_SAFE_RE = re.compile(r"^[A-Za-z0-9_\-.*?]+$")
+
 
 def validate(
     ast: Node,
@@ -177,6 +186,56 @@ def _check_value(clause: FieldClause) -> None:
     # Literal な new slug は増やさず、invalid_operator_for_field に流用。
     if clause.value_kind == "word" and isinstance(clause.value, str) and FIELD_TYPES.get(clause.field) == "number":
         _ensure_digit(clause.value, clause)
+    if clause.value_kind == "wildcard" and isinstance(clause.value, str):
+        _ensure_safe_wildcard(clause.value, clause)
+
+
+def _ensure_safe_wildcard(value: str, clause: FieldClause) -> None:
+    """Reject leading wildcards, lone ``*``/``?``, and short prefixes.
+
+    Defence-in-depth alongside the grammar's narrowed WILDCARD character
+    class: leading ``*foo`` / lone ``*`` / 1-char prefix ``f*`` would force
+    Elasticsearch and Solr to scan effectively every term in the index, so
+    we surface them as ``invalid-operator-for-field`` (the same slug already
+    used for "shape of value does not match field constraints").  Also
+    re-checks the metachar allow-list in case an AST is hand-built and
+    bypasses the grammar.
+    """
+    if not _WILDCARD_SAFE_RE.match(value):
+        raise DslError(
+            type=ErrorType.invalid_operator_for_field,
+            detail=(
+                f"wildcard value {value!r} for field {clause.field!r} contains characters "
+                f"outside the allowed set [A-Za-z0-9_\\-.*?] at column {clause.position.column} "
+                f"(length {clause.position.length})"
+            ),
+            column=clause.position.column,
+            length=clause.position.length,
+        )
+    if value[0] in "*?":
+        raise DslError(
+            type=ErrorType.invalid_operator_for_field,
+            detail=(
+                f"leading wildcard not allowed for field {clause.field!r} at column "
+                f"{clause.position.column} (length {clause.position.length}); the value must "
+                f"start with at least {_MIN_WILDCARD_LITERAL_LEN} literal characters before "
+                f"a '*' or '?'"
+            ),
+            column=clause.position.column,
+            length=clause.position.length,
+        )
+    first_wild = next((i for i, c in enumerate(value) if c in "*?"), len(value))
+    if first_wild < _MIN_WILDCARD_LITERAL_LEN:
+        raise DslError(
+            type=ErrorType.invalid_operator_for_field,
+            detail=(
+                f"wildcard prefix too short for field {clause.field!r} at column "
+                f"{clause.position.column} (length {clause.position.length}); at least "
+                f"{_MIN_WILDCARD_LITERAL_LEN} literal characters are required before a '*' or '?'"
+            ),
+            column=clause.position.column,
+            length=clause.position.length,
+        )
 
 
 def _ensure_digit(value: str, clause: FieldClause) -> None:

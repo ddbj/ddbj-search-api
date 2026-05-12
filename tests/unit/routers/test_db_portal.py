@@ -2060,6 +2060,7 @@ class TestDbPortalAdvValidDispatch:
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
 
+
 # === Tier 2 / Tier 3 end-to-end ===
 
 
@@ -2896,16 +2897,10 @@ class TestQueryAndJoin:
         bool_clause = body["query"]["bool"]
         must = bool_clause["must"]
         has_free_text = any(
-            isinstance(c, dict)
-            and "multi_match" in c
-            and c["multi_match"]["query"] == "human"
-            for c in must
+            isinstance(c, dict) and "multi_match" in c and c["multi_match"]["query"] == "human" for c in must
         )
         has_field_clause = any(
-            isinstance(c, dict)
-            and "match_phrase" in c
-            and c["match_phrase"].get("title") == "cancer"
-            for c in must
+            isinstance(c, dict) and "match_phrase" in c and c["match_phrase"].get("title") == "cancer" for c in must
         )
         assert has_free_text, f"free-text multi_match missing from bool.must: {must}"
         assert has_field_clause, f"field-clause match_phrase missing from bool.must: {must}"
@@ -2928,13 +2923,8 @@ class TestQueryAndJoin:
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         must = body["query"]["bool"]["must"]
-        has_free_text = any(
-            "multi_match" in c and c["multi_match"]["query"] == "human" for c in must
-        )
-        has_field_clause = any(
-            "match_phrase" in c and c["match_phrase"].get("title") == "cancer"
-            for c in must
-        )
+        has_free_text = any("multi_match" in c and c["multi_match"]["query"] == "human" for c in must)
+        has_field_clause = any("match_phrase" in c and c["match_phrase"].get("title") == "cancer" for c in must)
         assert has_free_text
         assert has_field_clause
 
@@ -2951,9 +2941,7 @@ class TestQueryAndJoin:
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
-        assert body["query"]["bool"]["filter"] == [
-            {"terms": {"status": ["public", "suppressed"]}}
-        ]
+        assert body["query"]["bool"]["filter"] == [{"terms": {"status": ["public", "suppressed"]}}]
 
     def test_status_mode_with_field_clause_identifier_match(
         self,
@@ -2968,9 +2956,7 @@ class TestQueryAndJoin:
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
-        assert body["query"]["bool"]["filter"] == [
-            {"terms": {"status": ["public", "suppressed"]}}
-        ]
+        assert body["query"]["bool"]["filter"] == [{"terms": {"status": ["public", "suppressed"]}}]
 
     def test_status_mode_neither_accession_match(
         self,

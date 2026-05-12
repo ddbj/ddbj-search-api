@@ -447,9 +447,7 @@ _DETAIL_RESPONSES: dict[int | str, dict[str, Any]] = {
                         {
                             "type": "DataDownload",
                             "encodingFormat": "JSON",
-                            "contentUrl": (
-                                "https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJDB1234.json"
-                            ),
+                            "contentUrl": ("https://ddbj.nig.ac.jp/search/api/entries/bioproject/PRJDB1234.json"),
                         },
                     ],
                     "isPartOf": "bioproject",

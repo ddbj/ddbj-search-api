@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc
+import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,11 +11,34 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from ddbj_search_api import config as _config_module
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.main import create_app
 from ddbj_search_api.routers.db_portal import _get_config_dep
 from ddbj_search_api.solr import get_solr_client
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ddbj_env(monkeypatch: pytest.MonkeyPatch) -> collections.abc.Iterator[None]:
+    """Strip ``DDBJ_SEARCH_API_*`` env and reset the AppConfig singleton.
+
+    Unit tests must not depend on the host / container env (testing.md
+    § テスト間の独立性). Without this, running ``uv run pytest`` inside the
+    dev compose container picks up the container's ``DDBJ_SEARCH_API_ES_URL``
+    etc. and the ``AppConfig()`` instances created by fixtures silently
+    diverge from production defaults.
+
+    ``_config`` is forced back to ``None`` both before yield (so the test
+    sees a clean state) and after yield (so the next test isn't poisoned
+    by a fixture that called ``get_config()``).
+    """
+    for key in list(os.environ):
+        if key.startswith("DDBJ_SEARCH_API_"):
+            monkeypatch.delenv(key, raising=False)
+    _config_module._config = None
+    yield
+    _config_module._config = None
 
 
 def _make_app(config: AppConfig) -> TestClient:
@@ -57,7 +81,8 @@ def get_es_search_body(mock: AsyncMock, call_index: int = -1) -> dict[str, Any]:
     if "body" in call.kwargs:
         body: dict[str, Any] = call.kwargs["body"]
         return body
-    return call.args[2]
+    positional_body: dict[str, Any] = call.args[2]
+    return positional_body
 
 
 def get_es_search_index(mock: AsyncMock, call_index: int = -1) -> str:
@@ -69,7 +94,8 @@ def get_es_search_index(mock: AsyncMock, call_index: int = -1) -> str:
     if "index" in call.kwargs:
         index: str = call.kwargs["index"]
         return index
-    return call.args[1]
+    positional_index: str = call.args[1]
+    return positional_index
 
 
 def make_es_search_response(
@@ -289,21 +315,6 @@ def app_with_entry_detail(
 
 
 @pytest.fixture
-def mock_es_get_source_stream_bulk() -> collections.abc.Iterator[AsyncMock]:
-    """Patch es_get_source_stream in the bulk router.
-
-    Default return value is None (not found).
-    Override via ``side_effect`` to control per-ID behaviour.
-    """
-    with patch(
-        "ddbj_search_api.routers.bulk.es_get_source_stream",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.return_value = None
-        yield mock
-
-
-@pytest.fixture
 def mock_es_ping() -> collections.abc.Iterator[AsyncMock]:
     """Patch es_ping in the service_info router.
 
@@ -323,15 +334,18 @@ def mock_es_ping() -> collections.abc.Iterator[AsyncMock]:
 
 @pytest.fixture
 def mock_es_mget_source_bulk() -> collections.abc.Iterator[AsyncMock]:
-    """Patch es_mget_source in the bulk router.
+    """Patch ``es_mget_source`` in the bulk router.
 
-    Default: every requested ID maps to ``status=public`` so the
-    visibility check (docs/api-spec.md § データ可視性) passes and the
-    existing per-ID streaming flow is exercised. Override ``.side_effect``
-    or ``.return_value`` to emulate withdrawn/private/missing entries.
+    The bulk router calls ``es_mget_source`` twice per request:
 
-    Tests that hit the bulk router must take this fixture as an
-    argument (``app_with_bulk`` already does so transitively).
+    1. visibility check with ``source_includes=["status"]`` (status only)
+    2. body fetch with ``source_excludes=["dbXrefs"]`` (full ``_source``)
+
+    The default side-effect distinguishes the two by inspecting kwargs and
+    returns ``status=public`` for the visibility call and a minimal
+    ``{"identifier": id_}`` body for the fetch call.  Tests override
+    ``.side_effect`` for richer scenarios (status filtering, race
+    conditions, custom bodies).
     """
     with patch(
         "ddbj_search_api.routers.bulk.es_mget_source",
@@ -342,21 +356,53 @@ def mock_es_mget_source_bulk() -> collections.abc.Iterator[AsyncMock]:
             _client: object,
             _index: str,
             ids: list[str],
-            **_kwargs: object,
+            **kwargs: object,
         ) -> dict[str, dict[str, str] | None]:
-            return {id_: {"status": "public"} for id_ in ids}
+            if kwargs.get("source_includes") == ["status"]:
+                return {id_: {"status": "public"} for id_ in ids}
+            # Body fetch (source_excludes=["dbXrefs"] or default).
+            return {id_: {"identifier": id_} for id_ in ids}
 
         mock.side_effect = _default
         yield mock
 
 
 @pytest.fixture
+def mock_dblink_bulk() -> collections.abc.Iterator[MagicMock]:
+    """Patch ``get_linked_ids_bulk`` in the bulk router.
+
+    Default: every visible entry maps to an empty dbXrefs list so
+    serialization picks up ``"dbXrefs": []``.  Override via
+    ``mock_dblink_bulk.side_effect = ...`` to inject real linked ids.
+    Also patches ``DBLINK_DB_PATH.exists()`` so the endpoint's
+    file-existence guard passes without a real DuckDB file on disk.
+    """
+    with (
+        patch(
+            "ddbj_search_api.routers.bulk.get_linked_ids_bulk",
+            return_value={},
+        ) as mock,
+        patch(
+            "ddbj_search_api.routers.bulk.DBLINK_DB_PATH",
+            MagicMock(exists=MagicMock(return_value=True)),
+        ),
+    ):
+        yield mock
+
+
+@pytest.fixture
 def app_with_bulk(
     config: AppConfig,
-    mock_es_get_source_stream_bulk: AsyncMock,
     mock_es_mget_source_bulk: AsyncMock,
+    mock_dblink_bulk: MagicMock,
 ) -> TestClient:
-    """TestClient with es_get_source_stream and es_mget_source mocked for bulk."""
+    """TestClient with ``es_mget_source`` and DuckDB bulk-fetch mocked.
+
+    The bulk router uses one ``_mget`` for visibility, one DuckDB bulk
+    query for dbXrefs, then chunked ``_mget`` calls for bodies, so both
+    of those externals must be stubbed for unit tests to skip the
+    network/filesystem entirely.
+    """
     fake_client = AsyncMock(spec=httpx.AsyncClient)
     application = create_app(config)
     application.dependency_overrides[get_es_client] = lambda: fake_client

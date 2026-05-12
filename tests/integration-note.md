@@ -94,5 +94,3 @@ markers = [
 ## CI
 
 現状の `uv run pytest` は `testpaths = ["tests/unit"]` で unit のみ実行する。integration は手動 (`uv run pytest tests/integration/`)。
-
-unit の coverage は `pyproject.toml` の addopts で常に計測され、`tests/htmlcov/` に出力される。integration は coverage 計測対象外として扱う (実 ES の挙動を見るのが目的のため)。

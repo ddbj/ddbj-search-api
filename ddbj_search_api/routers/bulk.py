@@ -2,10 +2,12 @@
 
 Retrieve multiple entries by IDs in JSON Array or NDJSON format.
 
-Design: streaming responses using ``es_get_source_stream`` per ID.
-Each document is streamed directly from ES without loading the full
-body into API memory, keeping peak memory at one streaming chunk.
-DuckDB dbXrefs are injected into each entry's JSON.
+Design: one `_mget` call classifies visibility, one DuckDB bulk query
+collects every visible entry's dbXrefs, and ES bodies are fetched in
+``_BULK_CHUNK_SIZE``-sized ``_mget`` batches.  Each batch is streamed
+to the client as soon as it arrives, so peak memory is bounded by the
+chunk's `_source` total plus the (one-shot) dbXrefs map rather than
+the entire result set.
 """
 
 from __future__ import annotations
@@ -21,15 +23,20 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
-from ddbj_search_api.dblink.client import iter_linked_ids
+from ddbj_search_api.dblink.client import get_linked_ids_bulk
 from ddbj_search_api.es import get_es_client
-from ddbj_search_api.es.client import es_get_source_stream, es_mget_source
+from ddbj_search_api.es.client import es_mget_source
 from ddbj_search_api.schemas.bulk import BulkRequest, BulkResponse
 from ddbj_search_api.schemas.common import DbType, ProblemDetails
 from ddbj_search_api.schemas.queries import BulkFormat, BulkQuery
-from ddbj_search_api.utils import format_xref
+from ddbj_search_api.utils import format_xref_dict
 
 _VISIBLE_STATUSES = ("public", "suppressed")
+
+# Number of IDs per `_mget` batch when fetching bodies.  50 keeps the
+# JSON payload per request below a few MB (typical _source is tens of KB)
+# while reducing N=1000 round-trips from 1000 to 20.
+_BULK_CHUNK_SIZE = 50
 
 
 async def _resolve_visible_ids(
@@ -67,41 +74,37 @@ router = APIRouter(tags=["Bulk"])
 # --- Helpers ---
 
 
-async def _read_source_bytes(response: httpx.Response) -> bytes:
-    """Read all bytes from an ES _source stream and strip trailing whitespace.
-
-    ES ``_source`` responses end with ``\\n``; stripping it prevents
-    malformed JSON in array mode and empty lines in NDJSON mode.
-    """
-    try:
-        chunks: list[bytes] = []
-        async for chunk in response.aiter_bytes():
-            chunks.append(chunk)
-        return b"".join(chunks).rstrip()
-    finally:
-        await response.aclose()
-
-
-async def _inject_dbxrefs_into_bytes(
-    source_bytes: bytes,
+async def _fetch_all_dbxrefs(
+    visible_ids: list[str],
     acc_type: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Return ``{id: [(linked_type, accession), ...]}`` for every visible id.
+
+    One DuckDB query for every visible id; replaces the N per-id
+    ``iter_linked_ids`` calls that dominated wall-clock time for large
+    bulk requests.
+    """
+    if not visible_ids:
+        return {}
+    entries = [(acc_type, id_) for id_ in visible_ids]
+    bulk_result = await asyncio.to_thread(get_linked_ids_bulk, DBLINK_DB_PATH, entries)
+    return {id_: bulk_result.get((acc_type, id_), []) for id_ in visible_ids}
+
+
+def _serialize_entry(
+    source: dict[str, Any],
     entry_id: str,
+    include_db_xrefs: bool,
+    dbxrefs_map: dict[str, list[tuple[str, str]]],
 ) -> bytes:
-    """Inject dbXrefs from DuckDB into an ES source JSON bytes object."""
-    text = source_bytes.decode("utf-8")
-    brace_pos = text.rfind("}")
-    if brace_pos == -1:
-        return source_bytes
+    """Inject dbXrefs into ``source`` and return UTF-8 JSON bytes.
 
-    def _fetch_all() -> list[tuple[str, str]]:
-        return list(iter_linked_ids(DBLINK_DB_PATH, acc_type, entry_id))
-
-    rows = await asyncio.to_thread(_fetch_all)
-    xrefs_parts = [format_xref(t, acc) for t, acc in rows]
-    db_xrefs_json = ',"dbXrefs":[' + ",".join(xrefs_parts) + "]"
-    text = text[:brace_pos] + db_xrefs_json + text[brace_pos:]
-
-    return text.encode("utf-8")
+    Mutates ``source`` (already a one-shot dict owned by the caller),
+    then ``json.dumps`` once -- no string splice, no double-encode.
+    """
+    if include_db_xrefs:
+        source["dbXrefs"] = [format_xref_dict(t, acc) for t, acc in dbxrefs_map.get(entry_id, [])]
+    return json.dumps(source, ensure_ascii=False).encode("utf-8")
 
 
 # --- Streaming generators ---
@@ -114,37 +117,39 @@ async def _generate_bulk_json(
     acc_type: str,
     include_db_xrefs: bool = True,
 ) -> collections.abc.AsyncIterator[bytes]:
-    """Stream ``{"entries":[...],"notFound":[...]}`` without loading all docs.
+    """Stream ``{"entries":[...],"notFound":[...]}`` from chunked `_mget`.
 
-    Before streaming entries, a single ``_mget`` call classifies IDs by
-    visibility (``status``): ``withdrawn`` / ``private`` and missing IDs
-    are all reported via ``notFound`` (docs/api-spec.md § データ可視性).
+    Visibility is resolved up front (one `_mget`), dbXrefs are fetched
+    in a single DuckDB bulk query, and bodies are pulled in
+    ``_BULK_CHUNK_SIZE``-sized `_mget` batches.  ``withdrawn`` / ``private``
+    / missing ids and any ids deleted between visibility check and body
+    fetch all land in ``notFound`` (docs/api-spec.md § データ可視性).
     """
     visible_ids, hidden_ids = await _resolve_visible_ids(client, index, ids)
+    dbxrefs_map = await _fetch_all_dbxrefs(visible_ids, acc_type) if include_db_xrefs else {}
 
     yield b'{"entries":['
     not_found: list[str] = list(hidden_ids)
     first = True
 
-    for id_ in visible_ids:
-        response = await es_get_source_stream(
+    for chunk_start in range(0, len(visible_ids), _BULK_CHUNK_SIZE):
+        chunk_ids = visible_ids[chunk_start : chunk_start + _BULK_CHUNK_SIZE]
+        sources = await es_mget_source(
             client,
             index,
-            id_,
-            source_excludes="dbXrefs",
+            chunk_ids,
+            source_excludes=["dbXrefs"],
         )
-        if response is None:
-            # Race condition: doc deleted between visibility check and stream.
-            not_found.append(id_)
-            continue
-        if not first:
-            yield b","
-        first = False
-        source_bytes = await _read_source_bytes(response)
-        if include_db_xrefs:
-            yield await _inject_dbxrefs_into_bytes(source_bytes, acc_type, id_)
-        else:
-            yield source_bytes
+        for id_ in chunk_ids:
+            src = sources.get(id_)
+            if src is None:
+                # Race: doc deleted between visibility check and body fetch.
+                not_found.append(id_)
+                continue
+            if not first:
+                yield b","
+            first = False
+            yield _serialize_entry(src, id_, include_db_xrefs, dbxrefs_map)
 
     yield b'],"notFound":'
     yield json.dumps(not_found).encode()
@@ -158,26 +163,26 @@ async def _generate_bulk_ndjson(
     acc_type: str,
     include_db_xrefs: bool = True,
 ) -> collections.abc.AsyncIterator[bytes]:
-    """Stream one entry per line. Missing / withdrawn / private IDs are
-    silently skipped (docs/api-spec.md § データ可視性).
+    """Stream one entry per line. Missing / withdrawn / private / race-
+    deleted IDs are silently skipped (docs/api-spec.md § データ可視性).
     """
     visible_ids, _hidden_ids = await _resolve_visible_ids(client, index, ids)
+    dbxrefs_map = await _fetch_all_dbxrefs(visible_ids, acc_type) if include_db_xrefs else {}
 
-    for id_ in visible_ids:
-        response = await es_get_source_stream(
+    for chunk_start in range(0, len(visible_ids), _BULK_CHUNK_SIZE):
+        chunk_ids = visible_ids[chunk_start : chunk_start + _BULK_CHUNK_SIZE]
+        sources = await es_mget_source(
             client,
             index,
-            id_,
-            source_excludes="dbXrefs",
+            chunk_ids,
+            source_excludes=["dbXrefs"],
         )
-        if response is None:
-            continue
-        source_bytes = await _read_source_bytes(response)
-        if include_db_xrefs:
-            yield await _inject_dbxrefs_into_bytes(source_bytes, acc_type, id_)
-        else:
-            yield source_bytes
-        yield b"\n"
+        for id_ in chunk_ids:
+            src = sources.get(id_)
+            if src is None:
+                continue
+            yield _serialize_entry(src, id_, include_db_xrefs, dbxrefs_map)
+            yield b"\n"
 
 
 # --- Endpoint ---

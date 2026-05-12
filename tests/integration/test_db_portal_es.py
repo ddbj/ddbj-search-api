@@ -69,9 +69,7 @@ class TestQueryAndJoin:
             base = baseline_counts.get(entry["db"])
             if base is None:
                 continue
-            assert entry["count"] <= base, (
-                f"AND-joined count exceeds free-text-only baseline on db={entry['db']!r}"
-            )
+            assert entry["count"] <= base, f"AND-joined count exceeds free-text-only baseline on db={entry['db']!r}"
 
     def test_search_and_join_is_subset_of_free_text_only_on_es_db(self, app: TestClient) -> None:
         """IT-DBPORTAL-15: ES-backed db-specific search で AND-join が free-text-only の subset."""

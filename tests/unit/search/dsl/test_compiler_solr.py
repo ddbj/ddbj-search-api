@@ -310,15 +310,11 @@ class TestSolrBoolWithTier3Mixed:
 
     def test_trad_mixed(self) -> None:
         # division:BCT AND title:cancer → ARSA 両方あり
-        assert _c("division:BCT AND title:cancer", "arsa") == (
-            '(Division:"BCT" AND Definition:"cancer")'
-        )
+        assert _c("division:BCT AND title:cancer", "arsa") == ('(Division:"BCT" AND Definition:"cancer")')
 
     def test_taxonomy_mixed_on_txsearch(self) -> None:
         # rank:species AND title:Homo → TXSearch 両方あり
-        assert _c("rank:species AND title:Homo", "txsearch") == (
-            '(rank:"species" AND scientific_name:"Homo")'
-        )
+        assert _c("rank:species AND title:Homo", "txsearch") == ('(rank:"species" AND scientific_name:"Homo")')
 
 
 class TestCompilerSolrPBT:

@@ -11,14 +11,43 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import threading
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-# Per-process secret; cursor tokens become invalid on restart, which is
-# acceptable because PIT IDs expire in 5 minutes anyway.
-_SECRET = secrets.token_bytes(32)
+# Signing key for cursor tokens.  Read from ``DDBJ_SEARCH_API_CURSOR_SECRET``
+# at first use; if unset, a per-process random key is generated.  Multi-worker
+# / multi-instance deployments must set the env so every process signs with
+# the same key, otherwise a cursor issued by one worker fails verification on
+# another (see docs/deployment.md).
+_SECRET: bytes | None = None
+_SECRET_LOCK = threading.Lock()
+
+
+def _get_secret() -> bytes:
+    """Lazily resolve the signing secret (env override, else per-process random)."""
+    global _SECRET  # noqa: PLW0603
+    if _SECRET is not None:
+        return _SECRET
+    with _SECRET_LOCK:
+        if _SECRET is not None:
+            return _SECRET
+        env_value = os.environ.get("DDBJ_SEARCH_API_CURSOR_SECRET")
+        if env_value:
+            _SECRET = env_value.encode("utf-8")
+        else:
+            _SECRET = secrets.token_bytes(32)
+        return _SECRET
+
+
+def _reset_secret_for_tests() -> None:
+    """Reset the cached secret so the next call re-reads the env. Test-only."""
+    global _SECRET  # noqa: PLW0603
+    with _SECRET_LOCK:
+        _SECRET = None
 
 
 class CursorPayload(BaseModel):
@@ -40,7 +69,7 @@ class CursorPayload(BaseModel):
 
 def _sign(payload_bytes: bytes) -> str:
     """Compute URL-safe Base64 HMAC-SHA256 signature."""
-    sig = hmac.new(_SECRET, payload_bytes, hashlib.sha256).digest()
+    sig = hmac.new(_get_secret(), payload_bytes, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(sig).decode("ascii").rstrip("=")
 
 

@@ -149,37 +149,21 @@ router = APIRouter()
 
 _DEEP_PAGING_LIMIT = 10000
 
+
+def _snake_to_camel(name: str) -> str:
+    """Convert ``snake_case`` to ``camelCase`` (e.g. ``object_types`` -> ``objectTypes``)."""
+    head, *rest = name.split("_")
+    return head + "".join(part.capitalize() for part in rest)
+
+
 # Snake_case attr -> wire-level alias for every type-specific filter
-# carried by ``TypeSpecificFilters``. ``_validate_cursor_exclusivity``
-# uses this mapping to surface the alias name (camelCase) in the 400
-# error detail when a cursor request also carries one of these
-# parameters. Adding a new field to ``TypeSpecificFilters`` requires a
-# matching entry here so the cursor exclusivity check stays complete.
+# carried by ``TypeSpecificFilters``. Derived directly from the dataclass
+# fields so that adding a field to ``TypeSpecificFilters`` automatically
+# keeps the cursor-exclusivity check complete.
+# ``_validate_cursor_exclusivity`` uses the alias to surface the camelCase
+# parameter name in the 400 error detail.
 _CURSOR_EXCLUSIVE_FILTER_FIELDS: dict[str, str] = {
-    "types": "types",
-    "object_types": "objectTypes",
-    "external_link_label": "externalLinkLabel",
-    "project_type": "projectType",
-    "derived_from_id": "derivedFromId",
-    "host": "host",
-    "strain": "strain",
-    "isolate": "isolate",
-    "geo_loc_name": "geoLocName",
-    "collection_date": "collectionDate",
-    "library_strategy": "libraryStrategy",
-    "library_source": "librarySource",
-    "library_selection": "librarySelection",
-    "platform": "platform",
-    "instrument_model": "instrumentModel",
-    "library_layout": "libraryLayout",
-    "analysis_type": "analysisType",
-    "library_name": "libraryName",
-    "library_construction_protocol": "libraryConstructionProtocol",
-    "study_type": "studyType",
-    "dataset_type": "datasetType",
-    "vendor": "vendor",
-    "experiment_type": "experimentType",
-    "submission_type": "submissionType",
+    f.name: _snake_to_camel(f.name) for f in dataclasses.fields(TypeSpecificFilters)
 }
 
 

@@ -10,7 +10,7 @@
 - **PBT (Property-Based Testing)**: hypothesis で入力空間を広く探索する。`@given` で書き、カスタムストラテジーは `tests/unit/strategies.py` に集約。テストデータは `hypothesis.strategies.builds()` で組み立てる (Pydantic v2 と相性が良い)
 - **境界値・エッジケース・異常系を必ず書く**: 正常系だけでは脆い
 - **mock は外部境界だけ**: ES client / DuckDB client のような外部 I/O を境界として mock し、内部 (Pydantic、レスポンス変換、FastAPI ルーティング) は実物を通す
-- **テスト間の独立性**: 状態を共有しない、実行順序に依存しない
+- **テスト間の独立性**: 状態を共有しない、実行順序に依存しない。`unit/conftest.py` の autouse fixture で `DDBJ_SEARCH_API_*` env と `AppConfig` の lazy singleton を毎テストでクリアする (host/コンテナ env が unit テストに混入するのを防ぐ)
 
 ## テスト分類
 

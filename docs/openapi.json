@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
-    "version": "0.3.3.dev16+g2e44a5989.d20260512"
+    "version": "0.3.3.dev17+g68566bc43.d20260512"
   },
   "paths": {
     "/entries/": {
@@ -19870,12 +19870,18 @@
                 },
                 {
                   "$ref": "#/components/schemas/JGA"
+                },
+                {
+                  "$ref": "#/components/schemas/GEA"
+                },
+                {
+                  "$ref": "#/components/schemas/MetaboBank"
                 }
               ]
             },
             "type": "array",
             "title": "Entries",
-            "description": "Found entries (raw ES documents). 'public' and 'suppressed' entries are returned here; 'private' and missing ids are listed under notFound.",
+            "description": "Found entries (raw ES documents). 'public' and 'suppressed' entries are returned here; 'withdrawn', 'private', and missing ids are listed under notFound.",
             "examples": [
               [
                 {
@@ -19892,7 +19898,7 @@
             },
             "type": "array",
             "title": "Notfound",
-            "description": "IDs that were not found (missing or hidden by visibility filter: 'private' / 'withdrawn'). Always satisfies len(entries) + len(notFound) == len(set(ids)).",
+            "description": "IDs that were not found (missing or hidden by visibility filter: 'withdrawn' / 'private'). Always satisfies len(entries) + len(notFound) == len(set(ids)).",
             "examples": [
               [
                 "PRJDB_INVALID"

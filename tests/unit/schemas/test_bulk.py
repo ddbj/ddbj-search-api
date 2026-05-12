@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import pytest
-from ddbj_search_converter.schema import BioProject
+from ddbj_search_converter.schema import GEA, JGA, SRA, BioProject, BioSample, MetaboBank
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from ddbj_search_api.schemas.bulk import BulkRequest, BulkResponse
+from tests._factories import make_bioproject_dict as _bp_dict
+from tests._factories import (
+    make_biosample_dict,
+    make_gea_dict,
+    make_jga_dict,
+    make_metabobank_dict,
+    make_sra_dict,
+)
 from tests.unit.strategies import valid_bulk_ids
 
 # === BulkRequest ===
@@ -72,26 +80,15 @@ class TestBulkRequestEdgeCases:
 # === BulkResponse ===
 
 
-def _make_bioproject(identifier: str) -> BioProject:
-    """Create a BioProject instance for testing via model_construct."""
+def _make_bioproject(identifier: str = "PRJDB1") -> BioProject:
+    """Build a fully-validated BioProject via the shared factory.
 
-    return BioProject.model_construct(
-        identifier=identifier,
-        type_="bioproject",
-        isPartOf="bioproject",
-        objectType="BioProject",
-        status="public",
-        accessibility="public-access",
-        url=f"https://example.com/{identifier}",
-        properties={},
-        distribution=[],
-        organization=[],
-        publication=[],
-        grant=[],
-        externalLink=[],
-        dbXrefs=[],
-        sameAs=[],
-    )
+    Uses ``BioProject(**dict)`` (not ``model_construct``) so the converter's
+    Pydantic schema contract (Literal isPartOf, enum accessibility, required
+    list fields) is enforced at test data construction time. Contract drift
+    surfaces here instead of bleeding into router tests.
+    """
+    return BioProject(**_bp_dict(identifier=identifier))
 
 
 class TestBulkResponse:
@@ -123,6 +120,57 @@ class TestBulkResponse:
     def test_missing_not_found_raises_error(self) -> None:
         with pytest.raises(ValidationError):
             BulkResponse(entries=[])  # type: ignore[call-arg]
+
+
+class TestBulkResponseAllDbTypes:
+    """All six entry types (BioProject / BioSample / SRA / JGA / GEA / MetaboBank)
+    are valid members of ``entries``.
+
+    Regression for the bug where ``BulkResponse.entries`` only declared
+    ``BioProject | BioSample | SRA | JGA``, silently dropping GEA and
+    MetaboBank from the OpenAPI schema and from validated responses.
+    """
+
+    def test_bioproject_entry_accepted(self) -> None:
+        entry = BioProject(**_bp_dict(identifier="PRJDB1"))
+        resp = BulkResponse(entries=[entry], notFound=[])
+        assert resp.entries[0].identifier == "PRJDB1"
+
+    def test_biosample_entry_accepted(self) -> None:
+        entry = BioSample(**make_biosample_dict(identifier="SAMD00000001"))
+        resp = BulkResponse(entries=[entry], notFound=[])
+        assert resp.entries[0].identifier == "SAMD00000001"
+
+    def test_sra_entry_accepted(self) -> None:
+        entry = SRA(**make_sra_dict(identifier="DRR000001"))
+        resp = BulkResponse(entries=[entry], notFound=[])
+        assert resp.entries[0].identifier == "DRR000001"
+
+    def test_jga_entry_accepted(self) -> None:
+        entry = JGA(**make_jga_dict(identifier="JGAS000001"))
+        resp = BulkResponse(entries=[entry], notFound=[])
+        assert resp.entries[0].identifier == "JGAS000001"
+
+    def test_gea_entry_accepted(self) -> None:
+        entry = GEA(**make_gea_dict(identifier="E-GEAD-1"))
+        resp = BulkResponse(entries=[entry], notFound=[])
+        assert resp.entries[0].identifier == "E-GEAD-1"
+
+    def test_metabobank_entry_accepted(self) -> None:
+        entry = MetaboBank(**make_metabobank_dict(identifier="MTBKS1"))
+        resp = BulkResponse(entries=[entry], notFound=[])
+        assert resp.entries[0].identifier == "MTBKS1"
+
+    def test_mixed_types_in_same_response(self) -> None:
+        """Cross-type bulk would never happen in practice, but the union must allow it."""
+        entries = [
+            BioProject(**_bp_dict(identifier="PRJDB1")),
+            GEA(**make_gea_dict(identifier="E-GEAD-1")),
+            MetaboBank(**make_metabobank_dict(identifier="MTBKS1")),
+        ]
+        resp = BulkResponse(entries=entries, notFound=[])  # type: ignore[arg-type]
+        assert len(resp.entries) == 3
+        assert {e.identifier for e in resp.entries} == {"PRJDB1", "E-GEAD-1", "MTBKS1"}
 
 
 class TestBulkResponsePBT:

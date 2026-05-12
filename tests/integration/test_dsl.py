@@ -590,9 +590,7 @@ class TestOrganismAnalyzerMismatchRegression:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total"] >= 1000, (
-            f"db={db}: organism phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
-        )
+        assert body["total"] >= 1000, f"db={db}: organism phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
 
     @pytest.mark.parametrize("db", ["bioproject", "biosample", "sra"])
     def test_organism_lowercase_phrase_also_hits(self, app: TestClient, db: str) -> None:

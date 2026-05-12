@@ -33,10 +33,13 @@ NOT.10: "NOT"
 PHRASE.5: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/
 RANGE.5: /\[[^\s\]]+\s+TO\s+[^\s\]]+\]/
 DATE.4: /\d{4}-\d{2}-\d{2}/
-// WILDCARD uses the same character class as WORD but requires at least one
-// ``*`` / ``?``.  Symbol-bearing tokens like ``HIF-1*`` / ``COVID-19*`` must
-// parse as wildcards so users can prefix-search gene / disease names.
-WILDCARD.3: /[^\s:()\[\]"{}^~\/]*[*?][^\s:()\[\]"{}^~\/]*/
+// WILDCARD is intentionally a narrower character class than WORD: only
+// alphanumerics, `_`, `-`, `.` plus the wildcard markers `*` / `?`.
+// Symbol-bearing tokens like ``HIF-1*`` / ``COVID-19*`` must parse as
+// wildcards so users can prefix-search gene / disease names, but Lucene /
+// Solr metacharacters (`\`, `+`, leading `-`, `!`, `|`, `&`, `<`, `>`, `=`)
+// are kept out at the grammar level to avoid downstream escape bugs.
+WILDCARD.3: /[A-Za-z0-9_\-.]*[*?][A-Za-z0-9_\-.]*/
 WORD.1: /[^\s:()\[\]"{}^~*?\/]+/
 
 %ignore /\s+/

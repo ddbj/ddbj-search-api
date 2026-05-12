@@ -21,6 +21,18 @@ def format_xref(type_: str, accession: str) -> str:
     return xref.model_dump_json(by_alias=True)
 
 
+def format_xref_dict(type_: str, accession: str) -> dict[str, Any]:
+    """Format a single xref as a dict (camelCase aliases applied).
+
+    Equivalent to ``json.loads(format_xref(...))`` but avoids the
+    JSON serialize/parse round-trip.  Used by the bulk endpoint, which
+    builds the response by ``json.dumps``-ing a doc-with-injected-
+    dbXrefs dict in one pass rather than splicing serialized fragments.
+    """
+    xref = to_xref(accession, type_hint=cast(XrefType, type_))
+    return xref.model_dump(by_alias=True)
+
+
 def _optional_organism(aggregations: dict[str, Any]) -> list[OrganismFacetBucket] | None:
     """Build the ``organism`` facet bucket list from an ES aggregation.
 
@@ -47,8 +59,7 @@ def _optional_organism(aggregations: dict[str, Any]) -> list[OrganismFacetBucket
             label = sub_buckets[0]["key"]
         else:
             logger.warning(
-                "organism facet bucket for TaxID %r has no organism.name sub-bucket; "
-                "falling back to TaxID as label",
+                "organism facet bucket for TaxID %r has no organism.name sub-bucket; falling back to TaxID as label",
                 tax_id,
             )
             label = tax_id

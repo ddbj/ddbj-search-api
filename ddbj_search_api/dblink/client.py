@@ -244,6 +244,21 @@ _QUERY_LIMITED_BULK = f"""
     ORDER BY input_type, input_accession, linked_type, linked_accession
 """
 
+_QUERY_BULK_UNLIMITED = f"""
+    WITH input AS (
+        SELECT UNNEST(?::VARCHAR[]) AS accession_type,
+               UNNEST(?::VARCHAR[]) AS accession
+    )
+    SELECT
+        i.accession_type AS input_type,
+        i.accession      AS input_accession,
+        d.linked_type,
+        d.linked_accession
+    FROM input i
+    JOIN {_CATALOG}.dbxref d USING (accession_type, accession)
+    ORDER BY i.accession_type, i.accession, d.linked_type, d.linked_accession
+"""
+
 _QUERY_COUNT_BULK = f"""
     WITH input AS (
         SELECT UNNEST(?::VARCHAR[]) AS accession_type,
@@ -299,6 +314,56 @@ def get_linked_ids_limited_bulk(
         rows = cursor.execute(
             _QUERY_LIMITED_BULK,
             (types, accessions, limit),
+        ).fetchall()
+    finally:
+        cursor.close()
+
+    result: dict[tuple[str, str], list[tuple[str, str]]] = {e: [] for e in unique_entries}
+    for input_type, input_accession, linked_type, linked_accession in rows:
+        result[(input_type, input_accession)].append((linked_type, linked_accession))
+    return result
+
+
+def get_linked_ids_bulk(
+    db_path: Path,
+    entries: list[tuple[str, str]],
+) -> dict[tuple[str, str], list[tuple[str, str]]]:
+    """Return *all* related ``(linked_type, accession)`` pairs per entry.
+
+    Unlike :func:`get_linked_ids_limited_bulk`, no per-linked-type row
+    cap is applied: every match in the join is returned.  Used by the
+    bulk endpoint, which has no ``dbXrefsLimit`` parameter and must
+    serialize the full ``dbXrefs`` list per visible entry.  Implemented
+    as a single SQL query that ``UNNEST``s the inputs and joins against
+    the dbxref table, eliminating the per-entry cursor loop and
+    bringing N=1000 from N round-trips to a single SQL execution.
+
+    Args:
+        db_path: Path to the DuckDB database file.
+        entries: List of ``(type, id)`` pairs to look up.
+
+    Returns:
+        Dict mapping ``(type, id)`` to sorted list of
+        ``(linked_type, accession)`` tuples.  Entries with no matches
+        map to an empty list.  Duplicate inputs are deduplicated before
+        the SQL call (one result entry per unique key).
+
+    Raises:
+        FileNotFoundError: If *db_path* does not exist.
+    """
+    if not entries:
+        return {}
+
+    unique_entries = list(dict.fromkeys(entries))
+    types = [t for t, _ in unique_entries]
+    accessions = [a for _, a in unique_entries]
+
+    conn = _get_conn(db_path)
+    cursor = conn.cursor()
+    try:
+        rows = cursor.execute(
+            _QUERY_BULK_UNLIMITED,
+            (types, accessions),
         ).fetchall()
     finally:
         cursor.close()
