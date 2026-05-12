@@ -505,3 +505,38 @@ class TestSingleQuotePhrase:
         assert single.status_code == 200
         assert double.status_code == 200
         assert single.json()["total"] == double.json()["total"]
+
+
+class TestOrganismAnalyzerMismatchRegression:
+    """IT-DSL-20: organism phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止).
+
+    ``organism.name`` は ES mapping で text + standard analyzer (converter
+    ``common.py:39-48``)、``term`` query を投げると tokenize 後の lowercase
+    token と単一値が不一致で 0 件になる。``compile_to_es`` は ``organism`` 専用
+    kind で name に ``match_phrase`` を投げて analyzer 経由するため、staging で
+    BP / BS / SRA いずれも数万〜数百万件ヒットする (FreeText 同等オーダー)。
+    回帰検出用に十分緩めの閾値 (``>= 1000``) で固定。
+    """
+
+    @pytest.mark.parametrize("db", ["bioproject", "biosample", "sra"])
+    def test_organism_phrase_hits_es_backed_db(self, app: TestClient, db: str) -> None:
+        """IT-DSL-20: ``organism:"Homo sapiens"`` が >= 1000 件ヒット (term 退化なら 0 件で fail)."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": db, "q": 'organism:"Homo sapiens"', "perPage": 20},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] >= 1000, (
+            f"db={db}: organism phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
+        )
+
+    @pytest.mark.parametrize("db", ["bioproject", "biosample", "sra"])
+    def test_organism_lowercase_phrase_also_hits(self, app: TestClient, db: str) -> None:
+        """IT-DSL-20: standard analyzer 経由なので ``"homo sapiens"`` (小文字) も同等にヒット."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": db, "q": 'organism:"homo sapiens"', "perPage": 20},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1000

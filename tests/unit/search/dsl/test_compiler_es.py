@@ -69,11 +69,15 @@ class TestTextFields:
 
 
 class TestOrganismField:
+    # organism.name は text + standard analyzer (converter common.py:39-48)、
+    # organism.identifier は keyword (taxID)。name 側で term だと analyzer mismatch
+    # (lowercase tokenize 後の inverted index と単一値が不一致) で 0 件になるため、
+    # name は match_phrase で analyzer を通し、identifier は term で taxID exact。
     def test_word_expands_to_should(self) -> None:
         assert _compile("organism:human") == {
             "bool": {
                 "should": [
-                    {"term": {"organism.name": "human"}},
+                    {"match_phrase": {"organism.name": "human"}},
                     {"term": {"organism.identifier": "human"}},
                 ],
                 "minimum_should_match": 1,
@@ -84,8 +88,21 @@ class TestOrganismField:
         assert _compile('organism:"Homo sapiens"') == {
             "bool": {
                 "should": [
-                    {"term": {"organism.name": "Homo sapiens"}},
+                    {"match_phrase": {"organism.name": "Homo sapiens"}},
                     {"term": {"organism.identifier": "Homo sapiens"}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
+
+    def test_taxid_word_hits_identifier_path(self) -> None:
+        # taxID 直接入力時は organism.identifier (keyword) 側で term hit する。
+        # name 側は analyzer 通すが数値だと当たらず、bool.should の identifier 句で拾う。
+        assert _compile("organism:9606") == {
+            "bool": {
+                "should": [
+                    {"match_phrase": {"organism.name": "9606"}},
+                    {"term": {"organism.identifier": "9606"}},
                 ],
                 "minimum_should_match": 1,
             },
@@ -672,11 +689,11 @@ class TestCompileToEsFreeTextNode:
         assert result == {
             "bool": {
                 "must": [
-                    # adv_ast の compile 結果 (organism は or_flat: organism.name / organism.identifier)
+                    # adv_ast の compile 結果 (organism kind: name は match_phrase、identifier は term)
                     {
                         "bool": {
                             "should": [
-                                {"term": {"organism.name": "Homo sapiens"}},
+                                {"match_phrase": {"organism.name": "Homo sapiens"}},
                                 {"term": {"organism.identifier": "Homo sapiens"}},
                             ],
                             "minimum_should_match": 1,

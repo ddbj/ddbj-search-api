@@ -1142,6 +1142,18 @@
 **回帰元**: `docs/db-portal-api-spec.md § Advanced Search DSL § 文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py` (TestFieldClauseValueKinds, TestPhraseEscaping)
 
+### IT-DSL-20: organism phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止)
+
+**endpoint**: `GET /db-portal/search?q=organism:"Homo sapiens"&db=<bioproject|biosample|sra>&perPage=20`
+
+**不変条件**:
+- BP / BS / SRA いずれも `total >= 1000` (FreeText `"Homo sapiens"` と概ね同オーダーになる)
+- 小文字 phrase `organism:"homo sapiens"` でも同等に `total >= 1000` (`organism.name` は text + standard analyzer なので大文字小文字に寛容)
+- term クエリだと analyzer mismatch (tokenize 後の lowercase token と単一値が不一致) で 0 件に戻るので、`match_phrase` 経由の正常実装が回帰すると本シナリオが破綻する
+
+**回帰元**: `docs/db-portal-api-spec.md § Tier 1 organism`、`ddbj_search_api/search/dsl/compiler_es.py § _compile_organism`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestOrganismField)
+
 ---
 
 ## IT-DBPORTAL-*: db-portal 横断 / DB 指定

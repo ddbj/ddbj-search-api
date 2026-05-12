@@ -3,7 +3,8 @@
 SSOT: search-backends.md §バックエンド変換 (L517-520, L546-575).
 
 - Tier 1 は 7 flat (identifier/title/description/date_published/date_modified/date_created/accessibility)
-  + 2 or_flat (organism / date alias)。
+  + 1 or_flat (date alias)
+  + 1 organism 専用 kind (organism.name は text なので match_phrase、organism.identifier は keyword なので term)。
 - Tier 2 は 2 nested (submitter: organization, publication: publication)。
 - Tier 3 (ES 対象) は 23 flat (BioProject project_type/relevance / BioSample 7
   (host/strain/isolate/geo_loc_name/collection_date/package/model) / SRA 8
@@ -35,13 +36,17 @@ class _ESStrategy:
     """DSL field 名 → ES query 構築方針。
 
     `kind` に応じて使うフィールドが異なる:
-    - ``flat``    : ``path`` (単一 top-level) に basic leaf を直接投げる。
-    - ``or_flat`` : ``paths`` (複数 top-level) に OR (bool should) で投げる。
-    - ``nested``  : ``path`` の nested wrapper + ``sub`` に basic leaf。
-    - ``nested2`` : ``path`` → ``inner_path`` の 2 段 nested + ``sub`` に basic leaf。
+    - ``flat``     : ``path`` (単一 top-level) に basic leaf を直接投げる。
+    - ``or_flat``  : ``paths`` (複数 top-level) に OR (bool should) で投げる。
+    - ``organism`` : ``organism.name`` (text + standard analyzer) に match_phrase、
+      ``organism.identifier`` (keyword) に term の OR (bool should)。
+      汎用 or_flat だと name 側で analyzer mismatch (term が tokenize 後の lowercase
+      token と一致しない) で 0 件になるための専用 kind。
+    - ``nested``   : ``path`` の nested wrapper + ``sub`` に basic leaf。
+    - ``nested2``  : ``path`` → ``inner_path`` の 2 段 nested + ``sub`` に basic leaf。
     """
 
-    kind: Literal["flat", "or_flat", "nested", "nested2"]
+    kind: Literal["flat", "or_flat", "organism", "nested", "nested2"]
     path: str | None = None
     paths: tuple[str, ...] | None = None
     sub: str | None = None
@@ -53,7 +58,9 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "identifier": _ESStrategy(kind="flat", path="identifier"),
     "title": _ESStrategy(kind="flat", path="title"),
     "description": _ESStrategy(kind="flat", path="description"),
-    "organism": _ESStrategy(kind="or_flat", paths=("organism.name", "organism.identifier")),
+    # organism は or_flat ではなく organism kind で分岐。name は text なので match_phrase
+    # 経由で analyzer を通す必要があり、identifier は keyword (taxID) で term。
+    "organism": _ESStrategy(kind="organism"),
     "date_published": _ESStrategy(kind="flat", path="datePublished"),
     "date_modified": _ESStrategy(kind="flat", path="dateModified"),
     "date_created": _ESStrategy(kind="flat", path="dateCreated"),
@@ -207,6 +214,8 @@ def _compile_leaf(clause: FieldClause) -> dict[str, Any]:
     if strategy.kind == "or_flat":
         assert strategy.paths is not None
         return _or_over_fields(clause, strategy.paths)
+    if strategy.kind == "organism":
+        return _compile_organism(clause)
     if strategy.kind == "nested":
         assert strategy.path is not None
         assert strategy.sub is not None
@@ -237,6 +246,24 @@ def _or_over_fields(clause: FieldClause, es_fields: tuple[str, ...]) -> dict[str
     return {
         "bool": {
             "should": [_basic_leaf(f, clause) for f in es_fields],
+            "minimum_should_match": 1,
+        },
+    }
+
+
+def _compile_organism(clause: FieldClause) -> dict[str, Any]:
+    # converter mapping (common.py:39-48) では organism.name が text + standard
+    # analyzer、organism.identifier が keyword (taxID)。term を text の inverted
+    # index に投げると tokenize 後の lowercase token と一致せず 0 件になるので、
+    # name には match_phrase で analyzer を通し、identifier には term を投げる。
+    # allowlist.py 側で organism は (word, phrase) → "eq" のみ許可 (wildcard 含む
+    # 他演算子は validator が弾く) なので、ここでは eq 経路のみ扱う。
+    return {
+        "bool": {
+            "should": [
+                {"match_phrase": {"organism.name": clause.value}},
+                _basic_leaf("organism.identifier", clause),
+            ],
             "minimum_should_match": 1,
         },
     }
