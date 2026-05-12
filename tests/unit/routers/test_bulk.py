@@ -271,6 +271,7 @@ class TestBulkJsonResponse:
     def test_dbxrefs_from_duckdb_with_data(
         self,
         mock_es_get_source_stream_bulk: AsyncMock,
+        mock_es_mget_source_bulk: AsyncMock,
     ) -> None:
         """Bulk returns actual dbXrefs when DuckDB returns results."""
         source = {
@@ -433,7 +434,13 @@ class TestBulkEsError:
     500 status code.  The connection is broken instead.
     """
 
-    def test_es_error_raises_during_streaming(self) -> None:
+    def test_es_error_raises_during_streaming(
+        self,
+        mock_es_mget_source_bulk: AsyncMock,
+    ) -> None:
+        """visibility check に成功した後、streaming 中に ES が落ちた場合は exception
+        が伝播する。``mock_es_mget_source_bulk`` で visibility check は public に
+        透過させ、その後の ``es_get_source_stream`` でだけ ES down を再現する。"""
         config = AppConfig()
         with patch(
             "ddbj_search_api.routers.bulk.es_get_source_stream",
@@ -503,6 +510,7 @@ class TestBulkPBT:
     def test_entries_plus_not_found_equals_ids(
         self,
         pbt_bulk_client: TestClient,
+        mock_es_mget_source_bulk: AsyncMock,
         found: list[str],
         not_found: list[str],
     ) -> None:

@@ -73,18 +73,62 @@ class TestCursorQExclusivitySolr:
 
 
 class TestDbPortalParseAst:
-    """IT-DSL-04: GET /db-portal/parse converts DSL → AST JSON."""
+    """IT-DSL-04: GET /db-portal/parse converts DSL → AST JSON.
 
-    def test_parse_returns_object(self, app: TestClient) -> None:
-        """IT-DSL-04: parse output is a non-empty object (queryTree shape)."""
+    parse endpoint の response envelope は ``{"ast": <node>}``。
+    leaf node は ``ast_to_json`` (search/dsl/serde.py) の規約に従い
+    ``{"field": ..., "op": ..., "value": ...}`` または range の場合は
+    ``{"field": ..., "op": "between", "from": ..., "to": ...}`` の shape。
+    """
+
+    def test_parse_leaf_contains(self, app: TestClient) -> None:
+        """IT-DSL-04: text-field word は ``op=contains`` の leaf になる。"""
         resp = app.get(
             "/db-portal/parse",
             params={"q": "title:cancer", "db": "bioproject"},
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert isinstance(body, dict)
-        assert len(body) > 0
+        # envelope check
+        assert "ast" in body
+        ast = body["ast"]
+        assert ast == {
+            "field": "title",
+            "op": "contains",
+            "value": "cancer",
+        }
+
+    def test_parse_bool_op_and(self, app: TestClient) -> None:
+        """IT-DSL-04: ``a AND b`` は op=AND ノード + 2 rules を返す。"""
+        resp = app.get(
+            "/db-portal/parse",
+            params={"q": "title:cancer AND organism:9606", "db": "bioproject"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        ast = body["ast"]
+        assert ast["op"] == "AND"
+        assert isinstance(ast.get("rules"), list)
+        assert len(ast["rules"]) == 2
+
+    def test_parse_range_leaf(self, app: TestClient) -> None:
+        """IT-DSL-04: date range は ``op=between`` + ``from`` / ``to`` を持つ。"""
+        resp = app.get(
+            "/db-portal/parse",
+            params={
+                "q": "date_published:[2020-01-01 TO 2024-12-31]",
+                "db": "bioproject",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        ast = body["ast"]
+        assert ast == {
+            "field": "date_published",
+            "op": "between",
+            "from": "2020-01-01",
+            "to": "2024-12-31",
+        }
 
 
 class TestDbPortalParseOpenApiResponses:
@@ -102,23 +146,42 @@ class TestDbPortalParseOpenApiResponses:
 
 
 class TestSymbolWildcardAccepted:
-    """IT-DSL-06: grammar accepts symbol-bearing wildcards (HIF-1*, COVID-19*)."""
+    """IT-DSL-06: grammar accepts symbol-bearing wildcards (HIF-1*, COVID-19*).
 
-    def test_hif1_wildcard_parses(self, app: TestClient) -> None:
-        """IT-DSL-06: ``HIF-1*`` parses without a syntax error."""
+    parses 通過だけでなく AST の value_kind が ``wildcard`` (== ``op=wildcard``)
+    に分類されたことを確認する。auto-phrase 化されたり symbol 含む token が
+    word として誤分類されると下流の wildcard クエリが組まれず regression する。
+    """
+
+    def test_hif1_wildcard_parses_with_wildcard_op(self, app: TestClient) -> None:
+        """IT-DSL-06: ``HIF-1*`` parses as ``op=wildcard`` (not contains)."""
         resp = app.get(
             "/db-portal/parse",
             params={"q": "title:HIF-1*", "db": "bioproject"},
         )
         assert resp.status_code == 200
+        body = resp.json()
+        ast = body["ast"]
+        assert ast == {
+            "field": "title",
+            "op": "wildcard",
+            "value": "HIF-1*",
+        }
 
-    def test_covid19_wildcard_parses(self, app: TestClient) -> None:
-        """IT-DSL-06: ``COVID-19*`` parses without a syntax error."""
+    def test_covid19_wildcard_parses_with_wildcard_op(self, app: TestClient) -> None:
+        """IT-DSL-06: ``COVID-19*`` parses as ``op=wildcard`` (not contains)."""
         resp = app.get(
             "/db-portal/parse",
             params={"q": "title:COVID-19*", "db": "bioproject"},
         )
         assert resp.status_code == 200
+        body = resp.json()
+        ast = body["ast"]
+        assert ast == {
+            "field": "title",
+            "op": "wildcard",
+            "value": "COVID-19*",
+        }
 
 
 class TestParseCrossModeTier3Rejection:

@@ -7,6 +7,16 @@ from hypothesis import strategies as st
 from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.dblink import AccessionType
 
+# ``ddbj_search_api.search.phrase`` is the SSOT for the auto-phrase trigger
+# sets; re-exported below under the legacy ``*_TRIGGERS`` aliases so existing
+# callers keep working without drifting from the production constants.
+from ddbj_search_api.search.phrase import (
+    ES_AUTO_PHRASE_CHARS as ES_AUTO_PHRASE_TRIGGERS,
+)
+from ddbj_search_api.search.phrase import (
+    SOLR_AUTO_PHRASE_CHARS as SOLR_AUTO_PHRASE_TRIGGERS,
+)
+
 # === DbType ===
 
 db_type_values: list[str] = [e.value for e in DbType]
@@ -60,30 +70,55 @@ valid_accession_id = st.text(
 
 bioproject_accession = st.from_regex(r"PRJ(DB|NA|EB)[0-9]{1,7}", fullmatch=True)
 
-# === Auto-phrase triggers (mirror ddbj_search_api.search.phrase constants) ===
+# === Auto-phrase triggers (re-exported above from the production module) ===
 
-ES_AUTO_PHRASE_TRIGGERS: str = "-/.+:"
-SOLR_AUTO_PHRASE_TRIGGERS: str = "-/.+:*?()[]{}^~!|&\\"
+__all__ = [
+    "ES_AUTO_PHRASE_TRIGGERS",
+    "SOLR_AUTO_PHRASE_TRIGGERS",
+    "accession_type_values",
+    "alphanumeric_no_trigger",
+    "bioproject_accession",
+    "db_type_values",
+    "invalid_db_xrefs_limit_high",
+    "invalid_db_xrefs_limit_low",
+    "invalid_page",
+    "invalid_per_page_high",
+    "invalid_per_page_low",
+    "oversized_bulk_ids",
+    "short_id",
+    "text_with_trigger",
+    "valid_accession_id",
+    "valid_accession_types",
+    "valid_bulk_ids",
+    "valid_db_types",
+    "valid_db_xrefs_limit",
+    "valid_facet_count",
+    "valid_facet_value",
+    "valid_id",
+    "valid_page",
+    "valid_per_page",
+    "valid_total",
+]
 
 
-def alphanumeric_no_trigger(trigger_chars: str) -> st.SearchStrategy[str]:
+def alphanumeric_no_trigger(trigger_chars: frozenset[str]) -> st.SearchStrategy[str]:
     """Alphanumeric text excluding trigger char, comma, quote, whitespace."""
     return st.text(
         alphabet=st.characters(
             whitelist_categories=("L", "N"),
-            blacklist_characters='",' + trigger_chars + " \t\r\n",
+            blacklist_characters='",' + "".join(sorted(trigger_chars)) + " \t\r\n",
         ),
         min_size=1,
         max_size=30,
     )
 
 
-def text_with_trigger(trigger_chars: str) -> st.SearchStrategy[str]:
+def text_with_trigger(trigger_chars: frozenset[str]) -> st.SearchStrategy[str]:
     """Text guaranteed to contain at least one trigger char (sandwiched)."""
     inner = alphanumeric_no_trigger(trigger_chars)
     return st.builds(
         lambda prefix, trigger, suffix: prefix + trigger + suffix,
         inner,
-        st.sampled_from(list(trigger_chars)),
+        st.sampled_from(sorted(trigger_chars)),
         inner,
     )

@@ -12,7 +12,12 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.unit.conftest import make_es_search_response, make_facets_aggregations
+from tests.unit.conftest import (
+    get_es_search_body,
+    get_es_search_index,
+    make_es_search_response,
+    make_facets_aggregations,
+)
 from tests.unit.strategies import db_type_values
 
 # === Helpers ===
@@ -169,8 +174,7 @@ class TestFacetsEsQuery:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets")
-        call_args = mock_es_search_facets.call_args
-        body = call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert body["size"] == 0
 
     def test_uses_entries_index(
@@ -179,8 +183,7 @@ class TestFacetsEsQuery:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets")
-        call_args = mock_es_search_facets.call_args
-        index = call_args[0][1]
+        index = get_es_search_index(mock_es_search_facets)
         assert index == "entries"
 
     def test_aggs_include_type_for_cross_type(
@@ -189,7 +192,7 @@ class TestFacetsEsQuery:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "type" in body["aggs"]
 
     def test_keywords_reflected_in_query(
@@ -198,7 +201,7 @@ class TestFacetsEsQuery:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets?keywords=cancer")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         assert "bool" in query
 
@@ -208,7 +211,7 @@ class TestFacetsEsQuery:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets?types=bioproject,biosample")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         assert "bool" in query
         filters = query["bool"]["filter"]
@@ -311,7 +314,7 @@ class TestFacetsOrganismFilter:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets?organism=9606")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         filters = body["query"]["bool"]["filter"]
         term_filters = [f for f in filters if "term" in f and "organism.identifier" in f["term"]]
         assert len(term_filters) == 1
@@ -330,7 +333,7 @@ class TestFacetsKeywordOperator:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets?keywords=cancer,tumor&keywordOperator=OR")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "should" in body["query"]["bool"]
 
     def test_keyword_operator_invalid_returns_422(
@@ -486,7 +489,7 @@ class TestFacetsTypeResponse:
             aggregations=make_facets_aggregations(),
         )
         app_with_facets.get("/facets/biosample")
-        index = mock_es_search_facets.call_args[0][1]
+        index = get_es_search_index(mock_es_search_facets)
         assert index == "biosample"
 
     def test_bioproject_default_excludes_object_type(
@@ -504,7 +507,7 @@ class TestFacetsTypeResponse:
         facets = resp.json()["facets"]
         assert facets.get("objectType") is None
         # Aggregation should not be requested either.
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "objectType" not in body.get("aggs", {})
 
     def test_bioproject_object_type_opt_in(
@@ -527,7 +530,7 @@ class TestFacetsTypeResponse:
             "BioProject",
             "UmbrellaBioProject",
         }
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "objectType" in body["aggs"]
         # facets=objectType means common facets are NOT requested.
         assert "organism" not in body["aggs"]
@@ -561,7 +564,7 @@ class TestFacetsBioProjectExtra:
             aggregations=make_facets_aggregations(object_type=[]),
         )
         app_with_facets.get("/facets/bioproject?objectTypes=UmbrellaBioProject")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         assert "bool" in query
         filters = query["bool"]["filter"]
@@ -578,7 +581,7 @@ class TestFacetsBioProjectExtra:
             aggregations=make_facets_aggregations(object_type=[]),
         )
         app_with_facets.get("/facets/bioproject?objectTypes=UmbrellaBioProject,BioProject")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         filters = query["bool"]["filter"]
         terms_filter = [f for f in filters if "terms" in f and "objectType" in f["terms"]]
@@ -597,7 +600,7 @@ class TestFacetsBioProjectExtra:
             aggregations=make_facets_aggregations(object_type=[]),
         )
         app_with_facets.get("/facets/bioproject?organization=DDBJ")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         assert "bool" in query
         filters = query["bool"]["filter"]
@@ -613,7 +616,7 @@ class TestFacetsBioProjectExtra:
             aggregations=make_facets_aggregations(object_type=[]),
         )
         app_with_facets.get("/facets/bioproject?publication=genomics")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         filters = query["bool"]["filter"]
         nested_filters = [f for f in filters if "nested" in f]
@@ -628,7 +631,7 @@ class TestFacetsBioProjectExtra:
             aggregations=make_facets_aggregations(object_type=[]),
         )
         app_with_facets.get("/facets/bioproject?grant=JSPS")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         query = body["query"]
         filters = query["bool"]["filter"]
         nested_filters = [f for f in filters if "nested" in f]
@@ -681,7 +684,7 @@ class TestFacetsStatusPublicOnly:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert self._extract_status_filter(body) == {"term": {"status": "public"}}
 
     def test_type_facets_uses_public_only(
@@ -690,7 +693,7 @@ class TestFacetsStatusPublicOnly:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets/biosample")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert self._extract_status_filter(body) == {"term": {"status": "public"}}
 
     def test_accession_keyword_still_uses_public_only(
@@ -702,7 +705,7 @@ class TestFacetsStatusPublicOnly:
         (suppressed が facet カウントに混ざらない)。
         """
         app_with_facets.get("/facets", params={"keywords": "PRJDB1234"})
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert self._extract_status_filter(body) == {"term": {"status": "public"}}
 
     def test_status_not_in_aggs(
@@ -711,7 +714,7 @@ class TestFacetsStatusPublicOnly:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "status" not in body["aggs"]
 
 
@@ -731,7 +734,7 @@ class TestFacetsPick:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets/bioproject")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert set(body["aggs"]) == {"organism", "accessibility"}
 
     def test_default_cross_type_includes_type(
@@ -740,7 +743,7 @@ class TestFacetsPick:
         mock_es_search_facets: AsyncMock,
     ) -> None:
         app_with_facets.get("/facets")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert set(body["aggs"]) == {"organism", "accessibility", "type"}
 
     def test_empty_string_yields_no_aggs_key(
@@ -751,7 +754,7 @@ class TestFacetsPick:
         # facets="" → resolve_requested_facets returns []
         # → build_facet_aggs returns {} → router omits aggs key entirely.
         app_with_facets.get("/facets/bioproject?facets=")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "aggs" not in body
 
     def test_explicit_subset_returned(
@@ -769,7 +772,7 @@ class TestFacetsPick:
         # but organism IS in aggregations. The router's build_facet_aggs
         # request reflects user choice, not the mocked response shape.
         app_with_facets.get("/facets/bioproject?facets=organism")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert set(body["aggs"]) == {"organism"}
 
     def test_typo_returns_422(
@@ -800,7 +803,7 @@ class TestFacetsPick:
         # produce empty buckets at the ES layer).
         resp = app_with_facets.get("/facets?facets=libraryStrategy")
         assert resp.status_code == 200
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "libraryStrategy" in body["aggs"]
 
     def test_type_specific_endpoint_accepts_its_own_facet(
@@ -810,7 +813,7 @@ class TestFacetsPick:
     ) -> None:
         resp = app_with_facets.get("/facets/sra-experiment?facets=libraryStrategy")
         assert resp.status_code == 200
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert "libraryStrategy" in body["aggs"]
 
     def test_cross_type_excludes_type_in_explicit_request(
@@ -822,7 +825,7 @@ class TestFacetsPick:
         # ``type`` must NOT auto-add it (the user picked exactly what
         # they want).
         app_with_facets.get("/facets?facets=organism")
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         assert set(body["aggs"]) == {"organism"}
 
 
@@ -890,7 +893,7 @@ class TestFacetsCrossTypeNestedAccepted:
     ) -> None:
         resp = app_with_facets.get(f"/facets?{name}=DDBJ")
         assert resp.status_code == 200
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         nested_clauses = [c for c in body["query"]["bool"]["filter"] if "nested" in c]
         assert any(c["nested"]["path"] == nested_path for c in nested_clauses)
 
@@ -917,7 +920,7 @@ class TestFacetsTypeGroupCommonality:
     ) -> None:
         resp = app_with_facets.get(f"/facets/{endpoint}?libraryStrategy=WGS")
         assert resp.status_code == 200
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         # Term filter on libraryStrategy.keyword is reflected in ES query
         # for every sra-* endpoint, even if the underlying index does not
         # actually have the field.
@@ -941,7 +944,7 @@ class TestFacetsTypeGroupCommonality:
     ) -> None:
         resp = app_with_facets.get(f"/facets/{endpoint}?studyType=GWAS")
         assert resp.status_code == 200
-        body = mock_es_search_facets.call_args[0][2]
+        body = get_es_search_body(mock_es_search_facets)
         filters = body["query"]["bool"]["filter"]
         assert any("studyType.keyword" in (f.get("term") or {}) for f in filters)
 

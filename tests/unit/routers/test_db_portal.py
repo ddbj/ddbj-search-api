@@ -25,12 +25,13 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
-from ddbj_search_api.routers.db_portal import _CROSS_SEARCH_DEDUP_OVERSHOOT
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCountError,
     DbPortalErrorType,
 )
 from tests.unit.conftest import (
+    get_es_search_body,
+    get_es_search_index,
     make_es_search_response,
     make_solr_arsa_response,
     make_solr_txsearch_response,
@@ -400,17 +401,20 @@ class TestDbPortalCrossSearch:
         mock_es_search_db_portal.return_value = make_es_search_response(total=5)
         resp = app_with_db_portal.get("/db-portal/cross-search")
         assert resp.status_code == 200
-        # First call is for sra (first ES-backed DB in order).  Default
-        # ``topHits=10``; ES ``size`` is overshot by
-        # ``_CROSS_SEARCH_DEDUP_OVERSHOOT`` so post-filter de-dup can still
-        # yield 10 unique hits when sameAs alias docs collide.
-        # ``q`` 省略でも default で ``public_only`` status filter が
-        # 付くため、query は ``match_all`` ではなく ``bool.filter`` 1 本のみ。
-        first_call_body = mock_es_search_db_portal.call_args_list[0].args[2]
+        # First call is for sra (first ES-backed DB in order). Default
+        # ``topHits=10``; ES ``size`` is overshot so post-filter de-dup
+        # can still yield 10 unique hits when sameAs alias docs collide.
+        # 倍率そのものは router の private constant なので、構造的不変条件
+        # (top_hits=10 の整数倍 + overshoot) のみを確認する。
+        # ``q`` 省略でも default で ``public_only`` status filter が付くため、
+        # query は ``match_all`` ではなく ``bool.filter`` 1 本のみ。
+        first_call_body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         assert first_call_body["query"] == {
             "bool": {"filter": [{"term": {"status": "public"}}]},
         }
-        assert first_call_body["size"] == 10 * _CROSS_SEARCH_DEDUP_OVERSHOOT
+        observed_size = first_call_body["size"]
+        assert observed_size >= 2 * 10, f"overshoot expected: size={observed_size}"
+        assert observed_size % 10 == 0, f"size {observed_size} not an integer multiple of top_hits=10"
 
 
 class TestDbPortalCrossSearchTopHits:
@@ -458,9 +462,11 @@ class TestDbPortalCrossSearchTopHits:
         mock_es_search_db_portal.return_value = make_es_search_response(total=5)
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args_list[0].args[2]
-        # Default ``topHits=10`` 、ES ``size`` は de-dup overshoot 込み。
-        assert body["size"] == 10 * _CROSS_SEARCH_DEDUP_OVERSHOOT
+        body = get_es_search_body(mock_es_search_db_portal, call_index=0)
+        # Default ``topHits=10`` 、ES ``size`` は de-dup overshoot 込み。倍率は
+        # router private なので、整数倍 + overshoot の構造的不変条件で確認する。
+        assert body["size"] >= 2 * 10
+        assert body["size"] % 10 == 0
         # Source allowlist is the 12-field lightweight contract.
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
@@ -474,7 +480,7 @@ class TestDbPortalCrossSearchTopHits:
         mock_es_search_db_portal.return_value = make_es_search_response(total=5)
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 0})
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         assert body["size"] == 0
         # No source filter / no sort / no track_total_hits in count-only path.
         assert "_source" not in body
@@ -492,9 +498,11 @@ class TestDbPortalCrossSearchTopHits:
         mock_es_search_db_portal.return_value = make_es_search_response(total=5)
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 25})
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args_list[0].args[2]
-        # Explicit ``topHits`` 値も de-dup overshoot 倍率で ES へ流れる。
-        assert body["size"] == 25 * _CROSS_SEARCH_DEDUP_OVERSHOOT
+        body = get_es_search_body(mock_es_search_db_portal, call_index=0)
+        # Explicit ``topHits`` 値も de-dup overshoot 倍率で ES へ流れる。倍率自体
+        # は router 内部実装、ここでは ``size >= 2 * top_hits`` + 整数倍を検証。
+        assert body["size"] >= 2 * 25
+        assert body["size"] % 25 == 0
 
     def test_top_hits_max_50_accepted(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 50})
@@ -694,9 +702,11 @@ class TestDbPortalAdvCrossSearchTopHits:
             params={"q": "title:cancer", "topHits": 7},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args_list[0].args[2]
-        # field clause を含む q でも ES ``size`` は de-dup overshoot 倍率。
-        assert body["size"] == 7 * _CROSS_SEARCH_DEDUP_OVERSHOOT
+        body = get_es_search_body(mock_es_search_db_portal, call_index=0)
+        # field clause を含む q でも ES ``size`` は de-dup overshoot 倍率。倍率は
+        # router private なので、整数倍 + overshoot の構造的不変条件で確認する。
+        assert body["size"] >= 2 * 7
+        assert body["size"] % 7 == 0
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
         assert "sort" in body
@@ -767,7 +777,7 @@ class TestDbPortalAdvCrossSearchTopHits:
             params={"q": "title:cancer", "topHits": 0},
         )
         assert resp.status_code == 200
-        es_body = mock_es_search_db_portal.call_args_list[0].args[2]
+        es_body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         assert es_body["size"] == 0
         assert "_source" not in es_body
         assert "sort" not in es_body
@@ -827,8 +837,7 @@ class TestDbPortalDbSpecificSearch:
             "/db-portal/search",
             params={"q": "foo", "db": db},
         )
-        call = mock_es_search_db_portal.call_args
-        assert call.args[1] == index
+        assert get_es_search_index(mock_es_search_db_portal) == index
 
     def test_hard_limit_reached_boundary_9999(
         self,
@@ -864,7 +873,7 @@ class TestDbPortalDbSpecificSearch:
             "/db-portal/search",
             params={"q": "foo", "db": "bioproject", "page": 3, "perPage": 20},
         )
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert body["from"] == 40
         assert body["size"] == 20
 
@@ -892,7 +901,7 @@ class TestDbPortalDbSpecificSearch:
             "/db-portal/search",
             params={"q": "foo", "db": "sra", "sort": "datePublished:desc"},
         )
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert body["sort"][0] == {"datePublished": {"order": "desc"}}
         # tiebreaker appended
         assert body["sort"][-1] == {"identifier": {"order": "asc"}}
@@ -907,7 +916,7 @@ class TestDbPortalDbSpecificSearch:
             "/db-portal/search",
             params={"q": "foo", "db": "sra"},
         )
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert body["sort"][0] == {"_score": {"order": "desc"}}
         assert body["sort"][-1] == {"identifier": {"order": "asc"}}
 
@@ -1954,10 +1963,8 @@ class TestDbPortalAdvValidDispatch:
             params={"q": "title:cancer", "db": "bioproject"},
         )
         # 最後の call args の body に compile_to_es 結果が入っていることを確認。
-        call_args = mock_es_search_db_portal.await_args
-        assert call_args is not None
-        body = call_args.args[2] if len(call_args.args) >= 3 else call_args.kwargs.get("body")
-        assert body is not None
+        assert mock_es_search_db_portal.await_count >= 1
+        body = get_es_search_body(mock_es_search_db_portal)
         assert body["query"] == {
             "bool": {
                 "must": [{"match_phrase": {"title": "cancer"}}],
@@ -2127,7 +2134,7 @@ class TestDbPortalAdvTier2Tier3:
             },
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         # compiled query が term + term の AND になっている
         must = body["query"]["bool"]["must"]
         assert {"term": {"libraryStrategy.keyword": "WGS"}} in must
@@ -2145,7 +2152,7 @@ class TestDbPortalAdvTier2Tier3:
             params={"q": "grant_agency:JSPS", "db": "bioproject"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         # 期待形: bool.must[0] = nested(grant) → nested(grant.agency) → match_phrase(grant.agency.name)
         outer_bool = body["query"]["bool"]
         assert outer_bool["filter"] == [{"term": {"status": "public"}}]
@@ -2167,7 +2174,7 @@ class TestDbPortalAdvTier2Tier3:
             params={"q": 'submitter:"Tokyo University"', "db": "bioproject"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert body["query"] == {
             "bool": {
                 "must": [
@@ -2263,7 +2270,7 @@ class TestDbPortalAdvTier2Tier3:
             params={"q": "NOT platform:ILLUMINA", "db": "sra"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         body_bool = body["query"]["bool"]
         assert body_bool["must_not"] == [{"term": {"platform.keyword": "ILLUMINA"}}]
         assert body_bool["filter"] == [{"term": {"status": "public"}}]
@@ -2583,7 +2590,7 @@ class TestDbPortalSearchStatusFilter:
             params={"db": db, "q": "cancer"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert _extract_status_clause(body["query"]) == _PUBLIC_ONLY_CLAUSE
 
     @pytest.mark.parametrize("db", _ES_DBS)
@@ -2599,7 +2606,7 @@ class TestDbPortalSearchStatusFilter:
             params={"db": db, "q": "PRJDB1234"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert _extract_status_clause(body["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
 
     @pytest.mark.parametrize("db", _ES_DBS)
@@ -2615,7 +2622,7 @@ class TestDbPortalSearchStatusFilter:
             params={"db": db, "q": "title:cancer"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert _extract_status_clause(body["query"]) == _PUBLIC_ONLY_CLAUSE
 
     @pytest.mark.parametrize("db", _ES_DBS)
@@ -2631,7 +2638,7 @@ class TestDbPortalSearchStatusFilter:
             params={"db": db, "q": "identifier:PRJDB1234"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert _extract_status_clause(body["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
 
     def test_adv_wildcard_identifier_uses_public_only(
@@ -2645,7 +2652,7 @@ class TestDbPortalSearchStatusFilter:
             params={"db": "bioproject", "q": "identifier:PRJDB*"},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args.args[2]
+        body = get_es_search_body(mock_es_search_db_portal)
         assert _extract_status_clause(body["query"]) == _PUBLIC_ONLY_CLAUSE
 
     def test_cursor_inherits_status_filter_from_offset_request(
@@ -2681,7 +2688,7 @@ class TestDbPortalSearchStatusFilter:
             params={"db": "bioproject", "q": "PRJDB1234", "perPage": per_page},
         )
         assert r1.status_code == 200
-        body_p1 = mock_es_search_db_portal.call_args.args[2]
+        body_p1 = get_es_search_body(mock_es_search_db_portal)
         assert _extract_status_clause(body_p1["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
         next_cursor = r1.json()["nextCursor"]
         assert next_cursor is not None
@@ -2920,7 +2927,7 @@ class TestQueryAndJoin:
             params={"q": "human AND title:cancer", "topHits": 0},
         )
         assert resp.status_code == 200
-        body = mock_es_search_db_portal.call_args_list[0].args[2]
+        body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         must = body["query"]["bool"]["must"]
         has_free_text = any(
             "multi_match" in c and c["multi_match"]["query"] == "human" for c in must

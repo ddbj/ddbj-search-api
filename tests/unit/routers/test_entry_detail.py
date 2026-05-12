@@ -7,7 +7,6 @@ and parameter validation.
 
 from __future__ import annotations
 
-import collections.abc
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -16,8 +15,9 @@ from fastapi.testclient import TestClient
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.routers.entry_detail import _inject_jsonld_prefix
-from tests.unit.conftest import make_mock_stream_response
+from ddbj_search_api.config import JSONLD_CONTEXT_URLS, AppConfig
+from ddbj_search_api.routers import entry_detail as entry_detail_module
+from tests.unit.conftest import make_mock_stream_response, make_multi_chunk_stream_response
 from tests.unit.strategies import db_type_values
 
 # === Routing: GET /entries/{type}/{id} ===
@@ -288,6 +288,52 @@ class TestEntryJsonLdResponse:
         resp = app_with_entry_detail.get("/entries/bioproject/NOTEXIST.jsonld")
         assert resp.status_code == 404
 
+    def test_context_value_matches_jsonld_context_urls(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+    ) -> None:
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.jsonld")
+        data = resp.json()
+        assert data["@context"] == JSONLD_CONTEXT_URLS["bioproject"]
+
+    def test_multi_chunk_es_stream_still_yields_valid_jsonld(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+    ) -> None:
+        # Brace falls inside the first chunk, identifier key spans the
+        # chunk boundary. If JSON-LD prefix injection mishandles the
+        # boundary the final stream is no longer valid JSON.
+        mock_es_get_source_stream.return_value = make_multi_chunk_stream_response(
+            [b'{"ident', b'ifier":"PRJDB1"}'],
+        )
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.jsonld")
+        data = resp.json()
+        assert "@context" in data
+        assert "@id" in data
+        assert data["identifier"] == "PRJDB1"
+
+    def test_special_chars_jsonld_escape(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setitem(JSONLD_CONTEXT_URLS, "bioproject", "http://example.com/a&b")
+        forged_config = AppConfig()
+        object.__setattr__(forged_config, "base_url", "http://example.com?d=1")
+        monkeypatch.setattr(entry_detail_module, "get_config", lambda: forged_config)
+
+        body = json.dumps({"identifier": "PRJDB1"}).encode()
+        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1.jsonld")
+        data = resp.json()
+        assert data["@context"] == "http://example.com/a&b"
+        assert data["@id"] == "http://example.com?d=1/entries/bioproject/PRJDB1"
+
 
 # === dbXrefs full response ===
 
@@ -330,71 +376,6 @@ class TestDbxrefsFullResponse:
             "/entries/bioproject/NOTEXIST/dbxrefs.json",
         )
         assert resp.status_code == 404
-
-
-# === _inject_jsonld_prefix ===
-
-
-class TestInjectJsonLdPrefix:
-    """Unit tests for the JSON-LD prefix injection helper."""
-
-    @pytest.mark.asyncio
-    async def test_single_chunk_injection(self) -> None:
-        async def _stream() -> collections.abc.AsyncIterator[bytes]:
-            yield b'{"identifier":"X"}'
-
-        chunks = []
-        async for chunk in _inject_jsonld_prefix(
-            _stream(),
-            "http://ctx",
-            "http://id",
-        ):
-            chunks.append(chunk)
-
-        result = json.loads(b"".join(chunks))
-        assert result["@context"] == "http://ctx"
-        assert result["@id"] == "http://id"
-        assert result["identifier"] == "X"
-
-    @pytest.mark.asyncio
-    async def test_multi_chunk_injection(self) -> None:
-        """Brace in first chunk, rest in second."""
-
-        async def _stream() -> collections.abc.AsyncIterator[bytes]:
-            yield b'{"ident'
-            yield b'ifier":"X"}'
-
-        chunks = []
-        async for chunk in _inject_jsonld_prefix(
-            _stream(),
-            "http://ctx",
-            "http://id",
-        ):
-            chunks.append(chunk)
-
-        result = json.loads(b"".join(chunks))
-        assert result["@context"] == "http://ctx"
-        assert result["@id"] == "http://id"
-        assert result["identifier"] == "X"
-
-    @pytest.mark.asyncio
-    async def test_special_chars_in_url(self) -> None:
-        """URLs with special chars are properly JSON-escaped."""
-
-        async def _stream() -> collections.abc.AsyncIterator[bytes]:
-            yield b'{"key":"val"}'
-
-        chunks = []
-        async for chunk in _inject_jsonld_prefix(
-            _stream(),
-            "http://example.com/a&b",
-            "http://example.com/c?d=1",
-        ):
-            chunks.append(chunk)
-
-        result = json.loads(b"".join(chunks))
-        assert result["@context"] == "http://example.com/a&b"
-        assert result["@id"] == "http://example.com/c?d=1"
 
 
 # === dbXrefsLimit parameter validation ===

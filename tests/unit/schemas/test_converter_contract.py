@@ -14,7 +14,7 @@ converter 側の schema/field 変更を api 側で早期検知するための te
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from ddbj_search_converter.schema import (
@@ -24,9 +24,22 @@ from ddbj_search_converter.schema import (
     BioSample,
     Grant,
     Organization,
+    OrganizationRole,
+    OrganizationType,
     Publication,
 )
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from pydantic import ValidationError
+
+from tests._factories import (
+    make_bioproject_dict,
+    make_biosample_dict,
+    make_sra_dict,
+)
+
+_ROLE_VALUES: tuple[str, ...] = get_args(OrganizationRole)
+_ORG_TYPE_VALUES: tuple[str, ...] = get_args(OrganizationType)
 
 # === Publication ===
 
@@ -89,51 +102,33 @@ class TestOrganizationContract:
         assert org.department is None
         assert org.url is None
 
-    @pytest.mark.parametrize("role", ["owner", "participant", "submitter", "broker"])
+    @pytest.mark.parametrize("role", _ROLE_VALUES)
     def test_role_literal_accepted(self, role: str) -> None:
         org = Organization(role=role)  # type: ignore[arg-type]
         assert org.role == role
 
-    def test_invalid_role_rejected(self) -> None:
+    @given(value=st.one_of(st.text(), st.integers()).filter(lambda v: v not in _ROLE_VALUES))
+    @settings(max_examples=50, deadline=None)
+    def test_invalid_role_rejected(self, value: object) -> None:
         with pytest.raises(ValidationError):
-            Organization(role="invalid-role")  # type: ignore[arg-type]
+            Organization(role=value)  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize("org_type", ["institute", "center", "consortium", "lab"])
+    @pytest.mark.parametrize("org_type", _ORG_TYPE_VALUES)
     def test_organization_type_literal_accepted(self, org_type: str) -> None:
         org = Organization(organizationType=org_type)  # type: ignore[arg-type]
         assert org.organizationType == org_type
 
-    def test_invalid_organization_type_rejected(self) -> None:
+    @given(value=st.one_of(st.text(), st.integers()).filter(lambda v: v not in _ORG_TYPE_VALUES))
+    @settings(max_examples=50, deadline=None)
+    def test_invalid_organization_type_rejected(self, value: object) -> None:
         with pytest.raises(ValidationError):
-            Organization(organizationType="invalid-type")  # type: ignore[arg-type]
+            Organization(organizationType=value)  # type: ignore[arg-type]
 
 
 # === BioSample ===
 
 
-_BIOSAMPLE_MIN: dict[str, Any] = {
-    "identifier": "SAMD00000001",
-    "properties": {},
-    "distribution": [],
-    "derivedFrom": [],
-    "organization": [],
-    "model": [],
-    "isPartOf": "biosample",
-    "type": "biosample",
-    "name": None,
-    "url": "https://example.com/SAMD00000001",
-    "organism": None,
-    "title": None,
-    "description": None,
-    "package": None,
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    "dateCreated": None,
-    "dateModified": None,
-    "datePublished": None,
-}
+_BIOSAMPLE_MIN: dict[str, Any] = make_biosample_dict()
 
 
 class TestBioSampleContract:
@@ -159,35 +154,7 @@ class TestBioSampleContract:
 # === SRA ===
 
 
-_SRA_MIN: dict[str, Any] = {
-    "identifier": "DRR000001",
-    "properties": {},
-    "distribution": [],
-    "organization": [],
-    "publication": [],
-    "libraryStrategy": [],
-    "librarySource": [],
-    "librarySelection": [],
-    "instrumentModel": [],
-    "derivedFrom": [],
-    "isPartOf": "sra",
-    "type": "sra-run",
-    "name": None,
-    "url": "https://example.com/DRR000001",
-    "organism": None,
-    "title": None,
-    "description": None,
-    "libraryLayout": None,
-    "platform": None,
-    "analysisType": None,
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    "dateCreated": None,
-    "dateModified": None,
-    "datePublished": None,
-}
+_SRA_MIN: dict[str, Any] = make_sra_dict()
 
 
 class TestSRAContract:
@@ -252,34 +219,7 @@ class TestJGAContract:
 # === BioProject / BioSample isPartOf lowercase ===
 
 
-_BIOPROJECT_MIN: dict[str, Any] = {
-    "identifier": "PRJDB1",
-    "properties": {},
-    "distribution": [],
-    "projectType": [],
-    "relevance": [],
-    "organization": [],
-    "publication": [],
-    "grant": [],
-    "externalLink": [],
-    "isPartOf": "bioproject",
-    "type": "bioproject",
-    "objectType": "BioProject",
-    "name": None,
-    "url": "https://example.com/PRJDB1",
-    "organism": None,
-    "title": None,
-    "description": None,
-    "dbXrefs": [],
-    "parentBioProjects": [],
-    "childBioProjects": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    "dateCreated": None,
-    "dateModified": None,
-    "datePublished": None,
-}
+_BIOPROJECT_MIN: dict[str, Any] = make_bioproject_dict()
 
 
 class TestIsPartOfLowercase:

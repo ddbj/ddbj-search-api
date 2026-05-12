@@ -31,140 +31,24 @@ from ddbj_search_api.schemas.entries import (
     SraEntryJsonLdResponse,
     SraEntryResponse,
 )
+from tests._factories import (
+    make_bioproject_dict,
+    make_biosample_dict,
+    make_gea_dict,
+    make_jga_dict,
+    make_metabobank_dict,
+    make_sra_dict,
+)
 
-# Minimal required data for each converter type.
-
-_COMMON_OPTIONAL = {
-    "name": None,
-    "organism": None,
-    "title": None,
-    "description": None,
-    "dateCreated": None,
-    "dateModified": None,
-    "datePublished": None,
-}
-
-_BIOPROJECT_BASE: dict[str, Any] = {
-    "identifier": "PRJDB1",
-    "properties": {},
-    "distribution": [],
-    "projectType": [],
-    "relevance": [],
-    "isPartOf": "bioproject",
-    "type": "bioproject",
-    "objectType": "BioProject",
-    "url": "https://example.com/PRJDB1",
-    "organization": [],
-    "publication": [],
-    "grant": [],
-    "externalLink": [],
-    "dbXrefs": [],
-    "parentBioProjects": [],
-    "childBioProjects": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    **_COMMON_OPTIONAL,
-}
-
-_BIOSAMPLE_BASE: dict[str, Any] = {
-    "identifier": "SAMD00000001",
-    "properties": {},
-    "distribution": [],
-    "derivedFrom": [],
-    "organization": [],
-    "isPartOf": "biosample",
-    "type": "biosample",
-    "url": "https://example.com/SAMD00000001",
-    "model": [],
-    "package": None,
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    **_COMMON_OPTIONAL,
-}
-
-_SRA_BASE: dict[str, Any] = {
-    "identifier": "DRR000001",
-    "properties": {},
-    "distribution": [],
-    "organization": [],
-    "publication": [],
-    "libraryStrategy": [],
-    "librarySource": [],
-    "librarySelection": [],
-    "instrumentModel": [],
-    "derivedFrom": [],
-    "isPartOf": "sra",
-    "type": "sra-run",
-    "url": "https://example.com/DRR000001",
-    "libraryLayout": None,
-    "platform": None,
-    "analysisType": None,
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    **_COMMON_OPTIONAL,
-}
-
-_JGA_BASE: dict[str, Any] = {
-    "identifier": "JGAS000001",
-    "properties": {},
-    "distribution": [],
-    "organization": [],
-    "publication": [],
-    "grant": [],
-    "externalLink": [],
-    "studyType": [],
-    "datasetType": [],
-    "vendor": [],
-    "isPartOf": "jga",
-    "type": "jga-study",
-    "url": "https://example.com/JGAS000001",
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "controlled-access",
-    **_COMMON_OPTIONAL,
-}
-
-_GEA_BASE: dict[str, Any] = {
-    "identifier": "E-GEAD-1",
-    "properties": {},
-    "distribution": [],
-    "organization": [],
-    "publication": [],
-    "experimentType": [],
-    "isPartOf": "gea",
-    "type": "gea",
-    "url": "https://example.com/E-GEAD-1",
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    **_COMMON_OPTIONAL,
-}
-
-_METABOBANK_BASE: dict[str, Any] = {
-    "identifier": "MTBKS1",
-    "properties": {},
-    "distribution": [],
-    "organization": [],
-    "publication": [],
-    "studyType": [],
-    "experimentType": [],
-    "submissionType": [],
-    "isPartOf": "metabobank",
-    "type": "metabobank",
-    "url": "https://example.com/MTBKS1",
-    "dbXrefs": [],
-    "sameAs": [],
-    "status": "public",
-    "accessibility": "public-access",
-    **_COMMON_OPTIONAL,
-}
+# Minimal required data for each converter type. Centralised in
+# ``tests/_factories.py`` so converter-schema additions touch a single
+# location instead of six duplicate dicts.
+_BIOPROJECT_BASE: dict[str, Any] = make_bioproject_dict()
+_BIOSAMPLE_BASE: dict[str, Any] = make_biosample_dict()
+_SRA_BASE: dict[str, Any] = make_sra_dict()
+_JGA_BASE: dict[str, Any] = make_jga_dict()
+_GEA_BASE: dict[str, Any] = make_gea_dict()
+_METABOBANK_BASE: dict[str, Any] = make_metabobank_dict()
 
 
 # === EntryListResponse ===

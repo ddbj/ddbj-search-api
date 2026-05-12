@@ -16,7 +16,7 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.cursor import CursorPayload, encode_cursor
-from tests.unit.conftest import make_es_search_response
+from tests.unit.conftest import get_es_search_body, get_es_search_index, make_es_search_response
 from tests.unit.strategies import db_type_values, valid_per_page
 
 # === Routing: GET /entries/{type}/ ===
@@ -261,8 +261,7 @@ class TestEntriesSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"page": 3, "perPage": 20})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         # page=3, perPage=20 → from=40, size=20
         assert body["from"] == 40
         assert body["size"] == 20
@@ -273,8 +272,7 @@ class TestEntriesSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/")
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         # page=1, perPage=10 → from=0, size=10
         assert body["from"] == 0
         assert body["size"] == 10
@@ -285,8 +283,7 @@ class TestEntriesSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"keywords": "cancer"})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "query" in body
         assert body["query"] != {"match_all": {}}
 
@@ -296,8 +293,7 @@ class TestEntriesSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/")
-        call_args = mock_es_search.call_args
-        index = call_args[1]["index"] if "index" in call_args[1] else call_args[0][1]
+        index = get_es_search_index(mock_es_search)
         assert index == "entries"
 
     def test_organism_filter_passed_to_es(
@@ -306,8 +302,7 @@ class TestEntriesSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"organism": "9606"})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         term_filters = [f for f in filters if "term" in f and "organism.identifier" in f["term"]]
         assert len(term_filters) == 1
@@ -322,8 +317,7 @@ class TestEntriesSearch:
             "/entries/",
             params={"keywords": "cancer,tumor", "keywordOperator": "OR"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "should" in body["query"]["bool"]
         assert "minimum_should_match" in body["query"]["bool"]
 
@@ -336,8 +330,7 @@ class TestEntriesSearch:
             "/entries/",
             params={"keywords": "cancer,tumor"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "must" in body["query"]["bool"]
 
     def test_keyword_operator_invalid_returns_422(self, app_with_es: TestClient) -> None:
@@ -398,8 +391,7 @@ class TestEntriesIncludeProperties:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"includeProperties": "false"})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         source = body["_source"]
         assert isinstance(source, dict)
         assert "properties" in source["excludes"]
@@ -418,8 +410,7 @@ class TestEntriesTypesFilter:
     ) -> None:
         resp = app_with_es.get("/entries/", params={"types": "bioproject,biosample"})
         assert resp.status_code == 200
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         type_filter = [f for f in filters if "terms" in f and "type" in f["terms"]]
         assert len(type_filter) == 1
@@ -478,8 +469,7 @@ class TestEntriesEmptyKeywords:
     ) -> None:
         resp = app_with_es.get("/entries/", params={"keywords": ""})
         assert resp.status_code == 200
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         # keyword 無し → status filter のみの bool 句 (match_all ではない)
         assert body["query"] == self._STATUS_ONLY_QUERY
 
@@ -490,8 +480,7 @@ class TestEntriesEmptyKeywords:
     ) -> None:
         resp = app_with_es.get("/entries/", params={"keywords": "   "})
         assert resp.status_code == 200
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert body["query"] == self._STATUS_ONLY_QUERY
 
     def test_comma_only_keywords_treated_as_no_filter(
@@ -501,8 +490,7 @@ class TestEntriesEmptyKeywords:
     ) -> None:
         resp = app_with_es.get("/entries/", params={"keywords": ","})
         assert resp.status_code == 200
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert body["query"] == self._STATUS_ONLY_QUERY
 
 
@@ -564,8 +552,7 @@ class TestEntriesSortValidation:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"sort": "datePublished:asc"})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "sort" in body
         assert body["sort"] == [
             {"datePublished": {"order": "asc"}},
@@ -645,8 +632,7 @@ class TestEntriesFacets:
             },
         )
         app_with_es.get("/entries/", params={"includeFacets": "true"})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "aggs" in body
 
 
@@ -662,8 +648,7 @@ class TestEntriesTypeSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/bioproject/")
-        call_args = mock_es_search.call_args
-        index = call_args[1]["index"] if "index" in call_args[1] else call_args[0][1]
+        index = get_es_search_index(mock_es_search)
         assert index == "bioproject"
 
     def test_sra_study_uses_sra_study_index(
@@ -672,8 +657,7 @@ class TestEntriesTypeSearch:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/sra-study/")
-        call_args = mock_es_search.call_args
-        index = call_args[1]["index"] if "index" in call_args[1] else call_args[0][1]
+        index = get_es_search_index(mock_es_search)
         assert index == "sra-study"
 
     def test_bioproject_object_types_single_emits_term(
@@ -685,8 +669,7 @@ class TestEntriesTypeSearch:
             "/entries/bioproject/",
             params={"objectTypes": "UmbrellaBioProject"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         obj_filters = [f for f in filters if "term" in f and "objectType" in f["term"]]
         assert len(obj_filters) == 1
@@ -701,8 +684,7 @@ class TestEntriesTypeSearch:
             "/entries/bioproject/",
             params={"objectTypes": "BioProject,UmbrellaBioProject"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         obj_filters = [f for f in filters if "terms" in f and "objectType" in f["terms"]]
         assert len(obj_filters) == 1
@@ -720,8 +702,7 @@ class TestEntriesTypeSearch:
             "/entries/bioproject/",
             params={"organization": "DDBJ"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         nested = [f for f in filters if "nested" in f]
         assert len(nested) == 1
@@ -736,8 +717,7 @@ class TestEntriesTypeSearch:
             "/entries/bioproject/",
             params={"publication": "genomics"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         nested = [f for f in filters if "nested" in f]
         assert len(nested) == 1
@@ -752,8 +732,7 @@ class TestEntriesTypeSearch:
             "/entries/bioproject/",
             params={"grant": "JSPS"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         filters = body["query"]["bool"]["filter"]
         nested = [f for f in filters if "nested" in f]
         assert len(nested) == 1
@@ -950,8 +929,7 @@ class TestEntriesSourceFilter:
             "/entries/",
             params={"fields": "identifier,type,dbXrefs"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         source = body["_source"]
         assert isinstance(source, list)
         assert "dbXrefs" not in source
@@ -966,8 +944,7 @@ class TestEntriesSourceFilter:
             "/entries/",
             params={"fields": "identifier,type"},
         )
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         source = body["_source"]
         assert isinstance(source, list)
         assert "identifier" in source
@@ -980,8 +957,7 @@ class TestEntriesSourceFilter:
     ) -> None:
         """Default (no fields) → _source excludes dbXrefs."""
         app_with_es.get("/entries/")
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         source = body["_source"]
         assert isinstance(source, dict)
         assert "dbXrefs" in source["excludes"]
@@ -1007,8 +983,7 @@ class TestEntriesFacetAggSize:
             },
         )
         app_with_es.get("/entries/", params={"includeFacets": "true"})
-        call_args = mock_es_search.call_args
-        body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         aggs = body["aggs"]
         for agg_name in ("organism", "accessibility", "type"):
             assert aggs[agg_name]["terms"]["size"] == 50, f"{agg_name} should have size=50"
@@ -1671,7 +1646,7 @@ class TestEntriesStatusMode:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/")
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {"term": {"status": "public"}}
 
     def test_free_text_uses_public_only(
@@ -1680,7 +1655,7 @@ class TestEntriesStatusMode:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"keywords": "cancer"})
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {"term": {"status": "public"}}
 
     @pytest.mark.parametrize(
@@ -1699,7 +1674,7 @@ class TestEntriesStatusMode:
         accession: str,
     ) -> None:
         app_with_es.get("/entries/", params={"keywords": accession})
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {
             "terms": {"status": ["public", "suppressed"]},
         }
@@ -1710,7 +1685,7 @@ class TestEntriesStatusMode:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"keywords": '"PRJDB1234"'})
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {
             "terms": {"status": ["public", "suppressed"]},
         }
@@ -1727,7 +1702,7 @@ class TestEntriesStatusMode:
             "/entries/",
             params={"keywords": "PRJDB1234", "organism": "9606"},
         )
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {
             "terms": {"status": ["public", "suppressed"]},
         }
@@ -1739,7 +1714,7 @@ class TestEntriesStatusMode:
     ) -> None:
         """accession を含んでいても複数トークンなら public のみ。"""
         app_with_es.get("/entries/", params={"keywords": "PRJDB1234,cancer"})
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {"term": {"status": "public"}}
 
     def test_wildcard_keywords_uses_public_only(
@@ -1748,7 +1723,7 @@ class TestEntriesStatusMode:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/", params={"keywords": "PRJDB*"})
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {"term": {"status": "public"}}
 
     def test_non_db_type_accession_uses_public_only(
@@ -1758,7 +1733,7 @@ class TestEntriesStatusMode:
     ) -> None:
         """DbType に含まれない accession (GSE, MTBKS 等) は通常キーワード扱い。"""
         app_with_es.get("/entries/", params={"keywords": "GSE12345"})
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {"term": {"status": "public"}}
 
 
@@ -1779,7 +1754,7 @@ class TestFacetsAlwaysPublicOnly:
             "/entries/",
             params={"keywords": "cancer", "includeFacets": "true"},
         )
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert _extract_status_filter(body) == {"term": {"status": "public"}}
         # facet aggs には status が含まれない
         if "aggs" in body:
@@ -1791,9 +1766,9 @@ class TestFacetsAlwaysPublicOnly:
 # ===================================================================
 
 
-def _es_filters(call_args: Any) -> list[dict[str, Any]]:
+def _es_filters(mock: AsyncMock) -> list[dict[str, Any]]:
     """Pull bool.filter clauses from the ES query body of the latest call."""
-    body = call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]
+    body = get_es_search_body(mock)
     return list(body["query"]["bool"]["filter"])
 
 
@@ -1862,7 +1837,7 @@ class TestEntriesCrossTypeNestedAccepted:
     ) -> None:
         resp = app_with_es.get(f"/entries/?{name}=DDBJ")
         assert resp.status_code == 200
-        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == nested_path]
         assert len(match) == 1
         assert match[0]["nested"]["query"] == {"match": {sub_field: "DDBJ"}}
@@ -1895,7 +1870,7 @@ class TestEntriesTypeGroupCommonality:
     ) -> None:
         resp = app_with_es.get(f"/entries/{endpoint}/?libraryStrategy=WGS")
         assert resp.status_code == 200
-        filters = _es_filters(mock_es_search.call_args)
+        filters = _es_filters(mock_es_search)
         assert any("libraryStrategy.keyword" in (f.get("term") or {}) for f in filters)
 
     @pytest.mark.parametrize(
@@ -1910,7 +1885,7 @@ class TestEntriesTypeGroupCommonality:
     ) -> None:
         resp = app_with_es.get(f"/entries/{endpoint}/?studyType=GWAS")
         assert resp.status_code == 200
-        filters = _es_filters(mock_es_search.call_args)
+        filters = _es_filters(mock_es_search)
         assert any("studyType.keyword" in (f.get("term") or {}) for f in filters)
 
 
@@ -1967,7 +1942,7 @@ class TestEntriesNewNestedFilters:
     ) -> None:
         resp = app_with_es.get("/entries/bioproject/?externalLinkLabel=GEO")
         assert resp.status_code == 200
-        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == "externalLink"]
         assert len(match) == 1
         assert match[0]["nested"]["query"] == {"match": {"externalLink.label": "GEO"}}
@@ -1979,7 +1954,7 @@ class TestEntriesNewNestedFilters:
     ) -> None:
         resp = app_with_es.get("/entries/jga-study/?externalLinkLabel=dbGaP")
         assert resp.status_code == 200
-        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         assert any(c["nested"]["path"] == "externalLink" for c in nested)
 
     def test_derived_from_id_on_biosample(
@@ -1989,7 +1964,7 @@ class TestEntriesNewNestedFilters:
     ) -> None:
         resp = app_with_es.get("/entries/biosample/?derivedFromId=SAMD00012345")
         assert resp.status_code == 200
-        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == "derivedFrom"]
         assert len(match) == 1
         assert match[0]["nested"]["query"] == {"match": {"derivedFrom.identifier": "SAMD00012345"}}
@@ -2001,7 +1976,7 @@ class TestEntriesNewNestedFilters:
     ) -> None:
         resp = app_with_es.get("/entries/sra-experiment/?derivedFromId=SAMD00001")
         assert resp.status_code == 200
-        nested = [c for c in _es_filters(mock_es_search.call_args) if "nested" in c]
+        nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         assert any(c["nested"]["path"] == "derivedFrom" for c in nested)
 
 
@@ -2035,7 +2010,7 @@ class TestEntriesTermFilterReflected:
     ) -> None:
         resp = app_with_es.get(f"/entries/{endpoint}/?{param}={value}")
         assert resp.status_code == 200
-        filters = _es_filters(mock_es_search.call_args)
+        filters = _es_filters(mock_es_search)
         match = [f for f in filters if "term" in f and es_field in f["term"]]
         assert len(match) == 1
         assert match[0]["term"][es_field] == value
@@ -2070,7 +2045,7 @@ class TestEntriesTextMatchReflected:
         # 単一 token (記号なし) は ``match`` clause + operator=and を組む
         resp = app_with_es.get(f"/entries/{endpoint}/?{param}=cancer")
         assert resp.status_code == 200
-        filters = _es_filters(mock_es_search.call_args)
+        filters = _es_filters(mock_es_search)
         match = [f for f in filters if isinstance(f.get("match"), dict) and es_field in f["match"]]
         assert len(match) == 1
         assert match[0]["match"][es_field]["query"] == "cancer"
@@ -2085,7 +2060,7 @@ class TestEntriesTextMatchReflected:
         ``match_phrase`` clause を作る (docs/api-spec.md § text match)。"""
         resp = app_with_es.get("/entries/biosample/?host=HIF-1")
         assert resp.status_code == 200
-        filters = _es_filters(mock_es_search.call_args)
+        filters = _es_filters(mock_es_search)
         phrase = [f for f in filters if isinstance(f.get("match_phrase"), dict) and "host" in f["match_phrase"]]
         assert len(phrase) == 1
         assert phrase[0]["match_phrase"]["host"] == "HIF-1"
@@ -2099,7 +2074,7 @@ class TestEntriesTextMatchReflected:
         (docs/api-spec.md § text match — keywordOperator 連動)。"""
         resp = app_with_es.get("/entries/biosample/?host=Homo sapiens&keywordOperator=OR")
         assert resp.status_code == 200
-        filters = _es_filters(mock_es_search.call_args)
+        filters = _es_filters(mock_es_search)
         match = [f for f in filters if isinstance(f.get("match"), dict) and "host" in f["match"]]
         assert len(match) == 1
         assert match[0]["match"]["host"]["operator"] == "or"
@@ -2123,7 +2098,7 @@ class TestEntriesFacetsPick:
             },
         )
         app_with_es.get("/entries/?includeFacets=true")
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert set(body["aggs"]) == {"organism", "accessibility", "type"}
 
     def test_explicit_facets_replaces_default(
@@ -2137,7 +2112,7 @@ class TestEntriesFacetsPick:
             aggregations={"objectType": {"buckets": []}},
         )
         app_with_es.get("/entries/bioproject/?includeFacets=true&facets=objectType")
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert set(body["aggs"]) == {"objectType"}
 
     def test_empty_facets_yields_no_aggs(
@@ -2146,7 +2121,7 @@ class TestEntriesFacetsPick:
         mock_es_search: AsyncMock,
     ) -> None:
         app_with_es.get("/entries/bioproject/?includeFacets=true&facets=")
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "aggs" not in body
 
     def test_typo_returns_422(self, app_with_es: TestClient) -> None:
@@ -2170,7 +2145,7 @@ class TestEntriesFacetsPick:
         (該当 index でのみ集計、他は空 buckets)。"""
         resp = app_with_es.get("/entries/?includeFacets=true&facets=libraryStrategy")
         assert resp.status_code == 200
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "libraryStrategy" in body["aggs"]
 
     def test_facets_ignored_when_include_facets_false(
@@ -2181,5 +2156,5 @@ class TestEntriesFacetsPick:
         """``facets=...`` 指定があっても ``includeFacets=false`` なら
         集計しない (docs/api-spec.md § ファセット集計対象の選択)。"""
         app_with_es.get("/entries/bioproject/?facets=objectType")
-        body = mock_es_search.call_args[0][2]
+        body = get_es_search_body(mock_es_search)
         assert "aggs" not in body

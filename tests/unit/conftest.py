@@ -46,6 +46,36 @@ def app(config: AppConfig) -> TestClient:
     return _make_app(config)
 
 
+def get_es_search_body(mock: AsyncMock, call_index: int = -1) -> dict[str, Any]:
+    """Return the body dict from a recorded ES search call.
+
+    Assumes the mocked function uses the ``es_search(client, index, body)``
+    positional signature. ``call_index`` selects which call (default
+    ``-1`` = the most recent); negative values count from the end. Reading
+    from a single helper insulates tests against future keyword-only
+    parameter migrations of ``es_search`` and avoids the
+    ``call_args[1]["body"] if "body" in call_args[1] else call_args[0][2]``
+    boilerplate that previously appeared in 60+ places.
+    """
+    call = mock.call_args_list[call_index]
+    if "body" in call.kwargs:
+        body: dict[str, Any] = call.kwargs["body"]
+        return body
+    return call.args[2]
+
+
+def get_es_search_index(mock: AsyncMock, call_index: int = -1) -> str:
+    """Return the index string from a recorded ES search call.
+
+    See :func:`get_es_search_body` for the call-index convention.
+    """
+    call = mock.call_args_list[call_index]
+    if "index" in call.kwargs:
+        index: str = call.kwargs["index"]
+        return index
+    return call.args[1]
+
+
 def make_es_search_response(
     hits: Any = None,
     total: int = 0,
@@ -155,6 +185,27 @@ def make_mock_stream_response(body: bytes) -> httpx.Response:
     return response
 
 
+def make_multi_chunk_stream_response(chunks: list[bytes]) -> httpx.Response:
+    """Like :func:`make_mock_stream_response` but yields multiple chunks.
+
+    ``aiter_bytes()`` yields each element of ``chunks`` in order.
+    Used to exercise streaming transformations (JSON-LD prefix /
+    dbXrefs tail injection) across chunk boundaries that may fall
+    mid-token.
+    """
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 200
+
+    async def _aiter_bytes() -> collections.abc.AsyncIterator[bytes]:
+        for chunk in chunks:
+            yield chunk
+
+    response.aiter_bytes = _aiter_bytes
+    response.aclose = AsyncMock()
+
+    return response
+
+
 # --- Entry Detail fixtures ---
 
 
@@ -256,15 +307,15 @@ def mock_es_get_source_stream_bulk() -> collections.abc.Iterator[AsyncMock]:
         yield mock
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_es_ping() -> collections.abc.Iterator[AsyncMock]:
-    """Autouse-patch es_ping in the service_info router.
+    """Patch es_ping in the service_info router.
 
     Default: ``return_value=True`` so /service-info reports
-    ``elasticsearch=ok``. Tests that need to simulate ES down should take
-    ``mock_es_ping`` as an argument and override
-    ``mock_es_ping.return_value = False`` (mirroring the
-    ``mock_es_mget_source_bulk`` pattern below).
+    ``elasticsearch=ok``. Tests that need to simulate ES down should
+    override ``mock_es_ping.return_value = False``. Consumers must take
+    this fixture as an argument; the previous autouse activation was
+    masking tests that silently relied on ``elasticsearch=ok``.
     """
     with patch(
         "ddbj_search_api.routers.service_info.es_ping",
@@ -274,17 +325,17 @@ def mock_es_ping() -> collections.abc.Iterator[AsyncMock]:
         yield mock
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_es_mget_source_bulk() -> collections.abc.Iterator[AsyncMock]:
-    """Autouse-patch es_mget_source in the bulk router.
+    """Patch es_mget_source in the bulk router.
 
     Default: every requested ID maps to ``status=public`` so the
     visibility check (docs/api-spec.md § データ可視性) passes and the
     existing per-ID streaming flow is exercised. Override ``.side_effect``
     or ``.return_value`` to emulate withdrawn/private/missing entries.
 
-    Autouse is used so that tests which construct a ``TestClient`` by
-    hand (without the ``app_with_bulk`` fixture) also get the mock.
+    Tests that hit the bulk router must take this fixture as an
+    argument (``app_with_bulk`` already does so transitively).
     """
     with patch(
         "ddbj_search_api.routers.bulk.es_mget_source",

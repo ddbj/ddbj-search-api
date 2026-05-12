@@ -17,10 +17,16 @@ from ddbj_search_api.schemas.dblink import (
 
 
 class TestAccessionType:
-    """AccessionType enum has exactly the expected 21 values."""
+    """AccessionType enum exposes the documented union exactly.
 
-    EXPECTED_VALUES = sorted(
-        [
+    docs/api-spec.md § dblink で列挙されている 21 種類が ``AccessionType``
+    に揃っているかを set 一致で検証する。要素数を ``== 21`` と固定値で書くと、
+    Enum から 1 つ消えて別の 1 つが追加された ``±0`` の drift を捕捉できない
+    ので、必ず member 集合そのものと比較する。
+    """
+
+    EXPECTED_VALUES = frozenset(
+        {
             "bioproject",
             "biosample",
             "gea",
@@ -42,15 +48,11 @@ class TestAccessionType:
             "sra-study",
             "sra-submission",
             "taxonomy",
-        ]
+        }
     )
 
-    def test_has_21_members(self) -> None:
-        assert len(AccessionType) == 21
-
-    def test_all_expected_values_present(self) -> None:
-        actual = sorted(e.value for e in AccessionType)
-        assert actual == self.EXPECTED_VALUES
+    def test_member_set_matches_expected(self) -> None:
+        assert {e.value for e in AccessionType} == self.EXPECTED_VALUES
 
     def test_is_str_enum(self) -> None:
         for member in AccessionType:
@@ -99,10 +101,14 @@ class TestDbLinksTypesResponse:
         values = [t.value for t in resp.types]
         assert values == sorted(values)
 
-    def test_contains_21_types(self) -> None:
+    def test_response_round_trips_full_enum(self) -> None:
+        """全 AccessionType メンバーを response に詰めて round-trip できる。
+
+        固定件数 ``== 21`` で確認すると enum サイズが ``±0`` で drift したケース
+        を見逃すので、enum と response の set 一致で検証する。"""
         types = list(AccessionType)
         resp = DbLinksTypesResponse(types=types)
-        assert len(resp.types) == 21
+        assert {t.value for t in resp.types} == {e.value for e in AccessionType}
 
 
 class TestDbLinksQuery:

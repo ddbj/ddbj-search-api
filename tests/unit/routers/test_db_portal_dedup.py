@@ -15,10 +15,7 @@ from fastapi.testclient import TestClient
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.routers.db_portal import (
-    _CROSS_SEARCH_DEDUP_OVERSHOOT,
-    _dedup_lightweight_hits,
-)
+from ddbj_search_api.routers.db_portal import _dedup_lightweight_hits
 from ddbj_search_api.schemas.db_portal import DbPortalLightweightHit
 from tests.unit.conftest import make_es_search_response
 
@@ -195,12 +192,22 @@ class TestCrossSearchDedupEndpoint:
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """ES に投げる ``size`` は ``top_hits * _CROSS_SEARCH_DEDUP_OVERSHOOT``."""
+        """ES に投げる ``size`` は ``top_hits`` より大きい (de-dup 後の不足を防ぐ
+        ためのオーバーシュート)。具体的な倍率は router の private 実装詳細なので
+        ここでは検証しない: 「``size >= 2 * top_hits``」「``size`` が ``top_hits``
+        の整数倍」という構造的不変条件のみを確認する。"""
+        top_hits = 5
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
-        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "human", "topHits": 5})
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "human", "topHits": top_hits},
+        )
         assert resp.status_code == 200
         sizes = {call.args[2]["size"] for call in mock_es_search_db_portal.call_args_list}
-        assert sizes == {5 * _CROSS_SEARCH_DEDUP_OVERSHOOT}
+        assert len(sizes) == 1, sizes
+        observed = next(iter(sizes))
+        assert observed >= 2 * top_hits, f"overshoot expected (>= 2x top_hits): size={observed}"
+        assert observed % top_hits == 0, f"size {observed} is not an integer multiple of top_hits={top_hits}"
 
     def test_cross_search_with_top_hits_zero_skips_overshoot(
         self,

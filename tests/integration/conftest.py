@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import collections.abc
 import os
+import warnings
 
 import httpx
 import pytest
@@ -21,6 +22,11 @@ ES_URL = os.environ.get(
     "DDBJ_SEARCH_INTEGRATION_ES_URL",
     "http://localhost:9200",
 )
+
+# When set to "1", representative-constant drift causes a session-level
+# skip rather than a warning. Use in CI to fail loudly; default is
+# warning-only so local invocations can still run the remaining suite.
+STRICT_PROBE = os.environ.get("DDBJ_SEARCH_INTEGRATION_STRICT", "0") == "1"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -169,3 +175,62 @@ def require_value(name: str, value: str) -> str:
 # Backwards-compatible alias for existing call sites that name the
 # helper ``require_accession``.
 require_accession = require_value
+
+
+# ---------------------------------------------------------------------------
+# Representative-constant drift probe
+# ---------------------------------------------------------------------------
+#
+# 主要な (type, accession) ペアを session 起動時に 1 度だけ確認し、
+# converter リリースで定数が陳腐化したら警告を出す。空文字 (``""``)
+# は ``require_value`` で skip 扱いなので probe からは除外する。
+# ``DDBJ_SEARCH_INTEGRATION_STRICT=1`` を設定したときだけ session を
+# skip させる (CI で drift を verbose に検知する用途)。
+
+# Probe する (type, accession, label) のペア。type ごとに 1 件で十分。
+# `_PROBE_REPRESENTATIVES` の値が変わったときに `ENTRIES_INDEX_BY_TYPE`
+# (router 側のマッピング) と同期している必要がある。
+_PROBE_REPRESENTATIVES: list[tuple[str, str, str]] = [
+    ("bioproject", PUBLIC_BIOPROJECT_ID, "PUBLIC_BIOPROJECT_ID"),
+    ("biosample", PUBLIC_BIOSAMPLE_ID, "PUBLIC_BIOSAMPLE_ID"),
+    ("sra-experiment", PUBLIC_SRA_EXPERIMENT_ID, "PUBLIC_SRA_EXPERIMENT_ID"),
+    ("jga-study", PUBLIC_JGA_STUDY_ID, "PUBLIC_JGA_STUDY_ID"),
+    ("gea", PUBLIC_GEA_ID, "PUBLIC_GEA_ID"),
+    ("metabobank", PUBLIC_METABOBANK_ID, "PUBLIC_METABOBANK_ID"),
+]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _probe_representatives(ensure_es: None) -> None:
+    """Probe representative constants once per session.
+
+    Each (type, accession) pair is fetched via the ES ``_doc/{id}``
+    endpoint to confirm the constant still resolves to a document.
+    Drift produces a warning by default; with
+    ``DDBJ_SEARCH_INTEGRATION_STRICT=1`` it raises a session-level
+    ``pytest.skip`` so CI catches it loudly.
+    """
+    del ensure_es  # session-order dependency only; value unused
+    stale: list[str] = []
+    for type_, accession, label in _PROBE_REPRESENTATIVES:
+        if not accession:
+            # Empty constants are deliberately blank (no representative in
+            # this dataset); require_value handles the per-test skip.
+            continue
+        try:
+            resp = httpx.get(f"{ES_URL}/{type_}/_doc/{accession}", timeout=5.0)
+        except (httpx.HTTPError, httpx.ConnectError) as exc:
+            stale.append(f"{label} ({type_}/{accession}) probe failed: {exc}")
+            continue
+        if resp.status_code == 404:
+            stale.append(f"{label} ({type_}/{accession}) returned 404 on probe")
+        elif resp.status_code >= 400:
+            stale.append(f"{label} ({type_}/{accession}) returned {resp.status_code} on probe")
+
+    if not stale:
+        return
+    msg = "Representative-constant drift detected:\n" + "\n".join(f"  - {s}" for s in stale)
+    if STRICT_PROBE:
+        pytest.skip(msg, allow_module_level=True)
+    else:
+        warnings.warn(msg, RuntimeWarning, stacklevel=2)

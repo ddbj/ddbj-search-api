@@ -57,23 +57,23 @@ class TestListTypes:
         resp = app.get("/dblink/")
         assert resp.status_code == 200
 
-    def test_returns_21_types(self, app: TestClient) -> None:
+    def test_types_match_accession_type_enum(self, app: TestClient) -> None:
+        """API レスポンスの ``types`` は ``AccessionType`` Enum と完全一致する。
+
+        固定件数 (``== 21``) ではなく set 一致で検証する: Enum に項目を追加 / 削除
+        したときに、レスポンス側を同期し忘れたら set 差分で即座に落ちる。逆に
+        ``== 21`` で書くと Enum の数が変わったあと「ちょうど 21」で偶然合うケースを
+        検出できない。
+        """
         resp = app.get("/dblink/")
         data = resp.json()
         assert "types" in data
-        assert len(data["types"]) == 21
+        assert set(data["types"]) == {member.value for member in AccessionType}
 
     def test_types_are_sorted(self, app: TestClient) -> None:
         resp = app.get("/dblink/")
         types = resp.json()["types"]
         assert types == sorted(types)
-
-    def test_contains_expected_types(self, app: TestClient) -> None:
-        resp = app.get("/dblink/")
-        types = set(resp.json()["types"])
-        assert "bioproject" in types
-        assert "humandbs" in types
-        assert "insdc" in types
 
     def test_trailing_slash_both_work(self, app: TestClient) -> None:
         resp_slash = app.get("/dblink/")

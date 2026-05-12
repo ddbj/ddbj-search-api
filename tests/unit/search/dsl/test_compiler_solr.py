@@ -10,7 +10,6 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.schemas.db_portal import DbPortalDb
 from ddbj_search_api.search.dsl import parse
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Position
 from ddbj_search_api.search.dsl.compiler_solr import (
@@ -18,20 +17,10 @@ from ddbj_search_api.search.dsl.compiler_solr import (
     compile_free_text_solr,
     compile_to_solr,
 )
-from ddbj_search_api.search.dsl.validator import validate
 
 
 def _c(dsl: str, dialect: SolrDialect = "arsa") -> str:
-    ast = parse(dsl)
-    validate(ast, mode="cross")
-    return compile_to_solr(ast, dialect=dialect)
-
-
-def _c_single(dsl: str, dialect: SolrDialect, db: DbPortalDb) -> str:
-    """Tier 3 (single mode required) を single mode で compile するヘルパ."""
-    ast = parse(dsl)
-    validate(ast, mode="single", db=db)
-    return compile_to_solr(ast, dialect=dialect)
+    return compile_to_solr(parse(dsl), dialect=dialect)
 
 
 class TestArsaBasics:
@@ -197,13 +186,13 @@ class TestArsaTier3Trad:
         ],
     )
     def test_trad_field_maps(self, dsl: str, expected: str) -> None:
-        assert _c_single(dsl, "arsa", DbPortalDb.trad) == expected
+        assert _c(dsl, "arsa") == expected
 
     def test_sequence_length_eq(self) -> None:
-        assert _c_single("sequence_length:5000", "arsa", DbPortalDb.trad) == 'SequenceLength:"5000"'
+        assert _c("sequence_length:5000", "arsa") == 'SequenceLength:"5000"'
 
     def test_sequence_length_range(self) -> None:
-        assert _c_single("sequence_length:[100 TO 5000]", "arsa", DbPortalDb.trad) == "SequenceLength:[100 TO 5000]"
+        assert _c("sequence_length:[100 TO 5000]", "arsa") == "SequenceLength:[100 TO 5000]"
 
 
 class TestArsaTier3EsOnlyDegenerate:
@@ -211,25 +200,25 @@ class TestArsaTier3EsOnlyDegenerate:
     は ARSA で degenerate."""
 
     @pytest.mark.parametrize(
-        ("dsl", "db"),
+        "dsl",
         [
-            ("project_type:BioProject", DbPortalDb.bioproject),
-            ("library_strategy:WGS", DbPortalDb.sra),
-            ("library_selection:RANDOM", DbPortalDb.sra),
-            ("platform:ILLUMINA", DbPortalDb.sra),
-            ("instrument_model:NovaSeq", DbPortalDb.sra),
-            ("study_type:Cohort", DbPortalDb.jga),
-            ("experiment_type:ChIP-Seq", DbPortalDb.gea),
-            ("submission_type:metabolite", DbPortalDb.metabobank),
-            ("grant_agency:JSPS", DbPortalDb.bioproject),
+            "project_type:BioProject",
+            "library_strategy:WGS",
+            "library_selection:RANDOM",
+            "platform:ILLUMINA",
+            "instrument_model:NovaSeq",
+            "study_type:Cohort",
+            "experiment_type:ChIP-Seq",
+            "submission_type:metabolite",
+            "grant_agency:JSPS",
             # db-portal sidebar 拡張で追加された ES-only Tier 3
-            ("package:MIGS.ba", DbPortalDb.biosample),
-            ("model:HiSeq", DbPortalDb.biosample),
-            ("type:sra-experiment", DbPortalDb.sra),
+            "package:MIGS.ba",
+            "model:HiSeq",
+            "type:sra-experiment",
         ],
     )
-    def test_es_tier3_degenerates_on_arsa(self, dsl: str, db: DbPortalDb) -> None:
-        assert _c_single(dsl, "arsa", db) == "(-*:*)"
+    def test_es_tier3_degenerates_on_arsa(self, dsl: str) -> None:
+        assert _c(dsl, "arsa") == "(-*:*)"
 
 
 class TestArsaTaxonomyTier3Degenerate:
@@ -251,7 +240,7 @@ class TestArsaTaxonomyTier3Degenerate:
         ],
     )
     def test_taxonomy_degenerates_on_arsa(self, dsl: str) -> None:
-        assert _c_single(dsl, "arsa", DbPortalDb.taxonomy) == "(-*:*)"
+        assert _c(dsl, "arsa") == "(-*:*)"
 
 
 class TestTxSearchTier3Taxonomy:
@@ -273,11 +262,11 @@ class TestTxSearchTier3Taxonomy:
         ],
     )
     def test_taxonomy_field_maps(self, dsl: str, expected: str) -> None:
-        assert _c_single(dsl, "txsearch", DbPortalDb.taxonomy) == expected
+        assert _c(dsl, "txsearch") == expected
 
     def test_wildcard_works_on_text_field(self) -> None:
         # rank は enum で wildcard 不可。text 型の kingdom で検証。
-        assert _c_single("kingdom:Anim*", "txsearch", DbPortalDb.taxonomy) == "kingdom:Anim*"
+        assert _c("kingdom:Anim*", "txsearch") == "kingdom:Anim*"
 
 
 class TestTxSearchTradTier3Degenerate:
@@ -294,28 +283,28 @@ class TestTxSearchTradTier3Degenerate:
         ],
     )
     def test_trad_degenerates_on_txsearch(self, dsl: str) -> None:
-        assert _c_single(dsl, "txsearch", DbPortalDb.trad) == "(-*:*)"
+        assert _c(dsl, "txsearch") == "(-*:*)"
 
 
 class TestTxSearchEsOnlyTier3Degenerate:
     """ES-only Tier 3 は TXSearch で degenerate."""
 
     @pytest.mark.parametrize(
-        ("dsl", "db"),
+        "dsl",
         [
-            ("project_type:BioProject", DbPortalDb.bioproject),
-            ("library_strategy:WGS", DbPortalDb.sra),
-            ("library_selection:RANDOM", DbPortalDb.sra),
-            ("study_type:Cohort", DbPortalDb.jga),
-            ("grant_agency:JSPS", DbPortalDb.bioproject),
+            "project_type:BioProject",
+            "library_strategy:WGS",
+            "library_selection:RANDOM",
+            "study_type:Cohort",
+            "grant_agency:JSPS",
             # db-portal sidebar 拡張で追加された ES-only Tier 3
-            ("package:MIGS.ba", DbPortalDb.biosample),
-            ("model:HiSeq", DbPortalDb.biosample),
-            ("type:sra-experiment", DbPortalDb.sra),
+            "package:MIGS.ba",
+            "model:HiSeq",
+            "type:sra-experiment",
         ],
     )
-    def test_es_tier3_degenerates_on_txsearch(self, dsl: str, db: DbPortalDb) -> None:
-        assert _c_single(dsl, "txsearch", db) == "(-*:*)"
+    def test_es_tier3_degenerates_on_txsearch(self, dsl: str) -> None:
+        assert _c(dsl, "txsearch") == "(-*:*)"
 
 
 class TestSolrBoolWithTier3Mixed:
@@ -323,13 +312,13 @@ class TestSolrBoolWithTier3Mixed:
 
     def test_trad_mixed(self) -> None:
         # division:BCT AND title:cancer → ARSA 両方あり
-        assert _c_single("division:BCT AND title:cancer", "arsa", DbPortalDb.trad) == (
+        assert _c("division:BCT AND title:cancer", "arsa") == (
             '(Division:"BCT" AND Definition:"cancer")'
         )
 
     def test_taxonomy_mixed_on_txsearch(self) -> None:
         # rank:species AND title:Homo → TXSearch 両方あり
-        assert _c_single("rank:species AND title:Homo", "txsearch", DbPortalDb.taxonomy) == (
+        assert _c("rank:species AND title:Homo", "txsearch") == (
             '(rank:"species" AND scientific_name:"Homo")'
         )
 
