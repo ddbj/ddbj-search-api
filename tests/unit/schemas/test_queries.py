@@ -18,6 +18,7 @@ import pytest
 from fastapi import HTTPException
 
 from ddbj_search_api.schemas.queries import (
+    Accessibility,
     BulkFormat,
     FacetsParamQuery,
     KeywordOperator,
@@ -42,6 +43,23 @@ class TestKeywordOperator:
     def test_invalid_value_raises_error(self) -> None:
         with pytest.raises(ValueError):
             KeywordOperator("NOT")
+
+
+class TestAccessibility:
+    """Accessibility enum: public-access / controlled-access."""
+
+    def test_public_access(self) -> None:
+        assert Accessibility("public-access") == Accessibility.public_access
+
+    def test_controlled_access(self) -> None:
+        assert Accessibility("controlled-access") == Accessibility.controlled_access
+
+    def test_has_exactly_2_members(self) -> None:
+        assert len(Accessibility) == 2
+
+    def test_invalid_value_raises_error(self) -> None:
+        with pytest.raises(ValueError):
+            Accessibility("private")
 
 
 class TestBulkFormat:

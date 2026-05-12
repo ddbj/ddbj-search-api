@@ -342,10 +342,10 @@ class TestTier2CrossModeAccepted:
         validate(parse("submitter:Tok*"), mode="cross")
 
     def test_publication_word_accepted(self) -> None:
-        validate(parse("publication:12345678"), mode="cross")
+        validate(parse("publication:cancer"), mode="cross")
 
     def test_publication_wildcard_accepted(self) -> None:
-        validate(parse("publication:123*"), mode="cross")
+        validate(parse("publication:canc*"), mode="cross")
 
 
 class TestTier3CrossModeReject:
@@ -358,6 +358,7 @@ class TestTier3CrossModeReject:
             ("project_type", "BioProject"),
             ("grant_agency", "JSPS"),
             ("relevance", "reference"),
+            ("external_link_label", "GEO"),
             # BioSample (converter 0.3.0 で top-level 化)
             ("host", "Homo"),
             ("strain", "C57BL"),
@@ -377,6 +378,7 @@ class TestTier3CrossModeReject:
             ("library_name", "test_lib"),
             ("library_construction_protocol", "Illumina"),
             ("analysis_type", "variation"),
+            ("derived_from_id", "SAMD00012345"),
             # JGA
             ("study_type", "Cohort"),
             ("vendor", "Illumina"),
@@ -457,6 +459,20 @@ class TestTier3CrossModeReject:
             validate(ast, mode="cross")
         assert "use db=sra or db=jga" in exc_info.value.detail
 
+    def test_detail_contains_multiple_db_hints_external_link_label(self) -> None:
+        """BioProject + JGA 共通の external_link_label は 'use db=bioproject or db=jga' を列挙。"""
+        ast = parse("external_link_label:GEO")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=bioproject or db=jga" in exc_info.value.detail
+
+    def test_detail_contains_multiple_db_hints_derived_from_id(self) -> None:
+        """BioSample + SRA 共通の derived_from_id は 'use db=biosample or db=sra' を列挙。"""
+        ast = parse("derived_from_id:SAMD00012345")
+        with pytest.raises(DslError) as exc_info:
+            validate(ast, mode="cross")
+        assert "use db=biosample or db=sra" in exc_info.value.detail
+
     def test_detail_contains_field_name(self) -> None:
         ast = parse("platform:ILLUMINA")
         with pytest.raises(DslError) as exc_info:
@@ -489,6 +505,8 @@ class TestTier3SingleModeAccepted:
             ("dataset_type", "fastq"),
             ("division", "BCT"),
             ("rank", "species"),
+            ("external_link_label", "GEO"),
+            ("derived_from_id", "SAMD00012345"),
         ],
     )
     def test_single_mode_accepts_tier3(self, field: str, value: str) -> None:

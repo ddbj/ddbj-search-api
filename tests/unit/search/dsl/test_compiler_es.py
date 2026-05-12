@@ -280,20 +280,88 @@ class TestTier2Submitter:
 
 
 class TestTier2Publication:
+    """``publication`` は publication.title (text) を match_phrase で検索する。"""
+
     def test_publication_word(self) -> None:
-        assert _compile("publication:12345678") == {
+        assert _compile("publication:cancer") == {
             "nested": {
                 "path": "publication",
-                "query": {"term": {"publication.id": "12345678"}},
+                "query": {"match_phrase": {"publication.title": "cancer"}},
+            },
+        }
+
+    def test_publication_phrase(self) -> None:
+        assert _compile('publication:"whole genome sequencing"') == {
+            "nested": {
+                "path": "publication",
+                "query": {"match_phrase": {"publication.title": "whole genome sequencing"}},
             },
         }
 
     def test_publication_wildcard(self) -> None:
-        assert _compile("publication:123*") == {
+        assert _compile("publication:canc*") == {
             "nested": {
                 "path": "publication",
                 "query": {
-                    "wildcard": {"publication.id": {"value": "123*", "case_insensitive": True}},
+                    "wildcard": {"publication.title": {"value": "canc*", "case_insensitive": True}},
+                },
+            },
+        }
+
+
+class TestTier3ExternalLinkLabel:
+    """``external_link_label`` は externalLink nested の label を text 型扱いで検索する。
+
+    converter mapping は keyword だが、allowlist が text 型として公開しているため、
+    ``contains`` 経路で ``match_phrase`` を生成する (順序保持)。
+    """
+
+    def test_external_link_label_word(self) -> None:
+        assert _compile("external_link_label:GEO") == {
+            "nested": {
+                "path": "externalLink",
+                "query": {"match_phrase": {"externalLink.label": "GEO"}},
+            },
+        }
+
+    def test_external_link_label_phrase(self) -> None:
+        assert _compile('external_link_label:"GEO Sample"') == {
+            "nested": {
+                "path": "externalLink",
+                "query": {"match_phrase": {"externalLink.label": "GEO Sample"}},
+            },
+        }
+
+    def test_external_link_label_wildcard(self) -> None:
+        assert _compile("external_link_label:GE*") == {
+            "nested": {
+                "path": "externalLink",
+                "query": {
+                    "wildcard": {"externalLink.label": {"value": "GE*", "case_insensitive": True}},
+                },
+            },
+        }
+
+
+class TestTier3DerivedFromId:
+    """``derived_from_id`` は derivedFrom nested の identifier を identifier 型 (term/wildcard) で検索する。"""
+
+    def test_derived_from_id_word(self) -> None:
+        assert _compile("derived_from_id:SAMD00012345") == {
+            "nested": {
+                "path": "derivedFrom",
+                "query": {"term": {"derivedFrom.identifier": "SAMD00012345"}},
+            },
+        }
+
+    def test_derived_from_id_wildcard(self) -> None:
+        assert _compile("derived_from_id:SAMD*") == {
+            "nested": {
+                "path": "derivedFrom",
+                "query": {
+                    "wildcard": {
+                        "derivedFrom.identifier": {"value": "SAMD*", "case_insensitive": True},
+                    },
                 },
             },
         }
@@ -738,6 +806,88 @@ class TestCompileToEsFreeTextNode:
                     },
                 ],
                 "minimum_should_match": 1,
+            },
+        }
+
+
+class TestCompileToEsFreeTextOperator:
+    """``compile_to_es(ast, free_text_operator="OR")`` の挙動."""
+
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
+
+    def test_free_text_alone_or(self) -> None:
+        """単一 FreeText で operator=OR は bool.should + minimum_should_match=1 を出す."""
+        node = FreeText("cancer, tumor")
+        result = compile_to_es(node, free_text_operator="OR")
+        assert result == {
+            "bool": {
+                "should": [
+                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                    {"multi_match": {"query": "tumor", "fields": self._DEFAULT_FIELDS}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
+
+    def test_and_of_adv_and_free_text_or_does_not_flatten(self) -> None:
+        """AND 直下の FreeText でも operator=OR なら flatten せず bool wrapper を残す.
+
+        OR semantics を AND clauses に inline すると意味が崩れるため。
+        """
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="cancer",
+            position=Position(column=1, length=12),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("apple, banana")),
+            position=Position(column=1, length=12),
+        )
+        result = compile_to_es(composite, free_text_operator="OR")
+        # FreeText 側は bool.should にコンパイルされ、AND の must clauses にそのまま並ぶ
+        assert result == {
+            "bool": {
+                "must": [
+                    {"match_phrase": {"title": "cancer"}},
+                    {
+                        "bool": {
+                            "should": [
+                                {"multi_match": {"query": "apple", "fields": self._DEFAULT_FIELDS}},
+                                {"multi_match": {"query": "banana", "fields": self._DEFAULT_FIELDS}},
+                            ],
+                            "minimum_should_match": 1,
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_and_of_adv_and_free_text_and_still_flattens(self) -> None:
+        """operator=AND (デフォルト) では従来通り flatten される (回帰テスト)."""
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="cancer",
+            position=Position(column=1, length=12),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("apple, banana")),
+            position=Position(column=1, length=12),
+        )
+        result_default = compile_to_es(composite)
+        result_explicit = compile_to_es(composite, free_text_operator="AND")
+        # デフォルトと明示 AND は同じ結果 + flatten 済 (multi_match が must に直に並ぶ)
+        assert result_default == result_explicit
+        assert result_default == {
+            "bool": {
+                "must": [
+                    {"match_phrase": {"title": "cancer"}},
+                    {"multi_match": {"query": "apple", "fields": self._DEFAULT_FIELDS}},
+                    {"multi_match": {"query": "banana", "fields": self._DEFAULT_FIELDS}},
+                ],
             },
         }
 

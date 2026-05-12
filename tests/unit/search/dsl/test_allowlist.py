@@ -40,18 +40,18 @@ class TestTierFrozensets:
         assert frozenset({"submitter", "publication"}) == TIER2_FIELDS
 
     def test_tier3_contains_expected_per_db_fields(self) -> None:
-        # Tier 3 unique 40 / per-DB 46。
-        # 内訳は BioProject 3、BioSample 7、SRA 9、JGA 3、GEA 0、MetaboBank 1、
-        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 39 件。GEA は experiment_type を
-        # MetaboBank と共有するため 0。
-        # 加えて shared が 6: grant_agency は BP と JGA で、study_type は JGA と MetaboBank で、
-        # experiment_type は GEA と MetaboBank で、geo_loc_name と collection_date は BioSample と
-        # SRA-sample で共有、type は SRA と JGA で共有 → unique は 40、per-DB は 46。
+        # Tier 3 unique 42 / per-DB 50。
+        # BioProject 4、BioSample 7、SRA 9、JGA 3、GEA 0、MetaboBank 1、
+        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 40 件 + shared 8 で unique 42。
+        # shared: grant_agency (BP+JGA)、external_link_label (BP+JGA)、derived_from_id
+        # (BS+SRA)、study_type (JGA+MB)、experiment_type (GEA+MB)、geo_loc_name と
+        # collection_date (BS+SRA-sample)、type (SRA+JGA)。
         expected = {
-            # BioProject 3 件
+            # BioProject 4 件
             "project_type",
             "grant_agency",  # BioProject と JGA 共通
             "relevance",
+            "external_link_label",  # BioProject と JGA 共通
             # BioSample 7 件。geo_loc_name と collection_date は SRA-sample と共通、
             # package / model は db-portal sidebar で controlled-value facet として使う
             "host",
@@ -61,6 +61,8 @@ class TestTierFrozensets:
             "collection_date",
             "package",
             "model",
+            # BioSample と SRA-sample 共通: derivedFrom.identifier
+            "derived_from_id",
             # SRA 9 件。library_* / platform / instrument_model は sra-experiment、
             # analysis_type は sra-analysis のみ field 存在、library_selection は sra-experiment
             "library_strategy",
@@ -102,8 +104,8 @@ class TestTierFrozensets:
         }
         assert expected == TIER3_FIELDS
 
-    def test_tier3_unique_count_is_40(self) -> None:
-        assert len(TIER3_FIELDS) == 40
+    def test_tier3_unique_count_is_42(self) -> None:
+        assert len(TIER3_FIELDS) == 42
 
     def test_tiers_are_disjoint(self) -> None:
         assert frozenset() == TIER1_FIELDS & TIER2_FIELDS
@@ -134,7 +136,7 @@ class TestFieldTypesMapping:
         [
             # Tier 2
             ("submitter", "text"),
-            ("publication", "identifier"),
+            ("publication", "text"),
             # Tier 3 enum
             ("project_type", "enum"),
             ("relevance", "enum"),
@@ -159,6 +161,8 @@ class TestFieldTypesMapping:
             ("library_construction_protocol", "text"),
             ("analysis_type", "text"),
             ("grant_agency", "text"),
+            ("external_link_label", "text"),
+            ("derived_from_id", "identifier"),
             ("experiment_type", "text"),
             ("submission_type", "text"),
             ("vendor", "text"),
@@ -246,6 +250,7 @@ class TestTier3FieldDbs:
             ("relevance", ("bioproject",)),
             # BioProject + JGA shared
             ("grant_agency", ("bioproject", "jga")),
+            ("external_link_label", ("bioproject", "jga")),
             # BioSample-only
             ("host", ("biosample",)),
             ("strain", ("biosample",)),
@@ -265,6 +270,8 @@ class TestTier3FieldDbs:
             ("library_name", ("sra",)),
             ("library_construction_protocol", ("sra",)),
             ("analysis_type", ("sra",)),
+            # BioSample + SRA shared
+            ("derived_from_id", ("biosample", "sra")),
             # JGA + MetaboBank shared
             ("study_type", ("jga", "metabobank")),
             # JGA-only

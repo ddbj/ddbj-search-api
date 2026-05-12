@@ -208,6 +208,8 @@ def _validate_cursor_exclusivity(
         conflicting.append("keywordOperator")
     if search_filter.organism is not None:
         conflicting.append("organism")
+    if search_filter.accessibility is not None:
+        conflicting.append("accessibility")
     if search_filter.organization is not None:
         conflicting.append("organization")
     if search_filter.publication is not None:
@@ -368,6 +370,7 @@ async def _do_search_offset(
         keyword_fields=fields,
         keyword_operator=search_filter.keyword_operator.value,
         organism=search_filter.organism,
+        accessibility=search_filter.accessibility.value if search_filter.accessibility is not None else None,
         date_published_from=search_filter.date_published_from,
         date_published_to=search_filter.date_published_to,
         date_modified_from=search_filter.date_modified_from,

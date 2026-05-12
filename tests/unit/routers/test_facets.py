@@ -321,6 +321,29 @@ class TestFacetsOrganismFilter:
         assert term_filters[0]["term"]["organism.identifier"] == "9606"
 
 
+class TestFacetsAccessibilityFilter:
+    """Accessibility filter on facets endpoint."""
+
+    def test_accessibility_passed_to_es(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets?accessibility=public-access")
+        body = get_es_search_body(mock_es_search_facets)
+        filters = body["query"]["bool"]["filter"]
+        term_filters = [f for f in filters if "term" in f and "accessibility" in f["term"]]
+        assert len(term_filters) == 1
+        assert term_filters[0]["term"]["accessibility"] == "public-access"
+
+    def test_accessibility_invalid_returns_422(
+        self,
+        app_with_facets: TestClient,
+    ) -> None:
+        resp = app_with_facets.get("/facets?accessibility=bogus")
+        assert resp.status_code == 422
+
+
 # === keywordOperator ===
 
 

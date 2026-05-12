@@ -108,6 +108,7 @@ async def _do_facets(
         keyword_fields=fields,
         keyword_operator=search_filter.keyword_operator.value,
         organism=search_filter.organism,
+        accessibility=search_filter.accessibility.value if search_filter.accessibility is not None else None,
         date_published_from=search_filter.date_published_from,
         date_published_to=search_filter.date_published_to,
         date_modified_from=search_filter.date_modified_from,

@@ -148,6 +148,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -696,6 +717,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -1288,6 +1330,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -1942,6 +2005,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -2724,6 +2808,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -3502,6 +3607,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -4284,6 +4410,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -5062,6 +5209,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -5844,6 +6012,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -6624,6 +6813,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -7234,6 +7444,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -7848,6 +8079,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -8458,6 +8710,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -9072,6 +9345,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -9619,6 +9913,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -10834,6 +11149,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -11156,6 +11492,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -11522,6 +11879,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -11950,6 +12328,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -12506,6 +12905,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -13058,6 +13478,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -13614,6 +14055,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -14166,6 +14628,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -14722,6 +15205,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -15276,6 +15780,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -15660,6 +16185,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -16048,6 +16594,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -16432,6 +16999,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -16820,6 +17408,27 @@
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
           },
           {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
+          },
+          {
             "name": "organization",
             "in": "query",
             "required": false,
@@ -17141,6 +17750,27 @@
               "title": "Organism"
             },
             "description": "NCBI Taxonomy ID, digits only (e.g. '9606')."
+          },
+          {
+            "name": "accessibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Accessibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value.",
+              "examples": [
+                "public-access"
+              ],
+              "title": "Accessibility"
+            },
+            "description": "Term filter on accessibility (all DB shared). Allowed: public-access, controlled-access. Re-injectable from the accessibility facet bucket value."
           },
           {
             "name": "organization",
@@ -17635,6 +18265,17 @@
               "title": "Tophits"
             },
             "description": "Per-DB top hits count.  ``0`` returns count-only (``databases[i].hits`` is ``null``); ``1``-``50`` returns up to N hits per DB.  Hits are ordered by relevance (``_score`` desc) with ``identifier`` ascending as the tiebreaker; when ``q`` is omitted (``match_all``) all scores tie, so ``identifier`` ascending becomes the effective order.  Out of range (>50 or negative) returns 422."
+          },
+          {
+            "name": "keywordOperator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/KeywordOperator",
+              "description": "Default boolean operator for bare word / phrase token connection inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) requires every token to match; ``OR`` requires at least one. The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL are unaffected.  ``/db-portal/parse`` does not accept this parameter (the parsed AST does not carry operator state).",
+              "default": "AND"
+            },
+            "description": "Default boolean operator for bare word / phrase token connection inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) requires every token to match; ``OR`` requires at least one. The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL are unaffected.  ``/db-portal/parse`` does not accept this parameter (the parsed AST does not carry operator state)."
           }
         ],
         "responses": {
@@ -17878,6 +18519,17 @@
               "title": "Sort"
             },
             "description": "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``."
+          },
+          {
+            "name": "keywordOperator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/KeywordOperator",
+              "description": "Default boolean operator for bare word / phrase token connection inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) requires every token to match; ``OR`` requires at least one. The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL are unaffected.  Exclusive with cursor when not at default (AND).",
+              "default": "AND"
+            },
+            "description": "Default boolean operator for bare word / phrase token connection inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) requires every token to match; ``OR`` requires at least one. The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL are unaffected.  Exclusive with cursor when not at default (AND)."
           }
         ],
         "responses": {
@@ -18134,6 +18786,15 @@
   },
   "components": {
     "schemas": {
+      "Accessibility": {
+        "type": "string",
+        "enum": [
+          "public-access",
+          "controlled-access"
+        ],
+        "title": "Accessibility",
+        "description": "INSDC accessibility levels carried by every entry."
+      },
       "AccessionType": {
         "type": "string",
         "enum": [

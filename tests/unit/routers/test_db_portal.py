@@ -1007,6 +1007,28 @@ class TestDbPortalCursor:
         assert resp.status_code == 400
         assert "q" in resp.json()["detail"]
 
+    def test_cursor_with_keyword_operator_or_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        """cursor + ``keywordOperator=OR`` は 400 排他 (普通 search と一貫した規約)."""
+        payload = CursorPayload(
+            pit_id=None,
+            search_after=["2024-01-15", "PRJDB1"],
+            sort=[
+                {"datePublished": {"order": "desc"}},
+                {"identifier": {"order": "asc"}},
+            ],
+            query={"match_all": {}},
+        )
+        token = encode_cursor(payload)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"cursor": token, "db": "bioproject", "keywordOperator": "OR"},
+        )
+        assert resp.status_code == 400
+        assert "keywordOperator" in resp.json()["detail"]
+
 
 class TestDbPortalCursorPBT:
     """Property-based cursor round-trip against db-portal offset handler."""
@@ -2873,6 +2895,142 @@ def _flatten_must(clause: dict[str, Any]) -> list[dict[str, Any]]:
     if "bool" in clause:
         return list(clause["bool"].get("must", []))
     return [clause]
+
+
+class TestKeywordOperatorOnDbPortal:
+    """``keywordOperator`` パラメータが FreeText の token 連結演算子を切り替えるか.
+
+    - ``AND`` (デフォルト): bool.must で multi_match を flat に並べる
+    - ``OR``: bool.should + minimum_should_match=1 で multi_match を並べる
+    - 明示 BoolOp (``q`` 中の ``AND`` / ``OR``) は影響を受けない
+    """
+
+    def test_search_default_and_uses_bool_must(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer,tumor"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        bool_clause = body["query"]["bool"]
+        # FreeText 単独 AST + AND → bool.must に multi_match が並ぶ
+        must = bool_clause.get("must")
+        assert isinstance(must, list)
+        queries = {c["multi_match"]["query"] for c in must if "multi_match" in c}
+        assert queries == {"cancer", "tumor"}
+        assert "should" not in bool_clause
+
+    def test_search_or_uses_bool_should(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer,tumor", "keywordOperator": "OR"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        bool_clause = body["query"]["bool"]
+        # FreeText 単独 AST + OR → bool.should + minimum_should_match=1
+        should = bool_clause.get("should")
+        assert isinstance(should, list)
+        queries = {c["multi_match"]["query"] for c in should if "multi_match" in c}
+        assert queries == {"cancer", "tumor"}
+        assert bool_clause.get("minimum_should_match") == 1
+
+    def test_search_explicit_or_in_dsl_unaffected_by_default_operator(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """DSL 内の明示 ``title:a OR title:b`` は keywordOperator=AND でも OR semantics を保つ.
+
+        compile_to_es の戻り値は ``bool.should + filter(status)`` (must は無い)
+        になっており、明示 OR のセマンティクスがそのまま反映される。
+        """
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "title:cancer OR title:tumor"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        bool_clause = body["query"]["bool"]
+        # 明示 OR は AST 上 BoolOp(OR, ...) → bool.should がトップ bool に直接出る
+        should = bool_clause["should"]
+        titles = {c["match_phrase"]["title"] for c in should if "match_phrase" in c}
+        assert titles == {"cancer", "tumor"}
+        assert bool_clause.get("minimum_should_match") == 1
+        # must は無い (filter は status のみ)
+        assert "must" not in bool_clause
+
+    def test_cross_search_or_uses_bool_should(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "cancer,tumor", "topHits": 0, "keywordOperator": "OR"},
+        )
+        assert resp.status_code == 200
+        # ES 側 (bioproject 等のいずれか) body を取って bool.should 構造を確認
+        body = get_es_search_body(mock_es_search_db_portal, call_index=0)
+        bool_clause = body["query"]["bool"]
+        should = bool_clause.get("should")
+        assert isinstance(should, list)
+        queries = {c["multi_match"]["query"] for c in should if "multi_match" in c}
+        assert queries == {"cancer", "tumor"}
+
+    def test_invalid_keyword_operator_returns_422(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "keywordOperator": "XOR"},
+        )
+        assert resp.status_code == 422
+
+    def test_cross_search_invalid_keyword_operator_returns_422(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"keywordOperator": "XOR"},
+        )
+        assert resp.status_code == 422
+
+    def test_arsa_or_uses_or_join(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        """ARSA も keywordOperator=OR で token 間が OR で連結される."""
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "trad", "q": "cancer,tumor", "keywordOperator": "OR"},
+        )
+        assert resp.status_code == 200
+        # ARSA 呼び出し時の q parameter を取り出す
+        call = mock_arsa_search_db_portal.call_args
+        params = call.kwargs.get("params") or call.args[-1]
+        q_value = params.get("q") if isinstance(params, dict) else None
+        assert q_value == '("cancer" OR "tumor")', f"unexpected ARSA q: {q_value!r}"
 
 
 class TestQueryAndJoin:

@@ -32,6 +32,7 @@ _SEARCH_FILTER_PARAM_NAMES = frozenset(
         "keywordFields",
         "keywordOperator",
         "organism",
+        "accessibility",
         "organization",
         "publication",
         "grant",

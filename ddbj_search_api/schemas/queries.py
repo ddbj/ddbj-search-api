@@ -40,6 +40,13 @@ class KeywordOperator(str, Enum):
     OR = "OR"
 
 
+class Accessibility(str, Enum):
+    """INSDC accessibility levels carried by every entry."""
+
+    public_access = "public-access"
+    controlled_access = "controlled-access"
+
+
 class BulkFormat(str, Enum):
     """Output format for the Bulk API."""
 
@@ -163,6 +170,15 @@ class SearchFilterQuery:
             examples=["9606"],
             description="NCBI Taxonomy ID, digits only (e.g. '9606').",
         ),
+        accessibility: Accessibility | None = Query(
+            default=None,
+            examples=["public-access"],
+            description=(
+                "Term filter on accessibility (all DB shared). "
+                "Allowed: public-access, controlled-access. "
+                "Re-injectable from the accessibility facet bucket value."
+            ),
+        ),
         organization: str | None = Query(
             default=None,
             examples=["DDBJ"],
@@ -221,6 +237,7 @@ class SearchFilterQuery:
         self.keyword_fields = keyword_fields
         self.keyword_operator = keyword_operator
         self.organism = organism
+        self.accessibility = accessibility
         self.organization = organization
         self.publication = publication
         self.grant = grant

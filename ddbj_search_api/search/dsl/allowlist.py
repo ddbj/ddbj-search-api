@@ -58,11 +58,15 @@ FIELD_TYPES: dict[str, FieldType] = {
     "accessibility": "enum",
     # === Tier 2 (cross, converter-normalized) ===
     "submitter": "text",
-    "publication": "identifier",
+    "publication": "text",
     # === Tier 3 BioProject ===
     "project_type": "enum",
     "grant_agency": "text",
     "relevance": "enum",
+    # BioProject + JGA 共通: externalLink nested の label。converter mapping は keyword だが、
+    # ラベル値 ("GEO" / "dbGaP" / "GEO Sample" など) はラベル名そのまま検索したい用途が
+    # 多いので text 型 (contains = match_phrase) で開放する。
+    "external_link_label": "text",
     # === Tier 3 BioSample (converter 0.3.0 で top-level 化) ===
     # converter mapping は text + keyword:256 (host/strain/isolate) または text 単独 (geo_loc_name/
     # collection_date)。値域が free text 寄り (Homo sapiens / liver / Tokyo, Japan / 2020-04 等) なので text 型。
@@ -85,6 +89,9 @@ FIELD_TYPES: dict[str, FieldType] = {
     "instrument_model": "text",
     "library_name": "text",
     "library_construction_protocol": "text",
+    # BioSample + SRA (sra-sample) 共通: derivedFrom nested の identifier (例: SAMD00012345)。
+    # converter mapping は keyword なので identifier 型 (eq / wildcard) で開放する。
+    "derived_from_id": "identifier",
     # analysis_type / dataset_type は controlled vocab に近い使われ方をするが、converter 側で
     # free string として受けるため、API 側でも text 型で開放する。
     "analysis_type": "text",
@@ -153,6 +160,8 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "relevance": ("bioproject",),
     # BioProject + JGA (jga-study のみ)
     "grant_agency": ("bioproject", "jga"),
+    # BioProject + JGA: externalLink nested (label)
+    "external_link_label": ("bioproject", "jga"),
     # BioSample-only
     "host": ("biosample",),
     "strain": ("biosample",),
@@ -173,6 +182,8 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "library_name": ("sra",),
     "library_construction_protocol": ("sra",),
     "analysis_type": ("sra",),
+    # BioSample + SRA: derivedFrom nested (identifier)
+    "derived_from_id": ("biosample", "sra"),
     # JGA + MetaboBank
     "study_type": ("jga", "metabobank"),
     # JGA-only (vendor=jga-study、dataset_type=jga-dataset)

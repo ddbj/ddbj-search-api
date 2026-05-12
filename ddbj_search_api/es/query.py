@@ -197,6 +197,7 @@ def build_search_query(
     keyword_fields: str | list[str] | None = None,
     keyword_operator: str = "AND",
     organism: str | None = None,
+    accessibility: str | None = None,
     date_published_from: str | None = None,
     date_published_to: str | None = None,
     date_modified_from: str | None = None,
@@ -254,6 +255,7 @@ def build_search_query(
     filters.extend(
         _build_filter_clauses(
             organism=organism,
+            accessibility=accessibility,
             date_published_from=date_published_from,
             date_published_to=date_published_to,
             date_modified_from=date_modified_from,
@@ -401,6 +403,7 @@ def _build_text_match_clause(
 
 def _build_filter_clauses(
     organism: str | None = None,
+    accessibility: str | None = None,
     date_published_from: str | None = None,
     date_published_to: str | None = None,
     date_modified_from: str | None = None,
@@ -439,6 +442,9 @@ def _build_filter_clauses(
 
     if organism:
         clauses.append({"term": {"organism.identifier": organism}})
+
+    if accessibility:
+        clauses.append({"term": {"accessibility": accessibility}})
 
     # datePublished range
     date_pub_range: dict[str, str] = {}

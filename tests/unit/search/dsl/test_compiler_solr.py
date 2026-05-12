@@ -146,14 +146,14 @@ class TestPhraseEscaping:
 """=== Tier 2 / Tier 3 ==="""
 
 
-class TestArsaTier2Publication:
-    """Tier 2 publication は ARSA で ReferencePubmedID にマップ."""
+class TestArsaTier2PublicationDegenerate:
+    """Tier 2 publication は publication.title (text) に正規化され、ARSA に相当 field なし → degenerate."""
 
-    def test_publication_word(self) -> None:
-        assert _c("publication:12345678") == 'ReferencePubmedID:"12345678"'
+    def test_publication_word_degenerate(self) -> None:
+        assert _c("publication:cancer") == "(-*:*)"
 
-    def test_publication_wildcard(self) -> None:
-        assert _c("publication:123*") == "ReferencePubmedID:123*"
+    def test_publication_wildcard_degenerate(self) -> None:
+        assert _c("publication:canc*") == "(-*:*)"
 
 
 class TestArsaTier2SubmitterDegenerate:
@@ -170,7 +170,7 @@ class TestTxSearchTier2Degenerate:
         assert _c("submitter:foo", "txsearch") == "(-*:*)"
 
     def test_publication_degenerate(self) -> None:
-        assert _c("publication:123", "txsearch") == "(-*:*)"
+        assert _c("publication:cancer", "txsearch") == "(-*:*)"
 
 
 class TestArsaTier3Trad:
@@ -214,6 +214,8 @@ class TestArsaTier3EsOnlyDegenerate:
             "package:MIGS.ba",
             "model:HiSeq",
             "type:sra-experiment",
+            "external_link_label:GEO",
+            "derived_from_id:SAMD00012345",
         ],
     )
     def test_es_tier3_degenerates_on_arsa(self, dsl: str) -> None:
@@ -299,6 +301,8 @@ class TestTxSearchEsOnlyTier3Degenerate:
             "package:MIGS.ba",
             "model:HiSeq",
             "type:sra-experiment",
+            "external_link_label:GEO",
+            "derived_from_id:SAMD00012345",
         ],
     )
     def test_es_tier3_degenerates_on_txsearch(self, dsl: str) -> None:
@@ -348,15 +352,22 @@ class TestCompilerSolrPBT:
 
 
 class TestCompileFreeTextSolr:
-    """compile_free_text_solr: トークンを quote / space-join して edismax ``q`` を返す."""
+    """compile_free_text_solr: トークンを quote し、operator (AND/OR) で連結して edismax ``q`` を返す."""
 
     def test_single_token(self) -> None:
-
         assert compile_free_text_solr("cancer") == '"cancer"'
 
-    def test_multiple_tokens_space_joined(self) -> None:
+    def test_multiple_tokens_default_and(self) -> None:
+        # token 間は AND がデフォルト (DSL の明示 BoolOp とは独立)
+        assert compile_free_text_solr("cancer, human") == '("cancer" AND "human")'
 
-        assert compile_free_text_solr("cancer, human") == '"cancer" "human"'
+    def test_multiple_tokens_or_operator(self) -> None:
+        # operator="OR" で token 間を OR 連結
+        assert compile_free_text_solr("cancer, human", operator="OR") == '("cancer" OR "human")'
+
+    def test_single_token_or_operator_omits_paren(self) -> None:
+        # 1 token のときは連結も括弧も不要 (operator に依らない)
+        assert compile_free_text_solr("cancer", operator="OR") == '"cancer"'
 
     def test_stray_quote_in_token_stripped(self) -> None:
         """stray double-quote は tokenize_keywords が strip する (escape されない)."""
@@ -437,3 +448,27 @@ class TestCompileToSolrFreeTextNode:
         )
         result = compile_to_solr(composite, dialect="arsa")
         assert result == '(Definition:"cancer" AND *:*)'
+
+    def test_free_text_multi_token_or_operator(self) -> None:
+        """operator="OR" で FreeText の token 間が OR で連結される (token 区切りは
+        カンマ。空白区切りでは 1 token のまま)。"""
+        node = FreeText("cancer, tumor")
+        assert compile_to_solr(node, dialect="arsa", free_text_operator="OR") == '("cancer" OR "tumor")'
+        assert compile_to_solr(node, dialect="txsearch", free_text_operator="OR") == '("cancer" OR "tumor")'
+
+    def test_and_of_adv_and_free_text_or_keeps_inner_or(self) -> None:
+        """BoolOp(AND, [adv, FreeText("a, b")], free_text_operator="OR") は
+        adv AND ("a" OR "b") 形に括弧で分離して残る (AND 句に inline されない)。"""
+        adv_ast = FieldClause(
+            field="title",
+            value_kind="word",
+            value="leukemia",
+            position=Position(column=1, length=14),
+        )
+        composite = BoolOp(
+            op="AND",
+            children=(adv_ast, FreeText("apple, banana")),
+            position=Position(column=1, length=14),
+        )
+        result = compile_to_solr(composite, dialect="arsa", free_text_operator="OR")
+        assert result == '(Definition:"leukemia" AND ("apple" OR "banana"))'

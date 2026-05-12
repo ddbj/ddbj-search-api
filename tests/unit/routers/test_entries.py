@@ -311,6 +311,25 @@ class TestEntriesSearch:
         assert len(term_filters) == 1
         assert term_filters[0]["term"]["organism.identifier"] == "9606"
 
+    def test_accessibility_filter_passed_to_es(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        app_with_es.get("/entries/", params={"accessibility": "controlled-access"})
+        body = get_es_search_body(mock_es_search)
+        filters = body["query"]["bool"]["filter"]
+        acc_filters = [f for f in filters if "term" in f and "accessibility" in f["term"]]
+        # 期待: accessibility term filter が 1 つ生成され、status filter とは
+        # 別に出る (status はファセット用 status:public が常に prepend されるが、
+        # こちらは ``accessibility`` キーで分離して識別する)
+        assert len(acc_filters) == 1
+        assert acc_filters[0]["term"]["accessibility"] == "controlled-access"
+
+    def test_accessibility_invalid_value_returns_422(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get("/entries/", params={"accessibility": "private"})
+        assert resp.status_code == 422
+
     def test_keyword_operator_or(
         self,
         app_with_es: TestClient,
@@ -1204,6 +1223,14 @@ class TestCursorExclusivity:
         )
         assert resp.status_code == 400
         assert "organism" in resp.json()["detail"]
+
+    def test_cursor_with_accessibility_returns_400(self, app_with_es: TestClient) -> None:
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "accessibility": "public-access"},
+        )
+        assert resp.status_code == 400
+        assert "accessibility" in resp.json()["detail"]
 
     def test_cursor_with_types_returns_400(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get(

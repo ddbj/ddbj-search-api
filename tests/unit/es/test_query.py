@@ -391,6 +391,26 @@ class TestBuildSearchQueryFilters:
         organism_filter = _find_filter(filters, "term", "organism.identifier")
         assert organism_filter["term"]["organism.identifier"] == "9606"
 
+    # --- Accessibility ---
+
+    def test_accessibility_public_access_filter(self) -> None:
+        result = build_search_query(accessibility="public-access")
+        filters = result["bool"]["filter"]
+        acc_filter = _find_filter(filters, "term", "accessibility")
+        assert acc_filter["term"]["accessibility"] == "public-access"
+
+    def test_accessibility_controlled_access_filter(self) -> None:
+        result = build_search_query(accessibility="controlled-access")
+        filters = result["bool"]["filter"]
+        acc_filter = _find_filter(filters, "term", "accessibility")
+        assert acc_filter["term"]["accessibility"] == "controlled-access"
+
+    def test_accessibility_none_emits_no_filter(self) -> None:
+        result = build_search_query(accessibility=None)
+        filters = result["bool"].get("filter", [])
+        # status filter は残るが accessibility filter は出ない
+        assert not any("accessibility" in (f.get("term") or {}) for f in filters)
+
     # --- Date published ---
 
     def test_date_published_from(self) -> None:

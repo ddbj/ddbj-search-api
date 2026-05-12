@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -192,6 +192,8 @@ def _validate_cursor_exclusivity(query: DbPortalSearchQuery) -> None:
         conflicting.append("q")
     if query.sort is not None:
         conflicting.append("sort")
+    if query.keyword_operator.value != "AND":
+        conflicting.append("keywordOperator")
     if conflicting:
         raise HTTPException(
             status_code=400,
@@ -225,7 +227,7 @@ def _map_httpx_error(exc: Exception) -> DbPortalCountError:
     return DbPortalCountError.unknown
 
 
-_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "topHits"})
+_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "topHits", "keywordOperator"})
 
 
 def _reject_unexpected_cross_params(request: Request) -> None:
@@ -290,27 +292,44 @@ def _resolve_status_mode(ast: DslNode | None) -> StatusMode:
     return "include_suppressed" if detect_accession_exact_match_in_ast(ast) is not None else "public_only"
 
 
-def _build_es_query_for_ast(ast: DslNode | None, status_mode: StatusMode) -> dict[str, Any]:
+def _build_es_query_for_ast(
+    ast: DslNode | None,
+    status_mode: StatusMode,
+    *,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> dict[str, Any]:
     """AST から ES query body を生成し、status filter を注入する.
 
     ``ast=None`` (``q`` 未指定) は ``build_search_query(keywords=None, ...)``
     と同形式の ``{"bool": {"filter": [<status>]}}`` を返す (keyword 無し + filter のみ)。
     ``ast`` が空の ``match_all`` ラップで誤って ``must`` に ``match_all`` を残さないよう、
     build_search_query 経由の形式に合わせる。
+
+    ``free_text_operator`` は AST 中の FreeText ノードのトークン連結演算子を制御する
+    (``AND`` / ``OR``)。``q`` 未指定パスでは AST 不在のため何も伝播しない。
     """
     if ast is None:
         return build_search_query(keywords=None, keyword_operator="AND", status_mode=status_mode)
-    return inject_status_filter(compile_to_es(ast), status_mode)
+    return inject_status_filter(
+        compile_to_es(ast, free_text_operator=free_text_operator),
+        status_mode,
+    )
 
 
-def _build_solr_q_for_ast(ast: DslNode | None, *, dialect: str) -> str:
+def _build_solr_q_for_ast(
+    ast: DslNode | None,
+    *,
+    dialect: str,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> str:
     """AST から Solr edismax ``q`` 文字列を生成する.
 
-    ``ast=None`` は ``*:*`` (all-docs)。dialect は ``"arsa"`` / ``"txsearch"``.
+    ``ast=None`` は ``*:*`` (all-docs)。dialect は ``"arsa"`` / ``"txsearch"``。
+    ``free_text_operator`` は AST 中の FreeText ノードのトークン連結演算子を制御する。
     """
     if ast is None:
         return "*:*"
-    return compile_to_solr(ast, dialect=dialect)  # type: ignore[arg-type]
+    return compile_to_solr(ast, dialect=dialect, free_text_operator=free_text_operator)  # type: ignore[arg-type]
 
 
 # === Cross-database fan-out (count + optional top hits) ===
@@ -595,15 +614,18 @@ async def _cross_search_dispatch(
     config: AppConfig,
     ast: DslNode | None,
     top_hits: int,
+    *,
+    free_text_operator: Literal["AND", "OR"] = "AND",
 ) -> DbPortalCrossSearchResponse:
     """cross-search 単一 dispatch (AST → 8 DB fan-out).
 
     ``ast=None`` (``q`` 未指定) は ``match_all`` (ES) / ``*:*`` (Solr) でカウントだけ取る。
+    ``free_text_operator`` は AST 中の FreeText ノードのトークン連結演算子を制御する。
     """
     status_mode = _resolve_status_mode(ast)
-    es_query_body = _build_es_query_for_ast(ast, status_mode)
-    arsa_q = _build_solr_q_for_ast(ast, dialect="arsa")
-    txsearch_q = _build_solr_q_for_ast(ast, dialect="txsearch")
+    es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_operator)
+    arsa_q = _build_solr_q_for_ast(ast, dialect="arsa", free_text_operator=free_text_operator)
+    txsearch_q = _build_solr_q_for_ast(ast, dialect="txsearch", free_text_operator=free_text_operator)
     with_uf = ast is not None and ast_has_field_clause(ast)
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
@@ -815,6 +837,7 @@ async def _db_specific_search_dispatch(
     """
     assert query.db is not None
     with_uf = ast is not None and ast_has_field_clause(ast)
+    free_text_op: Literal["AND", "OR"] = query.keyword_operator.value
     if query.db in _SOLR_DBS:
         _validate_deep_paging(query.page, query.per_page)
         if query.db == DbPortalDb.trad:
@@ -822,18 +845,18 @@ async def _db_specific_search_dispatch(
                 solr_client,
                 config,
                 query,
-                _build_solr_q_for_ast(ast, dialect="arsa"),
+                _build_solr_q_for_ast(ast, dialect="arsa", free_text_operator=free_text_op),
                 with_uf=with_uf,
             )
         return await _search_txsearch_unified(
             solr_client,
             config,
             query,
-            _build_solr_q_for_ast(ast, dialect="txsearch"),
+            _build_solr_q_for_ast(ast, dialect="txsearch", free_text_operator=free_text_op),
             with_uf=with_uf,
         )
     status_mode = _resolve_status_mode(ast)
-    es_query_body = _build_es_query_for_ast(ast, status_mode)
+    es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_op)
     return await _db_specific_search_es_unified(es_client, query, es_query_body)
 
 
@@ -921,7 +944,14 @@ async def _cross_search_handler(
     """
     _reject_unexpected_cross_params(request)
     ast = _parse_and_validate_query(query.q, db=None, config=config) if query.q else None
-    return await _cross_search_dispatch(es_client, solr_client, config, ast, query.top_hits)
+    return await _cross_search_dispatch(
+        es_client,
+        solr_client,
+        config,
+        ast,
+        query.top_hits,
+        free_text_operator=query.keyword_operator.value,
+    )
 
 
 async def _db_search_handler(

@@ -4,10 +4,11 @@ SSOT: search-backends.md §バックエンド変換.
 
 Dialect:
 - ``arsa``: ARSA (Solr 4.4.0)。Tier 1 (``PrimaryAccessionNumber`` / ``Definition`` /
-  ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Tier 2 ``publication`` →
-  ``ReferencePubmedID`` + Trad Tier 3 (``Division`` / ``MolecularType`` / ``SequenceLength`` /
-  ``FeatureQualifier`` / ``ReferenceJournal``)。``date_modified`` / ``date_created`` /
-  ``date`` alias、submitter (organization は ARSA にない)、ES-only / Taxonomy 系 Tier 3 は degenerate。
+  ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Trad Tier 3 (``Division`` /
+  ``MolecularType`` / ``SequenceLength`` / ``FeatureQualifier`` / ``ReferenceJournal``)。
+  ``date_modified`` / ``date_created`` / ``date`` alias、submitter / publication
+  (organization も publication.title 相当の field も ARSA にない)、ES-only / Taxonomy 系
+  Tier 3 は degenerate。
 - ``txsearch``: TXSearch (Solr 4.4.0)。Tier 1 (``tax_id`` / ``scientific_name`` / ``text``) +
   Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``common_name``; 10 field)。
   organism 自体が Taxonomy のため ``organism`` + 日付 + Tier 2 + Trad/ES-only Tier 3 は degenerate。
@@ -48,8 +49,9 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "organism": ("Organism", "Lineage"),
     "date_published": ("Date",),
     # === Tier 2 ===
-    "publication": ("ReferencePubmedID",),
-    # submitter は ARSA に相当 field なし → _ARSA_UNAVAILABLE で degenerate
+    # publication は publication.title (text) に正規化したため ARSA に対応 field なし
+    # (旧 publication.id → ReferencePubmedID マップは廃止)。
+    # submitter / publication は _ARSA_UNAVAILABLE で degenerate される。
     # === Tier 3 Trad only ===
     "division": ("Division",),
     "molecular_type": ("MolecularType",),
@@ -110,14 +112,21 @@ def txsearch_uf_fields() -> tuple[str, ...]:
     return tuple(sorted(seen))
 
 
-def compile_free_text_solr(value: str) -> str:
+def compile_free_text_solr(
+    value: str,
+    *,
+    operator: Literal["AND", "OR"] = "AND",
+) -> str:
     """シンプル検索 (``q``) を edismax ``q`` 文字列に変換する.
 
     各トークンを ``escape_solr_phrase`` で escape して double-quote wrap し、
-    space-join する。``ARSA`` / ``TXSearch`` どちらも同形式で、dialect 依存しない。
+    ``operator`` ("AND" または "OR") で連結する。``ARSA`` / ``TXSearch`` どちらも
+    同形式で、dialect 依存しない。
 
-    括弧でくくらず素のトークン列を返す。``BoolOp`` 配下では上位 ``_compile_node`` が
-    AND/OR/NOT 結合時に外側括弧を付与する (現状の ``compile_to_solr`` の挙動を踏襲)。
+    トークンが 1 つだけのときは括弧を省略する (escape されたフレーズそのまま)。
+    複数トークンの時は ``"(<t1> AND <t2> ...)"`` または ``"(<t1> OR <t2> ...)"`` の
+    形で外側括弧を付ける。Solr edismax の ``q.op`` には依存せず、token 間の演算子を
+    明示することで DSL の ``AND`` / ``OR`` BoolOp と挙動を干渉させない。
 
     入力がトークン化後に空 (None / "" / 空白のみ / カンマ区切り全部空) の場合は
     edismax all-docs ``*:*`` を返す。
@@ -125,27 +134,46 @@ def compile_free_text_solr(value: str) -> str:
     tokens = tokenize_keywords(value)
     if not tokens:
         return _FREE_TEXT_EMPTY_FALLBACK
-    return " ".join(f'"{escape_solr_phrase(t)}"' for t in tokens)
+    quoted = [f'"{escape_solr_phrase(t)}"' for t in tokens]
+    if len(quoted) == 1:
+        return quoted[0]
+    joiner = f" {operator} "
+    return "(" + joiner.join(quoted) + ")"
 
 
-def compile_to_solr(ast: Node, *, dialect: SolrDialect) -> str:
+def compile_to_solr(
+    ast: Node,
+    *,
+    dialect: SolrDialect,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> str:
     """Convert a validated AST to an edismax ``q`` string for the given Solr dialect.
 
     ``FreeText`` ノードは dialect 非依存の ``compile_free_text_solr`` で展開する.
+    ``free_text_operator`` は FreeText 内部のトークン連結に使う演算子を指定する
+    (``AND`` / ``OR``)。DSL の明示 ``AND`` / ``OR`` / ``NOT`` BoolOp は影響を受けない。
+
     トップレベル AND 直下に FreeText が混じる AST では、AND が既存ロジック
     ``"(" + " AND ".join(children_q) + ")"`` で結合するため
     ``(<field_compiled> AND "<freetext_token>" ...)`` 形式の単一外側括弧クエリに
     なる。
     """
-    return _compile_node(ast, dialect=dialect)
+    return _compile_node(ast, dialect=dialect, free_text_operator=free_text_operator)
 
 
-def _compile_node(node: Node, *, dialect: SolrDialect) -> str:
+def _compile_node(
+    node: Node,
+    *,
+    dialect: SolrDialect,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> str:
     if isinstance(node, FreeText):
-        return compile_free_text_solr(node.value)
+        return compile_free_text_solr(node.value, operator=free_text_operator)
     if isinstance(node, FieldClause):
         return _compile_leaf(node, dialect=dialect)
-    children_q = [_compile_node(c, dialect=dialect) for c in node.children]
+    children_q = [
+        _compile_node(c, dialect=dialect, free_text_operator=free_text_operator) for c in node.children
+    ]
     if node.op == "AND":
         return "(" + " AND ".join(children_q) + ")"
     if node.op == "OR":

@@ -70,7 +70,7 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "accessibility": _ESStrategy(kind="flat", path="accessibility"),
     # === Tier 2 ===
     "submitter": _ESStrategy(kind="nested", path="organization", sub="organization.name"),
-    "publication": _ESStrategy(kind="nested", path="publication", sub="publication.id"),
+    "publication": _ESStrategy(kind="nested", path="publication", sub="publication.title"),
     # === Tier 3 flat ===
     # SRA / GEA / MetaboBank の enum 系 (libraryStrategy 等) は ES mapping が text+keyword
     # multi-field のため、term query には `.keyword` サブフィールドを使う必要がある
@@ -113,6 +113,25 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
         inner_path="grant.agency",
         sub="grant.agency.name",
     ),
+    # === Tier 3 nested ===
+    # BioProject / JGA 共通: externalLink[].label。converter mapping は keyword だが、
+    # allowlist で text 型扱いとして公開しているため、contains 経由で match_phrase
+    # (順序保持) になる。普通 search 側の `externalLinkLabel` は match (analyzer 経由)
+    # なので analyzer 差はあるが、portal DSL の演算子セマンティクスを優先する。
+    "external_link_label": _ESStrategy(
+        kind="nested",
+        path="externalLink",
+        sub="externalLink.label",
+    ),
+    # BioSample / SRA (sra-sample) 共通: derivedFrom[].identifier。
+    # identifier 型なので eq (term) / wildcard 経路。普通 search 側 `derivedFromId` は
+    # match (analyzer 経由) なので analyzer 差はあるが、accession ID は大小区別なしで
+    # 一致するため実害は小さい。
+    "derived_from_id": _ESStrategy(
+        kind="nested",
+        path="derivedFrom",
+        sub="derivedFrom.identifier",
+    ),
     # Trad / Taxonomy 系 Tier 3 は ES 対象外 (compiler_solr で処理)。本 map には入れない。
 }
 
@@ -152,50 +171,74 @@ def compile_free_text(
     return {"bool": {"must": multi_matches}}
 
 
-def compile_to_es(ast: Node) -> dict[str, Any]:
+def compile_to_es(
+    ast: Node,
+    *,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> dict[str, Any]:
     """Convert a validated AST to an ES query body (value of the ``query`` key).
 
     Returns a bool / leaf dict suitable for embedding as ``{"query": <result>, "size": ...}``
     — matches the shape produced by :func:`ddbj_search_api.es.query.build_search_query` so
     the router can route all queries through the same helpers.
 
-    ``FreeText`` ノードは ``compile_free_text`` のデフォルト fields + ``AND`` 操作子で
-    展開する。トップレベル AND の直下に FreeText が混じった AST (``cancer AND
-    organism:9606`` 等) では、FreeText 子の ``bool.must`` 中身を上位 ``bool.must``
-    に flatten して単一 bool 句にまとめる。
+    ``free_text_operator`` controls the boolean connection of multiple bare-word /
+    phrase tokens inside a ``FreeText`` node (``cancer tumor`` → ``cancer AND tumor``
+    or ``cancer OR tumor``).  ``AND`` (default) emits ``bool.must``; ``OR`` emits
+    ``bool.should`` + ``minimum_should_match=1``.  The explicit ``AND`` / ``OR`` /
+    ``NOT`` BoolOps inside the AST are unaffected.
+
+    トップレベル AND の直下に FreeText が混じった AST (``cancer AND organism:9606`` 等)
+    では、``free_text_operator=AND`` のときに限り FreeText 子の ``bool.must`` 中身を
+    上位 ``bool.must`` に flatten して単一 bool 句にまとめる。OR の場合は FreeText の
+    ``bool.should`` が semantics 上 inline 化できないので、入れ子の bool 句として残す。
     """
-    return _compile_node(ast)
+    return _compile_node(ast, free_text_operator=free_text_operator)
 
 
-def _compile_node(node: Node) -> dict[str, Any]:
+def _compile_node(node: Node, *, free_text_operator: Literal["AND", "OR"] = "AND") -> dict[str, Any]:
     if isinstance(node, FreeText):
-        return compile_free_text(node.value)
+        return compile_free_text(node.value, operator=free_text_operator)
     if isinstance(node, FieldClause):
         return _compile_leaf(node)
     if node.op == "AND":
-        return {"bool": {"must": _compile_and_children(node.children)}}
+        return {
+            "bool": {
+                "must": _compile_and_children(node.children, free_text_operator=free_text_operator),
+            },
+        }
     if node.op == "OR":
         return {
             "bool": {
-                "should": [_compile_node(c) for c in node.children],
+                "should": [_compile_node(c, free_text_operator=free_text_operator) for c in node.children],
                 "minimum_should_match": 1,
             },
         }
     # NOT
-    return {"bool": {"must_not": [_compile_node(c) for c in node.children]}}
+    return {
+        "bool": {
+            "must_not": [_compile_node(c, free_text_operator=free_text_operator) for c in node.children],
+        },
+    }
 
 
-def _compile_and_children(children: tuple[Node, ...]) -> list[dict[str, Any]]:
+def _compile_and_children(
+    children: tuple[Node, ...],
+    *,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> list[dict[str, Any]]:
     """AND の子ノードを compile し、FreeText 由来の ``bool.must`` を flatten する.
 
-    AND 直下では FreeText が生成する ``bool.must=[multi_match_1, ...]`` をそのまま
-    親 AND の clauses に展開し、入れ子の bool wrapper を 1 段減らす。
-    OR / NOT 配下では flatten しない (bool 構造の意味が変わるため)。
+    ``free_text_operator=AND`` のときのみ FreeText が生成する ``bool.must=[multi_match_1, ...]``
+    をそのまま親 AND の clauses に展開し、入れ子の bool wrapper を 1 段減らす。
+    OR では FreeText が ``bool.should`` を生成するため、AND clauses に直接展開すると
+    semantics が崩れる (token 間 OR ではなくなる)。そのため OR 時は flatten しない。
+    OR / NOT 配下 (子の側) でも flatten しない (bool 構造の意味が変わるため)。
     """
     clauses: list[dict[str, Any]] = []
     for child in children:
-        compiled = _compile_node(child)
-        if isinstance(child, FreeText):
+        compiled = _compile_node(child, free_text_operator=free_text_operator)
+        if isinstance(child, FreeText) and free_text_operator == "AND":
             inner = compiled.get("bool", {}).get("must")
             if isinstance(inner, list):
                 clauses.extend(inner)

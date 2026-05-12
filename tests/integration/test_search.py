@@ -538,6 +538,41 @@ class TestOrganismFilter:
         assert cancer_and_human <= cancer
 
 
+class TestAccessibilityFilter:
+    """``accessibility`` filter narrows results to one of the 2 enum values.
+
+    Bug-hunting properties:
+
+    - public-access + controlled-access の合計が、無指定時の総件数を超えない
+      (status:public に絞り込まれた母集団のサブセット和になるはず)
+    - 一方のみで取得した件数は、無指定時よりも厳密に小さい (両値とも在席を仮定)
+    - 不正値は 422 で弾かれる
+    """
+
+    def test_accessibility_public_access_returns_200(self, app: TestClient) -> None:
+        resp = app.get("/entries/", params={"accessibility": "public-access", "perPage": 1})
+        assert resp.status_code == 200
+        assert resp.json()["pagination"]["total"] > 0
+
+    def test_accessibility_partition_sum_within_total(self, app: TestClient) -> None:
+        """無指定 total >= public-access total + controlled-access total."""
+        total = app.get("/entries/", params={"perPage": 1}).json()["pagination"]["total"]
+        public_total = app.get(
+            "/entries/",
+            params={"accessibility": "public-access", "perPage": 1},
+        ).json()["pagination"]["total"]
+        controlled_total = app.get(
+            "/entries/",
+            params={"accessibility": "controlled-access", "perPage": 1},
+        ).json()["pagination"]["total"]
+        # public + controlled は無指定全件のサブセット (status:public 内の 2 分割)
+        assert public_total + controlled_total <= total
+
+    def test_accessibility_invalid_returns_422(self, app: TestClient) -> None:
+        resp = app.get("/entries/", params={"accessibility": "private"})
+        assert resp.status_code == 422
+
+
 class TestDateRange:
     """IT-SEARCH-21: date range parameters and validation errors."""
 

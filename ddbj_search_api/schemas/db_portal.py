@@ -31,6 +31,8 @@ from ddbj_search_converter.schema import (
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from ddbj_search_api.schemas.queries import KeywordOperator
+
 
 class DbPortalDb(str, Enum):
     """Database identifier for db-portal search (8 values)."""
@@ -136,9 +138,22 @@ class DbPortalCrossSearchQuery:
                 "effective order.  Out of range (>50 or negative) returns 422."
             ),
         ),
+        keyword_operator: KeywordOperator = Query(
+            default=KeywordOperator.AND,
+            alias="keywordOperator",
+            description=(
+                "Default boolean operator for bare word / phrase token connection "
+                "inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) "
+                "requires every token to match; ``OR`` requires at least one. "
+                "The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL "
+                "are unaffected.  ``/db-portal/parse`` does not accept this parameter "
+                "(the parsed AST does not carry operator state)."
+            ),
+        ),
     ) -> None:
         self.q = q
         self.top_hits = top_hits
+        self.keyword_operator = keyword_operator
 
 
 class DbPortalSearchQuery:
@@ -203,6 +218,17 @@ class DbPortalSearchQuery:
                 "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``."
             ),
         ),
+        keyword_operator: KeywordOperator = Query(
+            default=KeywordOperator.AND,
+            alias="keywordOperator",
+            description=(
+                "Default boolean operator for bare word / phrase token connection "
+                "inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) "
+                "requires every token to match; ``OR`` requires at least one. "
+                "The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL "
+                "are unaffected.  Exclusive with cursor when not at default (AND)."
+            ),
+        ),
     ) -> None:
         # Pydantic's Literal[int] does not coerce HTTP query strings to int,
         # so per_page is typed ``int`` and constrained explicitly here while
@@ -227,6 +253,7 @@ class DbPortalSearchQuery:
         self.per_page = per_page
         self.cursor = cursor
         self.sort = sort
+        self.keyword_operator = keyword_operator
 
 
 class DbPortalCount(BaseModel):
