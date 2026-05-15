@@ -190,7 +190,13 @@ class TestValidateKeywordFields:
 
     def test_none_returns_default_fields(self) -> None:
         result = validate_keyword_fields(None)
-        assert set(result) == {"identifier", "title", "name", "description"}
+        assert set(result) == {
+            "identifier",
+            "title",
+            "name",
+            "description",
+            "organism.name",
+        }
 
     def test_single_field(self) -> None:
         assert validate_keyword_fields("title") == ["title"]
@@ -201,9 +207,19 @@ class TestValidateKeywordFields:
 
     def test_all_valid_fields(self) -> None:
         result = validate_keyword_fields(
-            "identifier,title,name,description",
+            "identifier,title,name,description,organism.name",
         )
-        assert set(result) == {"identifier", "title", "name", "description"}
+        assert set(result) == {
+            "identifier",
+            "title",
+            "name",
+            "description",
+            "organism.name",
+        }
+
+    def test_organism_name_field(self) -> None:
+        # ピリオドを含む field 名が allowlist 検証を素通りすることを担保する。
+        assert validate_keyword_fields("organism.name") == ["organism.name"]
 
     def test_whitespace_trimmed(self) -> None:
         result = validate_keyword_fields(" title , name ")
@@ -305,7 +321,31 @@ class TestBuildSearchQueryKeywords:
     def test_single_keyword_searches_all_default_fields(self) -> None:
         result = build_search_query(keywords="cancer")
         fields = result["bool"]["must"][0]["multi_match"]["fields"]
-        assert set(fields) == {"identifier", "title", "name", "description"}
+        assert set(fields) == {
+            "identifier",
+            "title",
+            "name",
+            "description",
+            "organism.name",
+        }
+
+    def test_auto_phrase_keyword_inherits_organism_name(self) -> None:
+        # auto-phrase 経路 (multi_match type=phrase) でも default fields の
+        # organism.name が落ちないことを担保する。
+        result = build_search_query(keywords="SARS-CoV-2")
+        multi_match = result["bool"]["must"][0]["multi_match"]
+        assert multi_match["type"] == "phrase"
+        assert "organism.name" in multi_match["fields"]
+
+    def test_keyword_fields_organism_name_only(self) -> None:
+        # organism.name 単独指定が allowlist → fields → multi_match まで
+        # ピリオドを含む field 名のまま運ばれることを確認する。
+        result = build_search_query(
+            keywords="Homo sapiens",
+            keyword_fields="organism.name",
+        )
+        must = result["bool"]["must"]
+        assert must[0]["multi_match"]["fields"] == ["organism.name"]
 
     def test_multiple_keywords_and_operator(self) -> None:
         """AND: all keywords in bool.must (all must match)."""

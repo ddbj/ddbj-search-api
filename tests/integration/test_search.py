@@ -617,9 +617,12 @@ class TestDateRange:
 
 
 class TestKeywordFields:
-    """IT-SEARCH-22: ``keywordFields`` allowlist (identifier / title / name / description)."""
+    """IT-SEARCH-22: ``keywordFields`` allowlist (identifier / title / name / description / organism.name)."""
 
-    @pytest.mark.parametrize("field", ["identifier", "title", "name", "description"])
+    @pytest.mark.parametrize(
+        "field",
+        ["identifier", "title", "name", "description", "organism.name"],
+    )
     def test_each_field_accepted(self, app: TestClient, field: str) -> None:
         """IT-SEARCH-22: each documented field name is accepted."""
         resp = app.get(

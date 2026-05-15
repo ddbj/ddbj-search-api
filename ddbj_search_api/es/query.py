@@ -24,7 +24,7 @@ _SORT_FIELD_MAP: dict[str, str] = {
 
 _VALID_SORT_DIRECTIONS = {"asc", "desc"}
 
-_DEFAULT_KEYWORD_FIELDS = ["identifier", "title", "name", "description"]
+_DEFAULT_KEYWORD_FIELDS = ["identifier", "title", "name", "description", "organism.name"]
 
 _VALID_KEYWORD_FIELDS = set(_DEFAULT_KEYWORD_FIELDS)
 

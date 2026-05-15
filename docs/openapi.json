@@ -100,19 +100,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -671,19 +671,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -1284,19 +1284,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -1959,19 +1959,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -2760,19 +2760,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -3561,19 +3561,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -4362,19 +4362,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -5163,19 +5163,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -5964,19 +5964,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -6765,19 +6765,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -7398,19 +7398,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -8031,19 +8031,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -8664,19 +8664,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -9297,19 +9297,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -9867,19 +9867,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -11101,19 +11101,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -11446,19 +11446,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -11833,19 +11833,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -12282,19 +12282,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -12857,19 +12857,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -13432,19 +13432,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -14007,19 +14007,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -14582,19 +14582,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -15157,19 +15157,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -15732,19 +15732,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -16139,19 +16139,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -16546,19 +16546,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -16953,19 +16953,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -17360,19 +17360,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",
@@ -17704,19 +17704,19 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+                  "pattern": "^(identifier|title|name|description|organism\\.name)(,(identifier|title|name|description|organism\\.name))*$"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description.",
+              "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name.",
               "examples": [
                 "title,description"
               ],
               "title": "Keywordfields"
             },
-            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description."
+            "description": "Limit keyword search to specific fields (comma-separated). Allowed: identifier, title, name, description, organism.name."
           },
           {
             "name": "keywordOperator",

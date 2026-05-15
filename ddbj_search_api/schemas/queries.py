@@ -19,7 +19,10 @@ from ddbj_search_api.schemas.common import DbType
 # Patterns expressed in OpenAPI for client codegen / docs.  Semantic
 # validation that emits a custom detail message (e.g. unknown-type lookup
 # in TypesFilterQuery) is performed in addition to the pattern check.
-_KEYWORD_FIELDS_PATTERN = r"^(identifier|title|name|description)(,(identifier|title|name|description))*$"
+_KEYWORD_FIELDS_PATTERN = (
+    r"^(identifier|title|name|description|organism\.name)"
+    r"(,(identifier|title|name|description|organism\.name))*$"
+)
 _DB_TYPES_PATTERN = (
     r"^(bioproject|biosample|sra-submission|sra-study|sra-experiment|sra-run|sra-sample|sra-analysis|"
     r"jga-study|jga-dataset|jga-dac|jga-policy|gea|metabobank)"
@@ -156,7 +159,7 @@ class SearchFilterQuery:
             description=(
                 "Limit keyword search to specific fields "
                 "(comma-separated). "
-                "Allowed: identifier, title, name, description."
+                "Allowed: identifier, title, name, description, organism.name."
             ),
         ),
         keyword_operator: KeywordOperator = Query(

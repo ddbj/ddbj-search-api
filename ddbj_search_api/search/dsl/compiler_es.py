@@ -150,8 +150,10 @@ def compile_free_text(
     ノード) で同じロジックを共有する。
 
     ``fields`` を省略すると ``("identifier", "title", "name", "description")``
-    (db-portal / entries 共通のデフォルト) を使う。``value`` がトークン化後に
-    空となる場合は ``ValueError`` を raise する (呼び出し側で空入力を弾く前提)。
+    (db-portal のデフォルト) を使う。entries / facets 系は ``build_search_query``
+    が ``_DEFAULT_KEYWORD_FIELDS`` から組み立てた ``fields`` を明示渡しするため
+    両者のデフォルトは独立に進化する。``value`` がトークン化後に空となる場合は
+    ``ValueError`` を raise する (呼び出し側で空入力を弾く前提)。
     """
     if fields is None:
         used_fields: list[str] = list(_FREE_TEXT_DEFAULT_FIELDS)

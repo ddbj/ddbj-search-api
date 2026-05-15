@@ -893,20 +893,28 @@ class TestCompileToEsFreeTextOperator:
 
 
 class TestCompileFreeTextMatchesBuildSearchQuery:
-    """compile_free_text の出力と build_search_query(keywords=...) の出力 (filter/status なし) が一致."""
+    """fields を揃えると compile_free_text と build_search_query が同じ multi_match を返す.
+
+    db-portal と entries/facets はデフォルト fields が独立しているため、
+    両者を fields 省略で比較しても一致しない (entries 側は organism.name を含む)。
+    auto-phrase 適用・operator 配置・token 分割など、fields 以外の構造の同期を
+    保証するために fields を明示揃えて比較する。
+    """
+
+    _SHARED_FIELDS = ("identifier", "title", "name", "description")
 
     @pytest.mark.parametrize(
         "keywords",
         ["cancer", "HIF-1", '"RNA Seq"', "cancer, human", "BRCA1/2"],
     )
     def test_and_operator(self, keywords: str) -> None:
-
         expected = build_search_query(
             keywords=keywords,
             keyword_operator="AND",
+            keyword_fields=list(self._SHARED_FIELDS),
             status_mode=None,
         )
-        actual = compile_free_text(keywords)
+        actual = compile_free_text(keywords, fields=self._SHARED_FIELDS)
         assert actual == expected
 
     @pytest.mark.parametrize(
@@ -914,11 +922,11 @@ class TestCompileFreeTextMatchesBuildSearchQuery:
         ["cancer", "HIF-1", "cancer, human"],
     )
     def test_or_operator(self, keywords: str) -> None:
-
         expected = build_search_query(
             keywords=keywords,
             keyword_operator="OR",
+            keyword_fields=list(self._SHARED_FIELDS),
             status_mode=None,
         )
-        actual = compile_free_text(keywords, operator="OR")
+        actual = compile_free_text(keywords, operator="OR", fields=self._SHARED_FIELDS)
         assert actual == expected
