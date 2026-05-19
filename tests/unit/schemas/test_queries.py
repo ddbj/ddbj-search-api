@@ -182,3 +182,17 @@ class TestFacetsParamQuery:
         with pytest.raises(HTTPException) as exc_info:
             FacetsParamQuery(facets=",,,")
         assert exc_info.value.status_code == 422
+
+    def test_facets_size_default_is_none(self) -> None:
+        """``facets_size`` defaults to ``None`` so callers can detect
+        whether the caller opted in to a non-default cap (and routers
+        can plug in the server default 100 via ``resolve_facets_size``).
+        Range validation (1-1000) is enforced by FastAPI at the
+        endpoint boundary, not in the constructor."""
+        q = FacetsParamQuery(facets=None, facets_size=None)
+        assert q.facets_size is None
+
+    @pytest.mark.parametrize("value", [1, 100, 1000])
+    def test_facets_size_explicit_values_passthrough(self, value: int) -> None:
+        q = FacetsParamQuery(facets=None, facets_size=value)
+        assert q.facets_size == value

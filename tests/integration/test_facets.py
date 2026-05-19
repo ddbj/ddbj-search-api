@@ -276,3 +276,52 @@ class TestOrganismFacetBucketShape:
         """IT-FACETS-10: ``?organism=<scientific name>`` は 422 で蹴られる (`_ORGANISM_PATTERN = ^\\d+$`)。"""
         resp = app.get("/entries/", params={"organism": "Homo sapiens"})
         assert resp.status_code == 422
+
+
+class TestFacetsSizeParameter:
+    """``facetsSize`` caps every facet's bucket list at the requested value.
+
+    docs/api-spec.md § ファセット bucket 数の指定 (`facetsSize` パラメータ)
+    """
+
+    def test_explicit_size_caps_bucket_count(self, app: TestClient) -> None:
+        """``facetsSize=2`` truncates the organism aggregation to at most 2 buckets."""
+        resp = app.get("/facets", params={"facets": "organism", "facetsSize": "2"})
+        assert resp.status_code == 200, resp.text
+        buckets = resp.json()["facets"].get("organism")
+        assert buckets is not None
+        assert len(buckets) <= 2
+
+    def test_default_size_allows_up_to_100_buckets(self, app: TestClient) -> None:
+        """Default ``facetsSize=100`` lets the organism aggregation return up to 100 buckets.
+
+        The actual cardinality depends on staging data; the assertion is just
+        ``<= 100`` so the test does not flake when fewer organisms are present.
+        """
+        resp = app.get("/facets", params={"facets": "organism"})
+        assert resp.status_code == 200, resp.text
+        buckets = resp.json()["facets"].get("organism")
+        assert buckets is not None
+        assert len(buckets) <= 100
+
+    @pytest.mark.parametrize("value", ["0", "-1", "1001", "abc"])
+    def test_out_of_range_returns_422(self, app: TestClient, value: str) -> None:
+        """Range / type errors on ``facetsSize`` are 422 (Pydantic boundary)."""
+        resp = app.get("/facets", params={"facetsSize": value})
+        assert resp.status_code == 422, (value, resp.text)
+
+    def test_propagates_to_entries_endpoint(self, app: TestClient) -> None:
+        """``facetsSize`` also applies on ``/entries/?includeFacets=true``."""
+        resp = app.get(
+            "/entries/",
+            params={
+                "perPage": 1,
+                "includeFacets": "true",
+                "facets": "organism",
+                "facetsSize": "3",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        buckets = resp.json()["facets"].get("organism")
+        assert buckets is not None
+        assert len(buckets) <= 3

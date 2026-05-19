@@ -989,9 +989,9 @@ class TestEntriesSourceFilter:
 
 
 class TestEntriesFacetAggSize:
-    """Facet aggregations use size=50."""
+    """Facet aggregations honour ``facetsSize`` (default 100)."""
 
-    def test_facet_aggs_have_size_50(
+    def test_facet_aggs_default_size_is_100(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
@@ -1008,9 +1008,71 @@ class TestEntriesFacetAggSize:
         body = get_es_search_body(mock_es_search)
         aggs = body["aggs"]
         for agg_name in ("organism", "accessibility", "type"):
-            assert aggs[agg_name]["terms"]["size"] == 50, f"{agg_name} should have size=50"
+            assert aggs[agg_name]["terms"]["size"] == 100, f"{agg_name} should default to size=100"
+        # organism sub-agg (label lookup) is pinned at 1 regardless of facetsSize
+        assert aggs["organism"]["aggs"]["name"]["terms"]["size"] == 1
         # status facet は常に public になるので aggs に含めない
         assert "status" not in aggs
+
+    def test_facet_aggs_explicit_size_propagates(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """``facetsSize=42`` reaches the terms aggregation; sub-agg stays 1."""
+        mock_es_search.return_value = make_es_search_response(
+            total=0,
+            aggregations={
+                "type": {"buckets": []},
+                "organism": {"buckets": []},
+                "accessibility": {"buckets": []},
+            },
+        )
+        app_with_es.get("/entries/", params={"includeFacets": "true", "facetsSize": "42"})
+        body = get_es_search_body(mock_es_search)
+        aggs = body["aggs"]
+        for agg_name in ("organism", "accessibility", "type"):
+            assert aggs[agg_name]["terms"]["size"] == 42, f"{agg_name} should reflect facetsSize=42"
+        assert aggs["organism"]["aggs"]["name"]["terms"]["size"] == 1
+
+    def test_facet_aggs_size_boundary_max(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """Upper boundary 1000 is accepted."""
+        mock_es_search.return_value = make_es_search_response(
+            total=0,
+            aggregations={"type": {"buckets": []}, "organism": {"buckets": []}, "accessibility": {"buckets": []}},
+        )
+        resp = app_with_es.get("/entries/", params={"includeFacets": "true", "facetsSize": "1000"})
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search)
+        assert body["aggs"]["organism"]["terms"]["size"] == 1000
+
+    def test_facet_aggs_size_out_of_range_returns_422(
+        self,
+        app_with_es: TestClient,
+    ) -> None:
+        """``facetsSize`` outside 1-1000 (and non-integer) is rejected as 422."""
+        for invalid in ("0", "-1", "1001", "abc"):
+            resp = app_with_es.get(
+                "/entries/",
+                params={"includeFacets": "true", "facetsSize": invalid},
+            )
+            assert resp.status_code == 422, f"facetsSize={invalid!r} should be 422, got {resp.status_code}"
+
+    def test_facets_size_ignored_when_include_facets_false(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        """``facetsSize`` is accepted but produces no ``aggs`` when facets are off."""
+        mock_es_search.return_value = make_es_search_response(total=0)
+        resp = app_with_es.get("/entries/", params={"facetsSize": "5"})
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search)
+        assert "aggs" not in body
 
 
 # === ES error handling ===
@@ -1342,6 +1404,20 @@ class TestCursorExclusivity:
         )
         assert resp.status_code == 400
         assert param in resp.json()["detail"]
+
+    def test_cursor_with_facets_size_returns_400(
+        self,
+        app_with_es: TestClient,
+    ) -> None:
+        """``facetsSize`` is also cursor-exclusive (since cursor mode skips
+        facet aggregation, accepting it silently would mislead clients —
+        docs/api-spec.md § カーソルベースページネーション)."""
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "facetsSize": "200"},
+        )
+        assert resp.status_code == 400
+        assert "facetsSize" in resp.json()["detail"]
 
     def test_filter_field_dict_covers_all_typespecific_fields(self) -> None:
         """Regression: adding a field to TypeSpecificFilters auto-extends the cursor check.

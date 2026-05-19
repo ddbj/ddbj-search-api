@@ -686,11 +686,17 @@ class FacetsParamQuery:
 
     Used by: GET /entries/, GET /entries/{type}/, GET /facets, GET /facets/{type}.
 
-    ``None`` (default) yields common facets only (organism, accessibility,
-    plus type for cross-type endpoints). An empty string suppresses
-    aggregation entirely. A comma-separated list opts in to specific
-    facet aggregations (allowlist enforced here; type-mismatch is checked
-    in the router and returns 400).
+    ``facets`` is ``None`` (default) for common facets only (organism,
+    accessibility, plus type for cross-type endpoints), the empty string
+    to suppress aggregation, or a comma-separated list to opt in to
+    specific facet aggregations (allowlist enforced here; type-mismatch
+    is checked in the router and returns 400).
+
+    ``facets_size`` is the shared ``terms.size`` applied to every
+    selected facet. ``None`` (default) means "use the server default"
+    (100); routers resolve the effective value via
+    :func:`resolve_facets_size`. The ``organism`` label sub-aggregation
+    is unaffected and always uses ``size: 1``.
     """
 
     def __init__(
@@ -713,7 +719,22 @@ class FacetsParamQuery:
                 "submissionType (metabobank)."
             ),
         ),
+        facets_size: int | None = Query(
+            default=None,
+            ge=1,
+            le=1000,
+            alias="facetsSize",
+            examples=[100],
+            description=(
+                "Maximum number of buckets returned per facet (1-1000, server default 100). "
+                "Applies uniformly to every facet selected via ``facets`` "
+                "(per-facet override is not exposed). "
+                "The ``organism`` label sub-aggregation always uses size 1 and is unaffected. "
+                "Ignored when ``includeFacets=false`` on ``/entries/*``."
+            ),
+        ),
     ):
+        self.facets_size = facets_size
         if facets is None or facets == "":
             self.facets = facets
             return

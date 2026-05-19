@@ -13,6 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from ddbj_search_api.es.query import (
+    DEFAULT_FACET_SIZE,
     _parse_keywords,
     build_facet_aggs,
     build_search_query,
@@ -22,6 +23,7 @@ from ddbj_search_api.es.query import (
     build_status_filter,
     inject_status_filter,
     pagination_to_from_size,
+    resolve_facets_size,
     resolve_requested_facets,
     validate_keyword_fields,
 )
@@ -761,6 +763,53 @@ class TestBuildFacetAggs:
         # silent so requests do not blow up.
         result = build_facet_aggs(requested_facets=["organism", "zzznotfacet"])
         assert set(result) == {"organism"}
+
+    # --- size injection (facetsSize parameter) ---
+
+    def test_default_size_is_100(self) -> None:
+        """Server-side default for ``terms.size`` is 100 across every facet."""
+        assert DEFAULT_FACET_SIZE == 100
+        result = build_facet_aggs(is_cross_type=True)
+        for name in result:
+            assert result[name]["terms"]["size"] == 100, f"{name} should default to size=100"
+
+    def test_size_injected_uniformly(self) -> None:
+        """A non-default ``size`` is applied to every facet's ``terms.size``."""
+        result = build_facet_aggs(
+            is_cross_type=True,
+            requested_facets=["organism", "libraryLayout", "analysisType", "type", "objectType"],
+            size=7,
+        )
+        for name in ("organism", "libraryLayout", "analysisType", "objectType"):
+            assert result[name]["terms"]["size"] == 7
+
+    def test_size_does_not_affect_organism_sub_agg(self) -> None:
+        """The ``organism.name`` sub-aggregation that fetches the display
+        label is pinned at ``size: 1`` and must not move with
+        ``facetsSize``."""
+        result = build_facet_aggs(requested_facets=["organism"], size=500)
+        assert result["organism"]["terms"]["size"] == 500
+        assert result["organism"]["aggs"]["name"]["terms"]["size"] == 1
+
+    def test_size_call_isolation(self) -> None:
+        """deepcopy guarantees: two calls with different ``size`` values
+        must not bleed into each other (regression: shared template
+        mutation would break second call's expected size)."""
+        first = build_facet_aggs(size=3)
+        second = build_facet_aggs(size=99)
+        assert first["organism"]["terms"]["size"] == 3
+        assert second["organism"]["terms"]["size"] == 99
+
+
+class TestResolveFacetsSize:
+    """resolve_facets_size: ``None`` -> server default; int -> passthrough."""
+
+    def test_none_returns_default(self) -> None:
+        assert resolve_facets_size(None) == DEFAULT_FACET_SIZE
+
+    @pytest.mark.parametrize("value", [1, 50, 100, 1000])
+    def test_int_passthrough(self, value: int) -> None:
+        assert resolve_facets_size(value) == value
 
 
 class TestBuildFacetAggsPBT:

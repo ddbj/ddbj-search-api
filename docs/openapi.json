@@ -430,6 +430,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -1041,6 +1064,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -1716,6 +1762,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -2519,6 +2588,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -3318,6 +3410,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -4121,6 +4236,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -4920,6 +5058,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -5723,6 +5884,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -6524,6 +6708,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -7155,6 +7362,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -7790,6 +8020,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -8421,6 +8674,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -9056,6 +9332,29 @@
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
           },
           {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
+          },
+          {
             "name": "dbXrefsLimit",
             "in": "query",
             "required": false,
@@ -9624,6 +9923,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -10236,6 +10558,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           },
           {
             "name": "dbXrefsLimit",
@@ -11362,6 +11707,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -11749,6 +12117,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -12198,6 +12589,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -12773,6 +13187,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -13348,6 +13785,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -13923,6 +14383,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -14498,6 +14981,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -15073,6 +15579,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -15648,6 +16177,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -16055,6 +16607,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -16462,6 +17037,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -16869,6 +17467,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -17276,6 +17897,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -17620,6 +18264,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {
@@ -18006,6 +18673,29 @@
               "title": "Facets"
             },
             "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100). Applies uniformly to every facet selected via ``facets`` (per-facet override is not exposed). The ``organism`` label sub-aggregation always uses size 1 and is unaffected. Ignored when ``includeFacets=false`` on ``/entries/*``."
           }
         ],
         "responses": {

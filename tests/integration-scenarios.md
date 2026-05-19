@@ -853,6 +853,20 @@
 **回帰元**: `docs/api-spec.md § ファセット § bucket 形式`
 **関連 unit テスト**: `tests/unit/routers/test_facets.py`, `tests/unit/schemas/test_facets.py`
 
+### IT-FACETS-11: `facetsSize` で全 facet の bucket 上限を共通制御
+
+**endpoint**: `GET /facets`, `GET /entries/?includeFacets=true`
+
+**不変条件**:
+- `facetsSize` 未指定時、各 facet の bucket 数は server default (100) を上限とする
+- `facetsSize=N` (1 ≤ N ≤ 1000) を指定すると、全 facet の bucket 数が同一上限 `N` に揃う
+- 範囲外 (`facetsSize=0` / `facetsSize=1001`) または非整数 (`facetsSize=abc`) は 422
+- `organism` の表示用ラベルを取得する sub-aggregation は `facetsSize` の影響を受けない (常に最頻 1 件)
+- `/entries/*?includeFacets=true` 経由でも同じ挙動
+
+**回帰元**: `docs/api-spec.md § ファセット § ファセット bucket 数の指定 (facetsSize パラメータ)`
+**関連 unit テスト**: `tests/unit/es/test_query.py` (`TestBuildFacetAggs::test_size_*`, `TestResolveFacetsSize`), `tests/unit/routers/test_facets.py` (`TestFacetsSizeParameter`), `tests/unit/routers/test_entries.py` (`TestEntriesFacetAggSize`)
+
 ---
 
 ## IT-UMBRELLA-*: Umbrella Tree

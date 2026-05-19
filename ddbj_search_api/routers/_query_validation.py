@@ -45,7 +45,7 @@ _SEARCH_FILTER_PARAM_NAMES = frozenset(
 _RESPONSE_CONTROL_PARAM_NAMES = frozenset({"sort", "fields", "includeProperties", "includeFacets"})
 _DB_XREFS_LIMIT_PARAM_NAMES = frozenset({"dbXrefsLimit", "includeDbXrefs"})
 _TYPES_FILTER_PARAM_NAMES = frozenset({"types"})
-_FACETS_PARAM_NAMES = frozenset({"facets"})
+_FACETS_PARAM_NAMES = frozenset({"facets", "facetsSize"})
 
 _BIOPROJECT_EXTRA_PARAM_NAMES = frozenset({"objectTypes", "externalLinkLabel", "projectType"})
 _BIOSAMPLE_EXTRA_PARAM_NAMES = frozenset(

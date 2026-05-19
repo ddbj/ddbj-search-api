@@ -23,12 +23,14 @@ from ddbj_search_api.dblink.client import count_linked_ids_bulk, get_linked_ids_
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
+    DEFAULT_FACET_SIZE,
     StatusMode,
     build_facet_aggs,
     build_search_query,
     build_sort_with_tiebreaker,
     build_source_filter,
     pagination_to_from_size,
+    resolve_facets_size,
     resolve_requested_facets,
     validate_keyword_fields,
 )
@@ -236,6 +238,8 @@ def _validate_cursor_exclusivity(
 
     if facets_param.facets is not None:
         conflicting.append("facets")
+    if facets_param.facets_size is not None:
+        conflicting.append("facetsSize")
 
     for attr, alias in _CURSOR_EXCLUSIVE_FILTER_FIELDS.items():
         if getattr(filters, attr) is not None:
@@ -293,6 +297,7 @@ async def _do_search(
     filters: TypeSpecificFilters,
     is_cross_type: bool = False,
     requested_facets: list[str] | None = None,
+    facets_size: int = DEFAULT_FACET_SIZE,
     include_db_xrefs: bool = True,
 ) -> Any:
     """Execute search against ES and build the response.
@@ -327,6 +332,7 @@ async def _do_search(
         filters=filters,
         is_cross_type=is_cross_type,
         requested_facets=requested_facets,
+        facets_size=facets_size,
         include_db_xrefs=include_db_xrefs,
     )
 
@@ -341,6 +347,7 @@ async def _do_search_offset(
     filters: TypeSpecificFilters,
     is_cross_type: bool = False,
     requested_facets: list[str] | None = None,
+    facets_size: int = DEFAULT_FACET_SIZE,
     include_db_xrefs: bool = True,
 ) -> Any:
     """Offset-based search (existing behaviour + nextCursor generation)."""
@@ -405,6 +412,7 @@ async def _do_search_offset(
         aggs = build_facet_aggs(
             is_cross_type=is_cross_type,
             requested_facets=requested_facets,
+            size=facets_size,
         )
         if aggs:
             body["aggs"] = aggs
@@ -657,6 +665,7 @@ async def _list_all_entries(
         filters=filters,
         is_cross_type=True,
         requested_facets=requested_facets,
+        facets_size=resolve_facets_size(facets_param.facets_size),
         include_db_xrefs=db_xrefs.include_db_xrefs,
     )
 
@@ -732,6 +741,7 @@ async def _run_type_search(
         filters=filters,
         is_cross_type=False,
         requested_facets=requested_facets,
+        facets_size=resolve_facets_size(facets_param.facets_size),
         include_db_xrefs=db_xrefs.include_db_xrefs,
     )
 

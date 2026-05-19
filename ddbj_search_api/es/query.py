@@ -528,43 +528,49 @@ def _build_filter_clauses(
     return clauses
 
 
-# Facet aggregation specifications. ``size`` is intentionally fixed at 50
-# for now; per-facet ``shard_size`` tuning can be revisited if cardinality
-# growth on the SRA ``instrumentModel`` / ``libraryStrategy`` fields starts
-# leaving meaningful counts in ``sum_other_doc_count`` (see docs § ファセット).
+# Facet aggregation specifications.  ``terms.size`` is injected per-call
+# by :func:`build_facet_aggs` from the ``facetsSize`` query parameter
+# (default 100), so the templates here only carry the bucket key field
+# and any sub-aggregations.  Per-facet ``shard_size`` tuning can be
+# revisited if cardinality growth on the SRA ``instrumentModel`` /
+# ``libraryStrategy`` fields starts leaving meaningful counts in
+# ``sum_other_doc_count`` (see docs § ファセット).
+DEFAULT_FACET_SIZE: int = 100
+
 _FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
     # ``organism`` buckets on ``organism.identifier`` (TaxID) so the bucket
     # value can be re-injected into ``?organism=`` (which only accepts
     # ``^\d+$``).  A sub-aggregation pulls the doc_count-most-frequent
     # ``organism.name.keyword`` value as the display ``label`` (see
-    # :func:`ddbj_search_api.utils._optional_organism`).
+    # :func:`ddbj_search_api.utils._optional_organism`); its ``size`` is
+    # intentionally pinned at 1 and is *not* affected by ``facetsSize``.
     "organism": {
-        "terms": {"field": "organism.identifier", "size": 50},
+        "terms": {"field": "organism.identifier"},
         "aggs": {
             "name": {"terms": {"field": "organism.name.keyword", "size": 1}},
         },
     },
-    "accessibility": {"terms": {"field": "accessibility", "size": 50}},
-    "type": {"terms": {"field": "type", "size": 50}},
-    "objectType": {"terms": {"field": "objectType", "size": 50}},
-    "libraryStrategy": {"terms": {"field": "libraryStrategy.keyword", "size": 50}},
-    "librarySource": {"terms": {"field": "librarySource.keyword", "size": 50}},
-    "librarySelection": {"terms": {"field": "librarySelection.keyword", "size": 50}},
-    "platform": {"terms": {"field": "platform.keyword", "size": 50}},
-    "instrumentModel": {"terms": {"field": "instrumentModel.keyword", "size": 50}},
-    "experimentType": {"terms": {"field": "experimentType.keyword", "size": 50}},
-    "studyType": {"terms": {"field": "studyType.keyword", "size": 50}},
-    "submissionType": {"terms": {"field": "submissionType.keyword", "size": 50}},
+    "accessibility": {"terms": {"field": "accessibility"}},
+    "type": {"terms": {"field": "type"}},
+    "objectType": {"terms": {"field": "objectType"}},
+    "libraryStrategy": {"terms": {"field": "libraryStrategy.keyword"}},
+    "librarySource": {"terms": {"field": "librarySource.keyword"}},
+    "librarySelection": {"terms": {"field": "librarySelection.keyword"}},
+    "platform": {"terms": {"field": "platform.keyword"}},
+    "instrumentModel": {"terms": {"field": "instrumentModel.keyword"}},
+    "experimentType": {"terms": {"field": "experimentType.keyword"}},
+    "studyType": {"terms": {"field": "studyType.keyword"}},
+    "submissionType": {"terms": {"field": "submissionType.keyword"}},
     # === BioProject ===
-    "relevance": {"terms": {"field": "relevance", "size": 50}},
+    "relevance": {"terms": {"field": "relevance"}},
     # === BioSample (package は object{name:keyword,displayName:keyword} の name サブフィールド) ===
-    "package": {"terms": {"field": "package.name", "size": 50}},
-    "model": {"terms": {"field": "model", "size": 50}},
-    # === SRA (libraryLayout は cardinality 2、analysisType は cardinality 4 で size 抑制) ===
-    "libraryLayout": {"terms": {"field": "libraryLayout.keyword", "size": 10}},
-    "analysisType": {"terms": {"field": "analysisType.keyword", "size": 10}},
+    "package": {"terms": {"field": "package.name"}},
+    "model": {"terms": {"field": "model"}},
+    # === SRA ===
+    "libraryLayout": {"terms": {"field": "libraryLayout.keyword"}},
+    "analysisType": {"terms": {"field": "analysisType.keyword"}},
     # === JGA ===
-    "datasetType": {"terms": {"field": "datasetType.keyword", "size": 50}},
+    "datasetType": {"terms": {"field": "datasetType.keyword"}},
 }
 
 # Default common facets when ``requested_facets`` is omitted. ``type`` is
@@ -605,6 +611,19 @@ _TYPE_SPECIFIC_FACET_SCOPE: dict[str, frozenset[str]] = {
     "analysisType": frozenset({"sra-analysis"}),
     "datasetType": frozenset({"jga-dataset"}),
 }
+
+
+def resolve_facets_size(facets_size: int | None) -> int:
+    """Map the ``facetsSize`` query value to an effective bucket size.
+
+    ``None`` (parameter omitted) falls back to :data:`DEFAULT_FACET_SIZE`
+    so the OpenAPI surface keeps ``facetsSize`` optional while the
+    aggregation builder always receives an integer.  Range validation
+    (1-1000) is enforced by :class:`FacetsParamQuery` upstream.
+    """
+    if facets_size is None:
+        return DEFAULT_FACET_SIZE
+    return facets_size
 
 
 def resolve_requested_facets(
@@ -660,6 +679,7 @@ def resolve_requested_facets(
 def build_facet_aggs(
     is_cross_type: bool = False,
     requested_facets: list[str] | None = None,
+    size: int = DEFAULT_FACET_SIZE,
 ) -> dict[str, Any]:
     """Build ES aggregation queries for facets.
 
@@ -670,6 +690,12 @@ def build_facet_aggs(
     - explicit list: just those facet names. Unknown names are silently
       ignored — the router validates the allowlist via
       :func:`resolve_requested_facets` before reaching here.
+
+    ``size`` applies to every facet's ``terms.size`` uniformly
+    (per-facet override is not exposed). The ``organism`` facet keeps
+    its sub-aggregation ``size: 1`` for the label lookup — that bucket
+    is unaffected. ``docs/api-spec.md`` § ファセット bucket 数の指定
+    documents the ``facetsSize`` query parameter that feeds this.
 
     ``status`` is intentionally not aggregated: the query that feeds the
     facet aggregations is always constrained to ``status:public``
@@ -692,5 +718,7 @@ def build_facet_aggs(
         # deepcopy keeps the per-call agg dict independent from the
         # module-level template; callers can safely mutate the result
         # (e.g. inject ``shard_size``) without leaking changes.
-        aggs[name] = copy.deepcopy(spec)
+        agg = copy.deepcopy(spec)
+        agg["terms"]["size"] = size
+        aggs[name] = agg
     return aggs

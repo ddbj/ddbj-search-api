@@ -18,6 +18,7 @@ from ddbj_search_api.es.client import es_search
 from ddbj_search_api.es.query import (
     build_facet_aggs,
     build_search_query,
+    resolve_facets_size,
     resolve_requested_facets,
     validate_keyword_fields,
 )
@@ -123,6 +124,7 @@ async def _do_facets(
     aggs = build_facet_aggs(
         is_cross_type=is_cross_type,
         requested_facets=requested_facets,
+        size=resolve_facets_size(facets_param.facets_size),
     )
 
     body: dict[str, Any] = {

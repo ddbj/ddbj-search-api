@@ -153,7 +153,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 |-----------|------|---------|
 | 400 | Bad Request | Deep paging 制限超過 (`page * perPage > 10000`)、`cursor` と検索条件/`page` の同時指定、不正な cursor トークン、cursor 期限切れ (PIT 失効)、`facets` の type-mismatch (valid なフィールド名だが対象 endpoint で利用できない、例: `GET /facets/bioproject?facets=libraryStrategy`) |
 | 404 | Not Found | エントリーが存在しない、withdrawn / private のエントリーへの直接アクセス (存在を秘匿するため存在しないものと同じ応答を返す)、不正な `{type}` |
-| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `objectTypes` 値 (`BioProject` / `UmbrellaBioProject` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値、不正な `facets` 値 (allowlist 外のフィールド名 typo)、cross-type endpoint (`GET /entries/`, `GET /facets`) に type-specific filter / 型グループ限定 nested 検索パラメータ (`externalLinkLabel` / `derivedFromId`) / text match パラメータが渡された場合 (`organization` / `publication` / `grant` は cross-type endpoint でも受け付け)、type-specific endpoint に対応する型グループ外のパラメータが渡された場合 (例: `GET /entries/biosample/?libraryStrategy=WGS` や `GET /entries/bioproject/?host=Homo+sapiens`) など) |
+| 422 | Unprocessable Entity | パラメータバリデーションエラー (`perPage` の範囲外、不正な日付形式 (`YYYY-MM-DD` 以外) や不正な日付 (`2024-02-30` 等)、不正な `types` 値、不正な `objectTypes` 値 (`BioProject` / `UmbrellaBioProject` 以外)、不正な `sort` フィールド、不正な `keywordFields` 値、不正な `facets` 値 (allowlist 外のフィールド名 typo)、`facetsSize` の範囲外 (1〜1000 以外) または非整数、cross-type endpoint (`GET /entries/`, `GET /facets`) に type-specific filter / 型グループ限定 nested 検索パラメータ (`externalLinkLabel` / `derivedFromId`) / text match パラメータが渡された場合 (`organization` / `publication` / `grant` は cross-type endpoint でも受け付け)、type-specific endpoint に対応する型グループ外のパラメータが渡された場合 (例: `GET /entries/biosample/?libraryStrategy=WGS` や `GET /entries/bioproject/?host=Homo+sapiens`) など) |
 | 500 | Internal Server Error | ES 接続エラー、DuckDB ファイルが見つからない (Entries 検索/詳細/Bulk/DBLinks API)、その他サーバー内部エラー |
 | 502 | Bad Gateway | DB Portal API の横断 fan-out で全 DB への問い合わせが失敗 |
 
@@ -189,7 +189,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 - `types`, `organization`, `publication`, `grant`, `objectTypes`, `externalLinkLabel`, `derivedFromId`
 - `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout`, `analysisType`, `experimentType`, `studyType`, `datasetType`, `submissionType` (type-specific term filter)
 - `projectType`, `host`, `strain`, `isolate`, `geoLocName`, `collectionDate`, `libraryName`, `libraryConstructionProtocol`, `vendor` (type-specific text match)
-- `includeFacets`, `includeProperties` (デフォルト値以外), `fields`, `facets`
+- `includeFacets`, `includeProperties` (デフォルト値以外), `fields`, `facets`, `facetsSize`
 
 `perPage`、`dbXrefsLimit`、`includeDbXrefs` は `cursor` と併用可能。
 
@@ -423,6 +423,16 @@ ES の terms aggregation は `organism.identifier` を bucket key にし、各 b
 cross-type endpoint (`GET /facets`, `GET /entries/?includeFacets=true`) では、いずれかの index でそのフィールドが存在すれば許可し、該当 index のみで集計する。
 
 背景・設計判断の詳細は [overview.md § ファセット default の設計](overview.md) を参照。
+
+#### ファセット bucket 数の指定 (`facetsSize` パラメータ)
+
+各 facet が返す bucket 数の上限はクエリパラメータ `facetsSize` で指定する。型 integer、デフォルト `100`、範囲 `1`–`1000`。`facets` で集計対象に含まれた全 facet 共通の `size` として ES の terms aggregation に渡る (facet ごとの個別指定はできない)。
+
+**適用箇所**: `facets` と同じく `GET /facets`, `GET /facets/{type}`, `GET /entries/*` の `includeFacets=true` 時。`includeFacets=false` (デフォルト) の `GET /entries/*` では指定しても無視される。
+
+**エラー**: 範囲外 (`facetsSize=0` / `facetsSize=1001` 等) や非整数値は **422 Unprocessable Entity**。
+
+`organism` facet の bucket に付く `label` は別の sub-aggregation (`organism.name.keyword` の最頻 1 件) で取得しており、`facetsSize` の影響を受けない (常に 1 件のままで bucket 表示用ラベルとして機能する)。
 
 ### データ可視性 (status 制御)
 

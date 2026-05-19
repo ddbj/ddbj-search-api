@@ -226,6 +226,101 @@ class TestFacetsEsQuery:
         assert resp.status_code == 422
 
 
+# === facetsSize parameter ===
+
+
+class TestFacetsSizeParameter:
+    """``facetsSize`` controls each terms aggregation's bucket cap.
+
+    Default is 100; the ``organism.name`` sub-aggregation that pulls the
+    label is independent and always uses ``size: 1``.
+    """
+
+    def test_default_size_is_100_cross_type(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets")
+        body = get_es_search_body(mock_es_search_facets)
+        aggs = body["aggs"]
+        for name in ("organism", "accessibility", "type"):
+            assert aggs[name]["terms"]["size"] == 100, f"{name} should default to size=100"
+        assert aggs["organism"]["aggs"]["name"]["terms"]["size"] == 1
+
+    def test_default_size_is_100_type_specific(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(),
+        )
+        app_with_facets.get("/facets/bioproject")
+        body = get_es_search_body(mock_es_search_facets)
+        for name in ("organism", "accessibility"):
+            assert body["aggs"][name]["terms"]["size"] == 100
+
+    def test_explicit_size_propagates(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        app_with_facets.get("/facets", params={"facetsSize": "42"})
+        body = get_es_search_body(mock_es_search_facets)
+        for name in ("organism", "accessibility", "type"):
+            assert body["aggs"][name]["terms"]["size"] == 42
+        # Sub-agg is not affected by facetsSize.
+        assert body["aggs"]["organism"]["aggs"]["name"]["terms"]["size"] == 1
+
+    def test_explicit_size_propagates_to_opt_in_facet(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        """``facetsSize`` also applies to facets requested via ``facets=``."""
+        mock_es_search_facets.return_value = make_es_search_response(
+            aggregations=make_facets_aggregations(
+                object_type=[{"key": "BioProject", "doc_count": 1}],
+            ),
+        )
+        app_with_facets.get(
+            "/facets/bioproject",
+            params={"facets": "objectType", "facetsSize": "7"},
+        )
+        body = get_es_search_body(mock_es_search_facets)
+        assert body["aggs"]["objectType"]["terms"]["size"] == 7
+
+    def test_size_boundary_min_accepted(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        resp = app_with_facets.get("/facets", params={"facetsSize": "1"})
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_facets)
+        assert body["aggs"]["organism"]["terms"]["size"] == 1
+
+    def test_size_boundary_max_accepted(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        resp = app_with_facets.get("/facets", params={"facetsSize": "1000"})
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_facets)
+        assert body["aggs"]["organism"]["terms"]["size"] == 1000
+
+    @pytest.mark.parametrize("invalid", ["0", "-1", "1001", "abc", "1.5"])
+    def test_size_out_of_range_returns_422(
+        self,
+        app_with_facets: TestClient,
+        invalid: str,
+    ) -> None:
+        resp = app_with_facets.get("/facets", params={"facetsSize": invalid})
+        assert resp.status_code == 422, f"facetsSize={invalid!r} should be 422"
+
+
 # === Search filter validation ===
 
 
