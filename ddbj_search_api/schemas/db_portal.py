@@ -1,7 +1,7 @@
 """DB Portal API schemas.
 
-Request/response types for ``GET /db-portal/cross-search``, ``GET /db-portal/search``
-and ``GET /db-portal/parse``.
+Request/response types for ``GET /db-portal/cross-search``, ``GET /db-portal/search``,
+``GET /db-portal/parse``, and ``POST /db-portal/serialize``.
 
 - ``DbPortalHit`` は ``type`` discriminator を持つ Pydantic v2 discriminated union
   の 8 variant に分割して明示型化。``extra="ignore"`` で converter 側の将来新 field は
@@ -68,6 +68,8 @@ class DbPortalErrorType(str, Enum):
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
     unexpected_parameter = "https://ddbj.nig.ac.jp/problems/unexpected-parameter"
     missing_db = "https://ddbj.nig.ac.jp/problems/missing-db"
+    # POST /db-portal/serialize request body schema violation.
+    invalid_ast = "https://ddbj.nig.ac.jp/problems/invalid-ast"
     # Query parser error types.
     unexpected_token = "https://ddbj.nig.ac.jp/problems/unexpected-token"
     unknown_field = "https://ddbj.nig.ac.jp/problems/unknown-field"
@@ -829,4 +831,50 @@ class DbPortalParseResponse(BaseModel):
             },
         ],
         description="Parsed AST as SSOT query-tree JSON.",
+    )
+
+
+# === POST /db-portal/serialize request/response ===
+#
+# Inverse of GET /db-portal/parse.  Accepts an AST JSON tree (the same shape
+# the parse endpoint emits) and returns the normalized DSL string that, when
+# fed back into /db-portal/parse, yields a structurally equivalent AST.
+
+
+class DbPortalSerializeRequest(BaseModel):
+    """Request body for POST /db-portal/serialize.
+
+    ``ast`` reuses ``DbPortalParseNode`` so the parse response can be sent
+    back verbatim.  Schema violations are surfaced as 400 ``invalid-ast``
+    (see ``ddbj_search_api.main`` request-validation handler).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    ast: DbPortalParseNode = Field(
+        examples=[
+            {
+                "op": "AND",
+                "rules": [
+                    {"op": "free_text", "value": "cancer"},
+                    {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                ],
+            },
+        ],
+        description="AST JSON tree (same shape as GET /db-portal/parse response).",
+    )
+
+
+class DbPortalSerializeResponse(BaseModel):
+    """Response envelope for POST /db-portal/serialize."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    dsl: str = Field(
+        examples=['cancer AND organism:"Homo sapiens"'],
+        description=(
+            "Normalized DSL string.  Reusable as ``q`` for "
+            "``GET /db-portal/parse`` / ``GET /db-portal/cross-search`` / "
+            "``GET /db-portal/search``."
+        ),
     )

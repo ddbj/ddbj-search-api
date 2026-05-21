@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, Literal
 
 import httpx
@@ -55,14 +56,18 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalLightweightHit,
     DbPortalParseResponse,
     DbPortalSearchQuery,
+    DbPortalSerializeRequest,
+    DbPortalSerializeResponse,
     _DbPortalHitAdapter,
     _DbPortalLightweightHitAdapter,
 )
 from ddbj_search_api.search.dsl import (
     DslError,
+    ast_to_dsl,
     ast_to_json,
     compile_to_es,
     compile_to_solr,
+    json_to_ast,
     parse,
     validate,
 )
@@ -1205,5 +1210,83 @@ router.add_api_route(
     },
     summary="Parse a search query into the SSOT query-tree JSON for GUI state restoration.",
     operation_id="parseDbPortal",
+    tags=["db-portal"],
+)
+
+
+# === POST /db-portal/serialize — AST JSON tree → DSL 文字列 (parse の逆経路) ===
+
+# validator の error detail は parser 由来の Position (1-based column / length) を
+# 文字列に埋め込む.  serialize endpoint は元 DSL 文字列を持たず ``json_to_ast`` で
+# dummy Position(column=1, length=0) を割り当てるため、その表記は client にとって
+# 誤誘導になる.  validator メッセージ末尾の ``at column N`` / ``at column N (length M)``
+# 表記を一括 strip して詳細から取り除く.
+_DUMMY_COLUMN_INFO_RE = re.compile(r"\s+at column \d+(?:\s*\(length \d+\))?")
+
+
+def _strip_dummy_column_info(detail: str) -> str:
+    """Remove ``at column N`` markers from validator errors raised via /db-portal/serialize."""
+    return _DUMMY_COLUMN_INFO_RE.sub("", detail) if detail else detail
+
+
+async def _serialize_db_portal(
+    body: DbPortalSerializeRequest,
+    db: DbPortalDb | None = Query(
+        default=None,
+        examples=["bioproject"],
+        description=(
+            "Validator mode target.  Omit for cross-db mode (Tier 1/2 only); "
+            "specify a DB for single-db mode (Tier 1/2/3 allowlist).  "
+            "Same semantics as ``GET /db-portal/parse``."
+        ),
+    ),
+    config: AppConfig = Depends(_get_config_dep),
+) -> DbPortalSerializeResponse:
+    """Serialize an AST JSON tree back into the normalized DSL string."""
+    payload = body.model_dump(by_alias=True)["ast"]
+    ast = json_to_ast(payload)
+    try:
+        validate(
+            ast,
+            mode="cross" if db is None else "single",
+            max_depth=config.dsl_max_depth,
+            max_nodes=config.dsl_max_nodes,
+        )
+    except DslError as exc:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType[exc.type.name],
+            detail=_strip_dummy_column_info(exc.detail),
+        ) from exc
+    return DbPortalSerializeResponse(dsl=ast_to_dsl(ast))
+
+
+router.add_api_route(
+    "/db-portal/serialize",
+    _serialize_db_portal,
+    methods=["POST"],
+    response_model=DbPortalSerializeResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"dsl": 'cancer AND organism:"Homo sapiens"'},
+                },
+            },
+        },
+        400: {
+            "description": (
+                "Bad Request — request body schema violation (``invalid-ast``) or "
+                "validator error (``unknown-field`` / ``invalid-operator-for-field`` etc.)."
+            ),
+            "model": ProblemDetails,
+        },
+        422: {
+            "description": "Unprocessable Entity (invalid ``db`` enum value in query string).",
+            "model": ProblemDetails,
+        },
+    },
+    summary="Serialize an AST JSON tree (parse-response shape) into a normalized DSL string.",
+    operation_id="serializeDbPortal",
     tags=["db-portal"],
 )

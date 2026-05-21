@@ -24,6 +24,7 @@ from starlette.responses import Response
 from ddbj_search_api.config import AppConfig, get_config, logging_config, parse_args
 from ddbj_search_api.routers import router
 from ddbj_search_api.routers.db_portal import DbPortalHTTPException
+from ddbj_search_api.schemas.db_portal import DbPortalErrorType
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,20 @@ def setup_error_handlers(app: FastAPI) -> None:
                 )
 
         details = "; ".join(f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors())
+
+        # /db-portal/serialize の body schema 違反は invalid-ast (400 + RFC 7807) として返す.
+        # query parameter (db enum) 由来の 422 は通常通り扱う.
+        # ``endswith`` で reverse proxy 配下の root_path prefix (例: /search/...) を吸収する.
+        if request_path.endswith("/db-portal/serialize") and any(
+            error.get("loc", ("",))[0] == "body" for error in exc.errors()
+        ):
+            return _problem_json(
+                status=400,
+                title="Bad Request",
+                detail=details,
+                request=request,
+                problem_type=DbPortalErrorType.invalid_ast.value,
+            )
 
         return _problem_json(
             status=422,

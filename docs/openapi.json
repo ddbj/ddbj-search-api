@@ -19441,6 +19441,94 @@
         }
       }
     },
+    "/db-portal/serialize": {
+      "post": {
+        "tags": [
+          "db-portal"
+        ],
+        "summary": "Serialize an AST JSON tree (parse-response shape) into a normalized DSL string.",
+        "description": "Serialize an AST JSON tree back into the normalized DSL string.",
+        "operationId": "serializeDbPortal",
+        "parameters": [
+          {
+            "name": "db",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DbPortalDb"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Validator mode target.  Omit for cross-db mode (Tier 1/2 only); specify a DB for single-db mode (Tier 1/2/3 allowlist).  Same semantics as ``GET /db-portal/parse``.",
+              "examples": [
+                "bioproject"
+              ],
+              "title": "Db"
+            },
+            "description": "Validator mode target.  Omit for cross-db mode (Tier 1/2 only); specify a DB for single-db mode (Tier 1/2/3 allowlist).  Same semantics as ``GET /db-portal/parse``."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DbPortalSerializeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbPortalSerializeResponse"
+                },
+                "example": {
+                  "dsl": "cancer AND organism:\"Homo sapiens\""
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request — request body schema violation (``invalid-ast``) or validator error (``unknown-field`` / ``invalid-operator-for-field`` etc.).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity (invalid ``db`` enum value in query string).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/service-info": {
       "get": {
         "tags": [
@@ -24781,7 +24869,7 @@
         "title": "DbPortalLightweightHit",
         "description": "12-field hit envelope returned by ``/db-portal/cross-search``.\n\nCarries only the common fields shared across all 8 db-portal DBs.\nDB-specific extras present in ``DbPortalHit`` (used by\n``/db-portal/search``) — ``projectType``, ``libraryStrategy``,\n``division``, ``rank``, ``commonName`` etc. — are not part of this\nenvelope.\n\n``type`` covers all 16 possible hit values: the 8 db-portal DBs with\nsub-types where applicable (``sra-*``, ``jga-*``) plus the\nSolr-backed fixed literals ``trad`` and ``taxonomy``."
       },
-      "DbPortalParseBoolOp": {
+      "DbPortalParseBoolOp-Input": {
         "properties": {
           "op": {
             "type": "string",
@@ -24800,7 +24888,7 @@
             "items": {
               "oneOf": [
                 {
-                  "$ref": "#/components/schemas/DbPortalParseBoolOp"
+                  "$ref": "#/components/schemas/DbPortalParseBoolOp-Input"
                 },
                 {
                   "$ref": "#/components/schemas/DbPortalParseLeafValue"
@@ -24815,9 +24903,80 @@
               "discriminator": {
                 "propertyName": "op",
                 "mapping": {
-                  "AND": "#/components/schemas/DbPortalParseBoolOp",
-                  "NOT": "#/components/schemas/DbPortalParseBoolOp",
-                  "OR": "#/components/schemas/DbPortalParseBoolOp",
+                  "AND": "#/components/schemas/DbPortalParseBoolOp-Input",
+                  "NOT": "#/components/schemas/DbPortalParseBoolOp-Input",
+                  "OR": "#/components/schemas/DbPortalParseBoolOp-Input",
+                  "between": "#/components/schemas/DbPortalParseLeafRange",
+                  "contains": "#/components/schemas/DbPortalParseLeafValue",
+                  "eq": "#/components/schemas/DbPortalParseLeafValue",
+                  "free_text": "#/components/schemas/DbPortalParseFreeText",
+                  "wildcard": "#/components/schemas/DbPortalParseLeafValue"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Rules",
+            "description": "Child nodes (NOT has exactly one).",
+            "examples": [
+              [
+                {
+                  "op": "free_text",
+                  "value": "cancer"
+                },
+                {
+                  "field": "organism",
+                  "op": "eq",
+                  "value": "Homo sapiens"
+                }
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "op",
+          "rules"
+        ],
+        "title": "DbPortalParseBoolOp",
+        "description": "Boolean node combining child clauses with AND / OR / NOT."
+      },
+      "DbPortalParseBoolOp-Output": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "AND",
+              "OR",
+              "NOT"
+            ],
+            "title": "Op",
+            "description": "Boolean operator.",
+            "examples": [
+              "AND"
+            ]
+          },
+          "rules": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/DbPortalParseBoolOp-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalParseLeafValue"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalParseLeafRange"
+                },
+                {
+                  "$ref": "#/components/schemas/DbPortalParseFreeText"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "op",
+                "mapping": {
+                  "AND": "#/components/schemas/DbPortalParseBoolOp-Output",
+                  "NOT": "#/components/schemas/DbPortalParseBoolOp-Output",
+                  "OR": "#/components/schemas/DbPortalParseBoolOp-Output",
                   "between": "#/components/schemas/DbPortalParseLeafRange",
                   "contains": "#/components/schemas/DbPortalParseLeafValue",
                   "eq": "#/components/schemas/DbPortalParseLeafValue",
@@ -24972,7 +25131,7 @@
           "ast": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/DbPortalParseBoolOp"
+                "$ref": "#/components/schemas/DbPortalParseBoolOp-Output"
               },
               {
                 "$ref": "#/components/schemas/DbPortalParseLeafValue"
@@ -25005,9 +25164,9 @@
             "discriminator": {
               "propertyName": "op",
               "mapping": {
-                "AND": "#/components/schemas/DbPortalParseBoolOp",
-                "NOT": "#/components/schemas/DbPortalParseBoolOp",
-                "OR": "#/components/schemas/DbPortalParseBoolOp",
+                "AND": "#/components/schemas/DbPortalParseBoolOp-Output",
+                "NOT": "#/components/schemas/DbPortalParseBoolOp-Output",
+                "OR": "#/components/schemas/DbPortalParseBoolOp-Output",
                 "between": "#/components/schemas/DbPortalParseLeafRange",
                 "contains": "#/components/schemas/DbPortalParseLeafValue",
                 "eq": "#/components/schemas/DbPortalParseLeafValue",
@@ -25023,6 +25182,81 @@
         ],
         "title": "DbPortalParseResponse",
         "description": "Response envelope for GET /db-portal/parse."
+      },
+      "DbPortalSerializeRequest": {
+        "properties": {
+          "ast": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DbPortalParseBoolOp-Input"
+              },
+              {
+                "$ref": "#/components/schemas/DbPortalParseLeafValue"
+              },
+              {
+                "$ref": "#/components/schemas/DbPortalParseLeafRange"
+              },
+              {
+                "$ref": "#/components/schemas/DbPortalParseFreeText"
+              }
+            ],
+            "title": "Ast",
+            "description": "AST JSON tree (same shape as GET /db-portal/parse response).",
+            "examples": [
+              {
+                "op": "AND",
+                "rules": [
+                  {
+                    "op": "free_text",
+                    "value": "cancer"
+                  },
+                  {
+                    "field": "organism",
+                    "op": "eq",
+                    "value": "Homo sapiens"
+                  }
+                ]
+              }
+            ],
+            "discriminator": {
+              "propertyName": "op",
+              "mapping": {
+                "AND": "#/components/schemas/DbPortalParseBoolOp-Input",
+                "NOT": "#/components/schemas/DbPortalParseBoolOp-Input",
+                "OR": "#/components/schemas/DbPortalParseBoolOp-Input",
+                "between": "#/components/schemas/DbPortalParseLeafRange",
+                "contains": "#/components/schemas/DbPortalParseLeafValue",
+                "eq": "#/components/schemas/DbPortalParseLeafValue",
+                "free_text": "#/components/schemas/DbPortalParseFreeText",
+                "wildcard": "#/components/schemas/DbPortalParseLeafValue"
+              }
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "ast"
+        ],
+        "title": "DbPortalSerializeRequest",
+        "description": "Request body for POST /db-portal/serialize.\n\n``ast`` reuses ``DbPortalParseNode`` so the parse response can be sent\nback verbatim.  Schema violations are surfaced as 400 ``invalid-ast``\n(see ``ddbj_search_api.main`` request-validation handler)."
+      },
+      "DbPortalSerializeResponse": {
+        "properties": {
+          "dsl": {
+            "type": "string",
+            "title": "Dsl",
+            "description": "Normalized DSL string.  Reusable as ``q`` for ``GET /db-portal/parse`` / ``GET /db-portal/cross-search`` / ``GET /db-portal/search``.",
+            "examples": [
+              "cancer AND organism:\"Homo sapiens\""
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "dsl"
+        ],
+        "title": "DbPortalSerializeResponse",
+        "description": "Response envelope for POST /db-portal/serialize."
       },
       "DbType": {
         "type": "string",

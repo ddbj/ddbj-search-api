@@ -417,6 +417,7 @@ _EXAMPLE_ENDPOINTS: list[tuple[str, str]] = [
     ("/entries/{type}/{id}", "get"),
     ("/db-portal/cross-search", "get"),
     ("/db-portal/search", "get"),
+    ("/db-portal/serialize", "post"),
 ]
 
 

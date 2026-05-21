@@ -440,3 +440,65 @@ cancer AND date:[2020-01-01 TO 2024-12-31]
 ### エラー
 
 `/db-portal/cross-search` / `/db-portal/search` と同一の 9 slug を共有する (`unexpected-token` / `unknown-field` / `field-not-available-in-cross-db` / `invalid-date-format` / `invalid-operator-for-field` / `nest-depth-exceeded` / `missing-value` / `invalid-freetext-position` / `duplicate-freetext`、すべて 400 + `application/problem+json`)。`field-not-available-in-cross-db` は cross モードで Tier 3 field を使用した場合に発動する (単一 DB 指定必須のため)。`q` 未指定 / `db` 値不正は FastAPI 標準の 422 (`about:blank`)。
+
+## `POST /db-portal/serialize`
+
+`GET /db-portal/parse` の逆経路。AST JSON tree を受け取り、正規化された DSL 文字列を返す。GUI でユーザが advanced builder / sidebar filter で組んだ条件をサーバ側で文字列化し、共有 URL の `?q=<dsl>` に流し込むためのエントリポイント。クライアント側で grammar を再実装する必要がなくなる ([db-portal/docs/search.md §GUI ↔ クエリの方向性](https://github.com/ddbj/db-portal/blob/main/docs/search.md))。
+
+`/parse` との対称性:
+
+```
+DSL string ─GET /parse──────> parse(grammar) → AST → JSON tree
+JSON tree  ─POST /serialize─> AST → validate  → DSL string
+```
+
+GET でなく POST を採る理由は、大きな AST を URL に載せると長さ制限に当たるため。
+
+Trailing slash なし (`/db-portal/serialize`) が canonical。
+
+### リクエスト (`DbPortalSerializeRequest`)
+
+```json
+{
+  "ast": {
+    "op": "AND",
+    "rules": [
+      { "op": "free_text", "value": "cancer" },
+      { "field": "organism", "op": "eq", "value": "Homo sapiens" }
+    ]
+  }
+}
+```
+
+`ast` フィールドの schema は `GET /db-portal/parse` のレスポンス `ast` フィールド (`DbPortalParseNode`) を再利用する。つまり parse 結果をそのまま serialize に投げ返せる (型重複なし)。
+
+### クエリパラメータ
+
+- `db`: `/db-portal/parse` と同一 semantics の validator mode 切替。省略で横断 (`cross`、Tier 1/2 のみ) / 指定で単一 DB (`single`、当該 DB の Tier 1/2/3 allowlist)。レスポンスには影響しない (DSL 文字列の生成は mode に依存しない)
+
+### レスポンス (`DbPortalSerializeResponse`)
+
+```json
+{ "dsl": "cancer AND organism:\"Homo sapiens\"" }
+```
+
+`dsl` は `GET /db-portal/parse?q=<dsl>` の入力としてそのまま使える正規化済 DSL 文字列。`parse(serialize(ast)) == ast` (Position を除く構造的等価) が保証される。
+
+正規化ルール (`grammar.lark` に従う):
+
+- `value_kind="phrase"` の値は常に `"..."` で quote、内部 `\` / `"` をエスケープ
+- `value_kind="word" / "date" / "wildcard"` の値は bare (wildcard を quote すると `*` / `?` が literal 化するため)
+- 空白・特殊文字を含む `FreeText` 値は必ず quote (parser が複数 token に分解しないように)
+- BoolOp は precedence (AND > OR、NOT 単項) に従い冗長括弧を排除。AND/OR の子 chain は flat (`a AND b AND c`)
+- `NOT` の子が `BoolOp` (AND/OR/NOT) のときは括弧化 (grammar `not_op: NOT atom` の制約)
+
+### エラー
+
+| `type` URI suffix | status | 発生条件 |
+|---|---|---|
+| `invalid-ast` | 400 | request body が `DbPortalParseNode` schema に合わない (`op` 不明、必須 key 欠落、value 型違い 等)。Pydantic の RequestValidationError を 400 + RFC 7807 にラップする |
+| `unknown-field` / `field-not-available-in-cross-db` / `invalid-operator-for-field` / `invalid-date-format` / `missing-value` / `nest-depth-exceeded` / `invalid-freetext-position` / `duplicate-freetext` | 400 | AST → validator で reject。`/db-portal/parse` と同一エラー slug を共有 |
+
+`db` query parameter の enum 値違反のみ FastAPI 標準の 422 (`about:blank`) を返す (body 由来ではないため `invalid-ast` 化しない)。
+
+`invalid-ast` の error detail は Pydantic の `loc` を `body.ast.<path>` 形式で連結したもの。元の DSL 文字列を持たないため、parser 系エラーと違い `column` 情報は意味を持たない。

@@ -84,12 +84,17 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: 3 routing slugs + 9 query parser slugs = 12 URIs."""
+    """DbPortalErrorType: 3 routing + 1 serialize body + 9 query parser slugs = 13 URIs."""
 
     def test_has_all_members(self) -> None:
         # routing 3 (cursor-not-supported, unexpected-parameter, missing-db)
-        # + query parser 9 (incl. invalid-freetext-position / duplicate-freetext) = 12.
-        assert len(DbPortalErrorType) == 12
+        # + serialize body 1 (invalid-ast, POST /db-portal/serialize)
+        # + query parser 9 (incl. invalid-freetext-position / duplicate-freetext)
+        # = 13.
+        assert len(DbPortalErrorType) == 13
+
+    def test_invalid_ast_uri(self) -> None:
+        assert DbPortalErrorType.invalid_ast.value == "https://ddbj.nig.ac.jp/problems/invalid-ast"
 
     def test_prefix_is_ddbj_problems(self) -> None:
         prefix = "https://ddbj.nig.ac.jp/problems/"
