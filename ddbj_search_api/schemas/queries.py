@@ -422,6 +422,9 @@ class TypeSpecificFilters:
     experiment_type: str | None = None
     submission_type: str | None = None
     vendor: str | None = None
+    relevance: str | None = None
+    package: str | None = None
+    model: str | None = None
 
 
 class BioProjectExtraQuery:
@@ -463,10 +466,21 @@ class BioProjectExtraQuery:
                 "tokens with - / . + : auto-phrased."
             ),
         ),
+        relevance: str | None = Query(
+            default=None,
+            examples=["Medical"],
+            description=(
+                "Term filter on relevance (comma-separated values are OR'd). "
+                "INSDC 7 controlled values: Agricultural / Medical / Industrial / Environmental / "
+                "Evolution / ModelOrganism / Other. Re-injectable from the relevance facet bucket value. "
+                "Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+            ),
+        ),
     ):
         self.object_types = object_types
         self.external_link_label = external_link_label
         self.project_type = project_type
+        self.relevance = relevance
 
 
 class BioSampleExtraQuery:
@@ -535,6 +549,24 @@ class BioSampleExtraQuery:
                 "tokens with - / . + : auto-phrased."
             ),
         ),
+        package: str | None = Query(
+            default=None,
+            examples=["MIGS.ba"],
+            description=(
+                "Term filter on package (BioSample package name, comma-separated values are OR'd). "
+                "Re-injectable from the package facet bucket value. "
+                "Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+            ),
+        ),
+        model: str | None = Query(
+            default=None,
+            examples=["Generic.1.0"],
+            description=(
+                "Term filter on model (comma-separated values are OR'd). "
+                "Re-injectable from the model facet bucket value. "
+                "Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+            ),
+        ),
     ):
         self.derived_from_id = derived_from_id
         self.host = host
@@ -542,6 +574,8 @@ class BioSampleExtraQuery:
         self.isolate = isolate
         self.geo_loc_name = geo_loc_name
         self.collection_date = collection_date
+        self.package = package
+        self.model = model
 
 
 class SraExtraQuery:
@@ -789,12 +823,13 @@ class FacetsParamQuery:
                 "An empty string returns no facets. "
                 "Explicit values fully replace the default selection (no auto-merge with common facets); "
                 "to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). "
-                "Allowed: organism, accessibility, type (cross-type only), "
-                "objectType (bioproject only), libraryStrategy, librarySource, "
-                "librarySelection, platform, instrumentModel "
-                "(sra-experiment-only buckets), experimentType "
-                "(gea / metabobank), studyType (jga-study / metabobank), "
-                "submissionType (metabobank)."
+                "Allowed: organism, accessibility (default common); type (cross-type only); "
+                "objectType, relevance, projectType (bioproject only); package, model, host (biosample only); "
+                "libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout "
+                "(sra-experiment only); analysisType (sra-analysis only); "
+                "experimentType (gea / metabobank); studyType (jga-study / metabobank); "
+                "submissionType (metabobank only); datasetType (jga-dataset only); "
+                "vendor (jga-study only)."
             ),
         ),
         facets_size: int | None = Query(

@@ -456,11 +456,14 @@ _QUERY_SEMANTICS_ENDPOINTS_PARAMS: list[tuple[str, str]] = [
     ("/entries/bioproject/", "objectTypes"),
     ("/entries/bioproject/", "externalLinkLabel"),
     ("/entries/bioproject/", "projectType"),
+    ("/entries/bioproject/", "relevance"),
     # BioSample
     ("/entries/biosample/", "derivedFromId"),
     ("/entries/biosample/", "host"),
     ("/entries/biosample/", "strain"),
     ("/entries/biosample/", "geoLocName"),
+    ("/entries/biosample/", "package"),
+    ("/entries/biosample/", "model"),
     # SRA-experiment (carries the full SRA filter set)
     ("/entries/sra-experiment/", "libraryStrategy"),
     ("/entries/sra-experiment/", "libraryName"),

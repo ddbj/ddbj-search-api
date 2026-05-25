@@ -16,10 +16,13 @@ from tests.integration.conftest import (
     BIOPROJECT_OBJECT_TYPE_PRIMARY,
     BIOPROJECT_OBJECT_TYPE_UMBRELLA,
     BIOPROJECT_PROJECT_TYPE,
+    BIOPROJECT_RELEVANCE,
     BIOSAMPLE_COLLECTION_DATE,
     BIOSAMPLE_GEO_LOC_NAME,
     BIOSAMPLE_HOST,
     BIOSAMPLE_ISOLATE,
+    BIOSAMPLE_MODEL,
+    BIOSAMPLE_PACKAGE,
     BIOSAMPLE_STRAIN,
     GEA_EXPERIMENT_TYPE,
     JGA_DATASET_TYPE,
@@ -73,6 +76,9 @@ _TYPE_SPECIFIC_TERM_FILTERS: list[tuple[str, str, str]] = [
     ("metabobank", "submissionType", METABOBANK_SUBMISSION_TYPE),
     ("jga-study", "studyType", JGA_STUDY_TYPE),
     ("jga-dataset", "datasetType", JGA_DATASET_TYPE),
+    ("bioproject", "relevance", BIOPROJECT_RELEVANCE),
+    ("biosample", "package", BIOSAMPLE_PACKAGE),
+    ("biosample", "model", BIOSAMPLE_MODEL),
 ]
 
 # IT-SEARCH-17 matrix: (type endpoint, text-match parameter, representative
@@ -517,6 +523,32 @@ class TestTypeSpecificTermFilters:
         assert umbrella > 0
         # OR semantics: combined equals the sum of disjoint buckets.
         assert combined == primary + umbrella
+
+    def test_bioproject_relevance_and_object_types_is_subset(self, app: TestClient) -> None:
+        """IT-SEARCH-19: 2 つの type-specific term filter は AND 結合され、
+        単独指定の結果 set に含まれる (`relevance` ∩ `objectTypes`).
+
+        単独件数が 0 でも AND 不変条件は成立するため、代表値の staging 残量に
+        非依存にして flake を避ける (`> 0` strict は要求しない)。
+        """
+        relevance_only = app.get(
+            "/entries/bioproject/",
+            params={"relevance": BIOPROJECT_RELEVANCE, "perPage": 1},
+        ).json()["pagination"]["total"]
+        object_types_only = app.get(
+            "/entries/bioproject/",
+            params={"objectTypes": BIOPROJECT_OBJECT_TYPE_PRIMARY, "perPage": 1},
+        ).json()["pagination"]["total"]
+        both = app.get(
+            "/entries/bioproject/",
+            params={
+                "relevance": BIOPROJECT_RELEVANCE,
+                "objectTypes": BIOPROJECT_OBJECT_TYPE_PRIMARY,
+                "perPage": 1,
+            },
+        ).json()["pagination"]["total"]
+        assert both <= relevance_only
+        assert both <= object_types_only
 
 
 class TestOrganismFilter:

@@ -187,7 +187,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 - `organism`, `accessibility`, `datePublishedFrom`, `datePublishedTo`, `dateModifiedFrom`, `dateModifiedTo`
 - `sort`
 - `types`, `organization`, `publication`, `grant`, `objectTypes`, `externalLinkLabel`, `derivedFromId`
-- `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout`, `analysisType`, `experimentType`, `studyType`, `datasetType`, `submissionType` (type-specific term filter)
+- `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout`, `analysisType`, `experimentType`, `studyType`, `datasetType`, `submissionType`, `relevance`, `package`, `model` (type-specific term filter)
 - `projectType`, `host`, `strain`, `isolate`, `geoLocName`, `collectionDate`, `libraryName`, `libraryConstructionProtocol`, `vendor` (type-specific text match)
 - `includeFacets`, `includeProperties` (デフォルト値以外), `fields`, `facets`, `facetsSize`
 
@@ -269,8 +269,8 @@ text match 9 param と nested 4 text param (`organization` / `publication` / `gr
 | 型グループ (DbType) | パラメータ |
 |---|---|
 | `GET /entries/`, `GET /facets` (cross-type) | `types` (`organization` / `publication` / `grant` は § 検索パラメータ の `SearchFilterQuery` で全 endpoint 共通) |
-| bioproject | `objectTypes` (term)、`externalLinkLabel` (nested)、`projectType` (text) |
-| biosample | `derivedFromId` (nested)、`host` / `strain` / `isolate` / `geoLocName` / `collectionDate` (text) |
+| bioproject | `objectTypes` / `relevance` (term)、`externalLinkLabel` (nested)、`projectType` (text) |
+| biosample | `package` / `model` (term)、`derivedFromId` (nested)、`host` / `strain` / `isolate` / `geoLocName` / `collectionDate` (text) |
 | sra-* (`sra-submission` / `sra-study` / `sra-experiment` / `sra-run` / `sra-sample` / `sra-analysis`) | `libraryStrategy` / `librarySource` / `librarySelection` / `platform` / `instrumentModel` / `libraryLayout` / `analysisType` (term)、`derivedFromId` (nested)、`libraryName` / `libraryConstructionProtocol` / `geoLocName` / `collectionDate` (text) |
 | jga-* (`jga-study` / `jga-dataset` / `jga-policy` / `jga-dac`) | `studyType` / `datasetType` (term)、`externalLinkLabel` (nested)、`vendor` (text) |
 | gea | `experimentType` (term) |
@@ -279,6 +279,8 @@ text match 9 param と nested 4 text param (`organization` / `publication` / `gr
 term filter / text match パラメータの値域は型グループ内で実際に当該 field を持つ type が SSOT (例: sra-* の `libraryStrategy` は sra-experiment、`libraryLayout` は sra-experiment、`analysisType` は sra-analysis、`libraryName` は sra-experiment、`geoLocName` / `collectionDate` は biosample / sra-sample、jga-* の `studyType` は jga-study、`datasetType` は jga-dataset、`vendor` は jga-study)。型グループ内の他 type に渡しても match なしで 0 件化される。
 
 **`objectTypes` (bioproject)** の補足: `BioProject` / `UmbrellaBioProject` のカンマ区切り (1 つまたは 2 つ)。指定された値の OR 検索。未指定または両方指定はフィルタなしと等価。値域は `objectType` ファセットの bucket key と一致する。
+
+**`relevance` (bioproject) / `package` (biosample) / `model` (biosample)** の補足: それぞれ同名ファセット (`relevance` / `package` / `model`) の bucket value をそのまま再注入できる。カンマ区切りで OR (`terms`)、単一値で `term`。値域のクライアント側 allowlist は行わず、ES 側に存在しない値は match なしで 0 件化される (`relevance` の INSDC 7 値、`package` の BioSample package 名、`model` のモデル名はいずれも controlled vocab 寄りだが、新値追加に api 側の regex 更新を要さない設計)。`package` は ES mapping 上は object 配下の `package.name` (keyword) に対して term filter を組むが、API parameter 名は object 表現を隠して `package` を使う。
 
 ### nested フィールド検索
 
@@ -375,10 +377,12 @@ cross-type endpoint (`GET /entries/`, `GET /facets`) では text match パラメ
 
 **bucket 形式**:
 
-`organism` を除く全 facet は `FacetBucket` (`{value, count}` の 2 フィールド) を返す。`value` の再注入経路は対応する term filter parameter の有無で 2 通りある:
+`organism` を除く全 facet は `FacetBucket` (`{value, count}` の 2 フィールド) を返す。`value` の再注入経路は **ペアになる search parameter のタイプ** によって 2 通りある:
 
-- **term filter parameter を持つ facet** (`accessibility`, `objectType`, `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout`, `analysisType`, `experimentType`, `studyType`, `submissionType`, `datasetType`): `?<facet>=<value>` で直接再注入できる (例: `libraryStrategy` facet の value `"WGS"` を `?libraryStrategy=WGS` に再注入、`accessibility` facet の value `"public-access"` を `?accessibility=public-access` に再注入)。DB Portal API (`/db-portal/*`) の `q` でも再注入可 (`q=library_strategy:"WGS"`、Tier 3 allowlist の snake_case field 名)
-- **term filter parameter を持たない facet** (`relevance`, `package`, `model`): DB Portal API の `q` での再注入のみ (例: `relevance` facet の value `"Medical"` を `q=relevance:"Medical"` に再注入、`package` / `model` は対応する Tier 3 allowlist field 名 `package` / `model` で同じく合算)
+- **term filter parameter とペア** (= bucket value を `?<facet>=<value>` に再注入すると完全一致、bucket 件数 = 検索結果件数): `accessibility`, `objectType` (→ `objectTypes`), `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout`, `analysisType`, `experimentType`, `studyType`, `submissionType`, `datasetType`, `relevance`, `package`, `model`。例: `libraryStrategy` facet の value `"WGS"` を `?libraryStrategy=WGS` に再注入。
+- **text match parameter とペア** (= bucket value は `.keyword` の exact、再注入先は analyzed match なので **bucket の docs ⊆ 検索結果**、トークン共有の docs が混ざる): `projectType`, `host`, `vendor`。例: `host` facet の value `"Homo sapiens"` を `?host=Homo+sapiens` に再注入すると analyzed match で `"Homo sapiens domesticus"` 等の追加 docs が混ざりうる。bucket 件数と完全に揃えたければ phrase 化 (`?host="Homo+sapiens"`) を使う。
+
+DB Portal API (`/db-portal/*`) の `q` 経由でも同様に再注入可 (Tier 3 allowlist の snake_case field 名、例: `q=library_strategy:"WGS"` / `q=relevance:"Medical"` / `q=package:"MIGS.ba"` / `q=host:"Homo sapiens"`)。
 
 `organism` のみ例外で `OrganismFacetBucket` (`{value, count, label}` の 3 フィールド) を返す:
 
@@ -416,13 +420,13 @@ ES の terms aggregation は `organism.identifier` を bucket key にし、各 b
 
 | タイプ | フィールド | 説明 |
 |--------|----------|------|
-| bioproject | `objectType`, `relevance` | `objectType`: Umbrella / 通常の区分 (`BioProject` / `UmbrellaBioProject`、同じ key を `objectTypes` filter に渡すと検索を絞り込める)。`relevance`: INSDC 7 値 (Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other) |
-| biosample | `package`, `model` | `package`: BioSample package 名 (`package.name` の値域、controlled vocab)。`model`: モデル名 (`model` の値域) |
+| bioproject | `objectType`, `relevance`, `projectType` | `objectType`: Umbrella / 通常の区分 (`BioProject` / `UmbrellaBioProject`、同じ key を `objectTypes` filter に渡すと検索を絞り込める)。`relevance`: INSDC 7 値 (Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other、同じ key を `relevance` filter に渡すと検索を絞り込める)。`projectType`: `projectType.keyword` の値域 (text match `?projectType=` とペア、再注入は analyzed match) |
+| biosample | `package`, `model`, `host` | `package`: BioSample package 名 (`package.name` の値域、controlled vocab、同じ key を `package` filter に渡すと検索を絞り込める)。`model`: モデル名 (`model` の値域、同じ key を `model` filter に渡すと検索を絞り込める)。`host`: `host.keyword` の値域 (cardinality ~134K、text match `?host=` とペア、再注入は analyzed match)。**高 cardinality のため `host` facet は大きな `facetsSize` (~1000) で叩くと shard 集計コストが重い。default の `facetsSize=100` 推奨、必要なら事前に `keywords` / `organism` 等で検索範囲を絞ること** |
 | sra-experiment | `libraryStrategy`, `librarySource`, `librarySelection`, `platform`, `instrumentModel`, `libraryLayout` | 各 `*.keyword` の値域。同名の type-specific filter parameter で検索を絞り込める |
 | sra-analysis | `analysisType` | `analysisType.keyword` の値域 |
 | gea | `experimentType` | `experimentType.keyword` の値域 |
 | metabobank | `studyType`, `experimentType`, `submissionType` | 各 `*.keyword` の値域 |
-| jga-study | `studyType` | `studyType.keyword` の値域 |
+| jga-study | `studyType`, `vendor` | `studyType.keyword` の値域。`vendor`: `vendor.keyword` の値域 (text match `?vendor=` とペア、再注入は analyzed match) |
 | jga-dataset | `datasetType` | `datasetType.keyword` の値域 |
 
 タイプ固有フィールドは、そのタイプのファセット (`GET /facets/{type}`, `GET /entries/{type}/?includeFacets=true`) でのみ返される。bucket key の値域は ES データから動的に決まるため (converter mapping の値域)、本仕様書には列挙しない。

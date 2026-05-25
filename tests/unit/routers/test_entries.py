@@ -1372,6 +1372,7 @@ class TestCursorExclusivity:
             ("bioproject", "objectTypes", "BioProject"),
             ("bioproject", "externalLinkLabel", "GEO"),
             ("bioproject", "projectType", "metagenome"),
+            ("bioproject", "relevance", "Medical"),
             # biosample 型グループ
             ("biosample", "derivedFromId", "SAMD00012345"),
             ("biosample", "host", "Homo sapiens"),
@@ -1379,6 +1380,8 @@ class TestCursorExclusivity:
             ("biosample", "isolate", "patient-1"),
             ("biosample", "geoLocName", "Japan"),
             ("biosample", "collectionDate", "2020-05-01"),
+            ("biosample", "package", "MIGS.ba"),
+            ("biosample", "model", "Generic.1.0"),
             # sra-* 型グループ (sra-experiment を代表として使う)
             ("sra-experiment", "libraryStrategy", "WGS"),
             ("sra-experiment", "librarySource", "GENOMIC"),
@@ -1969,6 +1972,9 @@ class TestEntriesCrossTypeRejections:
             ("libraryName", "lib1"),
             ("libraryConstructionProtocol", "PCR-free"),
             ("vendor", "Illumina"),
+            ("relevance", "Medical"),
+            ("package", "MIGS.ba"),
+            ("model", "Generic.1.0"),
         ],
     )
     def test_type_specific_filter_rejected_on_cross_type(
@@ -2068,26 +2074,37 @@ class TestEntriesTypeGroupRejections:
             ("bioproject", "libraryStrategy"),
             ("bioproject", "host"),
             ("bioproject", "studyType"),
+            ("bioproject", "package"),
+            ("bioproject", "model"),
             # biosample endpoint は sra/jga 系を拒否
             ("biosample", "libraryStrategy"),
             ("biosample", "platform"),
             ("biosample", "studyType"),
             ("biosample", "objectTypes"),
+            ("biosample", "relevance"),
             # sra-* endpoint は biosample-only / bioproject 系を拒否
             ("sra-experiment", "objectTypes"),
             ("sra-experiment", "host"),
             ("sra-experiment", "strain"),
+            ("sra-experiment", "relevance"),
+            ("sra-experiment", "package"),
+            ("sra-experiment", "model"),
             # jga-* endpoint は sra-only を拒否
             ("jga-study", "libraryStrategy"),
             ("jga-study", "host"),
             ("jga-study", "objectTypes"),
+            ("jga-study", "relevance"),
+            ("jga-study", "package"),
             # gea / metabobank も型グループ外を拒否
             ("gea", "objectTypes"),
             ("gea", "libraryStrategy"),
             ("gea", "studyType"),
+            ("gea", "relevance"),
+            ("gea", "package"),
             ("metabobank", "objectTypes"),
             ("metabobank", "libraryStrategy"),
             ("metabobank", "host"),
+            ("metabobank", "model"),
         ],
     )
     def test_out_of_group_param_returns_422(
@@ -2169,6 +2186,10 @@ class TestEntriesTermFilterReflected:
             ("jga-dataset", "datasetType", "datasetType.keyword", "WGS"),
             ("gea", "experimentType", "experimentType.keyword", "RNA-Seq"),
             ("metabobank", "submissionType", "submissionType.keyword", "open"),
+            # keyword 単独 / object.name 配下の term filter (facet と pair)
+            ("bioproject", "relevance", "relevance", "Medical"),
+            ("biosample", "package", "package.name", "MIGS.ba"),
+            ("biosample", "model", "model", "Generic.1.0"),
         ],
     )
     def test_term_filter_reflected(

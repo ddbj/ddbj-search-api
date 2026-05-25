@@ -31,6 +31,10 @@ _TYPE_SPECIFIC_FACETS: list[tuple[str, str]] = [
     ("metabobank", "experimentType"),
     ("metabobank", "submissionType"),
     ("jga-study", "studyType"),
+    # text match parameter とペアの facet (.keyword sub-field で集計)。
+    ("bioproject", "projectType"),
+    ("biosample", "host"),
+    ("jga-study", "vendor"),
 ]
 
 

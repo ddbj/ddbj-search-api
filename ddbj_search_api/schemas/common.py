@@ -250,6 +250,38 @@ class Facets(BaseModel):
         examples=[[{"value": "Whole genome sequencing", "count": 250}]],
         description="JGA dataset type count (jga-dataset only, opt-in).",
     )
+    project_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="projectType",
+        examples=[[{"value": "metagenome", "count": 1200}]],
+        description=(
+            "BioProject projectType count (bioproject only, opt-in). bucket value is the "
+            "``projectType.keyword`` exact value; the paired search parameter ``projectType`` "
+            "performs analyzed text match, so re-injecting a bucket value may return a superset "
+            'of the bucket (use ``?projectType="<value>"`` to force phrase match).'
+        ),
+    )
+    host: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "Homo sapiens", "count": 3000}]],
+        description=(
+            "BioSample host count (biosample only, opt-in). bucket value is the ``host.keyword`` "
+            "exact value (cardinality ~134K); the paired search parameter ``host`` performs "
+            "analyzed text match, so re-injecting a bucket value may return a superset of the "
+            'bucket (use ``?host="<value>"`` to force phrase match). '
+            "Due to the high cardinality, large ``facetsSize`` values (e.g. 1000) trigger "
+            "expensive shard-level aggregation; prefer the default ``facetsSize=100`` and "
+            "narrow the query (keywords / organism / etc.) before requesting this facet."
+        ),
+    )
+    vendor: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "Illumina", "count": 90}]],
+        description=(
+            "JGA vendor count (jga-study only, opt-in). bucket value is the ``vendor.keyword`` "
+            "exact value; the paired search parameter ``vendor`` performs analyzed text match."
+        ),
+    )
 
 
 # DbXrefsCount: mapping from XrefType to count

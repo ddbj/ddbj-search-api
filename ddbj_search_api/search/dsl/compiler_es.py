@@ -77,6 +77,12 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     # (analyzer 適用後の lowercase token と uppercase 値が一致しないため)。
     # text 型 (instrumentModel / libraryName / etc) は match_phrase で analyzer 経由する
     # ので suffix 不要。keyword 単独 (objectType / relevance) も suffix 不要。
+    #
+    # NOTE: DSL の `project_type` は **意図的に ES `objectType` field にマップ** している
+    # (BioProject / UmbrellaBioProject の Umbrella 区分。REST API の `?objectTypes=` 相当)。
+    # ES の `projectType` (text+keyword、INSDC の genome / metagenome 等) とは別 field で、
+    # DSL 側にはそちらの allowlist field を露出していない。`schemas/db_portal.py` の
+    # `project_type: Literal["BioProject", "UmbrellaBioProject"]` (alias="objectType") と整合。
     "project_type": _ESStrategy(kind="flat", path="objectType"),
     "relevance": _ESStrategy(kind="flat", path="relevance"),
     "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy.keyword"),

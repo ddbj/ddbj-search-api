@@ -421,13 +421,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -614,7 +614,7 @@
           "Entries"
         ],
         "summary": "Search bioproject entries",
-        "description": "Search bioproject entries. Type-specific filters: objectTypes (term), externalLinkLabel (nested), projectType (text).",
+        "description": "Search bioproject entries. Type-specific filters: objectTypes/relevance (term), externalLinkLabel (nested), projectType (text).",
         "operationId": "listBioProjectEntries",
         "parameters": [
           {
@@ -1045,6 +1045,27 @@
             "description": "Text match on projectType. Semantics: spaces = AND, commas = OR, double quotes = phrase, tokens with - / . + : auto-phrased."
           },
           {
+            "name": "relevance",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on relevance (comma-separated values are OR'd). INSDC 7 controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other. Re-injectable from the relevance facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced.",
+              "examples": [
+                "Medical"
+              ],
+              "title": "Relevance"
+            },
+            "description": "Term filter on relevance (comma-separated values are OR'd). INSDC 7 controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other. Re-injectable from the relevance facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+          },
+          {
             "name": "facets",
             "in": "query",
             "required": false,
@@ -1057,13 +1078,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -1250,7 +1271,7 @@
           "Entries"
         ],
         "summary": "Search biosample entries",
-        "description": "Search biosample entries. Type-specific filters: derivedFromId (nested); host/strain/isolate/geoLocName/collectionDate (text).",
+        "description": "Search biosample entries. Type-specific filters: package/model (term); derivedFromId (nested); host/strain/isolate/geoLocName/collectionDate (text).",
         "operationId": "listBioSampleEntries",
         "parameters": [
           {
@@ -1743,6 +1764,48 @@
             "description": "Text match on collectionDate. Semantics: spaces = AND, commas = OR, double quotes = phrase, tokens with - / . + : auto-phrased."
           },
           {
+            "name": "package",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on package (BioSample package name, comma-separated values are OR'd). Re-injectable from the package facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced.",
+              "examples": [
+                "MIGS.ba"
+              ],
+              "title": "Package"
+            },
+            "description": "Term filter on package (BioSample package name, comma-separated values are OR'd). Re-injectable from the package facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on model (comma-separated values are OR'd). Re-injectable from the model facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced.",
+              "examples": [
+                "Generic.1.0"
+              ],
+              "title": "Model"
+            },
+            "description": "Term filter on model (comma-separated values are OR'd). Re-injectable from the model facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+          },
+          {
             "name": "facets",
             "in": "query",
             "required": false,
@@ -1755,13 +1818,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -2579,13 +2642,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -3403,13 +3466,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -4227,13 +4290,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -5051,13 +5114,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -5875,13 +5938,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -6699,13 +6762,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -7355,13 +7418,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -8011,13 +8074,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -8667,13 +8730,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -9323,13 +9386,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -9916,13 +9979,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -10551,13 +10614,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -11700,13 +11763,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -11782,7 +11845,7 @@
           "Facets"
         ],
         "summary": "Facet aggregation for bioproject",
-        "description": "Get facet counts for bioproject entries. Type-specific filters: objectTypes (term), externalLinkLabel (nested), projectType (text).",
+        "description": "Get facet counts for bioproject entries. Type-specific filters: objectTypes/relevance (term), externalLinkLabel (nested), projectType (text).",
         "operationId": "getBioProjectFacets",
         "parameters": [
           {
@@ -12098,6 +12161,27 @@
             "description": "Text match on projectType. Semantics: spaces = AND, commas = OR, double quotes = phrase, tokens with - / . + : auto-phrased."
           },
           {
+            "name": "relevance",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on relevance (comma-separated values are OR'd). INSDC 7 controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other. Re-injectable from the relevance facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced.",
+              "examples": [
+                "Medical"
+              ],
+              "title": "Relevance"
+            },
+            "description": "Term filter on relevance (comma-separated values are OR'd). INSDC 7 controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other. Re-injectable from the relevance facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+          },
+          {
             "name": "facets",
             "in": "query",
             "required": false,
@@ -12110,13 +12194,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -12192,7 +12276,7 @@
           "Facets"
         ],
         "summary": "Facet aggregation for biosample",
-        "description": "Get facet counts for biosample entries. Type-specific filters: derivedFromId (nested); host/strain/isolate/geoLocName/collectionDate (text).",
+        "description": "Get facet counts for biosample entries. Type-specific filters: package/model (term); derivedFromId (nested); host/strain/isolate/geoLocName/collectionDate (text).",
         "operationId": "getBioSampleFacets",
         "parameters": [
           {
@@ -12570,6 +12654,48 @@
             "description": "Text match on collectionDate. Semantics: spaces = AND, commas = OR, double quotes = phrase, tokens with - / . + : auto-phrased."
           },
           {
+            "name": "package",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on package (BioSample package name, comma-separated values are OR'd). Re-injectable from the package facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced.",
+              "examples": [
+                "MIGS.ba"
+              ],
+              "title": "Package"
+            },
+            "description": "Term filter on package (BioSample package name, comma-separated values are OR'd). Re-injectable from the package facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Term filter on model (comma-separated values are OR'd). Re-injectable from the model facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced.",
+              "examples": [
+                "Generic.1.0"
+              ],
+              "title": "Model"
+            },
+            "description": "Term filter on model (comma-separated values are OR'd). Re-injectable from the model facet bucket value. Values not present in ES yield no hits naturally; no client-side allowlist is enforced."
+          },
+          {
             "name": "facets",
             "in": "query",
             "required": false,
@@ -12582,13 +12708,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -13180,13 +13306,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -13778,13 +13904,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -14376,13 +14502,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -14974,13 +15100,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -15572,13 +15698,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -16170,13 +16296,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -16600,13 +16726,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -17030,13 +17156,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -17460,13 +17586,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -17890,13 +18016,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -18257,13 +18383,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -18666,13 +18792,13 @@
                   "type": "null"
                 }
               ],
-              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank).",
+              "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only).",
               "examples": [
                 "organism,accessibility"
               ],
               "title": "Facets"
             },
-            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility, type (cross-type only), objectType (bioproject only), libraryStrategy, librarySource, librarySelection, platform, instrumentModel (sra-experiment-only buckets), experimentType (gea / metabobank), studyType (jga-study / metabobank), submissionType (metabobank)."
+            "description": "Comma-separated facet fields to aggregate. Omitting the parameter returns common facets only (organism, accessibility, and type for cross-type endpoints). An empty string returns no facets. Explicit values fully replace the default selection (no auto-merge with common facets); to keep common facets, list them explicitly (e.g. 'organism,accessibility,objectType'). Allowed: organism, accessibility (default common); type (cross-type only); objectType, relevance, projectType (bioproject only); package, model, host (biosample only); libraryStrategy, librarySource, librarySelection, platform, instrumentModel, libraryLayout (sra-experiment only); analysisType (sra-analysis only); experimentType (gea / metabobank); studyType (jga-study / metabobank); submissionType (metabobank only); datasetType (jga-dataset only); vendor (jga-study only)."
           },
           {
             "name": "facetsSize",
@@ -26085,6 +26211,75 @@
                 {
                   "count": 250,
                   "value": "Whole genome sequencing"
+                }
+              ]
+            ]
+          },
+          "projectType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projecttype",
+            "description": "BioProject projectType count (bioproject only, opt-in). bucket value is the ``projectType.keyword`` exact value; the paired search parameter ``projectType`` performs analyzed text match, so re-injecting a bucket value may return a superset of the bucket (use ``?projectType=\"<value>\"`` to force phrase match).",
+            "examples": [
+              [
+                {
+                  "count": 1200,
+                  "value": "metagenome"
+                }
+              ]
+            ]
+          },
+          "host": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host",
+            "description": "BioSample host count (biosample only, opt-in). bucket value is the ``host.keyword`` exact value (cardinality ~134K); the paired search parameter ``host`` performs analyzed text match, so re-injecting a bucket value may return a superset of the bucket (use ``?host=\"<value>\"`` to force phrase match). Due to the high cardinality, large ``facetsSize`` values (e.g. 1000) trigger expensive shard-level aggregation; prefer the default ``facetsSize=100`` and narrow the query (keywords / organism / etc.) before requesting this facet.",
+            "examples": [
+              [
+                {
+                  "count": 3000,
+                  "value": "Homo sapiens"
+                }
+              ]
+            ]
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor",
+            "description": "JGA vendor count (jga-study only, opt-in). bucket value is the ``vendor.keyword`` exact value; the paired search parameter ``vendor`` performs analyzed text match.",
+            "examples": [
+              [
+                {
+                  "count": 90,
+                  "value": "Illumina"
                 }
               ]
             ]

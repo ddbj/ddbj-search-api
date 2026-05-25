@@ -234,6 +234,9 @@ def build_search_query(
     library_name: str | None = None,
     library_construction_protocol: str | None = None,
     vendor: str | None = None,
+    relevance: str | None = None,
+    package: str | None = None,
+    model: str | None = None,
     status_mode: StatusMode | None = "public_only",
 ) -> dict[str, Any]:
     """Build ES query dict from search parameters.
@@ -295,6 +298,9 @@ def build_search_query(
             library_name=library_name,
             library_construction_protocol=library_construction_protocol,
             vendor=vendor,
+            relevance=relevance,
+            package=package,
+            model=model,
         )
     )
 
@@ -337,6 +343,9 @@ _TERM_FILTER_FIELDS: list[tuple[str, str]] = [
     ("study_type", "studyType.keyword"),
     ("submission_type", "submissionType.keyword"),
     ("dataset_type", "datasetType.keyword"),
+    ("relevance", "relevance"),
+    ("package", "package.name"),
+    ("model", "model"),
 ]
 
 # Mapping from API parameter name to the ES top-level text field used by
@@ -431,6 +440,9 @@ def _build_filter_clauses(
     library_name: str | None = None,
     library_construction_protocol: str | None = None,
     vendor: str | None = None,
+    relevance: str | None = None,
+    package: str | None = None,
+    model: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build list of ES filter clauses.
 
@@ -514,6 +526,9 @@ def _build_filter_clauses(
         "study_type": study_type,
         "submission_type": submission_type,
         "dataset_type": dataset_type,
+        "relevance": relevance,
+        "package": package,
+        "model": model,
     }
     for kwarg_name, es_field in _TERM_FILTER_FIELDS:
         clause = _build_term_clause(es_field, term_values[kwarg_name])
@@ -574,14 +589,22 @@ _FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
     "submissionType": {"terms": {"field": "submissionType.keyword"}},
     # === BioProject ===
     "relevance": {"terms": {"field": "relevance"}},
+    # text + .keyword の text match param とペア。bucket value は .keyword 値で
+    # 集計するが、再注入先の `?projectType=` は analyzed match なので部分一致が
+    # 紛れ込む可能性あり (docs/api-spec.md § ファセット — bucket 再注入)。
+    "projectType": {"terms": {"field": "projectType.keyword"}},
     # === BioSample (package は object{name:keyword,displayName:keyword} の name サブフィールド) ===
     "package": {"terms": {"field": "package.name"}},
     "model": {"terms": {"field": "model"}},
+    # host は text + .keyword (cardinality 134K)、text match `?host=` とペア。
+    "host": {"terms": {"field": "host.keyword"}},
     # === SRA ===
     "libraryLayout": {"terms": {"field": "libraryLayout.keyword"}},
     "analysisType": {"terms": {"field": "analysisType.keyword"}},
     # === JGA ===
     "datasetType": {"terms": {"field": "datasetType.keyword"}},
+    # vendor は text + .keyword (jga-study)、text match `?vendor=` とペア。
+    "vendor": {"terms": {"field": "vendor.keyword"}},
 }
 
 # Default common facets when ``requested_facets`` is omitted. ``type`` is
@@ -621,6 +644,9 @@ _TYPE_SPECIFIC_FACET_SCOPE: dict[str, frozenset[str]] = {
     "libraryLayout": frozenset({"sra-experiment"}),
     "analysisType": frozenset({"sra-analysis"}),
     "datasetType": frozenset({"jga-dataset"}),
+    "projectType": frozenset({"bioproject"}),
+    "host": frozenset({"biosample"}),
+    "vendor": frozenset({"jga-study"}),
 }
 
 

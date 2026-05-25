@@ -932,6 +932,57 @@ class TestFacetsPick:
         resp = app_with_facets.get("/facets/bioproject?facets=libraryStrategy")
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize(
+        ("endpoint", "facet", "es_field"),
+        [
+            ("bioproject", "projectType", "projectType.keyword"),
+            ("biosample", "host", "host.keyword"),
+            ("jga-study", "vendor", "vendor.keyword"),
+        ],
+    )
+    def test_text_match_paired_facet_aggregates_on_keyword_subfield(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+        endpoint: str,
+        facet: str,
+        es_field: str,
+    ) -> None:
+        """text match param とペアの facet は `.keyword` sub-field で terms 集計する。"""
+        resp = app_with_facets.get(f"/facets/{endpoint}?facets={facet}")
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_facets)
+        assert facet in body["aggs"]
+        assert body["aggs"][facet]["terms"]["field"] == es_field
+
+    @pytest.mark.parametrize(
+        ("endpoint", "facet"),
+        [
+            # projectType は bioproject 限定 → 他 type は 400
+            ("biosample", "projectType"),
+            ("sra-experiment", "projectType"),
+            ("jga-study", "projectType"),
+            # host は biosample 限定
+            ("bioproject", "host"),
+            ("sra-experiment", "host"),
+            ("jga-study", "host"),
+            # vendor は jga-study 限定
+            ("bioproject", "vendor"),
+            ("biosample", "vendor"),
+            ("sra-experiment", "vendor"),
+            ("jga-dataset", "vendor"),
+        ],
+    )
+    def test_text_match_paired_facet_out_of_scope_returns_400(
+        self,
+        app_with_facets: TestClient,
+        endpoint: str,
+        facet: str,
+    ) -> None:
+        """facet name は valid だが endpoint の type group では取れない場合は 400。"""
+        resp = app_with_facets.get(f"/facets/{endpoint}?facets={facet}")
+        assert resp.status_code == 400
+
     def test_cross_type_accepts_any_allowlisted_facet(
         self,
         app_with_facets: TestClient,
@@ -1000,6 +1051,9 @@ class TestFacetsCrossTypeRejections:
             ("libraryName", "lib"),
             ("libraryConstructionProtocol", "PCR-free"),
             ("vendor", "Illumina"),
+            ("relevance", "Medical"),
+            ("package", "MIGS.ba"),
+            ("model", "Generic.1.0"),
         ],
     )
     def test_type_specific_filter_rejected_on_cross_type(
@@ -1098,27 +1152,38 @@ class TestFacetsTypeGroupRejections:
             ("bioproject", "libraryStrategy"),
             ("bioproject", "host"),
             ("bioproject", "studyType"),
+            ("bioproject", "package"),
+            ("bioproject", "model"),
             # biosample endpoint should reject sra-* term-only params.
             ("biosample", "libraryStrategy"),
             ("biosample", "platform"),
             ("biosample", "studyType"),
             ("biosample", "objectTypes"),
+            ("biosample", "relevance"),
             # sra-* endpoint should reject biosample-only params.
             ("sra-experiment", "objectTypes"),
             ("sra-experiment", "host"),
             ("sra-experiment", "strain"),
+            ("sra-experiment", "relevance"),
+            ("sra-experiment", "package"),
+            ("sra-experiment", "model"),
             # jga-* endpoint should reject sra-only params.
             ("jga-study", "libraryStrategy"),
             ("jga-study", "host"),
             ("jga-study", "objectTypes"),
+            ("jga-study", "relevance"),
+            ("jga-study", "package"),
             # gea endpoint should reject other type-specific params.
             ("gea", "objectTypes"),
             ("gea", "libraryStrategy"),
             ("gea", "studyType"),
+            ("gea", "relevance"),
+            ("gea", "model"),
             # metabobank endpoint should reject other type-specific params.
             ("metabobank", "objectTypes"),
             ("metabobank", "libraryStrategy"),
             ("metabobank", "host"),
+            ("metabobank", "package"),
         ],
     )
     def test_out_of_group_param_returns_422(

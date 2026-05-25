@@ -802,6 +802,11 @@ class TestBuildFacetAggs:
             ("libraryLayout", "libraryLayout.keyword"),
             ("analysisType", "analysisType.keyword"),
             ("datasetType", "datasetType.keyword"),
+            # text + .keyword の text match param とペアになる facet。
+            # bucket 集計は .keyword 側で行い、search 側は analyzed text match。
+            ("projectType", "projectType.keyword"),
+            ("host", "host.keyword"),
+            ("vendor", "vendor.keyword"),
         ],
     )
     def test_explicit_type_specific_facet_uses_keyword_field(
@@ -1702,6 +1707,11 @@ class TestBuildSearchQueryTypeSpecificTermFilters:
             ("study_type", "studyType.keyword"),
             ("submission_type", "submissionType.keyword"),
             ("dataset_type", "datasetType.keyword"),
+            # relevance / model は keyword 単独 mapping なので suffix `.keyword` を付けない
+            ("relevance", "relevance"),
+            ("model", "model"),
+            # package は object{name:keyword,displayName:keyword} で name サブフィールドへ解決
+            ("package", "package.name"),
         ],
     )
     def test_each_term_filter_routes_to_keyword_field(
@@ -1731,6 +1741,37 @@ class TestBuildSearchQueryTypeSpecificTermFilters:
         f = _find_filter(result["bool"]["filter"], "terms", "libraryStrategy.keyword")
         assert "WGS" in f["terms"]["libraryStrategy.keyword"]
         assert "RNA-Seq" in f["terms"]["libraryStrategy.keyword"]
+
+    @pytest.mark.parametrize(
+        ("kwarg", "es_field", "single_value", "comma_values"),
+        [
+            ("relevance", "relevance", "Medical", "Medical,ModelOrganism"),
+            ("package", "package.name", "MIGS.ba", "MIGS.ba,MIMS.me"),
+            ("model", "model", "Generic.1.0", "Generic.1.0,Plant.1.0"),
+        ],
+    )
+    def test_facet_backed_term_filter_or(
+        self,
+        kwarg: str,
+        es_field: str,
+        single_value: str,
+        comma_values: str,
+    ) -> None:
+        single = build_search_query(**{kwarg: single_value})  # type: ignore[arg-type]
+        f_single = _find_filter(single["bool"]["filter"], "term", es_field)
+        assert f_single["term"][es_field] == single_value
+        multi = build_search_query(**{kwarg: comma_values})  # type: ignore[arg-type]
+        f_multi = _find_filter(multi["bool"]["filter"], "terms", es_field)
+        assert set(f_multi["terms"][es_field]) == set(comma_values.split(","))
+        assert "term" not in {k for c in multi["bool"]["filter"] for k in c if es_field in c.get(k, {})}
+
+    @pytest.mark.parametrize("kwarg", ["relevance", "package", "model"])
+    def test_facet_backed_term_filter_empty_skips(self, kwarg: str) -> None:
+        result = build_search_query(**{kwarg: ""})  # type: ignore[arg-type]
+        clauses = result["bool"].get("filter", [])
+        for es_field in ("relevance", "package.name", "model"):
+            assert not any(es_field in c.get("term", {}) for c in clauses)
+            assert not any(es_field in c.get("terms", {}) for c in clauses)
 
 
 # ===================================================================

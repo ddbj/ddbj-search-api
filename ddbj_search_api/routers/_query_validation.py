@@ -47,7 +47,7 @@ _DB_XREFS_LIMIT_PARAM_NAMES = frozenset({"dbXrefsLimit", "includeDbXrefs"})
 _TYPES_FILTER_PARAM_NAMES = frozenset({"types"})
 _FACETS_PARAM_NAMES = frozenset({"facets", "facetsSize"})
 
-_BIOPROJECT_EXTRA_PARAM_NAMES = frozenset({"objectTypes", "externalLinkLabel", "projectType"})
+_BIOPROJECT_EXTRA_PARAM_NAMES = frozenset({"objectTypes", "externalLinkLabel", "projectType", "relevance"})
 _BIOSAMPLE_EXTRA_PARAM_NAMES = frozenset(
     {
         "derivedFromId",
@@ -56,6 +56,8 @@ _BIOSAMPLE_EXTRA_PARAM_NAMES = frozenset(
         "isolate",
         "geoLocName",
         "collectionDate",
+        "package",
+        "model",
     }
 )
 _SRA_EXTRA_PARAM_NAMES = frozenset(
@@ -166,9 +168,12 @@ _JGA_FILTERS_DESC = (
 # parameter list.  Members of the same type group share the same
 # string (sra-* / jga-*).
 TYPE_GROUP_FILTERS_DESC: dict[DbType, str] = {
-    DbType.bioproject: ("Type-specific filters: objectTypes (term), externalLinkLabel (nested), projectType (text)."),
+    DbType.bioproject: (
+        "Type-specific filters: objectTypes/relevance (term), externalLinkLabel (nested), projectType (text)."
+    ),
     DbType.biosample: (
-        "Type-specific filters: derivedFromId (nested); host/strain/isolate/geoLocName/collectionDate (text)."
+        "Type-specific filters: package/model (term); derivedFromId (nested); "
+        "host/strain/isolate/geoLocName/collectionDate (text)."
     ),
     DbType.sra_submission: _SRA_FILTERS_DESC,
     DbType.sra_study: _SRA_FILTERS_DESC,

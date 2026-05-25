@@ -138,6 +138,13 @@ METABOBANK_SUBMISSION_TYPE: str = "LC-MS"
 # jga-study / jga-dataset
 JGA_STUDY_TYPE: str = "Exome Sequencing"
 JGA_DATASET_TYPE: str = "Phenotype information"
+# bioproject relevance (keyword 単独) / biosample package (object.name keyword) / biosample model (keyword 単独)。
+# いずれも controlled-vocab 寄りで、値域 = facet bucket key の top 値を staging から拾ったもの。
+# BIOSAMPLE_PACKAGE と BIOSAMPLE_MODEL は別フィールドで bucket 値が異なる (package は "Generic.1.0"
+# のように version suffix 付き、model は "Generic" のように suffix なし)。
+BIOPROJECT_RELEVANCE: str = "Medical"
+BIOSAMPLE_PACKAGE: str = "Generic.1.0"
+BIOSAMPLE_MODEL: str = "Generic"
 
 # ---- Type-specific text-match representative tokens ----
 # Each token must match a non-zero number of public docs in the connected
