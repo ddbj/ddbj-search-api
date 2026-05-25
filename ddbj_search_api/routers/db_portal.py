@@ -197,7 +197,7 @@ def _validate_cursor_exclusivity(query: DbPortalSearchQuery) -> None:
         conflicting.append("q")
     if query.sort is not None:
         conflicting.append("sort")
-    if query.keyword_operator.value != "AND":
+    if query.keyword_operator.value != "OR":
         conflicting.append("keywordOperator")
     if conflicting:
         raise HTTPException(

@@ -343,14 +343,31 @@ class TestEntriesSearch:
         assert "should" in body["query"]["bool"]
         assert "minimum_should_match" in body["query"]["bool"]
 
-    def test_keyword_operator_and_default(
+    def test_keyword_operator_or_default(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
+        # ``keywordOperator`` 未指定で default = OR (wire-level の挙動).
+        # カンマ区切り token は bool.should + minimum_should_match=1 に展開される.
         app_with_es.get(
             "/entries/",
             params={"keywords": "cancer,tumor"},
+        )
+        body = get_es_search_body(mock_es_search)
+        assert "should" in body["query"]["bool"]
+        assert body["query"]["bool"].get("minimum_should_match") == 1
+
+    def test_keyword_operator_and_explicit(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+    ) -> None:
+        # 明示的に AND 指定 → bool.must に展開される (default が OR に変わった後でも
+        # 旧 default 挙動を取り戻す手段が残っているか確認).
+        app_with_es.get(
+            "/entries/",
+            params={"keywords": "cancer,tumor", "keywordOperator": "AND"},
         )
         body = get_es_search_body(mock_es_search)
         assert "must" in body["query"]["bool"]
@@ -1278,6 +1295,31 @@ class TestCursorExclusivity:
         assert resp.status_code == 400
         assert "sort" in resp.json()["detail"]
 
+    def test_cursor_with_keyword_operator_and_returns_400(
+        self, app_with_es: TestClient,
+    ) -> None:
+        # default が OR になったので、AND を明示するのは default 以外として排他検出される.
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "keywordOperator": "AND"},
+        )
+        assert resp.status_code == 400
+        assert "keywordOperator" in resp.json()["detail"]
+
+    def test_cursor_with_keyword_operator_or_explicit_allowed(
+        self,
+        app_with_es: TestClient,
+        mock_es_open_pit: AsyncMock,
+        mock_es_search_with_pit: AsyncMock,
+    ) -> None:
+        # default (OR) を明示しているだけなら排他検出されず通る.
+        mock_es_search_with_pit.return_value = make_es_search_response()
+        resp = app_with_es.get(
+            "/entries/",
+            params={"cursor": _make_cursor_token(), "keywordOperator": "OR"},
+        )
+        assert resp.status_code == 200
+
     def test_cursor_with_organism_returns_400(self, app_with_es: TestClient) -> None:
         resp = app_with_es.get(
             "/entries/",
@@ -1964,7 +2006,10 @@ class TestEntriesCrossTypeNestedAccepted:
         nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == nested_path]
         assert len(match) == 1
-        assert match[0]["nested"]["query"] == {"match": {sub_field: "DDBJ"}}
+        # text match と統一: 値内空白 AND (operator=and).
+        assert match[0]["nested"]["query"] == {
+            "match": {sub_field: {"query": "DDBJ", "operator": "and"}},
+        }
 
 
 class TestEntriesTypeGroupCommonality:
@@ -2069,7 +2114,9 @@ class TestEntriesNewNestedFilters:
         nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == "externalLink"]
         assert len(match) == 1
-        assert match[0]["nested"]["query"] == {"match": {"externalLink.label": "GEO"}}
+        assert match[0]["nested"]["query"] == {
+            "match": {"externalLink.label": {"query": "GEO", "operator": "and"}},
+        }
 
     def test_external_link_label_on_jga_study(
         self,
@@ -2091,7 +2138,8 @@ class TestEntriesNewNestedFilters:
         nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == "derivedFrom"]
         assert len(match) == 1
-        assert match[0]["nested"]["query"] == {"match": {"derivedFrom.identifier": "SAMD00012345"}}
+        # derivedFromId は accession 完全一致 (term).
+        assert match[0]["nested"]["query"] == {"term": {"derivedFrom.identifier": "SAMD00012345"}}
 
     def test_derived_from_id_on_sra_experiment(
         self,
@@ -2189,19 +2237,23 @@ class TestEntriesTextMatchReflected:
         assert len(phrase) == 1
         assert phrase[0]["match_phrase"]["host"] == "HIF-1"
 
-    def test_text_match_keyword_operator_or_propagates(
+    def test_text_match_operator_is_and_regardless_of_keyword_operator(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        """``keywordOperator=OR`` は text match の operator にも伝搬する
-        (docs/api-spec.md § text match — keywordOperator 連動)。"""
+        """``keywordOperator`` は text match の値内空白 operator に影響しない.
+
+        text match の値内空白は常に AND (api-spec.md § セマンティクス共通ルール).
+        ``keywordOperator`` は keywords (multi_match) のカンマ区切り token 間
+        operator にのみ影響する.
+        """
         resp = app_with_es.get("/entries/biosample/?host=Homo sapiens&keywordOperator=OR")
         assert resp.status_code == 200
         filters = _es_filters(mock_es_search)
         match = [f for f in filters if isinstance(f.get("match"), dict) and "host" in f["match"]]
         assert len(match) == 1
-        assert match[0]["match"]["host"]["operator"] == "or"
+        assert match[0]["match"]["host"]["operator"] == "and"
 
 
 class TestEntriesFacetsPick:

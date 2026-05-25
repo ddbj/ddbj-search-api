@@ -167,6 +167,13 @@ def compile_free_text(
         mm: dict[str, Any] = {"query": text, "fields": used_fields}
         if is_phrase:
             mm["type"] = "phrase"
+        else:
+            # 1 multi_match 内 (= 1 keyword 値内) の空白を AND 結合する.
+            # multi_match の ES default は OR で、stop word に近い token を
+            # 含む長めの keyword で誤爆が大きいため明示する.
+            # phrase 系は順序固定なので operator は意味を持たない (ES 仕様で
+            # phrase に対する operator は無視される) ため付けない.
+            mm["operator"] = "and"
         multi_matches.append({"multi_match": mm})
     if operator == "OR":
         return {"bool": {"should": multi_matches, "minimum_should_match": 1}}

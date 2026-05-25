@@ -37,7 +37,7 @@ _ORGANISM_PATTERN = r"^\d+$"
 
 
 class KeywordOperator(str, Enum):
-    """Boolean operator for combining keywords."""
+    """Boolean operator for combining comma-separated keywords. Default OR."""
 
     AND = "AND"
     OR = "OR"
@@ -144,10 +144,12 @@ class SearchFilterQuery:
             default=None,
             examples=["cancer"],
             description=(
-                "Search keywords (comma-separated for multiple). "
-                "Wrap in double quotes for phrase match (e.g. '\"whole genome\"'). "
-                "Keywords containing symbols (- / . + :) are auto-phrased (e.g. 'HIF-1', 'COVID-19'). "
-                "When the value is a single token that matches an INSDC accession ID exactly, "
+                "Search keywords. Semantics: "
+                "(1) comma-separated values are combined with keywordOperator (default OR); "
+                "(2) spaces inside one value mean AND (all tokens must match in a document); "
+                "(3) wrap in double quotes for phrase match (e.g. '\"whole genome\"'); "
+                "(4) tokens containing - / . + : are auto-phrased (e.g. 'HIF-1', 'COVID-19'); "
+                "(5) when the value is a single token that matches an INSDC accession ID exactly, "
                 "'suppressed' entries are included in the search scope."
             ),
         ),
@@ -163,9 +165,13 @@ class SearchFilterQuery:
             ),
         ),
         keyword_operator: KeywordOperator = Query(
-            default=KeywordOperator.AND,
+            default=KeywordOperator.OR,
             alias="keywordOperator",
-            description="Boolean operator for keywords: AND or OR.",
+            description=(
+                "Boolean operator for combining comma-separated keywords: AND or OR. "
+                "Default OR. Tokens inside a single comma-separated value (e.g. 'whole genome') "
+                "are always AND-combined regardless of this setting; use double quotes for phrase match."
+            ),
         ),
         organism: str | None = Query(
             default=None,
@@ -187,6 +193,8 @@ class SearchFilterQuery:
             examples=["DDBJ"],
             description=(
                 "Nested filter on organization.name. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased. "
                 "Accepted on cross-type and all type-specific endpoints; "
                 "types whose schema has no organization nested path yield "
                 "no hits naturally on Elasticsearch side."
@@ -195,12 +203,22 @@ class SearchFilterQuery:
         publication: str | None = Query(
             default=None,
             examples=["Genomic variants"],
-            description=("Nested filter on publication.title. Accepted on cross-type and all type-specific endpoints."),
+            description=(
+                "Nested filter on publication.title. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased. "
+                "Accepted on cross-type and all type-specific endpoints."
+            ),
         ),
         grant: str | None = Query(
             default=None,
             examples=["JST CREST"],
-            description=("Nested filter on grant.title. Accepted on cross-type and all type-specific endpoints."),
+            description=(
+                "Nested filter on grant.title. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased. "
+                "Accepted on cross-type and all type-specific endpoints."
+            ),
         ),
         date_published_from: str | None = Query(
             default=None,
@@ -429,13 +447,21 @@ class BioProjectExtraQuery:
             default=None,
             alias="externalLinkLabel",
             examples=["GEO"],
-            description=("Nested filter on externalLink.label (text match within nested objects)."),
+            description=(
+                "Nested filter on externalLink.label. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         project_type: str | None = Query(
             default=None,
             alias="projectType",
             examples=["metagenome"],
-            description=("Text match on projectType (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on projectType. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
     ):
         self.object_types = object_types
@@ -455,34 +481,59 @@ class BioSampleExtraQuery:
             default=None,
             alias="derivedFromId",
             examples=["SAMD00012345"],
-            description=("Nested filter on derivedFrom.identifier (match within nested objects)."),
+            description=(
+                "Nested filter on derivedFrom.identifier (accession ID exact match, case-sensitive). "
+                "Comma-separated values are OR'd via terms query. "
+                "No parsing other than comma-split (spaces / quotes / auto-phrase are NOT applied); "
+                "values containing whitespace or quotes will yield 0 hits."
+            ),
         ),
         host: str | None = Query(
             default=None,
             examples=["Homo sapiens"],
-            description=("Text match on host (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on host. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         strain: str | None = Query(
             default=None,
             examples=["K12"],
-            description=("Text match on strain (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on strain. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         isolate: str | None = Query(
             default=None,
             examples=["patient-1"],
-            description=("Text match on isolate (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on isolate. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         geo_loc_name: str | None = Query(
             default=None,
             alias="geoLocName",
             examples=["Japan"],
-            description=("Text match on geoLocName (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on geoLocName. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         collection_date: str | None = Query(
             default=None,
             alias="collectionDate",
             examples=["2020-05-01"],
-            description=("Text match on collectionDate (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on collectionDate. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
     ):
         self.derived_from_id = derived_from_id
@@ -549,33 +600,52 @@ class SraExtraQuery:
             default=None,
             alias="derivedFromId",
             examples=["SAMD00012345"],
-            description=("Nested filter on derivedFrom.identifier (match within nested objects)."),
+            description=(
+                "Nested filter on derivedFrom.identifier (accession ID exact match, case-sensitive). "
+                "Comma-separated values are OR'd via terms query. "
+                "No parsing other than comma-split (spaces / quotes / auto-phrase are NOT applied); "
+                "values containing whitespace or quotes will yield 0 hits."
+            ),
         ),
         library_name: str | None = Query(
             default=None,
             alias="libraryName",
             examples=["my_lib"],
-            description=("Text match on libraryName (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on libraryName. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         library_construction_protocol: str | None = Query(
             default=None,
             alias="libraryConstructionProtocol",
             examples=["PCR-free"],
             description=(
-                "Text match on libraryConstructionProtocol (auto-phrase enabled; comma-separated values are OR'd)."
+                "Text match on libraryConstructionProtocol. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
             ),
         ),
         geo_loc_name: str | None = Query(
             default=None,
             alias="geoLocName",
             examples=["Japan"],
-            description=("Text match on geoLocName (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on geoLocName. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         collection_date: str | None = Query(
             default=None,
             alias="collectionDate",
             examples=["2020-05-01"],
-            description=("Text match on collectionDate (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on collectionDate. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
     ):
         self.library_strategy = library_strategy
@@ -617,12 +687,20 @@ class JgaExtraQuery:
             default=None,
             alias="externalLinkLabel",
             examples=["dbGaP"],
-            description=("Nested filter on externalLink.label (text match within nested objects)."),
+            description=(
+                "Nested filter on externalLink.label. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
         vendor: str | None = Query(
             default=None,
             examples=["Illumina"],
-            description=("Text match on vendor (auto-phrase enabled; comma-separated values are OR'd)."),
+            description=(
+                "Text match on vendor. "
+                "Semantics: spaces = AND, commas = OR, double quotes = phrase, "
+                "tokens with - / . + : auto-phrased."
+            ),
         ),
     ):
         self.study_type = study_type

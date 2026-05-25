@@ -206,7 +206,7 @@ def _validate_cursor_exclusivity(
         conflicting.append("keywords")
     if search_filter.keyword_fields is not None:
         conflicting.append("keywordFields")
-    if search_filter.keyword_operator.value != "AND":
+    if search_filter.keyword_operator.value != "OR":
         conflicting.append("keywordOperator")
     if search_filter.organism is not None:
         conflicting.append("organism")

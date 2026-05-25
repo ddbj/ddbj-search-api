@@ -332,40 +332,49 @@
 **回帰元**: `docs/api-spec.md § ファセット集計対象の選択`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`, `tests/unit/routers/test_facets.py`
 
-### IT-SEARCH-15: nested フィールド検索 (`organization` / `publication` / `grant`)
+### IT-SEARCH-15: nested フィールド検索のセマンティクス (`organization` / `publication` / `grant` / `externalLinkLabel`)
 
-**endpoint**: `GET /entries/?organization=DDBJ` / `?publication=<token>` / `?grant=<token>` (cross-type 含む全 endpoint)
+**endpoint**: `GET /entries/?organization=...` / `?publication=...` / `?grant=...` (cross-type 含む全 endpoint) と `GET /entries/{type}/?externalLinkLabel=...` (bioproject / jga-*)
 
-**不変条件**:
-- cross-type (`/entries/`) でも type 別 (`/entries/{type}/`) でも 200
-- ES nested query 経由で `organization.name` / `publication.title` / `grant.title` に match
-- 同じ token を keywords と組み合わせると、両条件の AND になり `total <= keywords 単独`
+**不変条件** (api-spec.md § セマンティクス共通ルール の text 群と同一):
+- 値内空白 AND: `?organization=National+Institute` の `total <= ?organization=National` の `total` かつ `<= ?organization=Institute` の `total` (token 全部を含む文書に絞り込まれる)
+- カンマ OR: `?organization=DDBJ,EBI` の `total >= max(?organization=DDBJ, ?organization=EBI)` (重複なしなら和に近い)
+- クオート phrase: `?organization=%22National+Institute%22` の `total <= ?organization=National+Institute` (AND より厳しい順序固定一致)
+- auto-phrase: 記号含み organization 値 (`?organization=<hyphen-bearing-name>`、staging fixture の `Pasteur-Lille` 等 staging に実在する `-` 含み値を使う) は `match_phrase` 化される。実在値依存テストは `tests/unit/es/test_query.py` で `match_phrase` clause が出ることを assert する unit テストで補完 (staging に対しては「ヒット数が hyphen 抜きより小さい」までは保証しない)
+- `keywordOperator` 非依存: `?organization=Foo+Bar&keywordOperator=OR` でも値内空白 AND は維持 (`total` は `keywordOperator` 未指定と同値)
 - 対応 nested path を持たない index に渡された場合は 0 件化 (ES 側で no match)
+- cross-type endpoint で `externalLinkLabel` は 422、`organization` / `publication` / `grant` は 200
 
-**回帰元**: `docs/api-spec.md § nested フィールド検索`
+**回帰元**: `docs/api-spec.md § nested フィールド検索`, `docs/api-spec.md § セマンティクス共通ルール`
 **関連 unit テスト**: `tests/unit/es/test_query.py`, `tests/unit/schemas/test_queries.py`
 
-### IT-SEARCH-16: nested フィールド検索の型グループ限定 (`externalLinkLabel` / `derivedFromId`)
+### IT-SEARCH-16: nested ID フィールド検索 (`derivedFromId`)
 
-**endpoint**: `GET /entries/{type}/?externalLinkLabel=...` (bioproject / jga-* で適用、それ以外で 422) / `?derivedFromId=...` (biosample / sra-* で適用、それ以外で 422)
+**endpoint**: `GET /entries/{type}/?derivedFromId=...` (biosample / sra-* で適用、それ以外で 422)
 
 **不変条件**:
-- cross-type endpoint (`/entries/`, `/facets`) で 422
-- 適用範囲内 endpoint で 200
+- 単一 accession: `?derivedFromId=SAMN02228699` の `total` は known nonzero value (staging 既知の親 accession を fixture から取る)
+- カンマ複数値 OR (`terms`): `?derivedFromId=A,B` の `total >= max(?derivedFromId=A, ?derivedFromId=B)` (重複なしなら和)
+- 大小区別: `?derivedFromId=samn02228699` は `total == 0` (lowercase の accession は ES に存在しない、term query で正規形のみ一致)
+- cross-type endpoint で 422
 - 型グループ外 endpoint で 422
 
 **回帰元**: `docs/api-spec.md § nested フィールド検索`
-**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+**関連 unit テスト**: `tests/unit/es/test_query.py`, `tests/unit/schemas/test_queries.py`
 
 ### IT-SEARCH-17: text match フィールド検索 (9 個、type-specific)
 
 **endpoint**: `GET /entries/{type}/?<param>=<token>` (spec L347-369 の 9 (type, field) ペアを parametrize で網羅)
 
-**不変条件**:
+**不変条件** (api-spec.md § セマンティクス共通ルール):
 - 適用範囲内 endpoint で 200 かつ `total > 0` (代表 token は conftest 定数)
-- 記号含み値で自動 phrase 化が効く (`host=HIF-1` の `total <= host=HIF` の `total`)
+- 値内空白 AND: `?host=Homo+sapiens` の `total` <= `?host=Homo` の `total` (token 全部含む)
+- カンマ OR: `?host=Homo+sapiens,Mus+musculus` の `total >= max(?host=Homo+sapiens, ?host=Mus+musculus)`
+- 記号含み値で自動 phrase 化: `?host=HIF-1` の `total <= ?host=HIF` の `total`
+- クオート phrase: `?host=%22Homo+sapiens%22` の `total <= ?host=Homo+sapiens` (AND より厳しい順序固定)
+- `keywordOperator` 非依存: `?host=Foo+Bar&keywordOperator=OR` でも値内空白 AND は維持
 
-**回帰元**: `docs/api-spec.md § text match フィールド検索`
+**回帰元**: `docs/api-spec.md § text match フィールド検索`, `docs/api-spec.md § セマンティクス共通ルール`
 **関連 unit テスト**: `tests/unit/search/test_phrase.py`, `tests/unit/schemas/test_queries.py`
 
 ### IT-SEARCH-18: text match の cross-type 拒否
@@ -426,17 +435,19 @@
 **回帰元**: `docs/api-spec.md § 検索パラメータ`
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
 
-### IT-SEARCH-23: keywordOperator AND と OR の挙動差
+### IT-SEARCH-23: keywordOperator AND と OR の挙動差 (default OR)
 
 **endpoint**: `GET /entries/?keywords=cancer,brain&keywordOperator={AND|OR}`
 
 **不変条件**:
-- `AND` の `total` <= `OR` の `total`
-- `OR` の `total` >= 単独 `keywords=cancer` の `total`
+- default (= 未指定) は **OR** (= `?keywords=cancer,brain` と `?keywords=cancer,brain&keywordOperator=OR` の `total` 一致)
+- `AND` の `total <= OR` の `total`
+- `OR` の `total >= max(?keywords=cancer, ?keywords=brain)`
 - allowlist 外 (`XOR` 等) で 422
+- `keywords` 値内空白 (1 keyword 内、例 `?keywords=whole+genome`) は AND 固定: `total <= ?keywords=whole` の `total` (`keywordOperator` 設定の影響を受けない)
 
-**回帰元**: `docs/api-spec.md § 検索パラメータ`
-**関連 unit テスト**: `tests/unit/schemas/test_queries.py`
+**回帰元**: `docs/api-spec.md § セマンティクス共通ルール`, `docs/api-spec.md § 検索パラメータ`
+**関連 unit テスト**: `tests/unit/schemas/test_queries.py`, `tests/unit/es/test_query.py`
 
 ### IT-SEARCH-24: dbXrefsLimit リスト系 (type ごとに切り詰め)
 

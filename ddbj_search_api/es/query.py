@@ -195,6 +195,11 @@ def inject_status_filter(
 def build_search_query(
     keywords: str | None = None,
     keyword_fields: str | list[str] | None = None,
+    # 内部 default は AND のまま (テストフィクスチャ互換用).
+    # wire-level の default は schemas.queries.KeywordOperator / schemas.db_portal で
+    # OR に切り替え済みで、production caller (routers/entries.py, routers/facets.py,
+    # routers/db_portal.py) はいずれも search_filter.keyword_operator.value を
+    # 明示渡しするため、本関数の引数 default 値は production 動作に影響しない.
     keyword_operator: str = "AND",
     organism: str | None = None,
     accessibility: str | None = None,
@@ -248,7 +253,10 @@ def build_search_query(
     before this function is called.
     """
     keyword_list = _parse_keywords(keywords)
-    operator = keyword_operator.lower() if keyword_operator else "and"
+    # text match / nested 4 text param の値内空白は **常に AND 固定** (api-spec.md
+    # § 検索 query parameter のセマンティクス共通ルール). ``keyword_operator``
+    # は keywords (multi_match) のカンマ区切り token 間 (AND/OR) にのみ影響する
+    # ように分離する.
     filters: list[dict[str, Any]] = []
     if status_mode is not None:
         filters.append(build_status_filter(status_mode))
@@ -287,7 +295,6 @@ def build_search_query(
             library_name=library_name,
             library_construction_protocol=library_construction_protocol,
             vendor=vendor,
-            text_match_operator=operator,
         )
     )
 
@@ -360,32 +367,21 @@ def _build_term_clause(field: str, value: str | None) -> dict[str, Any] | None:
     return {"terms": {field: values}}
 
 
-def _build_nested_match_clause(
-    path: str,
-    sub_field: str,
-    value: str | None,
-) -> dict[str, Any] | None:
-    """Build a nested match clause for a single nested-path/value pair."""
-    if not value:
-        return None
-    return {
-        "nested": {
-            "path": path,
-            "query": {"match": {sub_field: value}},
-        },
-    }
-
-
 def _build_text_match_clause(
     field: str,
     value: str | None,
-    operator: str,
+    operator: str = "and",
 ) -> dict[str, Any] | None:
     """Build a match / match_phrase clause with auto-phrase semantics.
 
-    ``operator`` is the in-token operator (``and`` / ``or``); comma-
-    separated input values are split into multiple per-value clauses
-    OR'd together via ``bool.should`` with ``minimum_should_match=1``.
+    ``operator`` is the in-token operator (``and`` / ``or``) applied to
+    every non-phrase ``match`` leaf. Default ``"and"`` to match the
+    "値内空白 = AND 固定" rule documented in
+    ``docs/api-spec.md § セマンティクス共通ルール``; callers should not
+    override it for production wire paths (only retained for unit tests
+    that need to probe the underlying ES semantics). Comma-separated
+    input values are split into multiple per-value clauses OR'd
+    together via ``bool.should`` with ``minimum_should_match=1``.
     """
     parsed = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
     if not parsed:
@@ -435,9 +431,15 @@ def _build_filter_clauses(
     library_name: str | None = None,
     library_construction_protocol: str | None = None,
     vendor: str | None = None,
-    text_match_operator: str = "and",
 ) -> list[dict[str, Any]]:
-    """Build list of ES filter clauses."""
+    """Build list of ES filter clauses.
+
+    text match / nested 4 text param の値内空白 operator は常に AND 固定で
+    ``_build_text_match_clause`` の default に任せる
+    (``docs/api-spec.md § セマンティクス共通ルール``).  ``keyword_operator``
+    は keywords (multi_match) のカンマ区切り token 間 (AND/OR) にのみ影響し,
+    本関数の clause 群には派生させない.
+    """
     clauses: list[dict[str, Any]] = []
 
     if organism:
@@ -479,17 +481,26 @@ def _build_filter_clauses(
         elif len(values) >= 2:
             clauses.append({"terms": {"objectType": values}})
 
-    nested_specs: list[tuple[str, str, str | None]] = [
+    # nested の text sub-field (organization/publication/grant/externalLinkLabel)
+    # は _build_text_match_clause を nested wrapper で包む. これで text match
+    # 9 param と同じ semantics (値内 AND / カンマ OR / クオート phrase /
+    # auto-phrase) に揃う.
+    nested_text_specs: list[tuple[str, str, str | None]] = [
         ("organization", "organization.name", organization),
         ("publication", "publication.title", publication),
         ("grant", "grant.title", grant),
         ("externalLink", "externalLink.label", external_link_label),
-        ("derivedFrom", "derivedFrom.identifier", derived_from_id),
     ]
-    for path, sub_field, value in nested_specs:
-        clause = _build_nested_match_clause(path, sub_field, value)
-        if clause is not None:
-            clauses.append(clause)
+    for path, sub_field, value in nested_text_specs:
+        inner = _build_text_match_clause(sub_field, value)
+        if inner is not None:
+            clauses.append({"nested": {"path": path, "query": inner}})
+
+    # derivedFromId は accession ID の完全一致用 (derivedFrom.identifier は
+    # keyword field). カンマ区切りで複数 accession の OR (terms) を表現する.
+    derived_inner = _build_term_clause("derivedFrom.identifier", derived_from_id)
+    if derived_inner is not None:
+        clauses.append({"nested": {"path": "derivedFrom", "query": derived_inner}})
 
     term_values: dict[str, str | None] = {
         "library_strategy": library_strategy,
@@ -521,7 +532,7 @@ def _build_filter_clauses(
         "vendor": vendor,
     }
     for kwarg_name, es_field in _TEXT_MATCH_FIELDS:
-        clause = _build_text_match_clause(es_field, text_values[kwarg_name], text_match_operator)
+        clause = _build_text_match_clause(es_field, text_values[kwarg_name])
         if clause is not None:
             clauses.append(clause)
 

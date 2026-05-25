@@ -388,6 +388,54 @@ class TestBuildSearchQueryKeywords:
         assert set(fields) == {"title", "description"}
 
 
+class TestBuildSearchQueryKeywordsInTokenAnd:
+    """1 keyword 値内 (= 1 multi_match 内) の空白が AND 結合される.
+
+    multi_match の ES default operator は OR だが、build_search_query 経由でも
+    compile_free_text 経由でも明示的に ``operator: "and"`` を注入する.
+    phrase 系 (type=phrase) には operator を付けない (ES 仕様で無視されるため).
+    """
+
+    def test_single_word_keyword_has_operator_and(self) -> None:
+        result = build_search_query(keywords="cancer")
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["operator"] == "and"
+        assert "type" not in mm
+
+    def test_single_token_with_spaces_has_operator_and(self) -> None:
+        # `whole genome` は phrase ではなく 1 multi_match 内で AND 結合される.
+        # ES 内部で analyzer が tokens=[whole, genome] に分割し、operator=and で
+        # 両方 token を含む document のみマッチ.
+        result = build_search_query(keywords="whole genome")
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["query"] == "whole genome"
+        assert mm["operator"] == "and"
+        assert "type" not in mm
+
+    def test_phrase_keyword_omits_operator(self) -> None:
+        # 明示クオート → phrase. operator は付けない.
+        result = build_search_query(keywords='"whole genome"')
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["type"] == "phrase"
+        assert "operator" not in mm
+
+    def test_auto_phrase_keyword_omits_operator(self) -> None:
+        # 記号 (-/.+:) 含み → auto phrase. operator は付けない.
+        result = build_search_query(keywords="HIF-1")
+        mm = result["bool"]["must"][0]["multi_match"]
+        assert mm["type"] == "phrase"
+        assert "operator" not in mm
+
+    def test_comma_separated_keywords_each_have_operator_and(self) -> None:
+        # カンマ区切り token がそれぞれ別の multi_match に展開され、
+        # phrase でない各 multi_match に operator=and が入る.
+        result = build_search_query(keywords="cancer,human", keyword_operator="AND")
+        for clause in result["bool"]["must"]:
+            mm = clause["multi_match"]
+            assert mm["operator"] == "and"
+            assert "type" not in mm
+
+
 class TestBuildSearchQueryKeywordsEdgeCases:
     """Edge cases for keyword handling."""
 
@@ -570,27 +618,35 @@ class TestBuildSearchQueryBioProject:
             assert not any("objectType" in (f.get("term") or {}) for f in filters)
 
     def test_organization_nested_query(self) -> None:
-        """organization → nested query on organization.name."""
+        """organization → nested query on organization.name (text match semantics)."""
         result = build_search_query(organization="DDBJ")
         filters = result["bool"]["filter"]
         nested = _find_nested_filter(filters, "organization")
         inner_query = nested["nested"]["query"]
-        assert inner_query["match"]["organization.name"] == "DDBJ"
+        # 単一値・記号なし → match + operator=and (値内空白 AND).
+        assert inner_query == {
+            "match": {"organization.name": {"query": "DDBJ", "operator": "and"}},
+        }
 
     def test_publication_nested_query(self) -> None:
-        """publication → nested query on publication.title."""
+        """publication → nested query on publication.title (text match semantics)."""
         result = build_search_query(publication="genome")
         filters = result["bool"]["filter"]
         nested = _find_nested_filter(filters, "publication")
         inner_query = nested["nested"]["query"]
-        assert inner_query["match"]["publication.title"] == "genome"
+        assert inner_query == {
+            "match": {"publication.title": {"query": "genome", "operator": "and"}},
+        }
 
     def test_grant_nested_query(self) -> None:
-        """grant → nested query on grant.title."""
+        """grant → nested query on grant.title (text match semantics)."""
         result = build_search_query(grant="NIH")
         filters = result["bool"]["filter"]
         nested = _find_nested_filter(filters, "grant")
         assert nested is not None
+        assert nested["nested"]["query"] == {
+            "match": {"grant.title": {"query": "NIH", "operator": "and"}},
+        }
 
 
 class TestBuildSearchQueryCombined:
@@ -1473,81 +1529,131 @@ class TestBuildSearchQueryAutoPhrase:
 
 
 # ===================================================================
-# nested filters: organization / publication / grant
+# nested filters: organization / publication / grant / externalLinkLabel
 #
-# converter の ES mapping は organization / publication / grant を
-# `type: nested` で定義している。query は nested clause を生成する
-# 必要があり、flat field に変えるとマッチしなくなる。converter bump
-# 時の回帰防止として shape を固定する。
+# converter の ES mapping は nested 型で定義している. query は
+# nested wrapper を生成する必要があり、flat field に変えるとマッチしなくなる.
+# 統一仕様 (api-spec.md § 検索 query parameter のセマンティクス共通ルール):
+#   値内空白 = AND, カンマ = OR, クオート = phrase, 記号 = auto-phrase.
 # ===================================================================
 
 
-class TestBuildSearchQueryNestedFilters:
-    """organization/publication/grant は nested query として組み立てられる."""
+@pytest.mark.parametrize(
+    ("kwarg", "path", "sub_field"),
+    [
+        ("organization", "organization", "organization.name"),
+        ("publication", "publication", "publication.title"),
+        ("grant", "grant", "grant.title"),
+        ("external_link_label", "externalLink", "externalLink.label"),
+    ],
+)
+class TestBuildSearchQueryNestedTextParams:
+    """nested 4 text param が _build_text_match_clause + nested wrapper で組まれる."""
 
-    def test_organization_builds_nested_clause(self) -> None:
-        result = build_search_query(organization="DDBJ")
-        filters = result["bool"]["filter"]
-        nested_clauses = [c for c in filters if "nested" in c]
-        assert len(nested_clauses) == 1
-        nested = nested_clauses[0]["nested"]
-        assert nested["path"] == "organization"
-        assert nested["query"] == {"match": {"organization.name": "DDBJ"}}
+    def test_single_token_uses_match_with_operator_and(
+        self, kwarg: str, path: str, sub_field: str,
+    ) -> None:
+        # 値内空白あり (記号なし) → match + operator=and.
+        result = build_search_query(**{kwarg: "foo bar"})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        assert nested["nested"]["query"] == {
+            "match": {sub_field: {"query": "foo bar", "operator": "and"}},
+        }
 
-    def test_publication_builds_nested_clause(self) -> None:
-        result = build_search_query(publication="Genomic variants")
-        filters = result["bool"]["filter"]
-        nested_clauses = [c for c in filters if "nested" in c]
-        assert len(nested_clauses) == 1
-        nested = nested_clauses[0]["nested"]
-        assert nested["path"] == "publication"
-        assert nested["query"] == {"match": {"publication.title": "Genomic variants"}}
+    def test_quoted_value_uses_match_phrase(
+        self, kwarg: str, path: str, sub_field: str,
+    ) -> None:
+        result = build_search_query(**{kwarg: '"foo bar"'})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        assert nested["nested"]["query"] == {"match_phrase": {sub_field: "foo bar"}}
 
-    def test_grant_builds_nested_clause(self) -> None:
-        result = build_search_query(grant="JST CREST")
-        filters = result["bool"]["filter"]
-        nested_clauses = [c for c in filters if "nested" in c]
-        assert len(nested_clauses) == 1
-        nested = nested_clauses[0]["nested"]
-        assert nested["path"] == "grant"
-        assert nested["query"] == {"match": {"grant.title": "JST CREST"}}
+    def test_symbol_value_auto_phrases(
+        self, kwarg: str, path: str, sub_field: str,
+    ) -> None:
+        # 記号 (-/.+:) 含み → 自動 phrase 化.
+        result = build_search_query(**{kwarg: "HIF-1"})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        assert nested["nested"]["query"] == {"match_phrase": {sub_field: "HIF-1"}}
+
+    def test_comma_separated_values_use_should(
+        self, kwarg: str, path: str, sub_field: str,
+    ) -> None:
+        # カンマ区切り → bool.should + minimum_should_match=1.
+        result = build_search_query(**{kwarg: "alpha,beta"})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        inner = nested["nested"]["query"]
+        assert "bool" in inner
+        assert inner["bool"]["minimum_should_match"] == 1
+        assert len(inner["bool"]["should"]) == 2
+
+    def test_keyword_operator_or_does_not_affect_inner_match(
+        self, kwarg: str, path: str, sub_field: str,
+    ) -> None:
+        # keyword_operator は keywords (multi_match) のカンマ区切り token 間 operator
+        # にのみ影響し、nested 4 text param の inner match.operator は常に "and"
+        # (値内空白 = AND 固定、api-spec.md § セマンティクス共通ルール).
+        result = build_search_query(keyword_operator="OR", **{kwarg: "foo bar"})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        assert nested["nested"]["query"] == {
+            "match": {sub_field: {"query": "foo bar", "operator": "and"}},
+        }
+
+
+class TestBuildSearchQueryNestedTextParamsCombined:
+    """nested 4 text param が同時指定で 4 nested clause を生成する."""
 
     def test_multiple_nested_filters_combined(self) -> None:
         result = build_search_query(
             organization="DDBJ",
             publication="Genomic variants",
             grant="JST CREST",
+            external_link_label="GEO",
         )
         filters = result["bool"]["filter"]
         nested_paths = {c["nested"]["path"] for c in filters if "nested" in c}
-        assert nested_paths == {"organization", "publication", "grant"}
+        assert nested_paths == {"organization", "publication", "grant", "externalLink"}
 
     def test_no_nested_filter_when_params_absent(self) -> None:
         result = build_search_query(keywords="cancer")
-        # keywords のみ → filter は存在しないか、nested を含まない
+        # keywords のみ → filter は status のみで nested を含まない.
         filters = result.get("bool", {}).get("filter", [])
         assert not any("nested" in c for c in filters)
 
 
 # ===================================================================
-# nested filters: externalLinkLabel / derivedFromId
+# nested filter: derivedFromId (keyword field、accession 完全一致)
 # ===================================================================
 
 
-class TestBuildSearchQueryNewNestedFilters:
-    """externalLinkLabel / derivedFromId build nested match clauses."""
+class TestBuildSearchQueryDerivedFromId:
+    """derivedFromId は _build_term_clause を nested wrapper で包む.
 
-    def test_external_link_label_builds_nested_clause(self) -> None:
-        result = build_search_query(external_link_label="GEO Series")
-        nested = _find_nested_filter(result["bool"]["filter"], "externalLink")
-        assert nested["nested"]["query"] == {"match": {"externalLink.label": "GEO Series"}}
+    derivedFrom.identifier は keyword field なので analyzer 不要.
+    単一値 → term、複数値 → terms (OR).
+    """
 
-    def test_derived_from_id_builds_nested_clause(self) -> None:
+    def test_single_value_uses_term(self) -> None:
         result = build_search_query(derived_from_id="SAMD00012345")
         nested = _find_nested_filter(result["bool"]["filter"], "derivedFrom")
-        assert nested["nested"]["query"] == {"match": {"derivedFrom.identifier": "SAMD00012345"}}
+        assert nested["nested"]["query"] == {
+            "term": {"derivedFrom.identifier": "SAMD00012345"},
+        }
 
-    def test_all_nested_filters_combined(self) -> None:
+    def test_multiple_values_use_terms(self) -> None:
+        result = build_search_query(derived_from_id="SAMD00012345,SAMD00067890")
+        nested = _find_nested_filter(result["bool"]["filter"], "derivedFrom")
+        terms_clause = nested["nested"]["query"]["terms"]
+        assert terms_clause["derivedFrom.identifier"] == ["SAMD00012345", "SAMD00067890"]
+
+    def test_whitespace_around_values_stripped(self) -> None:
+        result = build_search_query(derived_from_id=" SAMD00012345 , SAMD00067890 ")
+        nested = _find_nested_filter(result["bool"]["filter"], "derivedFrom")
+        assert nested["nested"]["query"]["terms"]["derivedFrom.identifier"] == [
+            "SAMD00012345",
+            "SAMD00067890",
+        ]
+
+    def test_all_five_nested_filters_combined(self) -> None:
         result = build_search_query(
             organization="DDBJ",
             publication="cancer",
@@ -1691,11 +1797,14 @@ class TestBuildSearchQueryTextMatchFilters:
             target = sub.get("match") or sub.get("match_phrase") or {}
             assert "host" in target
 
-    def test_text_match_respects_keyword_operator_or(self) -> None:
+    def test_text_match_operator_is_and_regardless_of_keyword_operator(self) -> None:
+        # keyword_operator は keywords (multi_match) のカンマ区切り token 間
+        # operator にのみ影響し、text match の値内空白 operator は常に "and"
+        # (api-spec.md § セマンティクス共通ルール).
         result = build_search_query(host="Homo sapiens", keyword_operator="OR")
         clause = _find_text_match_clause(result["bool"]["filter"], "host")
         assert clause is not None
-        assert clause["match"]["host"]["operator"] == "or"
+        assert clause["match"]["host"]["operator"] == "and"
 
     def test_text_match_empty_string_skipped(self) -> None:
         result = build_search_query(host="")

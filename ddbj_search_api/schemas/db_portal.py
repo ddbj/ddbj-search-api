@@ -141,15 +141,17 @@ class DbPortalCrossSearchQuery:
             ),
         ),
         keyword_operator: KeywordOperator = Query(
-            default=KeywordOperator.AND,
+            default=KeywordOperator.OR,
             alias="keywordOperator",
             description=(
-                "Default boolean operator for bare word / phrase token connection "
-                "inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) "
-                "requires every token to match; ``OR`` requires at least one. "
-                "The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL "
-                "are unaffected.  ``/db-portal/parse`` does not accept this parameter "
-                "(the parsed AST does not carry operator state)."
+                "Default boolean operator for connecting comma-separated FreeText tokens "
+                "(e.g. ``q=cancer,tumor``).  Default **OR** (matches Google-like behaviour "
+                "and the same parameter on ``/entries/*``).  ``AND`` requires every token "
+                "to match; ``OR`` requires at least one. Tokens inside a single FreeText "
+                "value (e.g. ``q=cancer tumor``) are always AND-combined regardless of this "
+                "setting (use double quotes for phrase match).  The explicit ``AND`` / ``OR`` "
+                "/ ``NOT`` operators inside the DSL are unaffected.  ``/db-portal/parse`` "
+                "does not accept this parameter (the parsed AST does not carry operator state)."
             ),
         ),
     ) -> None:
@@ -221,14 +223,16 @@ class DbPortalSearchQuery:
             ),
         ),
         keyword_operator: KeywordOperator = Query(
-            default=KeywordOperator.AND,
+            default=KeywordOperator.OR,
             alias="keywordOperator",
             description=(
-                "Default boolean operator for bare word / phrase token connection "
-                "inside FreeText (e.g. ``q=cancer tumor``).  ``AND`` (default) "
-                "requires every token to match; ``OR`` requires at least one. "
-                "The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL "
-                "are unaffected.  Exclusive with cursor when not at default (AND)."
+                "Default boolean operator for connecting comma-separated FreeText tokens "
+                "(e.g. ``q=cancer,tumor``).  Default **OR**.  ``AND`` requires every token "
+                "to match; ``OR`` requires at least one.  Tokens inside a single FreeText "
+                "value (e.g. ``q=cancer tumor``) are always AND-combined regardless of this "
+                "setting (use double quotes for phrase match).  The explicit ``AND`` / ``OR`` "
+                "/ ``NOT`` operators inside the DSL are unaffected.  Exclusive with cursor "
+                "when not at default (OR)."
             ),
         ),
     ) -> None:

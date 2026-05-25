@@ -619,7 +619,30 @@ class TestCompileFreeText:
         assert compile_free_text("cancer") == {
             "bool": {
                 "must": [
-                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_single_token_with_spaces_has_operator_and(self) -> None:
+        """1 keyword 値内の空白は AND 結合 (multi_match.operator=and)."""
+
+        assert compile_free_text("whole genome") == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "whole genome",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
                 ],
             },
         }
@@ -665,8 +688,20 @@ class TestCompileFreeText:
         assert result == {
             "bool": {
                 "must": [
-                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
-                    {"multi_match": {"query": "human", "fields": self._DEFAULT_FIELDS}},
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                    {
+                        "multi_match": {
+                            "query": "human",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
                 ],
             },
         }
@@ -677,8 +712,20 @@ class TestCompileFreeText:
         assert compile_free_text("cancer, human", operator="OR") == {
             "bool": {
                 "should": [
-                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
-                    {"multi_match": {"query": "human", "fields": self._DEFAULT_FIELDS}},
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                    {
+                        "multi_match": {
+                            "query": "human",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
                 ],
                 "minimum_should_match": 1,
             },
@@ -688,7 +735,15 @@ class TestCompileFreeText:
 
         assert compile_free_text("cancer", fields=["title"]) == {
             "bool": {
-                "must": [{"multi_match": {"query": "cancer", "fields": ["title"]}}],
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": ["title"],
+                            "operator": "and",
+                        },
+                    },
+                ],
             },
         }
 
@@ -741,8 +796,15 @@ class TestCompileToEsFreeTextNode:
                             "minimum_should_match": 1,
                         },
                     },
-                    # FreeText の multi_match が flatten されて並ぶ
-                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
+                    # FreeText の multi_match が flatten されて並ぶ. operator=and は
+                    # 1 multi_match 内の token 内空白を AND 結合するため.
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
                 ],
             },
         }
@@ -800,7 +862,13 @@ class TestCompileToEsFreeTextNode:
                     {
                         "bool": {
                             "must": [
-                                {"multi_match": {"query": "tumor", "fields": self._DEFAULT_FIELDS}},
+                                {
+                                    "multi_match": {
+                                        "query": "tumor",
+                                        "fields": self._DEFAULT_FIELDS,
+                                        "operator": "and",
+                                    },
+                                },
                             ],
                         },
                     },
@@ -822,8 +890,20 @@ class TestCompileToEsFreeTextOperator:
         assert result == {
             "bool": {
                 "should": [
-                    {"multi_match": {"query": "cancer", "fields": self._DEFAULT_FIELDS}},
-                    {"multi_match": {"query": "tumor", "fields": self._DEFAULT_FIELDS}},
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                    {
+                        "multi_match": {
+                            "query": "tumor",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
                 ],
                 "minimum_should_match": 1,
             },
@@ -854,8 +934,20 @@ class TestCompileToEsFreeTextOperator:
                     {
                         "bool": {
                             "should": [
-                                {"multi_match": {"query": "apple", "fields": self._DEFAULT_FIELDS}},
-                                {"multi_match": {"query": "banana", "fields": self._DEFAULT_FIELDS}},
+                                {
+                                    "multi_match": {
+                                        "query": "apple",
+                                        "fields": self._DEFAULT_FIELDS,
+                                        "operator": "and",
+                                    },
+                                },
+                                {
+                                    "multi_match": {
+                                        "query": "banana",
+                                        "fields": self._DEFAULT_FIELDS,
+                                        "operator": "and",
+                                    },
+                                },
                             ],
                             "minimum_should_match": 1,
                         },
@@ -885,8 +977,20 @@ class TestCompileToEsFreeTextOperator:
             "bool": {
                 "must": [
                     {"match_phrase": {"title": "cancer"}},
-                    {"multi_match": {"query": "apple", "fields": self._DEFAULT_FIELDS}},
-                    {"multi_match": {"query": "banana", "fields": self._DEFAULT_FIELDS}},
+                    {
+                        "multi_match": {
+                            "query": "apple",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                    {
+                        "multi_match": {
+                            "query": "banana",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
                 ],
             },
         }

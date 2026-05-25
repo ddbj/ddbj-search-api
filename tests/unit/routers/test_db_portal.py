@@ -1007,11 +1007,11 @@ class TestDbPortalCursor:
         assert resp.status_code == 400
         assert "q" in resp.json()["detail"]
 
-    def test_cursor_with_keyword_operator_or_returns_400(
+    def test_cursor_with_keyword_operator_and_returns_400(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
-        """cursor + ``keywordOperator=OR`` は 400 排他 (普通 search と一貫した規約)."""
+        """cursor + ``keywordOperator=AND`` (= default の OR 以外) は 400 排他."""
         payload = CursorPayload(
             pit_id=None,
             search_after=["2024-01-15", "PRJDB1"],
@@ -1024,10 +1024,40 @@ class TestDbPortalCursor:
         token = encode_cursor(payload)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"cursor": token, "db": "bioproject", "keywordOperator": "OR"},
+            params={"cursor": token, "db": "bioproject", "keywordOperator": "AND"},
         )
         assert resp.status_code == 400
         assert "keywordOperator" in resp.json()["detail"]
+
+    def test_cursor_with_keyword_operator_default_or_passes(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_open_pit_db_portal: AsyncMock,
+        mock_es_search_with_pit_db_portal: AsyncMock,
+    ) -> None:
+        """cursor + ``keywordOperator`` 未指定 (= default OR) は 排他検出されず通る.
+
+        Critical 級の回帰: default が AND のままだと、user 未指定でも default !=
+        "OR" 判定で必ず 400 になる. default を OR に統一した後の sanity check.
+        """
+        mock_es_search_with_pit_db_portal.return_value = make_es_search_response(total=0)
+        payload = CursorPayload(
+            pit_id=None,
+            search_after=["2024-01-15", "PRJDB1"],
+            sort=[
+                {"datePublished": {"order": "desc"}},
+                {"identifier": {"order": "asc"}},
+            ],
+            query={"match_all": {}},
+        )
+        token = encode_cursor(payload)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"cursor": token, "db": "bioproject"},
+        )
+        # default OR でも、cursor 排他に引っかからずに 200 を返すことを確認
+        # (excluding ES 通信失敗等の他の理由による 5xx).
+        assert resp.status_code == 200, resp.text
 
 
 class TestDbPortalCursorPBT:
@@ -2900,16 +2930,17 @@ def _flatten_must(clause: dict[str, Any]) -> list[dict[str, Any]]:
 class TestKeywordOperatorOnDbPortal:
     """``keywordOperator`` パラメータが FreeText の token 連結演算子を切り替えるか.
 
-    - ``AND`` (デフォルト): bool.must で multi_match を flat に並べる
-    - ``OR``: bool.should + minimum_should_match=1 で multi_match を並べる
+    - ``OR`` (デフォルト、entries 系と統一): bool.should + minimum_should_match=1 で multi_match を並べる
+    - ``AND``: bool.must で multi_match を flat に並べる
     - 明示 BoolOp (``q`` 中の ``AND`` / ``OR``) は影響を受けない
     """
 
-    def test_search_default_and_uses_bool_must(
+    def test_search_default_or_uses_bool_should(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
+        # ``keywordOperator`` 未指定で default = OR (wire-level、entries と統一).
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
@@ -2918,7 +2949,28 @@ class TestKeywordOperatorOnDbPortal:
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
         bool_clause = body["query"]["bool"]
-        # FreeText 単独 AST + AND → bool.must に multi_match が並ぶ
+        # FreeText 単独 AST + OR → bool.should + minimum_should_match=1
+        should = bool_clause.get("should")
+        assert isinstance(should, list)
+        queries = {c["multi_match"]["query"] for c in should if "multi_match" in c}
+        assert queries == {"cancer", "tumor"}
+        assert bool_clause.get("minimum_should_match") == 1
+        assert "must" not in bool_clause
+
+    def test_search_explicit_and_uses_bool_must(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # 明示 AND で旧 default 挙動 (bool.must) を取り戻せる.
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer,tumor", "keywordOperator": "AND"},
+        )
+        assert resp.status_code == 200
+        body = _bioproject_es_body(mock_es_search_db_portal)
+        bool_clause = body["query"]["bool"]
         must = bool_clause.get("must")
         assert isinstance(must, list)
         queries = {c["multi_match"]["query"] for c in must if "multi_match" in c}
@@ -3038,6 +3090,11 @@ class TestQueryAndJoin:
 
     例: ``q='human AND title:cancer'`` → AST ``BoolOp(AND, [FreeText('human'),
     FieldClause(title, cancer)])`` → ES bool.must / Solr edismax AND-join.
+
+    flatten 挙動は ``free_text_operator=AND`` の時のみ働く (compiler_es.py の
+    ``_compile_and_children``)。``keywordOperator`` の wire default は OR に
+    なったので、flatten を検証する場合は明示的に ``keywordOperator=AND`` を
+    渡す必要がある.
     """
 
     def test_search_es_bool_must_has_free_text_and_field_clauses(
@@ -3048,7 +3105,9 @@ class TestQueryAndJoin:
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "human AND title:cancer"},
+            # default OR では FreeText の bool.should が must 配下に bool wrapper
+            # として残り flatten されない. flatten 挙動を見るために AND 明示.
+            params={"db": "bioproject", "q": "human AND title:cancer", "keywordOperator": "AND"},
         )
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
@@ -3076,7 +3135,8 @@ class TestQueryAndJoin:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/cross-search",
-            params={"q": "human AND title:cancer", "topHits": 0},
+            # default OR では FreeText が flatten されないため、AND 明示で flatten 挙動を見る.
+            params={"q": "human AND title:cancer", "topHits": 0, "keywordOperator": "AND"},
         )
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)

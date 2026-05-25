@@ -454,6 +454,27 @@ class TestFacetsKeywordOperator:
         body = get_es_search_body(mock_es_search_facets)
         assert "should" in body["query"]["bool"]
 
+    def test_keyword_operator_or_is_default(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        # ``keywordOperator`` 未指定で default = OR (wire-level).
+        app_with_facets.get("/facets?keywords=cancer,tumor")
+        body = get_es_search_body(mock_es_search_facets)
+        assert "should" in body["query"]["bool"]
+        assert body["query"]["bool"].get("minimum_should_match") == 1
+
+    def test_keyword_operator_and_explicit(
+        self,
+        app_with_facets: TestClient,
+        mock_es_search_facets: AsyncMock,
+    ) -> None:
+        # 明示 AND で旧 default 挙動 (bool.must) を取り戻せる.
+        app_with_facets.get("/facets?keywords=cancer,tumor&keywordOperator=AND")
+        body = get_es_search_body(mock_es_search_facets)
+        assert "must" in body["query"]["bool"]
+
     def test_keyword_operator_invalid_returns_422(
         self,
         app_with_facets: TestClient,
