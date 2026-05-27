@@ -62,22 +62,25 @@ class TestSerializeSpecExamples:
         assert resp.status_code == 200
         assert resp.json() == {"dsl": "cancer"}
 
-    def test_single_field_eq_phrase(self, app_with_db_portal: TestClient) -> None:
-        resp = _post(app_with_db_portal, {"field": "organism", "op": "eq", "value": "Homo sapiens"})
+    def test_single_field_contains_phrase(self, app_with_db_portal: TestClient) -> None:
+        resp = _post(
+            app_with_db_portal,
+            {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
+        )
         assert resp.status_code == 200
-        assert resp.json() == {"dsl": 'organism:"Homo sapiens"'}
+        assert resp.json() == {"dsl": 'organism_name:"Homo sapiens"'}
 
     def test_free_text_plus_field(self, app_with_db_portal: TestClient) -> None:
         ast = {
             "op": "AND",
             "rules": [
                 {"op": "free_text", "value": "cancer"},
-                {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
             ],
         }
         resp = _post(app_with_db_portal, ast)
         assert resp.status_code == 200
-        assert resp.json() == {"dsl": 'cancer AND organism:"Homo sapiens"'}
+        assert resp.json() == {"dsl": 'cancer AND organism_name:"Homo sapiens"'}
 
     def test_or_inside_and_requires_paren(self, app_with_db_portal: TestClient) -> None:
         # 依頼書 §4 の OR + 括弧例は FreeText 同士 OR を含むが、validator が
@@ -92,24 +95,31 @@ class TestSerializeSpecExamples:
                         {"field": "title", "op": "contains", "value": "tumor"},
                     ],
                 },
-                {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
             ],
         }
         resp = _post(app_with_db_portal, ast)
         assert resp.status_code == 200
-        assert resp.json() == {"dsl": '(title:cancer OR title:tumor) AND organism:"Homo sapiens"'}
+        assert resp.json() == {
+            "dsl": '(title:cancer OR title:tumor) AND organism_name:"Homo sapiens"',
+        }
 
     def test_not_with_and_parent(self, app_with_db_portal: TestClient) -> None:
         ast = {
             "op": "AND",
             "rules": [
                 {"op": "free_text", "value": "cancer"},
-                {"op": "NOT", "rules": [{"field": "organism", "op": "eq", "value": "Mus musculus"}]},
+                {
+                    "op": "NOT",
+                    "rules": [
+                        {"field": "organism_name", "op": "contains", "value": "Mus musculus"},
+                    ],
+                },
             ],
         }
         resp = _post(app_with_db_portal, ast)
         assert resp.status_code == 200
-        assert resp.json() == {"dsl": 'cancer AND NOT organism:"Mus musculus"'}
+        assert resp.json() == {"dsl": 'cancer AND NOT organism_name:"Mus musculus"'}
 
     def test_range(self, app_with_db_portal: TestClient) -> None:
         ast = {
@@ -323,7 +333,7 @@ class TestParseSerializeSymmetry:
         [
             # 基本 leaf / FreeText
             "cancer",
-            'organism:"Homo sapiens"',
+            'organism_name:"Homo sapiens"',
             "identifier:PRJDB1234",
             "title:cancer",
             # wildcard
@@ -338,9 +348,9 @@ class TestParseSerializeSymmetry:
             "NOT title:cancer",
             "NOT (title:a AND title:b)",
             # 複合 (top-level AND with FreeText / OR inside AND)
-            'cancer AND organism:"Homo sapiens"',
+            'cancer AND organism_name:"Homo sapiens"',
             "(title:a OR title:b) AND title:c",
-            'organism:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] '
+            'organism_name:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] '
             "AND (title:cancer OR title:tumor)",
             # token-collision corner: DATE-shape value as identifier / reserved literal as text
             'identifier:"2024-01-01"',

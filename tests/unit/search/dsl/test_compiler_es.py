@@ -57,44 +57,37 @@ class TestTextFields:
         }
 
 
-class TestOrganismField:
-    # organism.name は text + standard analyzer (converter common.py:39-48)、
-    # organism.identifier は keyword (taxID)。name 側で term だと analyzer mismatch
-    # (lowercase tokenize 後の inverted index と単一値が不一致) で 0 件になるため、
-    # name は match_phrase で analyzer を通し、identifier は term で taxID exact。
-    def test_word_expands_to_should(self) -> None:
-        assert _compile("organism:human") == {
-            "bool": {
-                "should": [
-                    {"match_phrase": {"organism.name": "human"}},
-                    {"term": {"organism.identifier": "human"}},
-                ],
-                "minimum_should_match": 1,
-            },
+class TestOrganismFields:
+    # organism は taxID exact 用の identifier 型 (organism_id → organism.identifier に term)
+    # と 学名 match 用の text 型 (organism_name → organism.name に match_phrase) の 2 field に
+    # 分割。converter mapping (common.py:39-48) は organism.identifier が keyword、
+    # organism.name が text + standard analyzer。
+    def test_organism_id_word(self) -> None:
+        assert _compile("organism_id:9606") == {"term": {"organism.identifier": "9606"}}
+
+    def test_organism_id_phrase(self) -> None:
+        # accession ID 系で phrase を使うことは稀だが文法上許可されている (eq 経路).
+        assert _compile('organism_id:"9606"') == {"term": {"organism.identifier": "9606"}}
+
+    def test_organism_id_wildcard(self) -> None:
+        # identifier 型は wildcard も使える (organism_name 側は別)。
+        assert _compile("organism_id:96*") == {
+            "wildcard": {"organism.identifier": {"value": "96*", "case_insensitive": True}},
         }
 
-    def test_phrase_expands_to_should(self) -> None:
-        assert _compile('organism:"Homo sapiens"') == {
-            "bool": {
-                "should": [
-                    {"match_phrase": {"organism.name": "Homo sapiens"}},
-                    {"term": {"organism.identifier": "Homo sapiens"}},
-                ],
-                "minimum_should_match": 1,
-            },
+    def test_organism_name_word(self) -> None:
+        # text 型 contains は match_phrase 経由で analyzer を通す。term だと
+        # lowercase tokenize 後の inverted index と単一値が不一致で 0 件になる。
+        assert _compile("organism_name:human") == {"match_phrase": {"organism.name": "human"}}
+
+    def test_organism_name_phrase(self) -> None:
+        assert _compile('organism_name:"Homo sapiens"') == {
+            "match_phrase": {"organism.name": "Homo sapiens"},
         }
 
-    def test_taxid_word_hits_identifier_path(self) -> None:
-        # taxID 直接入力時は organism.identifier (keyword) 側で term hit する。
-        # name 側は analyzer 通すが数値だと当たらず、bool.should の identifier 句で拾う。
-        assert _compile("organism:9606") == {
-            "bool": {
-                "should": [
-                    {"match_phrase": {"organism.name": "9606"}},
-                    {"term": {"organism.identifier": "9606"}},
-                ],
-                "minimum_should_match": 1,
-            },
+    def test_organism_name_wildcard(self) -> None:
+        assert _compile("organism_name:Homo*") == {
+            "wildcard": {"organism.name": {"value": "Homo*", "case_insensitive": True}},
         }
 
 
@@ -374,7 +367,7 @@ class TestTier3FlatEnum:
     @pytest.mark.parametrize(
         ("dsl", "es_field", "value"),
         [
-            ("project_type:BioProject", "objectType", "BioProject"),
+            ("object_type:BioProject", "objectType", "BioProject"),
             # text+keyword multi-field の enum 系は `.keyword` サブフィールドを使う
             # (term query で analyzer 適用後 lowercase token と uppercase 値が一致しないため)
             ("library_strategy:WGS", "libraryStrategy.keyword", "WGS"),
@@ -427,6 +420,8 @@ class TestTier3FlatText:
             # JGA exclusive
             ("dataset_type:fastq", "datasetType"),
             ("vendor:Illumina", "vendor"),
+            # BioProject INSDC controlled vocab (text+keyword)、object_type とは別 field
+            ("project_type:genome", "projectType"),
         ],
     )
     def test_text_match_phrase(self, dsl: str, es_field: str) -> None:
@@ -459,6 +454,35 @@ class TestTier3PhraseSpaceValue:
     def test_library_construction_protocol_phrase_with_space(self) -> None:
         assert _compile('library_construction_protocol:"Illumina TruSeq"') == {
             "match_phrase": {"libraryConstructionProtocol": "Illumina TruSeq"},
+        }
+
+
+class TestTier3GrantTitleNested:
+    # grant_title は単一 nested (grant.title) で、grant_agency の 2 段 nested と path が違う.
+    def test_grant_title_word_single_nested(self) -> None:
+        assert _compile("grant_title:CREST") == {
+            "nested": {
+                "path": "grant",
+                "query": {"match_phrase": {"grant.title": "CREST"}},
+            },
+        }
+
+    def test_grant_title_phrase(self) -> None:
+        assert _compile('grant_title:"JST CREST"') == {
+            "nested": {
+                "path": "grant",
+                "query": {"match_phrase": {"grant.title": "JST CREST"}},
+            },
+        }
+
+    def test_grant_title_wildcard(self) -> None:
+        assert _compile("grant_title:CRES*") == {
+            "nested": {
+                "path": "grant",
+                "query": {
+                    "wildcard": {"grant.title": {"value": "CRES*", "case_insensitive": True}},
+                },
+            },
         }
 
 
@@ -612,7 +636,7 @@ class TestWildcardCaseInsensitive:
 class TestCompileFreeText:
     """compile_free_text helper と FreeText AST 経由の compile が等価か."""
 
-    _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description", "organism.name"]
 
     def test_single_token_word_no_phrase(self) -> None:
 
@@ -761,7 +785,7 @@ class TestCompileFreeText:
 class TestCompileToEsFreeTextNode:
     """``compile_to_es(FreeText(...))`` が ``compile_free_text`` のデフォルトと等価."""
 
-    _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description", "organism.name"]
 
     def test_free_text_node_equals_compile_free_text(self) -> None:
 
@@ -772,7 +796,7 @@ class TestCompileToEsFreeTextNode:
         """``BoolOp(AND, [adv_ast, FreeText(q)])`` で FreeText の bool.must を flatten する."""
 
         adv_ast = FieldClause(
-            field="organism",
+            field="organism_name",
             value_kind="phrase",
             value="Homo sapiens",
             position=Position(column=1, length=24),
@@ -786,16 +810,8 @@ class TestCompileToEsFreeTextNode:
         assert result == {
             "bool": {
                 "must": [
-                    # adv_ast の compile 結果 (organism kind: name は match_phrase、identifier は term)
-                    {
-                        "bool": {
-                            "should": [
-                                {"match_phrase": {"organism.name": "Homo sapiens"}},
-                                {"term": {"organism.identifier": "Homo sapiens"}},
-                            ],
-                            "minimum_should_match": 1,
-                        },
-                    },
+                    # adv_ast の compile 結果 (organism_name は text 型 contains → match_phrase)
+                    {"match_phrase": {"organism.name": "Homo sapiens"}},
                     # FreeText の multi_match が flatten されて並ぶ. operator=and は
                     # 1 multi_match 内の token 内空白を AND 結合するため.
                     {
@@ -881,7 +897,7 @@ class TestCompileToEsFreeTextNode:
 class TestCompileToEsFreeTextOperator:
     """``compile_to_es(ast, free_text_operator="OR")`` の挙動."""
 
-    _DEFAULT_FIELDS = ["identifier", "title", "name", "description"]
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description", "organism.name"]
 
     def test_free_text_alone_or(self) -> None:
         """単一 FreeText で operator=OR は bool.should + minimum_should_match=1 を出す."""
@@ -997,15 +1013,15 @@ class TestCompileToEsFreeTextOperator:
 
 
 class TestCompileFreeTextMatchesBuildSearchQuery:
-    """fields を揃えると compile_free_text と build_search_query が同じ multi_match を返す.
+    """compile_free_text と build_search_query が同じ multi_match を返す.
 
-    db-portal と entries/facets はデフォルト fields が独立しているため、
-    両者を fields 省略で比較しても一致しない (entries 側は organism.name を含む)。
-    auto-phrase 適用・operator 配置・token 分割など、fields 以外の構造の同期を
-    保証するために fields を明示揃えて比較する。
+    db-portal の ``_FREE_TEXT_DEFAULT_FIELDS`` と entries の ``_DEFAULT_KEYWORD_FIELDS``
+    は同じ 5 field (``identifier`` / ``title`` / ``name`` / ``description`` / ``organism.name``) で揃えてあり、
+    fields を省略しても一致する。auto-phrase 適用・operator 配置・token 分割など、
+    fields 以外の構造の同期を保証するために fields を明示揃えて比較する。
     """
 
-    _SHARED_FIELDS = ("identifier", "title", "name", "description")
+    _SHARED_FIELDS = ("identifier", "title", "name", "description", "organism.name")
 
     @pytest.mark.parametrize(
         "keywords",
@@ -1033,4 +1049,20 @@ class TestCompileFreeTextMatchesBuildSearchQuery:
             status_mode=None,
         )
         actual = compile_free_text(keywords, operator="OR", fields=self._SHARED_FIELDS)
+        assert actual == expected
+
+    @pytest.mark.parametrize(
+        "keywords",
+        ["cancer", "HIF-1", "cancer, human", "Homo sapiens"],
+    )
+    def test_default_fields_match(self, keywords: str) -> None:
+        # fields を両側とも省略しても一致する (default 同期の契約).
+        # entries 側 `_DEFAULT_KEYWORD_FIELDS` と db-portal 側 `_FREE_TEXT_DEFAULT_FIELDS`
+        # がずれると "Homo sapiens" のような organism.name 依存クエリで結果が分岐する.
+        expected = build_search_query(
+            keywords=keywords,
+            keyword_operator="AND",
+            status_mode=None,
+        )
+        actual = compile_free_text(keywords)
         assert actual == expected

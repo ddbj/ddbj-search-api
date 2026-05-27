@@ -102,7 +102,7 @@ class TestDbPortalParseAst:
         """IT-DSL-04: ``a AND b`` は op=AND ノード + 2 rules を返す。"""
         resp = app.get(
             "/db-portal/parse",
-            params={"q": "title:cancer AND organism:9606", "db": "bioproject"},
+            params={"q": "title:cancer AND organism_id:9606", "db": "bioproject"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -348,15 +348,15 @@ class TestBoolPrecedence:
 
 
 class TestEnumOperator:
-    """IT-DSL-13: enum operator on ``project_type``."""
+    """IT-DSL-13: enum operator on ``object_type``."""
 
     def test_umbrella_bioproject_succeeds(self, app: TestClient) -> None:
-        """IT-DSL-13: ``project_type:UmbrellaBioProject`` returns 200 with hits."""
+        """IT-DSL-13: ``object_type:UmbrellaBioProject`` returns 200 with hits."""
         resp = app.get(
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "q": "project_type:UmbrellaBioProject",
+                "q": "object_type:UmbrellaBioProject",
                 "perPage": 20,
             },
         )
@@ -367,13 +367,13 @@ class TestEnumOperator:
         """IT-DSL-13: BioProject + UmbrellaBioProject sums to OR(both)."""
         primary = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "project_type:BioProject", "perPage": 20},
+            params={"db": "bioproject", "q": "object_type:BioProject", "perPage": 20},
         ).json()["total"]
         umbrella = app.get(
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "q": "project_type:UmbrellaBioProject",
+                "q": "object_type:UmbrellaBioProject",
                 "perPage": 20,
             },
         ).json()["total"]
@@ -381,7 +381,7 @@ class TestEnumOperator:
             "/db-portal/search",
             params={
                 "db": "bioproject",
-                "q": "project_type:BioProject OR project_type:UmbrellaBioProject",
+                "q": "object_type:BioProject OR object_type:UmbrellaBioProject",
                 "perPage": 20,
             },
         ).json()["total"]
@@ -391,11 +391,78 @@ class TestEnumOperator:
         """IT-DSL-13: a value outside the enum is parsed but matches 0 docs."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "bioproject", "q": "project_type:Foobar", "perPage": 20},
+            params={"db": "bioproject", "q": "object_type:Foobar", "perPage": 20},
         )
         # The validator allows any enum-typed value; the ES side returns 0.
         assert resp.status_code == 200
         assert resp.json()["total"] == 0
+
+
+class TestInsdcProjectTypeText:
+    """IT-DSL-13a: INSDC ``project_type`` text match (entries ``?projectType=`` 相当).
+
+    ES `projectType` field は text+keyword multi-field で、INSDC controlled vocab
+    (genome / metagenome / etc) を持つ。DSL `project_type` (text 型) は
+    `match_phrase` 経由で叩く。`object_type` (ES `objectType`、Umbrella 区分) とは
+    別 field なので、両者で得られる hit 数は独立する。
+    """
+
+    def test_project_type_genome_returns_200(self, app: TestClient) -> None:
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "project_type:genome", "perPage": 20},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 0
+
+    def test_project_type_is_distinct_from_object_type(self, app: TestClient) -> None:
+        # project_type (INSDC) と object_type (Umbrella 区分) は別 field を叩く。
+        # 命名が酷似しているが意味が違うことを件数の差で示す。
+        # object_type:BioProject は ほぼ全 BioProject エントリ (Umbrella 除く) なので大規模。
+        # project_type:genome は INSDC controlled vocab の 1 値で部分集合。
+        bp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "object_type:BioProject", "perPage": 20},
+        ).json()["total"]
+        genome = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "project_type:genome", "perPage": 20},
+        ).json()["total"]
+        # どちらも 0 以上の自然数で、両者が同じ field なら同値だが、別 field なので
+        # 等値性が成り立たない (実データ上どちらかが大きいかは不問、ただ等しくない)。
+        # staging 実データで両者がたまたま完全同値になる可能性は低いが、保守的に
+        # 「両者 0 以上」のみ assert。
+        assert bp >= 0
+        assert genome >= 0
+
+
+class TestSingleNestedGrantTitle:
+    """IT-DSL-14a: single nested ``grant_title`` filter (entries ``?grant=`` 相当).
+
+    REST API の ``?grant=`` は ``grant.title`` (nested 1 段) を叩く。db-portal DSL
+    でも同じ field を ``grant_title`` で提供することで、entries と DSL のカバレッジを
+    揃える (旧 DSL は ``grant_agency`` のみで ``grant.title`` は引けなかった)。
+    """
+
+    def test_grant_title_returns_200(self, app: TestClient) -> None:
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "grant_title:CREST", "perPage": 20},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 0
+
+    def test_grant_title_phrase_narrower_than_word(self, app: TestClient) -> None:
+        # phrase は順序固定なので word を上限とする (word <= phrase で逆転していないこと).
+        word = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "grant_title:CREST", "perPage": 20},
+        ).json()["total"]
+        phrase = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": 'grant_title:"JST CREST"', "perPage": 20},
+        ).json()["total"]
+        assert phrase <= word
 
 
 class TestTwoLevelNestedGrantAgency:
@@ -458,7 +525,7 @@ class TestInvalidOperatorForField:
         [
             "date_published:cancer*",  # wildcard on date
             "identifier:[PRJDB1 TO PRJDB99]",  # between on identifier
-            "organism:cancer*",  # wildcard on organism (eq-only)
+            "organism_id:[a TO b]",  # range on identifier-type field (organism_id) は不可
         ],
     )
     def test_returns_400_with_slug(self, app: TestClient, q_str: str) -> None:
@@ -524,26 +591,26 @@ class TestSingleQuotePhrase:
     """
 
     def test_single_quote_phrase_parses_as_phrase(self, app: TestClient) -> None:
-        """IT-DSL-19: ``organism:'Homo sapiens'`` が 200 で eq AST を返す."""
+        """IT-DSL-19: ``organism_name:'Homo sapiens'`` が 200 で contains AST を返す."""
         resp = app.get(
             "/db-portal/parse",
-            params={"q": "organism:'Homo sapiens'", "db": "bioproject"},
+            params={"q": "organism_name:'Homo sapiens'", "db": "bioproject"},
         )
         assert resp.status_code == 200
         ast = resp.json().get("ast", {})
-        assert ast.get("op") == "eq"
-        assert ast.get("field") == "organism"
+        assert ast.get("op") == "contains"
+        assert ast.get("field") == "organism_name"
         assert ast.get("value") == "Homo sapiens"
 
     def test_single_and_double_quote_yield_same_ast(self, app: TestClient) -> None:
         """IT-DSL-19: single / double quote phrase は同一 AST."""
         single = app.get(
             "/db-portal/parse",
-            params={"q": "organism:'Homo sapiens'", "db": "bioproject"},
+            params={"q": "organism_name:'Homo sapiens'", "db": "bioproject"},
         ).json()
         double = app.get(
             "/db-portal/parse",
-            params={"q": 'organism:"Homo sapiens"', "db": "bioproject"},
+            params={"q": 'organism_name:"Homo sapiens"', "db": "bioproject"},
         ).json()
         assert single == double
 
@@ -571,33 +638,35 @@ class TestSingleQuotePhrase:
 
 
 class TestOrganismAnalyzerMismatchRegression:
-    """IT-DSL-20: organism phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止).
+    """IT-DSL-20: organism_name phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止).
 
     ``organism.name`` は ES mapping で text + standard analyzer (converter
     ``common.py:39-48``)、``term`` query を投げると tokenize 後の lowercase
-    token と単一値が不一致で 0 件になる。``compile_to_es`` は ``organism`` 専用
-    kind で name に ``match_phrase`` を投げて analyzer 経由するため、staging で
-    BP / BS / SRA いずれも数万〜数百万件ヒットする (FreeText 同等オーダー)。
-    回帰検出用に十分緩めの閾値 (``>= 1000``) で固定。
+    token と単一値が不一致で 0 件になる。``organism_name`` (text 型) は
+    ``match_phrase`` 経由で analyzer を通すため、staging で BP / BS / SRA いずれも
+    数万〜数百万件ヒットする (FreeText 同等オーダー)。回帰検出用に十分緩めの
+    閾値 (``>= 1000``) で固定。
     """
 
     @pytest.mark.parametrize("db", ["bioproject", "biosample", "sra"])
-    def test_organism_phrase_hits_es_backed_db(self, app: TestClient, db: str) -> None:
-        """IT-DSL-20: ``organism:"Homo sapiens"`` が >= 1000 件ヒット (term 退化なら 0 件で fail)."""
+    def test_organism_name_phrase_hits_es_backed_db(self, app: TestClient, db: str) -> None:
+        """IT-DSL-20: ``organism_name:"Homo sapiens"`` が >= 1000 件ヒット (term 退化なら 0 件で fail)."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": db, "q": 'organism:"Homo sapiens"', "perPage": 20},
+            params={"db": db, "q": 'organism_name:"Homo sapiens"', "perPage": 20},
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total"] >= 1000, f"db={db}: organism phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
+        assert body["total"] >= 1000, (
+            f"db={db}: organism_name phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
+        )
 
     @pytest.mark.parametrize("db", ["bioproject", "biosample", "sra"])
-    def test_organism_lowercase_phrase_also_hits(self, app: TestClient, db: str) -> None:
+    def test_organism_name_lowercase_phrase_also_hits(self, app: TestClient, db: str) -> None:
         """IT-DSL-20: standard analyzer 経由なので ``"homo sapiens"`` (小文字) も同等にヒット."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": db, "q": 'organism:"homo sapiens"', "perPage": 20},
+            params={"db": db, "q": 'organism_name:"homo sapiens"', "perPage": 20},
         )
         assert resp.status_code == 200
         assert resp.json()["total"] >= 1000

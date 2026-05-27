@@ -50,7 +50,6 @@ _KIND_BY_FIELD_OP: dict[tuple[FieldType, Operator], ValueKind | None] = {
     ("identifier", "wildcard"): "wildcard",
     ("text", "contains"): None,
     ("text", "wildcard"): "wildcard",
-    ("organism", "eq"): None,
     ("date", "eq"): "date",
     ("date", "between"): "range",
     ("enum", "eq"): None,

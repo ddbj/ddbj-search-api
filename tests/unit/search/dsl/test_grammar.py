@@ -30,16 +30,16 @@ class TestFieldClauseValueKinds:
         assert ast.value == "cancer"
 
     def test_phrase_simple(self) -> None:
-        ast = parse('organism:"Homo sapiens"')
+        ast = parse('organism_name:"Homo sapiens"')
         assert isinstance(ast, FieldClause)
-        assert ast.field == "organism"
+        assert ast.field == "organism_name"
         assert ast.value_kind == "phrase"
         assert ast.value == "Homo sapiens"
 
     def test_phrase_simple_single_quote(self) -> None:
-        ast = parse("organism:'Homo sapiens'")
+        ast = parse("organism_name:'Homo sapiens'")
         assert isinstance(ast, FieldClause)
-        assert ast.field == "organism"
+        assert ast.field == "organism_name"
         assert ast.value_kind == "phrase"
         assert ast.value == "Homo sapiens"
 
@@ -398,7 +398,7 @@ class TestErrorPositionMeta:
 
 class TestDslParserPBT:
     @given(
-        field=st.sampled_from(["identifier", "title", "description", "organism"]),
+        field=st.sampled_from(["identifier", "title", "description", "organism_name"]),
         word=st.text(
             alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="_"),
             min_size=1,
@@ -414,7 +414,7 @@ class TestDslParserPBT:
         assert ast.value == word
 
     @given(
-        field=st.sampled_from(["identifier", "title", "description", "organism"]),
+        field=st.sampled_from(["identifier", "title", "description", "organism_name"]),
         quote=st.sampled_from(['"', "'"]),
         inner=st.text(
             alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters=" _-"),
@@ -446,8 +446,8 @@ class TestDslParserPBT:
         assert ast.value == date_str
 
     @given(
-        left=st.sampled_from(["title:a", "description:b", "organism:c"]),
-        right=st.sampled_from(["title:x", "description:y", "organism:z"]),
+        left=st.sampled_from(["title:a", "description:b", "organism_name:c"]),
+        right=st.sampled_from(["title:x", "description:y", "organism_name:z"]),
         op=st.sampled_from(["AND", "OR"]),
     )
     @settings(max_examples=30, deadline=None)

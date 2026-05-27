@@ -44,11 +44,16 @@ class TestArsaBasics:
 
 
 class TestArsaOrganism:
-    def test_organism_word_expands_to_2_fields(self) -> None:
-        assert _c("organism:human") == '(Organism:"human" OR Lineage:"human")'
+    def test_organism_name_word_expands_to_2_fields(self) -> None:
+        # 学名は Organism + Lineage の OR phrase で広めに拾う.
+        assert _c("organism_name:human") == '(Organism:"human" OR Lineage:"human")'
 
-    def test_organism_phrase_expands_to_2_fields(self) -> None:
-        assert _c('organism:"Homo sapiens"') == '(Organism:"Homo sapiens" OR Lineage:"Homo sapiens")'
+    def test_organism_name_phrase_expands_to_2_fields(self) -> None:
+        assert _c('organism_name:"Homo sapiens"') == '(Organism:"Homo sapiens" OR Lineage:"Homo sapiens")'
+
+    def test_organism_id_degenerate(self) -> None:
+        # ARSA に taxID 直接検索 field が無いので degenerate.
+        assert _c("organism_id:9606") == "(-*:*)"
 
 
 class TestArsaDate:
@@ -76,7 +81,7 @@ class TestArsaDate:
 
 class TestArsaBool:
     def test_and(self) -> None:
-        assert _c("title:cancer AND organism:human") == (
+        assert _c("title:cancer AND organism_name:human") == (
             '(Definition:"cancer" AND (Organism:"human" OR Lineage:"human"))'
         )
 
@@ -111,12 +116,23 @@ class TestTxSearchBasics:
         assert _c("description:tumor", "txsearch") == 'text:"tumor"'
 
 
+class TestTxSearchOrganism:
+    # TXSearch は Taxonomy DB そのものなので、organism_id / organism_name は
+    # entry の identifier / title と同じ tax_id / scientific_name field を別名で叩く.
+    def test_organism_id_word_hits_tax_id(self) -> None:
+        assert _c("organism_id:9606", "txsearch") == 'tax_id:"9606"'
+
+    def test_organism_name_word_hits_scientific_name(self) -> None:
+        assert _c("organism_name:human", "txsearch") == 'scientific_name:"human"'
+
+    def test_organism_name_phrase_hits_scientific_name(self) -> None:
+        assert _c('organism_name:"Homo sapiens"', "txsearch") == 'scientific_name:"Homo sapiens"'
+
+
 class TestTxSearchDegenerate:
     @pytest.mark.parametrize(
         "dsl",
         [
-            "organism:human",
-            'organism:"Homo sapiens"',
             "date_published:2024-01-01",
             "date_modified:2024-01-01",
             "date_created:2024-01-01",
@@ -130,7 +146,10 @@ class TestTxSearchDegenerate:
         assert _c(dsl, "txsearch") == "(-*:*)"
 
     def test_bool_preserves_structure_with_degenerate_children(self) -> None:
-        assert _c("title:human AND organism:primate", "txsearch") == ('(scientific_name:"human" AND (-*:*))')
+        # TXSearch では accessibility が degenerate、構造は維持される.
+        assert _c("title:human AND accessibility:public-access", "txsearch") == (
+            '(scientific_name:"human" AND (-*:*))'
+        )
 
 
 class TestPhraseEscaping:
@@ -196,13 +215,14 @@ class TestArsaTier3Trad:
 
 
 class TestArsaTier3EsOnlyDegenerate:
-    """ES-only Tier 3 (project_type / library_* / study_type / experiment_type / submission_type / grant_agency)
+    """ES-only Tier 3 (object_type / library_* / study_type / experiment_type / submission_type / grant_agency)
     は ARSA で degenerate."""
 
     @pytest.mark.parametrize(
         "dsl",
         [
-            "project_type:BioProject",
+            "object_type:BioProject",
+            "project_type:genome",
             "library_strategy:WGS",
             "library_selection:RANDOM",
             "platform:ILLUMINA",
@@ -210,6 +230,7 @@ class TestArsaTier3EsOnlyDegenerate:
             "study_type:Cohort",
             "experiment_type:ChIP-Seq",
             "submission_type:metabolite",
+            "grant_title:CREST",
             "grant_agency:JSPS",
             "package:MIGS.ba",
             "model:HiSeq",
@@ -293,10 +314,12 @@ class TestTxSearchEsOnlyTier3Degenerate:
     @pytest.mark.parametrize(
         "dsl",
         [
-            "project_type:BioProject",
+            "object_type:BioProject",
+            "project_type:genome",
             "library_strategy:WGS",
             "library_selection:RANDOM",
             "study_type:Cohort",
+            "grant_title:CREST",
             "grant_agency:JSPS",
             "package:MIGS.ba",
             "model:HiSeq",

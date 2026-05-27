@@ -2,15 +2,16 @@
 
 SSOT: search-backends.md §バックエンド変換.
 
-- Tier 1 は 7 flat (identifier/title/description/date_published/date_modified/date_created/accessibility)
-  + 1 or_flat (date alias)
-  + 1 organism 専用 kind (organism.name は text なので match_phrase、organism.identifier は keyword なので term)。
+- Tier 1 は 9 flat (identifier/title/description/organism_id/organism_name/date_published/
+  date_modified/date_created/accessibility) + 1 or_flat (date alias)。
 - Tier 2 は 2 nested (submitter: organization, publication: publication)。
-- Tier 3 (ES 対象) は 23 flat (BioProject project_type/relevance / BioSample 7
+- Tier 3 (ES 対象) は 24 flat (BioProject object_type/project_type/relevance / BioSample 7
   (host/strain/isolate/geo_loc_name/collection_date/package/model) / SRA 8
   (library_strategy/source/layout/selection/platform/instrument_model/library_name/
   library_construction_protocol; analysis_type は別 path) / JGA 3 / MetaboBank shared 3 /
-  SRA+JGA shared 1 (type)) + 1 double-nested (grant_agency: grant → grant.agency)。
+  SRA+JGA shared 1 (type)) + 3 nested (grant_title: grant.title, external_link_label:
+  externalLink.label, derived_from_id: derivedFrom.identifier) + 1 double-nested
+  (grant_agency: grant → grant.agency)。
 - Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
 
 前提: validator で ``(field_type, value_kind)`` 互換性および cross-mode Tier 3 拒否は担保済。
@@ -27,8 +28,15 @@ from ddbj_search_api.search.phrase import ES_AUTO_PHRASE_CHARS, parse_keywords_w
 
 # シンプル検索 (q) を multi_match に展開するときのデフォルトフィールド集合.
 # db-portal handler は keyword_fields を渡さず常にこのデフォルトで検索する.
-# entries / facets は ``validate_keyword_fields`` の出力 (この集合の部分集合) を渡す.
-_FREE_TEXT_DEFAULT_FIELDS: tuple[str, ...] = ("identifier", "title", "name", "description")
+# entries / facets は ``validate_keyword_fields`` 経由で同じ 5 field を明示渡しする
+# (entries 側 ``_DEFAULT_KEYWORD_FIELDS`` (``ddbj_search_api/es/query.py``) と一致).
+_FREE_TEXT_DEFAULT_FIELDS: tuple[str, ...] = (
+    "identifier",
+    "title",
+    "name",
+    "description",
+    "organism.name",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,15 +46,11 @@ class _ESStrategy:
     `kind` に応じて使うフィールドが異なる:
     - ``flat``     : ``path`` (単一 top-level) に basic leaf を直接投げる。
     - ``or_flat``  : ``paths`` (複数 top-level) に OR (bool should) で投げる。
-    - ``organism`` : ``organism.name`` (text + standard analyzer) に match_phrase、
-      ``organism.identifier`` (keyword) に term の OR (bool should)。
-      汎用 or_flat だと name 側で analyzer mismatch (term が tokenize 後の lowercase
-      token と一致しない) で 0 件になるための専用 kind。
     - ``nested``   : ``path`` の nested wrapper + ``sub`` に basic leaf。
     - ``nested2``  : ``path`` → ``inner_path`` の 2 段 nested + ``sub`` に basic leaf。
     """
 
-    kind: Literal["flat", "or_flat", "organism", "nested", "nested2"]
+    kind: Literal["flat", "or_flat", "nested", "nested2"]
     path: str | None = None
     paths: tuple[str, ...] | None = None
     sub: str | None = None
@@ -58,9 +62,10 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "identifier": _ESStrategy(kind="flat", path="identifier"),
     "title": _ESStrategy(kind="flat", path="title"),
     "description": _ESStrategy(kind="flat", path="description"),
-    # organism は or_flat ではなく organism kind で分岐。name は text なので match_phrase
-    # 経由で analyzer を通す必要があり、identifier は keyword (taxID) で term。
-    "organism": _ESStrategy(kind="organism"),
+    # 生物種は taxID と学名で別 field に分割。organism_id は identifier 型 (keyword に term)、
+    # organism_name は text 型 (text に match_phrase 経由で standard analyzer を通す)。
+    "organism_id": _ESStrategy(kind="flat", path="organism.identifier"),
+    "organism_name": _ESStrategy(kind="flat", path="organism.name"),
     "date_published": _ESStrategy(kind="flat", path="datePublished"),
     "date_modified": _ESStrategy(kind="flat", path="dateModified"),
     "date_created": _ESStrategy(kind="flat", path="dateCreated"),
@@ -78,12 +83,13 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     # text 型 (instrumentModel / libraryName / etc) は match_phrase で analyzer 経由する
     # ので suffix 不要。keyword 単独 (objectType / relevance) も suffix 不要。
     #
-    # NOTE: DSL の `project_type` は **意図的に ES `objectType` field にマップ** している
-    # (BioProject / UmbrellaBioProject の Umbrella 区分。REST API の `?objectTypes=` 相当)。
-    # ES の `projectType` (text+keyword、INSDC の genome / metagenome 等) とは別 field で、
-    # DSL 側にはそちらの allowlist field を露出していない。`schemas/db_portal.py` の
-    # `project_type: Literal["BioProject", "UmbrellaBioProject"]` (alias="objectType") と整合。
-    "project_type": _ESStrategy(kind="flat", path="objectType"),
+    # NOTE: DSL の `object_type` は ES `objectType` field を叩く
+    # (BioProject / UmbrellaBioProject の Umbrella 区分。REST API の `?objectTypes=` と同じ field)。
+    "object_type": _ESStrategy(kind="flat", path="objectType"),
+    # DSL `project_type` は ES `projectType` text+keyword field を match_phrase
+    # (INSDC controlled vocab: genome / metagenome / 等)。REST `?projectType=` と同じ field。
+    # `object_type` (ES `objectType`、Umbrella 区分) とは別 field なので混同注意。
+    "project_type": _ESStrategy(kind="flat", path="projectType"),
     "relevance": _ESStrategy(kind="flat", path="relevance"),
     "library_strategy": _ESStrategy(kind="flat", path="libraryStrategy.keyword"),
     "library_source": _ESStrategy(kind="flat", path="librarySource.keyword"),
@@ -112,7 +118,13 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     # SRA + JGA 共通 (subtype 識別子。SRA: sra-submission..sra-analysis、JGA: jga-study..jga-policy)
     "type": _ESStrategy(kind="flat", path="type"),
     # === Tier 3 double-nested ===
-    # BioProject / JGA 共通: grant[].agency[].name。DSL 名は `grant_agency` で統一。
+    # BioProject / JGA 共通: grant[].title (単一 nested)。REST API の `?grant=` と同じ field。
+    "grant_title": _ESStrategy(
+        kind="nested",
+        path="grant",
+        sub="grant.title",
+    ),
+    # BioProject / JGA 共通: grant[].agency[].name (2 段 nested)。DSL 名は `grant_agency`。
     "grant_agency": _ESStrategy(
         kind="nested2",
         path="grant",
@@ -155,11 +167,12 @@ def compile_free_text(
     ``bool.should`` を選ぶ。db-portal / entries / facets / AST 経路 (FreeText
     ノード) で同じロジックを共有する。
 
-    ``fields`` を省略すると ``("identifier", "title", "name", "description")``
-    (db-portal のデフォルト) を使う。entries / facets 系は ``build_search_query``
-    が ``_DEFAULT_KEYWORD_FIELDS`` から組み立てた ``fields`` を明示渡しするため
-    両者のデフォルトは独立に進化する。``value`` がトークン化後に空となる場合は
-    ``ValueError`` を raise する (呼び出し側で空入力を弾く前提)。
+    ``fields`` を省略すると ``_FREE_TEXT_DEFAULT_FIELDS`` (5 field、
+    ``identifier`` / ``title`` / ``name`` / ``description`` / ``organism.name``) を使う。
+    entries / facets 系は ``build_search_query`` が ``_DEFAULT_KEYWORD_FIELDS`` から
+    組み立てた ``fields`` を明示渡しするが、両者の集合は同期させてある (`organism.name`
+    込みの 5 field)。``value`` がトークン化後に空となる場合は ``ValueError`` を
+    raise する (呼び出し側で空入力を弾く前提)。
     """
     if fields is None:
         used_fields: list[str] = list(_FREE_TEXT_DEFAULT_FIELDS)
@@ -203,7 +216,7 @@ def compile_to_es(
     ``bool.should`` + ``minimum_should_match=1``.  The explicit ``AND`` / ``OR`` /
     ``NOT`` BoolOps inside the AST are unaffected.
 
-    トップレベル AND の直下に FreeText が混じった AST (``cancer AND organism:9606`` 等)
+    トップレベル AND の直下に FreeText が混じった AST (``cancer AND organism_id:9606`` 等)
     では、``free_text_operator=AND`` のときに限り FreeText 子の ``bool.must`` 中身を
     上位 ``bool.must`` に flatten して単一 bool 句にまとめる。OR の場合は FreeText の
     ``bool.should`` が semantics 上 inline 化できないので、入れ子の bool 句として残す。
@@ -270,8 +283,6 @@ def _compile_leaf(clause: FieldClause) -> dict[str, Any]:
     if strategy.kind == "or_flat":
         assert strategy.paths is not None
         return _or_over_fields(clause, strategy.paths)
-    if strategy.kind == "organism":
-        return _compile_organism(clause)
     if strategy.kind == "nested":
         assert strategy.path is not None
         assert strategy.sub is not None
@@ -302,24 +313,6 @@ def _or_over_fields(clause: FieldClause, es_fields: tuple[str, ...]) -> dict[str
     return {
         "bool": {
             "should": [_basic_leaf(f, clause) for f in es_fields],
-            "minimum_should_match": 1,
-        },
-    }
-
-
-def _compile_organism(clause: FieldClause) -> dict[str, Any]:
-    # converter mapping (common.py:39-48) では organism.name が text + standard
-    # analyzer、organism.identifier が keyword (taxID)。term を text の inverted
-    # index に投げると tokenize 後の lowercase token と一致せず 0 件になるので、
-    # name には match_phrase で analyzer を通し、identifier には term を投げる。
-    # allowlist.py 側で organism は (word, phrase) → "eq" のみ許可 (wildcard 含む
-    # 他演算子は validator が弾く) なので、ここでは eq 経路のみ扱う。
-    return {
-        "bool": {
-            "should": [
-                {"match_phrase": {"organism.name": clause.value}},
-                _basic_leaf("organism.identifier", clause),
-            ],
             "minimum_should_match": 1,
         },
     }

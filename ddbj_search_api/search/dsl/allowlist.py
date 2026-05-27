@@ -1,9 +1,9 @@
 """Tier-based field allowlist and operator matrix.
 
 3 段構成:
-- Tier 1 (横断可、9 field): identifier / text / organism / date 系の基本 field + accessibility。
+- Tier 1 (横断可、10 field): identifier / text / organism_id / organism_name / date 系の基本 field + accessibility。
 - Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
-- Tier 3 (単一 DB 指定必須、40 unique / per-DB 集計 46 field): DB 特化 field。
+- Tier 3 (単一 DB 指定必須、44 unique / per-DB 集計 53 field): DB 特化 field。
 
 SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス、
 db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
@@ -16,7 +16,7 @@ from typing import Literal, TypeAlias
 
 from ddbj_search_api.search.dsl.ast import ValueKind
 
-FieldType: TypeAlias = Literal["identifier", "text", "organism", "date", "enum", "number"]
+FieldType: TypeAlias = Literal["identifier", "text", "date", "enum", "number"]
 Operator: TypeAlias = Literal["eq", "contains", "starts_with", "wildcard", "between", "gte", "lte"]
 Tier: TypeAlias = Literal["tier1", "tier2", "tier3"]
 
@@ -25,7 +25,10 @@ TIER1_FIELDS: frozenset[str] = frozenset(
         "identifier",
         "title",
         "description",
-        "organism",
+        # 生物種は identifier (taxID exact) / name (学名 match) で 2 field に分ける.
+        # REST API の `?organism=<taxId>` は organism_id 側と同じ field を叩く.
+        "organism_id",
+        "organism_name",
         "date_published",
         "date_modified",
         "date_created",
@@ -49,7 +52,10 @@ FIELD_TYPES: dict[str, FieldType] = {
     "identifier": "identifier",
     "title": "text",
     "description": "text",
-    "organism": "organism",
+    # 生物種 (taxID): keyword `organism.identifier` に term。REST API の `?organism=<taxId>` と同じ.
+    "organism_id": "identifier",
+    # 生物種 (学名): text `organism.name` に match_phrase (standard analyzer 経由で大文字小文字寛容).
+    "organism_name": "text",
     "date_published": "date",
     "date_modified": "date",
     "date_created": "date",
@@ -60,7 +66,15 @@ FIELD_TYPES: dict[str, FieldType] = {
     "submitter": "text",
     "publication": "text",
     # === Tier 3 BioProject ===
-    "project_type": "enum",
+    # ES `objectType` (keyword) に term。BioProject / UmbrellaBioProject の Umbrella 区分。
+    # REST API の `?objectTypes=` と同じ field。
+    "object_type": "enum",
+    # ES `projectType` (text+keyword) を match_phrase。INSDC controlled vocab
+    # (genome / metagenome / 等)。REST API の `?projectType=` と同じ field。
+    # `object_type` (ES `objectType`、Umbrella 区分) とは別 field。
+    "project_type": "text",
+    # BioProject + JGA 共通: grant nested の title。REST API の `?grant=` と同じ field。
+    "grant_title": "text",
     "grant_agency": "text",
     "relevance": "enum",
     # BioProject + JGA 共通: externalLink nested の label。converter mapping は keyword だが、
@@ -137,8 +151,6 @@ OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
     ("text", "word"): "contains",
     ("text", "phrase"): "contains",
     ("text", "wildcard"): "wildcard",
-    ("organism", "word"): "eq",
-    ("organism", "phrase"): "eq",
     ("date", "date"): "eq",
     ("date", "range"): "between",
     # === enum / number ===
@@ -156,9 +168,11 @@ OPERATOR_BY_KIND: dict[tuple[FieldType, ValueKind], Operator] = {
 # は候補 DB を列挙して提示する。Tier 3 のフィールド集合 (``TIER3_FIELDS``) はこの dict のキーから導出する。
 TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     # BioProject-only
+    "object_type": ("bioproject",),
     "project_type": ("bioproject",),
     "relevance": ("bioproject",),
     # BioProject + JGA (jga-study のみ)
+    "grant_title": ("bioproject", "jga"),
     "grant_agency": ("bioproject", "jga"),
     # BioProject + JGA: externalLink nested (label)
     "external_link_label": ("bioproject", "jga"),

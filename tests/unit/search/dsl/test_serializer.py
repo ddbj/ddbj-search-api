@@ -78,22 +78,22 @@ class TestSerializeSpecExamples:
         assert ast_to_dsl(_and(_free("cancer"), _free("tumor"))) == "cancer AND tumor"
 
     def test_single_field_eq_phrase(self) -> None:
-        assert ast_to_dsl(_phrase("organism", "Homo sapiens")) == 'organism:"Homo sapiens"'
+        assert ast_to_dsl(_phrase("organism_name", "Homo sapiens")) == 'organism_name:"Homo sapiens"'
 
     def test_free_text_plus_field(self) -> None:
-        ast = _and(_free("cancer"), _phrase("organism", "Homo sapiens"))
-        assert ast_to_dsl(ast) == 'cancer AND organism:"Homo sapiens"'
+        ast = _and(_free("cancer"), _phrase("organism_name", "Homo sapiens"))
+        assert ast_to_dsl(ast) == 'cancer AND organism_name:"Homo sapiens"'
 
     def test_or_inside_and_requires_paren(self) -> None:
         ast = _and(
             _or(_free("cancer"), _free("tumor")),
-            _phrase("organism", "Homo sapiens"),
+            _phrase("organism_name", "Homo sapiens"),
         )
-        assert ast_to_dsl(ast) == '(cancer OR tumor) AND organism:"Homo sapiens"'
+        assert ast_to_dsl(ast) == '(cancer OR tumor) AND organism_name:"Homo sapiens"'
 
     def test_not_with_and_parent(self) -> None:
-        ast = _and(_free("cancer"), _not(_phrase("organism", "Mus musculus")))
-        assert ast_to_dsl(ast) == 'cancer AND NOT organism:"Mus musculus"'
+        ast = _and(_free("cancer"), _not(_phrase("organism_name", "Mus musculus")))
+        assert ast_to_dsl(ast) == 'cancer AND NOT organism_name:"Mus musculus"'
 
     def test_range(self) -> None:
         assert (

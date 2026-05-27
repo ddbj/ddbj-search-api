@@ -46,15 +46,24 @@ class TestLeafSerialization:
     def test_title_wildcard(self) -> None:
         assert _j("title:canc*") == {"field": "title", "op": "wildcard", "value": "canc*"}
 
-    def test_organism_eq_word(self) -> None:
-        assert _j("organism:human") == {"field": "organism", "op": "eq", "value": "human"}
+    def test_organism_name_contains_word(self) -> None:
+        # organism_name は text 型 → contains
+        assert _j("organism_name:human") == {
+            "field": "organism_name",
+            "op": "contains",
+            "value": "human",
+        }
 
-    def test_organism_eq_phrase(self) -> None:
-        assert _j('organism:"Homo sapiens"') == {
-            "field": "organism",
-            "op": "eq",
+    def test_organism_name_contains_phrase(self) -> None:
+        assert _j('organism_name:"Homo sapiens"') == {
+            "field": "organism_name",
+            "op": "contains",
             "value": "Homo sapiens",
         }
+
+    def test_organism_id_eq_word(self) -> None:
+        # organism_id は identifier 型 → eq
+        assert _j("organism_id:9606") == {"field": "organism_id", "op": "eq", "value": "9606"}
 
     def test_date_published_eq(self) -> None:
         assert _j("date_published:2024-01-01") == {
@@ -107,11 +116,11 @@ class TestBoolSerialization:
 
     def test_ssot_sample_nested(self) -> None:
         # SSOT search-backends.md §AST フォーマット のサンプル相当
-        dsl = 'organism:"Homo sapiens" AND date:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)'
+        dsl = 'organism_name:"Homo sapiens" AND date:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)'
         assert _j(dsl) == {
             "op": "AND",
             "rules": [
-                {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
                 {
                     "field": "date",
                     "op": "between",
@@ -179,12 +188,16 @@ class TestJsonToAstLeaves:
         d = {"field": "title", "op": "contains", "value": "cancer treatment"}
         assert ast_to_json(json_to_ast(d)) == d
 
-    def test_organism_eq_word(self) -> None:
-        d = {"field": "organism", "op": "eq", "value": "human"}
+    def test_organism_name_contains_word(self) -> None:
+        d = {"field": "organism_name", "op": "contains", "value": "human"}
         assert ast_to_json(json_to_ast(d)) == d
 
-    def test_organism_eq_phrase(self) -> None:
-        d = {"field": "organism", "op": "eq", "value": "Homo sapiens"}
+    def test_organism_name_contains_phrase(self) -> None:
+        d = {"field": "organism_name", "op": "contains", "value": "Homo sapiens"}
+        assert ast_to_json(json_to_ast(d)) == d
+
+    def test_organism_id_eq_word(self) -> None:
+        d = {"field": "organism_id", "op": "eq", "value": "9606"}
         assert ast_to_json(json_to_ast(d)) == d
 
     def test_date_eq(self) -> None:
@@ -209,15 +222,15 @@ class TestJsonToAstLeaves:
 
 
 class TestJsonToAstValueKindInference:
-    """word vs phrase 推定 (organism/text/identifier/enum + eq/contains の曖昧ケース)."""
+    """word vs phrase 推定 (text/identifier/enum + eq/contains の曖昧ケース)."""
 
     def test_no_special_chars_yields_word(self) -> None:
-        node = json_to_ast({"field": "organism", "op": "eq", "value": "human"})
+        node = json_to_ast({"field": "organism_name", "op": "contains", "value": "human"})
         assert isinstance(node, FieldClause)
         assert node.value_kind == "word"
 
     def test_space_yields_phrase(self) -> None:
-        node = json_to_ast({"field": "organism", "op": "eq", "value": "Homo sapiens"})
+        node = json_to_ast({"field": "organism_name", "op": "contains", "value": "Homo sapiens"})
         assert isinstance(node, FieldClause)
         assert node.value_kind == "phrase"
 
@@ -272,7 +285,7 @@ class TestJsonToAstBool:
                     "op": "OR",
                     "rules": [
                         {"field": "title", "op": "contains", "value": "tumor"},
-                        {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                        {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
                     ],
                 },
             ],
@@ -298,10 +311,10 @@ class TestJsonToAstAstToJsonRoundTrip:
         [
             "cancer",
             "identifier:PRJDB1",
-            'organism:"Homo sapiens"',
+            'organism_name:"Homo sapiens"',
             "title:cancer AND title:tumor",
-            'title:cancer AND organism:"Homo sapiens"',
-            '(title:cancer OR title:tumor) AND organism:"Homo sapiens"',
+            'title:cancer AND organism_name:"Homo sapiens"',
+            '(title:cancer OR title:tumor) AND organism_name:"Homo sapiens"',
             "date_published:[2020-01-01 TO 2024-12-31]",
             "NOT title:cancer",
             "identifier:PRJ*",

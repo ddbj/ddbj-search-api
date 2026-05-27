@@ -140,7 +140,7 @@ class TestDetectAccessionExactMatchInAst:
             op="AND",
             children=(
                 FieldClause(field="title", value_kind="word", value="PRJDB1234", position=_POS),
-                FieldClause(field="organism", value_kind="word", value="9606", position=_POS),
+                FieldClause(field="organism_id", value_kind="word", value="9606", position=_POS),
             ),
             position=_POS,
         )

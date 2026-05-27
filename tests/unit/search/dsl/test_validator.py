@@ -23,7 +23,8 @@ class TestAllowedFields:
             "identifier",
             "title",
             "description",
-            "organism",
+            "organism_id",
+            "organism_name",
             "date_published",
             "date_modified",
             "date_created",
@@ -34,7 +35,9 @@ class TestAllowedFields:
     def test_tier1_fields_accepted_in_cross_mode(self, field: str) -> None:
         if field == "identifier":
             dsl = f"{field}:PRJDB1"
-        elif field == "organism":
+        elif field == "organism_id":
+            dsl = f"{field}:9606"
+        elif field == "organism_name":
             dsl = f"{field}:human"
         elif field.startswith("date"):
             dsl = f"{field}:2024-01-01"
@@ -71,9 +74,9 @@ class TestValueKindOperatorCompat:
             "date:cancer*",  # date alias x wildcard 不可
             "date_published:2024*",  # date 型 x wildcard 不可 (YYYYMMDD format への暗黙変換は無い)
             "date_published:cancer",  # date は word 不可
-            "organism:cancer*",  # organism は wildcard 不可
-            "organism:2024-01-01",  # organism は date 不可
             "description:[a TO b]",  # text は range 不可
+            "organism_id:[a TO b]",  # organism_id (identifier 型) は range 不可
+            "organism_name:2024-01-01",  # organism_name (text 型) は date 不可
         ],
     )
     def test_invalid_operator_rejected(self, dsl: str) -> None:
@@ -91,8 +94,11 @@ class TestValueKindOperatorCompat:
             "title:cancer",
             'title:"cancer treatment"',
             "title:canc*",
-            "organism:human",
-            'organism:"Homo sapiens"',
+            "organism_id:9606",
+            "organism_id:96*",  # identifier 型は wildcard 可
+            "organism_name:human",
+            'organism_name:"Homo sapiens"',
+            "organism_name:Homo*",  # text 型は wildcard 可
             "date_published:2024-01-01",
             "date_published:[2020-01-01 TO 2024-12-31]",
             "date:[2020-01-01 TO 2024-12-31]",
@@ -314,7 +320,7 @@ class TestMode:
 
 class TestBoolCombinations:
     def test_and_with_valid_leaves_accepted(self) -> None:
-        validate(parse("title:cancer AND organism:human"), mode="cross")
+        validate(parse("title:cancer AND organism_name:human"), mode="cross")
 
     def test_or_with_invalid_leaf_rejected(self) -> None:
         ast = parse("title:cancer OR date:cancer*")
@@ -355,7 +361,9 @@ class TestTier3CrossModeReject:
         ("field", "value"),
         [
             # BioProject
-            ("project_type", "BioProject"),
+            ("object_type", "BioProject"),
+            ("project_type", "genome"),
+            ("grant_title", "CREST"),
             ("grant_agency", "JSPS"),
             ("relevance", "reference"),
             ("external_link_label", "GEO"),
@@ -493,7 +501,7 @@ class TestTier3SingleModeAccepted:
     @pytest.mark.parametrize(
         ("field", "value"),
         [
-            ("project_type", "BioProject"),
+            ("object_type", "BioProject"),
             ("relevance", "reference"),
             ("library_strategy", "WGS"),
             ("analysis_type", "variation"),
@@ -530,7 +538,7 @@ class TestEnumValueKindCompat:
             "library_source:GENOMIC",
             "platform:ILLUMINA",
             "rank:species",
-            "project_type:BioProject",
+            "object_type:BioProject",
             "relevance:reference",
             'relevance:"reference genome"',  # 空白含み phrase
             "division:BCT",
@@ -546,7 +554,7 @@ class TestEnumValueKindCompat:
             "library_strategy:WGS*",  # wildcard
             "platform:ILLU*",
             "rank:2024-01-01",  # date
-            "project_type:[A TO B]",  # range
+            "object_type:[A TO B]",  # range
             "relevance:ref*",  # 新 enum field も wildcard 不可
             "relevance:[a TO z]",  # 新 enum field も range 不可
         ],
@@ -609,7 +617,7 @@ class TestNumberDigitValidation:
 
 class TestValidatorPBT:
     @given(
-        field=st.sampled_from(["title", "description", "organism"]),
+        field=st.sampled_from(["title", "description", "organism_name"]),
         word=st.text(
             alphabet=st.characters(
                 min_codepoint=ord("0"),
@@ -644,7 +652,7 @@ class TestValidatorPBT:
 
 
 _ENUM_FIELDS = [
-    "project_type",
+    "object_type",
     "relevance",
     "library_strategy",
     "library_source",

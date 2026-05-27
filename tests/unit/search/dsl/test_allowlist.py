@@ -1,6 +1,6 @@
 """Tests for ddbj_search_api.search.dsl.allowlist.
 
-3 段構成の Tier 1/2/3 allowlist (57 field per DB 集計 = 51 unique; Tier 1 9 + Tier 2 2 +
+3 段構成の Tier 1/2/3 allowlist (Tier 1 10 + Tier 2 2 + Tier 3 44 unique / per-DB 53、
 Tier 3 unique 40 / per-DB 46) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
 db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
 """
@@ -28,8 +28,8 @@ from ddbj_search_api.search.dsl.ast import ValueKind
 
 
 class TestTierFrozensets:
-    def test_tier1_has_9_fields(self) -> None:
-        assert len(TIER1_FIELDS) == 9
+    def test_tier1_has_10_fields(self) -> None:
+        assert len(TIER1_FIELDS) == 10
 
     def test_tier1_includes_accessibility(self) -> None:
         # accessibility は ES backed 6 DB 共通 (cross 可)、Solr backed (Trad / Taxonomy)
@@ -40,15 +40,17 @@ class TestTierFrozensets:
         assert frozenset({"submitter", "publication"}) == TIER2_FIELDS
 
     def test_tier3_contains_expected_per_db_fields(self) -> None:
-        # Tier 3 unique 42 / per-DB 50。
-        # BioProject 4、BioSample 7、SRA 9、JGA 3、GEA 0、MetaboBank 1、
-        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 40 件 + shared 8 で unique 42。
-        # shared: grant_agency (BP+JGA)、external_link_label (BP+JGA)、derived_from_id
-        # (BS+SRA)、study_type (JGA+MB)、experiment_type (GEA+MB)、geo_loc_name と
-        # collection_date (BS+SRA-sample)、type (SRA+JGA)。
+        # Tier 3 unique 44 / per-DB 53。
+        # BioProject 6、BioSample 7、SRA 9、JGA 3、GEA 0、MetaboBank 1、
+        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 42 件 + shared 8 で unique 44。
+        # shared: grant_title (BP+JGA)、grant_agency (BP+JGA)、external_link_label (BP+JGA)、
+        # derived_from_id (BS+SRA)、study_type (JGA+MB)、experiment_type (GEA+MB)、
+        # geo_loc_name と collection_date (BS+SRA-sample)、type (SRA+JGA)。
         expected = {
-            # BioProject 4 件
-            "project_type",
+            # BioProject 6 件
+            "object_type",
+            "project_type",  # INSDC controlled vocab (genome / metagenome 等)、object_type と別 field
+            "grant_title",  # BioProject と JGA 共通
             "grant_agency",  # BioProject と JGA 共通
             "relevance",
             "external_link_label",  # BioProject と JGA 共通
@@ -104,8 +106,8 @@ class TestTierFrozensets:
         }
         assert expected == TIER3_FIELDS
 
-    def test_tier3_unique_count_is_42(self) -> None:
-        assert len(TIER3_FIELDS) == 42
+    def test_tier3_unique_count_is_44(self) -> None:
+        assert len(TIER3_FIELDS) == 44
 
     def test_tiers_are_disjoint(self) -> None:
         assert frozenset() == TIER1_FIELDS & TIER2_FIELDS
@@ -127,7 +129,7 @@ class TestFieldTypesMapping:
 
     def test_field_type_values_are_literals(self) -> None:
         valid = set(get_args(FieldType))
-        assert valid == {"identifier", "text", "organism", "date", "enum", "number"}
+        assert valid == {"identifier", "text", "date", "enum", "number"}
         for field, ftype in FIELD_TYPES.items():
             assert ftype in valid, f"{field}: invalid type {ftype!r}"
 
@@ -138,7 +140,8 @@ class TestFieldTypesMapping:
             ("submitter", "text"),
             ("publication", "text"),
             # Tier 3 enum
-            ("project_type", "enum"),
+            ("object_type", "enum"),
+            ("project_type", "text"),
             ("relevance", "enum"),
             ("library_strategy", "enum"),
             ("library_source", "enum"),
@@ -160,6 +163,7 @@ class TestFieldTypesMapping:
             ("library_name", "text"),
             ("library_construction_protocol", "text"),
             ("analysis_type", "text"),
+            ("grant_title", "text"),
             ("grant_agency", "text"),
             ("external_link_label", "text"),
             ("derived_from_id", "identifier"),
@@ -198,8 +202,6 @@ class TestOperatorByKind:
             ("text", "word"),
             ("text", "phrase"),
             ("text", "wildcard"),
-            ("organism", "word"),
-            ("organism", "phrase"),
             ("date", "date"),
             ("date", "range"),
         ]:
@@ -246,9 +248,11 @@ class TestTier3FieldDbs:
         ("field", "expected_dbs"),
         [
             # BioProject-only
+            ("object_type", ("bioproject",)),
             ("project_type", ("bioproject",)),
             ("relevance", ("bioproject",)),
             # BioProject + JGA shared
+            ("grant_title", ("bioproject", "jga")),
             ("grant_agency", ("bioproject", "jga")),
             ("external_link_label", ("bioproject", "jga")),
             # BioSample-only

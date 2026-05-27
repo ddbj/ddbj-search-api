@@ -6,13 +6,16 @@ Dialect:
 - ``arsa``: ARSA (Solr 4.4.0)。Tier 1 (``PrimaryAccessionNumber`` / ``Definition`` /
   ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Trad Tier 3 (``Division`` /
   ``MolecularType`` / ``SequenceLength`` / ``FeatureQualifier`` / ``ReferenceJournal``)。
-  ``date_modified`` / ``date_created`` / ``date`` alias、submitter / publication
-  (organization も publication.title 相当の field も ARSA にない)、ES-only / Taxonomy 系
-  Tier 3 は degenerate。
+  ``organism_name`` は ``Organism`` / ``Lineage`` の OR phrase にマップ、``organism_id``
+  は taxID 直接検索 field がないため degenerate。``date_modified`` / ``date_created`` /
+  ``date`` alias、submitter / publication (organization も publication.title 相当の field
+  も ARSA にない)、ES-only / Taxonomy 系 Tier 3 は degenerate。
 - ``txsearch``: TXSearch (Solr 4.4.0)。Tier 1 (``tax_id`` / ``scientific_name`` / ``text``) +
   Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``common_name``; 10 field)。
-  organism 自体が Taxonomy のため ``organism`` + 日付 + Tier 2 + Trad/ES-only Tier 3 は degenerate。
-  ``japanese_name`` は staging TXSearch の schema に不在のため allowlist 外。
+  TXSearch は Taxonomy DB そのものなので ``organism_id`` を ``tax_id`` に、``organism_name``
+  を ``scientific_name`` にマップ (entry の identifier / title と同じ field を別名で叩く形)。
+  日付 + Tier 2 + Trad/ES-only Tier 3 は degenerate。``japanese_name`` は staging TXSearch
+  の schema に不在のため allowlist 外。
 
 degenerate は leaf を ``(-*:*)`` (no-match リテラル) に置換。ツリー構造は維持する。
 """
@@ -46,7 +49,9 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "identifier": ("PrimaryAccessionNumber",),
     "title": ("Definition",),
     "description": ("AllText",),
-    "organism": ("Organism", "Lineage"),
+    # organism_name は学名 (Organism) + 分類体系 (Lineage) の OR phrase。
+    # organism_id (taxID exact) は ARSA に対応 field 不在のため _ARSA_UNAVAILABLE 行き。
+    "organism_name": ("Organism", "Lineage"),
     "date_published": ("Date",),
     # === Tier 2 ===
     # publication は publication.title (text) に正規化したため ARSA に対応 field なし
@@ -69,6 +74,10 @@ _TXSEARCH_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "identifier": ("tax_id",),
     "title": ("scientific_name",),
     "description": ("text",),
+    # TXSearch は Taxonomy DB なので entry の identifier=tax_id / title=scientific_name と
+    # 生物種検索の organism_id / organism_name が同じ field を指す (organism そのものを引く DB).
+    "organism_id": ("tax_id",),
+    "organism_name": ("scientific_name",),
     # === Tier 3 Taxonomy ===
     "rank": ("rank",),
     "lineage": ("lineage",),

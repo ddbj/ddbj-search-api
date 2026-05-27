@@ -1092,9 +1092,9 @@
 **回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py`, `tests/unit/search/dsl/test_compiler_es.py`
 
-### IT-DSL-13: enum 演算子 (`project_type`)
+### IT-DSL-13: enum 演算子 (`object_type`)
 
-**endpoint**: `GET /db-portal/search?db=bioproject&q=project_type:<value>`
+**endpoint**: `GET /db-portal/search?db=bioproject&q=object_type:<value>`
 
 **不変条件**:
 - `BioProject` / `UmbrellaBioProject` 単独 `total` の和が OR 結合 `total` と一致 (enum 排他)
@@ -1102,6 +1102,19 @@
 
 **回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
+
+### IT-DSL-13a: INSDC `project_type` (text、`object_type` と別 field)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&q=project_type:<value>`
+
+**不変条件**:
+- 200 (silent 5xx 化しない、ES `projectType` text+keyword field に `match_phrase`)
+- INSDC controlled vocab 値 (`genome` / `metagenome` 等) でヒットする
+- `project_type:genome` と `object_type:BioProject` は別 field を叩くため、同値が成り立たない (命名が酷似しているが意味が違うことの担保)
+- entries の `?projectType=genome` と意味的に同等な field を引く (両 API で同じ `projectType` を叩く)
+
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3 § BioProject`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestTier3FlatText)
 
 ### IT-DSL-14: 2 段 nested (`grant_agency`)
 
@@ -1113,6 +1126,18 @@
 
 **回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3 § BioProject`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py`
+
+### IT-DSL-14a: 1 段 nested (`grant_title`)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&q=grant_title:CREST`
+
+**不変条件**:
+- 200 (silent 5xx 化しない、`grant.title` への単一 nested クエリが ES 側で評価される)
+- phrase (`"JST CREST"`) の `total` <= word (`CREST`) の `total` (順序固定は word を上限とする)
+- entries の `?grant=CREST` と意味的に同等な field を引く (両 API で同じ `grant.title` を叩く)
+
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 3 § BioProject`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestTier3GrantTitleNested)
 
 ### IT-DSL-15: invalid-date-format で 400
 
@@ -1159,27 +1184,27 @@
 
 ### IT-DSL-19: single quote phrase は double quote と同等
 
-**endpoint**: `GET /db-portal/parse?q=organism:'Homo sapiens'` ↔ `?q=organism:"Homo sapiens"`
+**endpoint**: `GET /db-portal/parse?q=organism_name:'Homo sapiens'` ↔ `?q=organism_name:"Homo sapiens"`
 
 **不変条件**:
-- `/db-portal/parse`: single / double quote の phrase が同一の AST (`{op: eq, field, value}`) を返す
+- `/db-portal/parse`: single / double quote の phrase が同一の AST (`{op: contains, field, value}`) を返す
 - `/db-portal/search`: 同一クエリで `total` が一致 (quote 種別はバックエンドの match に影響しない)
 - `/entries/*` 系の `keywords` パラメータの phrase 扱いとも一貫 (`'...'` も phrase として扱う)
 
 **回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § 文法`
 **関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py` (TestFieldClauseValueKinds, TestPhraseEscaping)
 
-### IT-DSL-20: organism phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止)
+### IT-DSL-20: organism_name phrase が ES backed DB で実際にヒットする (analyzer mismatch 回帰防止)
 
-**endpoint**: `GET /db-portal/search?q=organism:"Homo sapiens"&db=<bioproject|biosample|sra>&perPage=20`
+**endpoint**: `GET /db-portal/search?q=organism_name:"Homo sapiens"&db=<bioproject|biosample|sra>&perPage=20`
 
 **不変条件**:
 - BP / BS / SRA いずれも `total >= 1000` (FreeText `"Homo sapiens"` と概ね同オーダーになる)
-- 小文字 phrase `organism:"homo sapiens"` でも同等に `total >= 1000` (`organism.name` は text + standard analyzer なので大文字小文字に寛容)
+- 小文字 phrase `organism_name:"homo sapiens"` でも同等に `total >= 1000` (`organism.name` は text + standard analyzer なので大文字小文字に寛容)
 - term クエリだと analyzer mismatch (tokenize 後の lowercase token と単一値が不一致) で 0 件に戻るので、`match_phrase` 経由の正常実装が回帰すると本シナリオが破綻する
 
-**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 1 organism`
-**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestOrganismField)
+**回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 1 organism_name`
+**関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestOrganismFields)
 
 ---
 

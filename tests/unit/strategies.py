@@ -159,7 +159,7 @@ _DSL_FIELDS_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {
     field_type: tuple(
         sorted(f for f in (TIER1_FIELDS | TIER2_FIELDS) if FIELD_TYPES[f] == field_type)
     )
-    for field_type in ("identifier", "text", "organism", "date", "enum")
+    for field_type in ("identifier", "text", "date", "enum")
 }
 
 _DSL_KINDS_BY_FIELD: Final[dict[str, tuple[ValueKind, ...]]] = {

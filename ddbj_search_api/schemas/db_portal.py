@@ -91,10 +91,10 @@ _Q_DESC = (
     "``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single "
     "expression.  Bare words and phrases are matched as free text against "
     "indexed fields; ``field:value`` constrains to a specific field.  "
-    "Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism``, "
-    "``date_published``, ``date_modified``, ``date_created``, ``date``.  "
+    "Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism_id``, "
+    "``organism_name``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  "
     "Tier 2 (cross): ``submitter``, ``publication``.  "
-    "Tier 3 (single-DB only): BioProject ``project_type`` / ``grant_agency`` / "
+    "Tier 3 (single-DB only): BioProject ``object_type`` / ``project_type`` / ``grant_title`` / ``grant_agency`` / "
     "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank "
     "``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` "
     "etc. / Taxonomy ``rank`` etc.  "
@@ -122,7 +122,7 @@ class DbPortalCrossSearchQuery:
         self,
         q: str | None = Query(
             default=None,
-            examples=["cancer AND organism:9606"],
+            examples=["cancer AND organism_id:9606"],
             description=_Q_DESC,
         ),
         top_hits: int = Query(
@@ -173,7 +173,7 @@ class DbPortalSearchQuery:
         self,
         q: str | None = Query(
             default=None,
-            examples=["cancer AND organism:9606"],
+            examples=["cancer AND organism_id:9606"],
             description=_Q_DESC,
         ),
         db: DbPortalDb | None = Query(
@@ -804,7 +804,7 @@ class DbPortalParseBoolOp(BaseModel):
         examples=[
             [
                 {"op": "free_text", "value": "cancer"},
-                {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
             ],
         ],
         description="Child nodes (NOT has exactly one).",
@@ -830,7 +830,7 @@ class DbPortalParseResponse(BaseModel):
                 "op": "AND",
                 "rules": [
                     {"op": "free_text", "value": "cancer"},
-                    {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                    {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
                 ],
             },
         ],
@@ -861,7 +861,7 @@ class DbPortalSerializeRequest(BaseModel):
                 "op": "AND",
                 "rules": [
                     {"op": "free_text", "value": "cancer"},
-                    {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                    {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
                 ],
             },
         ],
@@ -875,7 +875,7 @@ class DbPortalSerializeResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     dsl: str = Field(
-        examples=['cancer AND organism:"Homo sapiens"'],
+        examples=['cancer AND organism_name:"Homo sapiens"'],
         description=(
             "Normalized DSL string.  Reusable as ``q`` for "
             "``GET /db-portal/parse`` / ``GET /db-portal/cross-search`` / "

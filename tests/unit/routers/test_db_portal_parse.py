@@ -85,16 +85,25 @@ class TestDbPortalParseValidLeaf:
         resp = app_with_db_portal.get("/db-portal/parse", params={"q": "title:canc*"})
         assert _ast(resp.json()) == {"field": "title", "op": "wildcard", "value": "canc*"}
 
-    def test_organism_eq_word(self, app_with_db_portal: TestClient) -> None:
-        resp = app_with_db_portal.get("/db-portal/parse", params={"q": "organism:human"})
-        assert _ast(resp.json()) == {"field": "organism", "op": "eq", "value": "human"}
+    def test_organism_name_contains_word(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": "organism_name:human"})
+        assert _ast(resp.json()) == {"field": "organism_name", "op": "contains", "value": "human"}
 
-    def test_organism_eq_phrase_with_space(self, app_with_db_portal: TestClient) -> None:
+    def test_organism_name_contains_phrase_with_space(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/parse",
-            params={"q": 'organism:"Homo sapiens"'},
+            params={"q": 'organism_name:"Homo sapiens"'},
         )
-        assert _ast(resp.json()) == {"field": "organism", "op": "eq", "value": "Homo sapiens"}
+        assert _ast(resp.json()) == {
+            "field": "organism_name",
+            "op": "contains",
+            "value": "Homo sapiens",
+        }
+
+    def test_organism_id_eq_word(self, app_with_db_portal: TestClient) -> None:
+        # taxID exact 用は identifier 型 → eq
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": "organism_id:9606"})
+        assert _ast(resp.json()) == {"field": "organism_id", "op": "eq", "value": "9606"}
 
     def test_date_published_eq(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
@@ -153,14 +162,14 @@ class TestDbPortalParseFreeText:
     def test_bare_with_field_clause_and(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/parse",
-            params={"q": "cancer AND organism:9606"},
+            params={"q": "cancer AND organism_id:9606"},
         )
         assert resp.status_code == 200
         assert _ast(resp.json()) == {
             "op": "AND",
             "rules": [
                 {"op": "free_text", "value": "cancer"},
-                {"field": "organism", "op": "eq", "value": "9606"},
+                {"field": "organism_id", "op": "eq", "value": "9606"},
             ],
         }
 
@@ -196,12 +205,12 @@ class TestDbPortalParseValidBool:
         }
 
     def test_nested(self, app_with_db_portal: TestClient) -> None:
-        q = 'organism:"Homo sapiens" AND date:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)'
+        q = 'organism_name:"Homo sapiens" AND date:[2020-01-01 TO 2024-12-31] AND (title:cancer OR title:tumor)'
         resp = app_with_db_portal.get("/db-portal/parse", params={"q": q})
         assert _ast(resp.json()) == {
             "op": "AND",
             "rules": [
-                {"field": "organism", "op": "eq", "value": "Homo sapiens"},
+                {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
                 {
                     "field": "date",
                     "op": "between",
@@ -342,7 +351,7 @@ class TestDbPortalParseErrorSlugs:
         # ネスト AND 配下 (top-level AND の直下子じゃない) も NG。
         resp = app_with_db_portal.get(
             "/db-portal/parse",
-            params={"q": "(cancer AND title:tumor) AND organism:9606"},
+            params={"q": "(cancer AND title:tumor) AND organism_id:9606"},
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.invalid_freetext_position.value
@@ -369,7 +378,7 @@ class TestDbPortalParseMode:
 
     def test_tier1_same_result_both_modes(self, app_with_db_portal: TestClient) -> None:
         # Tier 1 は mode を問わず同じ AST を返す。
-        q = "title:cancer AND organism:human"
+        q = "title:cancer AND organism_name:human"
         r_cross = app_with_db_portal.get("/db-portal/parse", params={"q": q})
         r_single = app_with_db_portal.get("/db-portal/parse", params={"q": q, "db": "bioproject"})
         assert r_cross.status_code == 200
@@ -451,8 +460,9 @@ class TestDbPortalParsePBT:
             'title:"breast cancer"',
             "identifier:PRJDB1",
             "identifier:PRJ*",
-            "organism:human",
-            'organism:"Homo sapiens"',
+            "organism_id:9606",
+            "organism_name:human",
+            'organism_name:"Homo sapiens"',
             "date_published:2024-01-01",
             "date_published:[2020-01-01 TO 2024-12-31]",
             "date:[2020-01-01 TO 2024-12-31]",
@@ -460,7 +470,7 @@ class TestDbPortalParsePBT:
             "date_modified:2024-06-15",
             "date_created:2022-03-01",
             "cancer",
-            'cancer AND organism:"Homo sapiens"',
+            'cancer AND organism_name:"Homo sapiens"',
         ],
     )
 
