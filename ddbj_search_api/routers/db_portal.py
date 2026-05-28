@@ -1170,7 +1170,7 @@ router.add_api_route(
 async def _parse_db_portal(
     q: str = Query(
         ...,
-        examples=["cancer AND organism:9606"],
+        examples=["cancer AND organism_id:9606"],
         description=(
             "Search query to parse into AST.  Same grammar as "
             "``GET /db-portal/cross-search?q=...`` / "
@@ -1270,7 +1270,7 @@ router.add_api_route(
         200: {
             "content": {
                 "application/json": {
-                    "example": {"dsl": 'cancer AND organism:"Homo sapiens"'},
+                    "example": {"dsl": 'cancer AND organism_name:"Homo sapiens"'},
                 },
             },
         },

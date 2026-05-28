@@ -238,8 +238,9 @@ class TestBoolOperators:
 
 def _flatten_leaves(node: Node) -> list[FieldClause]:
     if isinstance(node, FreeText):
-        # Lark パーサからは FreeText が生成されないため、テスト helper では到達しない.
-        raise TypeError("FreeText nodes are not produced by the Lark parser")
+        # この helper は FieldClause leaf のみ収集する用途で、FreeText を含む AST は対象外.
+        # FreeText 入りの AST を扱うテストは個別に AST を navigate する.
+        raise TypeError("FreeText nodes are not handled by this helper")
     if isinstance(node, FieldClause):
         return [node]
     out: list[FieldClause] = []
@@ -455,3 +456,102 @@ class TestDslParserPBT:
         ast = parse(f"{left} {op} {right}")
         assert isinstance(ast, BoolOp)
         assert ast.op == op
+
+    @given(
+        word=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="_"),
+            min_size=1,
+            max_size=20,
+        ),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_free_text_bare_roundtrip(self, word: str) -> None:
+        """bare word (root) は FreeText(is_phrase=False) として parse される."""
+        ast = parse(word)
+        assert isinstance(ast, FreeText)
+        assert ast.value == word
+        assert ast.is_phrase is False
+
+    @given(
+        quote=st.sampled_from(['"', "'"]),
+        inner=st.text(
+            alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters=" _-"),
+            min_size=1,
+            max_size=20,
+        ),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_free_text_quoted_phrase_roundtrip(self, quote: str, inner: str) -> None:
+        """quoted FreeText (root) は FreeText(is_phrase=True) として parse される.
+
+        ``inner`` には quote / backslash を含めない (escape は TestPhraseEscaping で別途確認).
+        """
+        ast = parse(f"{quote}{inner}{quote}")
+        assert isinstance(ast, FreeText)
+        assert ast.value == inner
+        assert ast.is_phrase is True
+
+
+class TestFreeTextPhraseFlag:
+    """FreeText が quoted phrase 由来 (`"..."` / `'...'`) か bare word 由来かを ``is_phrase`` で区別する.
+
+    parser 段で flag を立てておかないと compile_es が ``multi_match.type=phrase``
+    (順序保持) を出せず、``q='"Homo sapiens"'`` が ``operator=and`` の AND match
+    (順序非保持) に退化する (db-portal-api-spec.md § FreeText auto-phrase 処理)。
+    """
+
+    def test_double_quoted_phrase_sets_is_phrase_true(self) -> None:
+        ast = parse('"Homo sapiens"')
+        assert isinstance(ast, FreeText)
+        assert ast.value == "Homo sapiens"
+        assert ast.is_phrase is True
+
+    def test_single_quoted_phrase_sets_is_phrase_true(self) -> None:
+        ast = parse("'Homo sapiens'")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "Homo sapiens"
+        assert ast.is_phrase is True
+
+    def test_bare_word_sets_is_phrase_false(self) -> None:
+        ast = parse("cancer")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer"
+        assert ast.is_phrase is False
+
+    def test_bare_word_with_symbol_sets_is_phrase_false(self) -> None:
+        # auto-phrase 化は compile 段の責務で AST 上は bare のまま (is_phrase=False).
+        ast = parse("HIF-1")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "HIF-1"
+        assert ast.is_phrase is False
+
+    def test_escaped_phrase_preserves_is_phrase_true(self) -> None:
+        ast = parse(r'"foo\"bar"')
+        assert isinstance(ast, FreeText)
+        assert ast.value == 'foo"bar'
+        assert ast.is_phrase is True
+
+    def test_quoted_phrase_with_comma_inside_kept_as_single_freetext(self) -> None:
+        # 引用符内のコンマは phrase の一部として保持される (AST 段では unquote 済み value のみ持つ).
+        ast = parse('"cancer, tumor"')
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer, tumor"
+        assert ast.is_phrase is True
+
+    def test_quoted_phrase_inside_and_carries_flag(self) -> None:
+        ast = parse('"Homo sapiens" AND title:cancer')
+        assert isinstance(ast, BoolOp)
+        assert ast.op == "AND"
+        free_text_children = [c for c in ast.children if isinstance(c, FreeText)]
+        assert len(free_text_children) == 1
+        assert free_text_children[0].is_phrase is True
+        assert free_text_children[0].value == "Homo sapiens"
+
+    def test_bare_word_inside_and_carries_flag(self) -> None:
+        ast = parse("cancer AND title:tumor")
+        assert isinstance(ast, BoolOp)
+        assert ast.op == "AND"
+        free_text_children = [c for c in ast.children if isinstance(c, FreeText)]
+        assert len(free_text_children) == 1
+        assert free_text_children[0].is_phrase is False
+        assert free_text_children[0].value == "cancer"

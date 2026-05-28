@@ -88,7 +88,9 @@ class TestBioProjectVariant:
             },
         )
         assert isinstance(h, DbPortalHitBioProject)
-        assert h.project_type == "UmbrellaBioProject"
+        # object_type は Umbrella 区分 (Literal["BioProject", "UmbrellaBioProject"]).
+        # alias=objectType で ES から入る.
+        assert h.object_type == "UmbrellaBioProject"
         assert h.organization is not None
         assert h.organization[0].name == "DDBJ"
         assert h.organization[0].role == "submitter"
@@ -98,14 +100,61 @@ class TestBioProjectVariant:
         assert h.grant is not None
         assert h.grant[0].agency[0].name == "JSPS"
 
-    def test_project_type_literal_rejects_invalid_value(self) -> None:
-        # spec 外 (INSDC ProjectType 系は未 allowlist 化)
+    def test_object_type_literal_rejects_invalid_value(self) -> None:
+        # objectType は Umbrella 区分の Literal なので、INSDC project type vocab を
+        # 入れると 422 (allowlist 外). ES `projectType` (INSDC list) は別 field.
         with pytest.raises(pydantic.ValidationError):
             _validate(
                 {
                     "identifier": "PRJDB1",
                     "type": "bioproject",
                     "objectType": "Genome sequencing",
+                },
+            )
+
+    def test_project_type_accepts_insdc_list_and_distinct_from_object_type(self) -> None:
+        # INSDC project_type (genome / metagenome / 等の list[str]) と Umbrella 区分の
+        # object_type が同時に乗り、互いに別 field として読まれることを確認.
+        # converter SSOT (schema.py: projectType: list[str], objectType: Literal[2]) と整合.
+        h = _validate(
+            {
+                "identifier": "PRJDB1",
+                "type": "bioproject",
+                "objectType": "BioProject",
+                "projectType": ["genome", "metagenome"],
+            },
+        )
+        assert isinstance(h, DbPortalHitBioProject)
+        assert h.object_type == "BioProject"
+        assert h.project_type == ["genome", "metagenome"]
+
+    def test_project_type_defaults_to_none_when_absent(self) -> None:
+        # ES からの _source に projectType が無いドキュメントも許容 (Hit 側 defensive).
+        h = _validate({"identifier": "PRJDB1", "type": "bioproject"})
+        assert isinstance(h, DbPortalHitBioProject)
+        assert h.project_type is None
+        assert h.object_type is None
+
+    def test_project_type_rejects_non_list_str_value(self) -> None:
+        # projectType は list[str] のため、ES converter からの型ドリフト
+        # ({"projectType": "genome"} のような str) を 422 で検出する.
+        with pytest.raises(pydantic.ValidationError):
+            _validate(
+                {
+                    "identifier": "PRJDB1",
+                    "type": "bioproject",
+                    "projectType": "genome",
+                },
+            )
+
+    def test_project_type_rejects_list_of_non_str_values(self) -> None:
+        # 型ドリフト検出: list[int] は 422.
+        with pytest.raises(pydantic.ValidationError):
+            _validate(
+                {
+                    "identifier": "PRJDB1",
+                    "type": "bioproject",
+                    "projectType": [1, 2],
                 },
             )
 

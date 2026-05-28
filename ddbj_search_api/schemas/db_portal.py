@@ -400,11 +400,21 @@ class DbPortalHitBioProject(DbPortalHitBase):
     """BioProject hit."""
 
     type: Literal["bioproject"] = Field(examples=["bioproject"], description="Hit type discriminator.")
-    project_type: Literal["BioProject", "UmbrellaBioProject"] | None = Field(
+    object_type: Literal["BioProject", "UmbrellaBioProject"] | None = Field(
         default=None,
         alias="objectType",
         examples=["BioProject"],
         description="Umbrella vs regular BioProject.",
+    )
+    project_type: list[str] | None = Field(
+        default=None,
+        alias="projectType",
+        examples=[["genome", "metagenome"]],
+        description=(
+            "BioProject project-type values (INSDC controlled vocabulary, e.g. ``genome``, "
+            "``metagenome``).  Sourced from the ES ``projectType`` text+keyword field "
+            "(``list[str]``); distinct from ``object_type`` (Umbrella vs regular BioProject)."
+        ),
     )
     organization: list[Organization] | None = Field(
         default=None,
@@ -790,6 +800,17 @@ class DbPortalParseFreeText(BaseModel):
 
     op: Literal["free_text"] = Field(examples=["free_text"], description="Always 'free_text' for bare word / phrase.")
     value: str = Field(examples=["cancer"], description="Free-text value (the bare word or unquoted phrase).")
+    is_phrase: bool = Field(
+        default=False,
+        alias="is_phrase",
+        examples=[True],
+        description=(
+            "True when the value was originally quoted (``\"...\"`` / ``'...'``) in the DSL. "
+            "Backend compiles such FreeText to ``multi_match.type=phrase`` (ES) / quoted "
+            "edismax token (Solr) for order-preserving phrase match. False for bare words. "
+            "Always present in the response."
+        ),
+    )
 
 
 class DbPortalParseBoolOp(BaseModel):

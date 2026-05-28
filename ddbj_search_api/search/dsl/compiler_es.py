@@ -159,6 +159,7 @@ def compile_free_text(
     *,
     operator: Literal["AND", "OR"] = "AND",
     fields: list[str] | tuple[str, ...] | None = None,
+    is_phrase: bool = False,
 ) -> dict[str, Any]:
     """Convert a raw search keyword string (``q``) to an ES bool query.
 
@@ -173,27 +174,43 @@ def compile_free_text(
     組み立てた ``fields`` を明示渡しするが、両者の集合は同期させてある (`organism.name`
     込みの 5 field)。``value`` がトークン化後に空となる場合は ``ValueError`` を
     raise する (呼び出し側で空入力を弾く前提)。
+
+    ``is_phrase=True`` の場合、ユーザーが DSL 上で値全体をクオートで囲んだことを
+    示す (AST 経路から ``FreeText.is_phrase`` を引き継ぐ)。このときコンマ分割 /
+    auto-phrase 判定を bypass し、``value`` 全体を 1 phrase token として
+    ``multi_match.type=phrase`` (順序保持) で出力する。引用符内のコンマも phrase
+    の一部として保持される (parser の PHRASE terminal と整合)。``is_phrase=False``
+    (default) は string-based 経路 (entries / facets 系) と従来 AST 経路で同じ.
     """
     if fields is None:
         used_fields: list[str] = list(_FREE_TEXT_DEFAULT_FIELDS)
     else:
         used_fields = list(fields)
-    tokens = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
-    if not tokens:
-        raise ValueError(f"empty free-text value (after tokenization): {value!r}")
-    multi_matches: list[dict[str, Any]] = []
-    for text, is_phrase in tokens:
-        mm: dict[str, Any] = {"query": text, "fields": used_fields}
-        if is_phrase:
-            mm["type"] = "phrase"
-        else:
-            # 1 multi_match 内 (= 1 keyword 値内) の空白を AND 結合する.
-            # multi_match の ES default は OR で、stop word に近い token を
-            # 含む長めの keyword で誤爆が大きいため明示する.
-            # phrase 系は順序固定なので operator は意味を持たない (ES 仕様で
-            # phrase に対する operator は無視される) ため付けない.
-            mm["operator"] = "and"
-        multi_matches.append({"multi_match": mm})
+    if is_phrase:
+        # ユーザーが明示的に "..." / '...' で囲んだ FreeText: value 全体を 1 phrase token
+        # として match_phrase (= multi_match.type=phrase) に展開. コンマ分割は bypass.
+        if not value:
+            raise ValueError(f"empty free-text value (after tokenization): {value!r}")
+        multi_matches: list[dict[str, Any]] = [
+            {"multi_match": {"query": value, "fields": used_fields, "type": "phrase"}},
+        ]
+    else:
+        tokens = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
+        if not tokens:
+            raise ValueError(f"empty free-text value (after tokenization): {value!r}")
+        multi_matches = []
+        for text, token_is_phrase in tokens:
+            mm: dict[str, Any] = {"query": text, "fields": used_fields}
+            if token_is_phrase:
+                mm["type"] = "phrase"
+            else:
+                # 1 multi_match 内 (= 1 keyword 値内) の空白を AND 結合する.
+                # multi_match の ES default は OR で、stop word に近い token を
+                # 含む長めの keyword で誤爆が大きいため明示する.
+                # phrase 系は順序固定なので operator は意味を持たない (ES 仕様で
+                # phrase に対する operator は無視される) ため付けない.
+                mm["operator"] = "and"
+            multi_matches.append({"multi_match": mm})
     if operator == "OR":
         return {"bool": {"should": multi_matches, "minimum_should_match": 1}}
     return {"bool": {"must": multi_matches}}
@@ -226,7 +243,11 @@ def compile_to_es(
 
 def _compile_node(node: Node, *, free_text_operator: Literal["AND", "OR"] = "AND") -> dict[str, Any]:
     if isinstance(node, FreeText):
-        return compile_free_text(node.value, operator=free_text_operator)
+        return compile_free_text(
+            node.value,
+            operator=free_text_operator,
+            is_phrase=node.is_phrase,
+        )
     if isinstance(node, FieldClause):
         return _compile_leaf(node)
     if node.op == "AND":

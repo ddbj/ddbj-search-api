@@ -1066,3 +1066,180 @@ class TestCompileFreeTextMatchesBuildSearchQuery:
         )
         actual = compile_free_text(keywords)
         assert actual == expected
+
+
+class TestCompileFreeTextNodePhrase:
+    """``is_phrase=True`` の FreeText を AST 経由で compile すると順序保持の phrase match を出す.
+
+    bug 期: parser が引用符を strip 後、``parse_keywords_with_autophrase`` の物理
+    quote 判定が False になり、``multi_match.operator=and`` (順序非保持の AND match)
+    が出力されていた。``is_phrase`` flag を AST に伝播することで
+    ``multi_match.type=phrase`` (順序保持) を出すよう修正する。
+    """
+
+    _DEFAULT_FIELDS = ["identifier", "title", "name", "description", "organism.name"]
+
+    def test_quoted_phrase_emits_multi_match_phrase(self) -> None:
+        # parse('"Homo sapiens"') は FreeText(value="Homo sapiens", is_phrase=True) を生成.
+        # 期待: multi_match.type=phrase (operator は付かない).
+        result = compile_to_es(parse('"Homo sapiens"'))
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "Homo sapiens",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_single_quoted_phrase_emits_multi_match_phrase(self) -> None:
+        # single quote でも対称に phrase match.
+        result = compile_to_es(parse("'Homo sapiens'"))
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "Homo sapiens",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_quoted_phrase_with_comma_kept_as_single_phrase(self) -> None:
+        # is_phrase=True ではコンマ分割を bypass し、value 全体を 1 phrase token として渡す.
+        # bare の ``cancer, tumor`` (is_phrase=False) はコンマで 2 token に分割するが、
+        # quoted ``"cancer, tumor"`` は 1 phrase のまま (引用符内コンマ保持仕様).
+        result = compile_to_es(parse('"cancer, tumor"'))
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "cancer, tumor",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_quoted_phrase_inside_and_flatten_preserves_phrase(self) -> None:
+        # AND 直下の FreeText (is_phrase=True) でも flatten ロジックで phrase が保持される.
+        # AST children 順: [FreeText("Homo sapiens", phrase=True), FieldClause(title:cancer)].
+        result = compile_to_es(parse('"Homo sapiens" AND title:cancer'))
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "Homo sapiens",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                    # FIELD_TYPES["title"]="text" + value_kind="word" → "contains" → match_phrase.
+                    {"match_phrase": {"title": "cancer"}},
+                ],
+            },
+        }
+
+    def test_bare_word_unchanged_emits_operator_and(self) -> None:
+        # 回帰: is_phrase=False の bare word は従来通り operator=and (順序非保持の AND match).
+        result = compile_to_es(parse("cancer"))
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "cancer",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_bare_word_with_symbol_still_auto_phrases(self) -> None:
+        # 回帰: bare の auto-phrase trigger (-/.+:) は従来通り compile 段で type=phrase 化される.
+        # AST の is_phrase=False とは独立して、value 文字列の物理判定で trigger 検出する.
+        result = compile_to_es(parse("HIF-1"))
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "HIF-1",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_compile_free_text_with_is_phrase_kwarg(self) -> None:
+        # compile_free_text(value, is_phrase=True) は AST 非経由でも phrase 化する.
+        # AST 経路 (_compile_node) はこの引数を内部で渡す.
+        result = compile_free_text("Homo sapiens", is_phrase=True)
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "Homo sapiens",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_compile_free_text_is_phrase_default_false_is_backward_compatible(self) -> None:
+        # entries / facets 系 (string-based 経路) は is_phrase 引数を渡さないため、
+        # default False で従来の comma split + auto-phrase 経路 (operator=and) を維持する.
+        result_implicit = compile_free_text("cancer tumor")
+        result_explicit_false = compile_free_text("cancer tumor", is_phrase=False)
+        assert result_implicit == result_explicit_false
+        assert result_implicit == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "cancer tumor",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                ],
+            },
+        }
+
+    def test_free_text_node_with_is_phrase_true_directly(self) -> None:
+        # AST を直接組み立てるユースケース (e.g. /db-portal/serialize) でも is_phrase が効く.
+        node = FreeText(value="whole genome", is_phrase=True)
+        result = compile_to_es(node)
+        assert result == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "whole genome",
+                            "fields": self._DEFAULT_FIELDS,
+                            "type": "phrase",
+                        },
+                    },
+                ],
+            },
+        }

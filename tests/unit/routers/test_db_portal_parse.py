@@ -146,18 +146,18 @@ class TestDbPortalParseFreeText:
     def test_bare_word_alone(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get("/db-portal/parse", params={"q": "cancer"})
         assert resp.status_code == 200
-        assert _ast(resp.json()) == {"op": "free_text", "value": "cancer"}
+        assert _ast(resp.json()) == {"op": "free_text", "value": "cancer", "is_phrase": False}
 
     def test_phrase_alone(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get("/db-portal/parse", params={"q": '"Homo sapiens"'})
         assert resp.status_code == 200
-        assert _ast(resp.json()) == {"op": "free_text", "value": "Homo sapiens"}
+        assert _ast(resp.json()) == {"op": "free_text", "value": "Homo sapiens", "is_phrase": True}
 
     def test_hyphenated_word_stays_bare(self, app_with_db_portal: TestClient) -> None:
-        # auto-phrase 化は compiler 内、parser は bare WORD のまま FreeText に積む。
+        # auto-phrase 化は compiler 内、parser は bare WORD のまま FreeText に積む (is_phrase=False).
         resp = app_with_db_portal.get("/db-portal/parse", params={"q": "HIF-1"})
         assert resp.status_code == 200
-        assert _ast(resp.json()) == {"op": "free_text", "value": "HIF-1"}
+        assert _ast(resp.json()) == {"op": "free_text", "value": "HIF-1", "is_phrase": False}
 
     def test_bare_with_field_clause_and(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get(
@@ -168,7 +168,22 @@ class TestDbPortalParseFreeText:
         assert _ast(resp.json()) == {
             "op": "AND",
             "rules": [
-                {"op": "free_text", "value": "cancer"},
+                {"op": "free_text", "value": "cancer", "is_phrase": False},
+                {"field": "organism_id", "op": "eq", "value": "9606"},
+            ],
+        }
+
+    def test_phrase_with_field_clause_and(self, app_with_db_portal: TestClient) -> None:
+        # quoted phrase は is_phrase=True で AST に乗り、レスポンスにも出る.
+        resp = app_with_db_portal.get(
+            "/db-portal/parse",
+            params={"q": '"whole genome" AND organism_id:9606'},
+        )
+        assert resp.status_code == 200
+        assert _ast(resp.json()) == {
+            "op": "AND",
+            "rules": [
+                {"op": "free_text", "value": "whole genome", "is_phrase": True},
                 {"field": "organism_id", "op": "eq", "value": "9606"},
             ],
         }
@@ -251,8 +266,9 @@ class TestDbPortalParseKeysShape:
         assert set(ast) == {"op", "rules"}
 
     def test_free_text_keys(self, app_with_db_portal: TestClient) -> None:
+        # is_phrase は常に出力される (False / True 明示).
         ast = _ast(app_with_db_portal.get("/db-portal/parse", params={"q": "cancer"}).json())
-        assert set(ast) == {"op", "value"}
+        assert set(ast) == {"op", "value", "is_phrase"}
         assert ast["op"] == "free_text"
 
     def test_full_tree_json_serializable(self, app_with_db_portal: TestClient) -> None:

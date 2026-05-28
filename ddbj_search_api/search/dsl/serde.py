@@ -67,7 +67,10 @@ def ast_to_json(ast: Node) -> dict[str, Any]:
 
 def _node_to_json(node: Node) -> dict[str, Any]:
     if isinstance(node, FreeText):
-        return {"op": "free_text", "value": node.value}
+        # is_phrase は常に出力する (True / False 明示).  router 経由で
+        # ``DbPortalParseResponse`` を通すと Pydantic が default fill して常に出力する
+        # ため、dict 表現も同じ shape にして両者をずらさない.
+        return {"op": "free_text", "value": node.value, "is_phrase": node.is_phrase}
     if isinstance(node, FieldClause):
         return _leaf_to_json(node)
     return {
@@ -104,7 +107,8 @@ def json_to_ast(payload: dict[str, Any]) -> Node:
     """
     op = payload.get("op")
     if op == "free_text":
-        return FreeText(value=payload["value"])
+        # 旧形式 JSON tree (is_phrase 不在) は False で復元 (後方互換).
+        return FreeText(value=payload["value"], is_phrase=bool(payload.get("is_phrase", False)))
     if op in _BOOL_OPS:
         children = tuple(json_to_ast(rule) for rule in payload["rules"])
         return BoolOp(op=cast(BoolOpKind, op), children=children, position=_DUMMY_POSITION)

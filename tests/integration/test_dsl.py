@@ -670,3 +670,81 @@ class TestOrganismAnalyzerMismatchRegression:
         )
         assert resp.status_code == 200
         assert resp.json()["total"] >= 1000
+
+
+class TestFreeTextQuotedPhraseRegression:
+    """IT-DSL-21: bare quoted FreeText (``q='"..."'``) が ES で phrase match (順序保持) に展開される.
+
+    bug 期: parser が引用符を strip した時点で「quoted phrase だったか」の情報が
+    AST に残らず、compile_es は ``parse_keywords_with_autophrase`` の物理 quote 判定で
+    False となり ``multi_match.operator=and`` (順序非保持の AND match) を出していた.
+    結果 ``q='"Homo sapiens"'`` は Homo と sapiens を別々に AND match していた.
+
+    修正: ``FreeText.is_phrase`` を parser → AST → compile_es まで伝播し、
+    ``multi_match.type=phrase`` (順序保持) を出力する.
+    """
+
+    def test_quoted_freetext_phrase_returns_200_and_nonempty(self, app: TestClient) -> None:
+        """``q='"Homo sapiens"'`` で 200 が返り、空集合でない."""
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": '"Homo sapiens"', "perPage": 20},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1
+
+    def test_quoted_freetext_phrase_order_matters(self, app: TestClient) -> None:
+        """順序逆転 phrase (``"sapiens Homo"``) は元 phrase より少ない.
+
+        bug 期: AND match で順序を見ないので両者 ≈ 同 hits (順序非保持).
+        修正後: phrase match で順序保持、逆順は元 phrase より大幅に少ない (ほぼ 0).
+        """
+        forward = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": '"Homo sapiens"', "perPage": 20},
+        ).json()["total"]
+        reverse = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": '"sapiens Homo"', "perPage": 20},
+        ).json()["total"]
+        # 順序逆転は元 phrase より大幅に少ない (bug 期は同等).
+        assert reverse < forward
+
+    def test_quoted_freetext_phrase_at_most_as_broad_as_field_clause_phrase(self, app: TestClient) -> None:
+        """bare quoted phrase (5 default fields phrase OR) は title 単独 phrase 以上の hits.
+
+        title:"x y" の集合 ⊆ q='"x y"' の集合 (5 fields phrase OR で title を含むため).
+        修正前は AND match で過剰 hit、修正後は phrase match で適正範囲.
+        """
+        title_phrase = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": 'title:"whole genome"', "perPage": 20},
+        ).json()["total"]
+        bare_phrase = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": '"whole genome"', "perPage": 20},
+        ).json()["total"]
+        # 5 fields phrase OR は title 単独 phrase を必ず包含する.
+        assert bare_phrase >= title_phrase
+        # かつ最低 1 件は title_phrase 経由で hit する想定 (空集合でない sanity).
+        assert title_phrase >= 1
+
+    def test_parse_endpoint_emits_is_phrase_true_for_quoted_freetext(self, app: TestClient) -> None:
+        """``/db-portal/parse?q='"Homo sapiens"'`` の AST に ``is_phrase: true`` が乗る."""
+        resp = app.get("/db-portal/parse", params={"q": '"Homo sapiens"'})
+        assert resp.status_code == 200
+        assert resp.json()["ast"] == {
+            "op": "free_text",
+            "value": "Homo sapiens",
+            "is_phrase": True,
+        }
+
+    def test_parse_endpoint_emits_is_phrase_false_for_bare_freetext(self, app: TestClient) -> None:
+        """回帰: bare word は ``is_phrase: false``."""
+        resp = app.get("/db-portal/parse", params={"q": "cancer"})
+        assert resp.status_code == 200
+        assert resp.json()["ast"] == {
+            "op": "free_text",
+            "value": "cancer",
+            "is_phrase": False,
+        }

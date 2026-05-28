@@ -130,6 +130,63 @@ class TestFreeTextQuoting:
         assert ast_to_dsl(_free('a"b c')) == '"a\\"b c"'
 
 
+class TestFreeTextPhraseSerialization:
+    """``FreeText.is_phrase=True`` の AST を AST → DSL シリアライズしたとき、
+    無条件で quote を保持する.
+
+    意図: ``/db-portal/parse`` のレスポンス JSON tree から DSL を組み立て直したとき
+    (e.g. /db-portal/serialize)、ユーザーがクオートで囲んだ事実を保つ。
+    single word でも is_phrase=True なら ``"cancer"`` で出力し、再 parse 時に
+    is_phrase=True の FreeText に戻る (GUI 復元の round-trip 安定性のため)。
+    """
+
+    def test_is_phrase_true_single_word_keeps_quote(self) -> None:
+        # bare word (cancer は WORD regex full-match) でも is_phrase=True なら quote.
+        ast = FreeText(value="cancer", is_phrase=True)
+        assert ast_to_dsl(ast) == '"cancer"'
+
+    def test_is_phrase_false_single_word_bare(self) -> None:
+        # 回帰: is_phrase=False は従来通り bare 出力.
+        ast = FreeText(value="cancer", is_phrase=False)
+        assert ast_to_dsl(ast) == "cancer"
+
+    def test_is_phrase_true_with_space_keeps_quote(self) -> None:
+        ast = FreeText(value="Homo sapiens", is_phrase=True)
+        assert ast_to_dsl(ast) == '"Homo sapiens"'
+
+    def test_is_phrase_true_with_inner_double_quote_escaped(self) -> None:
+        # is_phrase=True 出力でも quote/backslash の escape は維持.
+        ast = FreeText(value='a"b', is_phrase=True)
+        assert ast_to_dsl(ast) == '"a\\"b"'
+
+    def test_is_phrase_true_parse_reparse_round_trip(self) -> None:
+        # FreeText(is_phrase=True) → DSL → parse 後も is_phrase=True に戻る.
+        ast = FreeText(value="cancer", is_phrase=True)
+        dsl = ast_to_dsl(ast)
+        reparsed = parse(dsl)
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "cancer"
+        assert reparsed.is_phrase is True
+
+    def test_is_phrase_false_parse_reparse_round_trip(self) -> None:
+        # FreeText(is_phrase=False) → DSL → parse でも is_phrase=False のまま.
+        # (value が WORD full-match の bare 出力ケース.)
+        ast = FreeText(value="cancer", is_phrase=False)
+        dsl = ast_to_dsl(ast)
+        reparsed = parse(dsl)
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "cancer"
+        assert reparsed.is_phrase is False
+
+    def test_is_phrase_true_inside_and_serialized(self) -> None:
+        # AND 子に is_phrase=True の FreeText が混ざってもシリアライズで quote 保持.
+        ast = _and(
+            FreeText(value="cancer", is_phrase=True),
+            _word("title", "tumor"),
+        )
+        assert ast_to_dsl(ast) == '"cancer" AND title:tumor'
+
+
 class TestFieldClauseQuoting:
     def test_word_bare(self) -> None:
         assert ast_to_dsl(_word("title", "cancer")) == "title:cancer"

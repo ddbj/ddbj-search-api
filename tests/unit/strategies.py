@@ -25,6 +25,7 @@ from ddbj_search_api.search.dsl.ast import (
     Range,
     ValueKind,
 )
+from ddbj_search_api.search.dsl.lex_patterns import WORD_RE, needs_quote_for_token_collision
 
 # === DbType ===
 
@@ -294,8 +295,23 @@ def _dsl_free_text_value(draw: st.DrawFn) -> str:
     )
 
 
+def _value_implies_phrase(value: str) -> bool:
+    """parser/serializer の quote 規則から ``is_phrase`` を導出.
+
+    grammar 上、bare word は WORD regex full-match かつ token 衝突 (DATE / AND / OR / NOT 等)
+    を起こさない値だけが許容される. それ以外 (空白・記号・operator literal・DATE 形)
+    は serializer が必ず quote を付け、parser はそれを quoted phrase として読み戻し
+    ``is_phrase=True`` の FreeText を生成する.
+    """
+    return not (value and WORD_RE.match(value) is not None and not needs_quote_for_token_collision(value))
+
+
 def _free_text_strategy() -> st.SearchStrategy[FreeText]:
-    return _dsl_free_text_value().map(lambda v: FreeText(value=v))
+    # is_phrase は value の性質から確定的に導出 (parser → AST → serialize → parser の
+    # round-trip が常に成り立つ AST のみ生成する).
+    return _dsl_free_text_value().map(
+        lambda v: FreeText(value=v, is_phrase=_value_implies_phrase(v)),
+    )
 
 
 @st.composite

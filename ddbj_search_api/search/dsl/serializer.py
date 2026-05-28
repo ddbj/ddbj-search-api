@@ -53,7 +53,7 @@ def ast_to_dsl(ast: Node) -> str:
 
 def _node_to_dsl(node: Node, parent_prec: int) -> str:
     if isinstance(node, FreeText):
-        return _serialize_free_text(node.value)
+        return _serialize_free_text(node.value, node.is_phrase)
     if isinstance(node, FieldClause):
         return f"{node.field}:{_serialize_field_value(node.value_kind, node.value)}"
     return _serialize_bool_op(node, parent_prec)
@@ -94,7 +94,12 @@ def _serialize_field_value(value_kind: ValueKind, value: str | Range) -> str:
     return value
 
 
-def _serialize_free_text(value: str) -> str:
+def _serialize_free_text(value: str, is_phrase: bool) -> str:
+    # is_phrase=True: ユーザーが DSL で ``"..."`` / ``'...'`` で囲んだ事実を尊重し、
+    # single word (e.g. ``"cancer"``) でも quote を保持する. 再 parse 時に
+    # ``is_phrase=True`` の FreeText に復元され、phrase match (順序保持) を継続できる.
+    if is_phrase:
+        return _quote_phrase(value)
     # WORD regex に full-match しない値 (空白・記号入り・空文字) は quote 必須.
     # quote しないと parser が複数 token に分解して duplicate-freetext を引き起こす.
     # 加えて DATE / operator literal token と衝突する値も quote する.

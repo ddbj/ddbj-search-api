@@ -19495,7 +19495,7 @@
               "type": "string",
               "description": "Search query to parse into AST.  Same grammar as ``GET /db-portal/cross-search?q=...`` / ``GET /db-portal/search?q=...&db=<id>``.  Returned JSON tree is intended for GUI state restoration from shared URLs.",
               "examples": [
-                "cancer AND organism:9606"
+                "cancer AND organism_id:9606"
               ],
               "title": "Q"
             },
@@ -19617,7 +19617,7 @@
                   "$ref": "#/components/schemas/DbPortalSerializeResponse"
                 },
                 "example": {
-                  "dsl": "cancer AND organism:\"Homo sapiens\""
+                  "dsl": "cancer AND organism_name:\"Homo sapiens\""
                 }
               }
             }
@@ -22066,6 +22066,27 @@
             "description": "Umbrella vs regular BioProject.",
             "examples": [
               "BioProject"
+            ]
+          },
+          "projectType": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projecttype",
+            "description": "BioProject project-type values (INSDC controlled vocabulary, e.g. ``genome``, ``metagenome``).  Sourced from the ES ``projectType`` text+keyword field (``list[str]``); distinct from ``object_type`` (Umbrella vs regular BioProject).",
+            "examples": [
+              [
+                "genome",
+                "metagenome"
+              ]
             ]
           },
           "organization": {
@@ -25154,6 +25175,15 @@
             "description": "Free-text value (the bare word or unquoted phrase).",
             "examples": [
               "cancer"
+            ]
+          },
+          "is_phrase": {
+            "type": "boolean",
+            "title": "Is Phrase",
+            "description": "True when the value was originally quoted (``\"...\"`` / ``'...'``) in the DSL. Backend compiles such FreeText to ``multi_match.type=phrase`` (ES) / quoted edismax token (Solr) for order-preserving phrase match. False for bare words. Always present in the response.",
+            "default": false,
+            "examples": [
+              true
             ]
           }
         },

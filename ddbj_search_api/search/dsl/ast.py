@@ -36,9 +36,15 @@ class FreeText:
     Lark grammar の bare word / quoted phrase から生成される。compiler が
     backend に応じた全文検索クエリ (ES multi_match / Solr edismax quoted token 列)
     に変換する。
+
+    ``is_phrase`` は元の DSL で値が ``"..."`` / ``'...'`` でクオートされていたかを表す。
+    True なら compiler は順序保持の phrase match (ES の ``multi_match.type=phrase``) を
+    出力する必要があり、bare word (False) の場合は ``operator=and`` の AND match
+    (auto-phrase trigger 文字含みは内部で phrase 化) として展開される。
     """
 
     value: str
+    is_phrase: bool = False
     position: Position | None = None
 
 

@@ -102,10 +102,10 @@ class _AstTransformer(Transformer):  # type: ignore[type-arg]
     def ft_phrase(self, meta: Any, tok: Token) -> FreeText:
         raw = str(tok)
         unescaped = _PHRASE_UNESCAPE.sub(lambda m: m.group(1), raw[1:-1])
-        return FreeText(value=unescaped, position=_position(meta))
+        return FreeText(value=unescaped, is_phrase=True, position=_position(meta))
 
     def ft_word(self, meta: Any, tok: Token) -> FreeText:
-        return FreeText(value=str(tok), position=_position(meta))
+        return FreeText(value=str(tok), is_phrase=False, position=_position(meta))
 
 
 def _position(meta: Any) -> Position:

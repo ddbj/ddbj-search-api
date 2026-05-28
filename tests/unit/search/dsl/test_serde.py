@@ -166,11 +166,14 @@ class TestJsonToAstLeaves:
     """Inverse direction (dict → AST).  JSON dict round-trip via ast_to_json."""
 
     def test_free_text(self) -> None:
-        d = {"op": "free_text", "value": "cancer"}
-        node = json_to_ast(d)
+        # 受け入れ: is_phrase 不在 dict (legacy) は default False で復元.
+        # 出力: ast_to_json は常に is_phrase key を出力する (False 明示).
+        d_in = {"op": "free_text", "value": "cancer"}
+        node = json_to_ast(d_in)
         assert isinstance(node, FreeText)
         assert node.value == "cancer"
-        assert ast_to_json(node) == d
+        assert node.is_phrase is False
+        assert ast_to_json(node) == {"op": "free_text", "value": "cancer", "is_phrase": False}
 
     def test_identifier_eq_word(self) -> None:
         d = {"field": "identifier", "op": "eq", "value": "PRJDB1"}
@@ -277,7 +280,8 @@ class TestJsonToAstBool:
         assert ast_to_json(json_to_ast(d)) == d
 
     def test_nested_bool(self) -> None:
-        d = {
+        # legacy input (is_phrase 不在) は default False で受入れ、output は常に is_phrase 出力.
+        d_in = {
             "op": "AND",
             "rules": [
                 {"op": "free_text", "value": "cancer"},
@@ -290,7 +294,20 @@ class TestJsonToAstBool:
                 },
             ],
         }
-        assert ast_to_json(json_to_ast(d)) == d
+        d_out = {
+            "op": "AND",
+            "rules": [
+                {"op": "free_text", "value": "cancer", "is_phrase": False},
+                {
+                    "op": "OR",
+                    "rules": [
+                        {"field": "title", "op": "contains", "value": "tumor"},
+                        {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
+                    ],
+                },
+            ],
+        }
+        assert ast_to_json(json_to_ast(d_in)) == d_out
 
 
 class TestJsonToAstUnknownField:
@@ -324,3 +341,80 @@ class TestJsonToAstAstToJsonRoundTrip:
         original = _j(dsl)
         recovered = ast_to_json(json_to_ast(original))
         assert recovered == original
+
+
+class TestFreeTextPhraseRoundtrip:
+    """FreeText.is_phrase が JSON tree (``/db-portal/parse`` レスポンス形式) と
+    AST 間で往復しても保持されることを確認.
+
+    出力は常に ``is_phrase`` key を明示する (True / False).  受入れは legacy
+    形式 (key 不在) も default False で復元する (json_to_ast の後方互換).
+    """
+
+    def test_is_phrase_true_emitted_in_json(self) -> None:
+        ast = FreeText(value="Homo sapiens", is_phrase=True)
+        assert ast_to_json(ast) == {
+            "op": "free_text",
+            "value": "Homo sapiens",
+            "is_phrase": True,
+        }
+
+    def test_is_phrase_false_always_present_in_json(self) -> None:
+        # is_phrase=False でも常に key 出力 (response shape の安定性のため).
+        ast = FreeText(value="cancer", is_phrase=False)
+        assert ast_to_json(ast) == {
+            "op": "free_text",
+            "value": "cancer",
+            "is_phrase": False,
+        }
+
+    def test_legacy_json_without_is_phrase_defaults_to_false(self) -> None:
+        # 旧形式 JSON tree (is_phrase key 無し) は is_phrase=False の AST に復元 (受入れ後方互換).
+        node = json_to_ast({"op": "free_text", "value": "cancer"})
+        assert isinstance(node, FreeText)
+        assert node.value == "cancer"
+        assert node.is_phrase is False
+
+    def test_json_with_is_phrase_true_round_trip(self) -> None:
+        d = {"op": "free_text", "value": "Homo sapiens", "is_phrase": True}
+        node = json_to_ast(d)
+        assert isinstance(node, FreeText)
+        assert node.is_phrase is True
+        assert ast_to_json(node) == d
+
+    def test_json_with_is_phrase_false_explicit_round_trip(self) -> None:
+        d = {"op": "free_text", "value": "cancer", "is_phrase": False}
+        node = json_to_ast(d)
+        assert isinstance(node, FreeText)
+        assert node.is_phrase is False
+        assert ast_to_json(node) == d
+
+    def test_parse_quoted_emits_is_phrase_in_json(self) -> None:
+        ast = parse('"Homo sapiens"')
+        assert ast_to_json(ast) == {
+            "op": "free_text",
+            "value": "Homo sapiens",
+            "is_phrase": True,
+        }
+
+    def test_parse_bare_emits_is_phrase_false_in_json(self) -> None:
+        ast = parse("cancer")
+        assert ast_to_json(ast) == {
+            "op": "free_text",
+            "value": "cancer",
+            "is_phrase": False,
+        }
+
+    def test_nested_bool_preserves_is_phrase(self) -> None:
+        ast = parse('"whole genome" AND title:cancer')
+        result = ast_to_json(ast)
+        assert result == {
+            "op": "AND",
+            "rules": [
+                {"op": "free_text", "value": "whole genome", "is_phrase": True},
+                {"field": "title", "op": "contains", "value": "cancer"},
+            ],
+        }
+        # 逆方向 round-trip でも保持される.
+        recovered = ast_to_json(json_to_ast(result))
+        assert recovered == result
