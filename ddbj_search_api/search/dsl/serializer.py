@@ -16,7 +16,8 @@ quote / paren 判定:
 - ``value_kind="phrase"``: 常に ``"..."`` で包み、内部 ``\\`` → ``\\\\`` / ``"`` → ``\\"`` を
   エスケープ (parser の ``_PHRASE_UNESCAPE`` と対称).
 - ``value_kind="range"``: ``[from TO to]``.
-- ``FreeText.value``: WORD regex に full-match すれば bare、空白・特殊文字を含めば quote.
+- ``FreeText.value``: 空白区切りの各 token が WORD として bare 出力可能なら bare、記号・
+  連続空白・token 衝突を含めば quote.
 - ``BoolOp(NOT, [child])``: 子が ``BoolOp`` (AND/OR/NOT) なら必ず括弧.  grammar の
   ``not_op: NOT atom`` 制約 (連鎖 ``NOT NOT x`` を許容しない) のため.
 - ``BoolOp(AND|OR, ...)``: precedence (AND=3, OR=2) を子のものと比較し、子 < 親なら括弧.
@@ -32,7 +33,10 @@ from ddbj_search_api.search.dsl.ast import (
     Range,
     ValueKind,
 )
-from ddbj_search_api.search.dsl.lex_patterns import WORD_RE, needs_quote_for_token_collision
+from ddbj_search_api.search.dsl.lex_patterns import (
+    is_bare_safe_multiword,
+    needs_quote_for_token_collision,
+)
 
 _AND_PRECEDENCE = 3
 _OR_PRECEDENCE = 2
@@ -100,10 +104,11 @@ def _serialize_free_text(value: str, is_phrase: bool) -> str:
     # ``is_phrase=True`` の FreeText に復元され、phrase match (順序保持) を継続できる.
     if is_phrase:
         return _quote_phrase(value)
-    # WORD regex に full-match しない値 (空白・記号入り・空文字) は quote 必須.
-    # quote しないと parser が複数 token に分解して duplicate-freetext を引き起こす.
-    # 加えて DATE / operator literal token と衝突する値も quote する.
-    if value and WORD_RE.match(value) and not needs_quote_for_token_collision(value):
+    # 空白区切りの各 token が bare 出力可能なら bare のまま出す. parser の
+    # ``free_text_atom: WORD+`` がこれを 1 つの FreeText (is_phrase=False) に復元するため
+    # round-trip が安定する. 記号・連続空白・空文字や、DATE / operator literal token と
+    # 衝突する値は quote 必須 (bare だと re-parse で別 token に分解 / drift する).
+    if is_bare_safe_multiword(value):
         return value
     return _quote_phrase(value)
 

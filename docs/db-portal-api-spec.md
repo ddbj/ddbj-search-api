@@ -49,6 +49,8 @@
 
 ### FreeText のトークン分割と値内空白の AND 結合
 
+クエリ中で空白区切りに並べた連続 bare word (例 `q=cancer tumor`) は parser が 1 つの `FreeText` 値 (`value="cancer tumor"`) に畳む (`/db-portal/parse` のレスポンスでも単一 `op="free_text"` ノードになる)。明示 `AND` で区切った `cancer AND tumor` は 2 つの `FreeText` になり、[§ FreeText の位置制約](#freetext-の位置制約) の `duplicate-freetext` で 400 になる点に注意 (両方含めたいときは空白区切り or quote phrase を使う)。
+
 `FreeText` の値はまず **カンマ** で複数 token に分割される (引用符内のカンマは保持)。各 token は ES の `multi_match` 1 件に展開される (Solr では `("token1" OR/AND "token2")` の各句にマップ)。
 
 - **トークン間 (カンマ区切り)** の連結演算子は `keywordOperator` パラメータで切替え (default **OR**、AND も指定可)

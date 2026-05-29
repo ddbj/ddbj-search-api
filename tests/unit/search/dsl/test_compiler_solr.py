@@ -147,9 +147,7 @@ class TestTxSearchDegenerate:
 
     def test_bool_preserves_structure_with_degenerate_children(self) -> None:
         # TXSearch では accessibility が degenerate、構造は維持される.
-        assert _c("title:human AND accessibility:public-access", "txsearch") == (
-            '(scientific_name:"human" AND (-*:*))'
-        )
+        assert _c("title:human AND accessibility:public-access", "txsearch") == ('(scientific_name:"human" AND (-*:*))')
 
 
 class TestPhraseEscaping:

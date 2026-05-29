@@ -37,3 +37,17 @@ def needs_quote_for_token_collision(value: str) -> bool:
     してしまうため、serializer 側で強制 quote する必要がある.
     """
     return DATE_RE.match(value) is not None or value in RESERVED_OPERATOR_LITERALS
+
+
+def is_bare_safe_multiword(value: str) -> bool:
+    """Return True if ``value`` can be emitted as space-separated bare words.
+
+    parser は ``free_text_atom: WORD+`` で空白区切りの bare word 列を 1 つの
+    FreeText 値に畳む (``%ignore /\\s+/`` で空白は単一に正規化される).  serializer は
+    この形の値を quote せず bare 出力してよいかをこの関数で判定する.  連続空白・先頭末尾
+    空白を含む値や、DATE / operator literal token と衝突する token を含む値は bare 化
+    できない (quote しないと re-parse で別 token に分解 / drift する).
+    """
+    if " ".join(value.split()) != value:
+        return False
+    return all(WORD_RE.match(tok) is not None and not needs_quote_for_token_collision(tok) for tok in value.split(" "))

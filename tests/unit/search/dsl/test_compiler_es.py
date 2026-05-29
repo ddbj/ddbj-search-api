@@ -792,6 +792,25 @@ class TestCompileToEsFreeTextNode:
         node = FreeText("cancer")
         assert compile_to_es(node) == compile_free_text("cancer")
 
+    def test_multiword_free_text_node_emits_operator_and(self) -> None:
+        """空白区切り bare word が畳まれた ``FreeText(value="cancer tumor")`` は値内空白を
+        ``multi_match.operator=and`` で AND 結合する (parser → 1 FreeText → compile)."""
+
+        node = FreeText("cancer tumor")
+        assert compile_to_es(node) == {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "cancer tumor",
+                            "fields": self._DEFAULT_FIELDS,
+                            "operator": "and",
+                        },
+                    },
+                ],
+            },
+        }
+
     def test_and_of_adv_and_free_text_flattens_multi_match(self) -> None:
         """``BoolOp(AND, [adv_ast, FreeText(q)])`` で FreeText の bool.must を flatten する."""
 

@@ -15,8 +15,11 @@ not_expr: NOT atom   -> not_op
 // Field name and free-text token share the WORD terminal; the parser
 // distinguishes the two by 1-token lookahead on the following ``:``.
 field_clause: WORD ":" value
+// Space-separated bare words (e.g. ``cancer tumor``) collapse into a single
+// free-text value; the compiler AND-combines the intra-value spaces
+// (``multi_match.operator=and``).
 free_text_atom: PHRASE -> ft_phrase
-              | WORD   -> ft_word
+              | WORD+  -> ft_word
 
 value: PHRASE    -> v_phrase
      | RANGE     -> v_range

@@ -657,9 +657,7 @@ class TestOrganismAnalyzerMismatchRegression:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total"] >= 1000, (
-            f"db={db}: organism_name phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
-        )
+        assert body["total"] >= 1000, f"db={db}: organism_name phrase hit が下限を下回る (analyzer mismatch 再発の疑い)"
 
     @pytest.mark.parametrize("db", ["bioproject", "biosample", "sra"])
     def test_organism_name_lowercase_phrase_also_hits(self, app: TestClient, db: str) -> None:
@@ -748,3 +746,57 @@ class TestFreeTextQuotedPhraseRegression:
             "value": "cancer",
             "is_phrase": False,
         }
+
+
+class TestFreeTextMultiWord:
+    """IT-DSL-22: 空白区切りの連続 bare word が 1 FreeText に畳まれ、値内空白を AND 結合する.
+
+    db-portal-api-spec.md § FreeText のトークン分割と値内空白の AND 結合。``q=cancer tumor``
+    は parser が単一 FreeText (is_phrase=false) に畳み、compile_es が値内空白を
+    ``multi_match.operator=and`` で AND 結合する。bug 期は parser が ``cancer`` の直後の
+    ``tumor`` を演算子なしで受けられず 400 (unexpected-token) になっていた。
+    """
+
+    def test_parse_endpoint_collapses_space_separated_words(self, app: TestClient) -> None:
+        """``/db-portal/parse?q=cancer tumor`` は単一 FreeText (is_phrase=false) を返す."""
+        resp = app.get("/db-portal/parse", params={"q": "cancer tumor"})
+        assert resp.status_code == 200
+        assert resp.json()["ast"] == {
+            "op": "free_text",
+            "value": "cancer tumor",
+            "is_phrase": False,
+        }
+
+    def test_space_separated_search_returns_200(self, app: TestClient) -> None:
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer tumor", "perPage": 20},
+        )
+        assert resp.status_code == 200
+
+    def test_space_separated_is_and_narrowed(self, app: TestClient) -> None:
+        """``cancer tumor`` (値内 AND) は各単語単独の total 以下に絞り込まれる."""
+        both = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer tumor", "perPage": 20},
+        ).json()["total"]
+        cancer = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "cancer", "perPage": 20},
+        ).json()["total"]
+        tumor = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": "tumor", "perPage": 20},
+        ).json()["total"]
+        # 値内 AND なので両語を含む doc に絞られ、各単語単独の hit 数以下になる.
+        assert both <= cancer
+        assert both <= tumor
+
+    def test_explicit_and_of_two_free_texts_is_duplicate_freetext_400(self, app: TestClient) -> None:
+        """非対称性 pin: 空白区切り ``q=cancer tumor`` は 200 だが、明示 ``q=cancer AND tumor``
+        は FreeText 2 個で 400 (duplicate-freetext)。両語を含めたいときは空白区切り or quote。"""
+        ok = app.get("/db-portal/parse", params={"q": "cancer tumor"})
+        assert ok.status_code == 200
+        ng = app.get("/db-portal/parse", params={"q": "cancer AND tumor"})
+        assert ng.status_code == 400
+        assert "duplicate-freetext" in ng.json().get("type", "")

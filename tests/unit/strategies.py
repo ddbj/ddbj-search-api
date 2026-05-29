@@ -25,7 +25,7 @@ from ddbj_search_api.search.dsl.ast import (
     Range,
     ValueKind,
 )
-from ddbj_search_api.search.dsl.lex_patterns import WORD_RE, needs_quote_for_token_collision
+from ddbj_search_api.search.dsl.lex_patterns import is_bare_safe_multiword
 
 # === DbType ===
 
@@ -152,21 +152,15 @@ _DSL_WORD_ALPHABET: Final[str] = string.ascii_letters + string.digits + "_-."
 # Phrase 用の文字集合.  改行と Tab を除き、ASCII 印字可能 + 一部記号.  PHRASE
 # regex の ``\\.`` エスケープが正常動作することを担保するため backslash と quote
 # を一部含めるが、頻度を低めに抑える.
-_DSL_PHRASE_ALPHABET: Final[str] = (
-    string.ascii_letters + string.digits + " _-.,:/()[]{}"
-)
+_DSL_PHRASE_ALPHABET: Final[str] = string.ascii_letters + string.digits + " _-.,:/()[]{}"
 
 _DSL_FIELDS_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {
-    field_type: tuple(
-        sorted(f for f in (TIER1_FIELDS | TIER2_FIELDS) if FIELD_TYPES[f] == field_type)
-    )
+    field_type: tuple(sorted(f for f in (TIER1_FIELDS | TIER2_FIELDS) if FIELD_TYPES[f] == field_type))
     for field_type in ("identifier", "text", "date", "enum")
 }
 
 _DSL_KINDS_BY_FIELD: Final[dict[str, tuple[ValueKind, ...]]] = {
-    field: tuple(
-        sorted(vk for (ft, vk) in OPERATOR_BY_KIND if ft == FIELD_TYPES[field])
-    )
+    field: tuple(sorted(vk for (ft, vk) in OPERATOR_BY_KIND if ft == FIELD_TYPES[field]))
     for field in (TIER1_FIELDS | TIER2_FIELDS)
 }
 
@@ -274,20 +268,34 @@ def _dsl_subtree_strategy(*, depth: int, parent_op: str | None) -> st.SearchStra
             inner = draw(_dsl_subtree_strategy(depth=depth - 1, parent_op=None))
             return BoolOp(op="NOT", children=(inner,), position=_DSL_DUMMY_POSITION)
         n = draw(st.integers(min_value=2, max_value=3))
-        children = [
-            draw(_dsl_subtree_strategy(depth=depth - 1, parent_op=choice)) for _ in range(n)
-        ]
+        children = [draw(_dsl_subtree_strategy(depth=depth - 1, parent_op=choice)) for _ in range(n)]
         return BoolOp(op=choice, children=tuple(children), position=_DSL_DUMMY_POSITION)  # type: ignore[arg-type]
 
     return _composite()
 
 
 @st.composite
+def _dsl_multiword_value(draw: st.DrawFn) -> str:
+    """空白区切りの複数 bare word.  各 token は WORD alphabet だが DATE / operator
+    literal shape も混ざり得るので、bare-safe (1 FreeText の値内 AND) と phrase 退避の
+    両経路を round-trip が踏むようにする."""
+    words = draw(
+        st.lists(
+            st.text(alphabet=_DSL_WORD_ALPHABET, min_size=1, max_size=8),
+            min_size=2,
+            max_size=3,
+        ),
+    )
+    return " ".join(words)
+
+
+@st.composite
 def _dsl_free_text_value(draw: st.DrawFn) -> str:
-    """FreeText.value 用 strategy.  WORD / phrase / DATE / operator literal を網羅生成."""
+    """FreeText.value 用 strategy.  単一/複数 WORD / phrase / DATE / operator literal を網羅生成."""
     return draw(
         st.one_of(
             st.text(alphabet=_DSL_WORD_ALPHABET, min_size=1, max_size=10),
+            _dsl_multiword_value(),
             _dsl_phrase_value(),
             _dsl_date_value(),
             st.sampled_from(_DSL_RESERVED_OPERATOR_LITERALS),
@@ -298,12 +306,13 @@ def _dsl_free_text_value(draw: st.DrawFn) -> str:
 def _value_implies_phrase(value: str) -> bool:
     """parser/serializer の quote 規則から ``is_phrase`` を導出.
 
-    grammar 上、bare word は WORD regex full-match かつ token 衝突 (DATE / AND / OR / NOT 等)
-    を起こさない値だけが許容される. それ以外 (空白・記号・operator literal・DATE 形)
-    は serializer が必ず quote を付け、parser はそれを quoted phrase として読み戻し
-    ``is_phrase=True`` の FreeText を生成する.
+    serializer は空白区切りの各 token が bare 出力可能 (WORD full-match かつ DATE /
+    operator literal と衝突しない) な値だけを bare のまま出し、parser はそれを
+    ``free_text_atom: WORD+`` 経由で ``is_phrase=False`` の単一 FreeText に読み戻す.
+    それ以外 (記号・連続空白・operator literal・DATE 形を含む値) は serializer が quote
+    を付け、parser はそれを quoted phrase として ``is_phrase=True`` に復元する.
     """
-    return not (value and WORD_RE.match(value) is not None and not needs_quote_for_token_collision(value))
+    return not is_bare_safe_multiword(value)
 
 
 def _free_text_strategy() -> st.SearchStrategy[FreeText]:
@@ -322,9 +331,7 @@ def _top_level_and_with_free_text(draw: st.DrawFn, *, max_depth: int) -> BoolOp:
     """
     free = draw(_free_text_strategy())
     n = draw(st.integers(min_value=1, max_value=3))
-    rest = [
-        draw(_dsl_subtree_strategy(depth=max(max_depth - 1, 0), parent_op="AND")) for _ in range(n)
-    ]
+    rest = [draw(_dsl_subtree_strategy(depth=max(max_depth - 1, 0), parent_op="AND")) for _ in range(n)]
     return BoolOp(op="AND", children=(free, *rest), position=_DSL_DUMMY_POSITION)
 
 

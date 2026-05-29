@@ -1296,7 +1296,8 @@ class TestCursorExclusivity:
         assert "sort" in resp.json()["detail"]
 
     def test_cursor_with_keyword_operator_and_returns_400(
-        self, app_with_es: TestClient,
+        self,
+        app_with_es: TestClient,
     ) -> None:
         # default が OR になったので、AND を明示するのは default 以外として排他検出される.
         resp = app_with_es.get(

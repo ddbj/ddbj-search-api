@@ -180,9 +180,7 @@ def _compile_node(
         return compile_free_text_solr(node.value, operator=free_text_operator)
     if isinstance(node, FieldClause):
         return _compile_leaf(node, dialect=dialect)
-    children_q = [
-        _compile_node(c, dialect=dialect, free_text_operator=free_text_operator) for c in node.children
-    ]
+    children_q = [_compile_node(c, dialect=dialect, free_text_operator=free_text_operator) for c in node.children]
     if node.op == "AND":
         return "(" + " AND ".join(children_q) + ")"
     if node.op == "OR":

@@ -1556,7 +1556,10 @@ class TestBuildSearchQueryNestedTextParams:
     """nested 4 text param が _build_text_match_clause + nested wrapper で組まれる."""
 
     def test_single_token_uses_match_with_operator_and(
-        self, kwarg: str, path: str, sub_field: str,
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
     ) -> None:
         # 値内空白あり (記号なし) → match + operator=and.
         result = build_search_query(**{kwarg: "foo bar"})  # type: ignore[arg-type]
@@ -1566,14 +1569,20 @@ class TestBuildSearchQueryNestedTextParams:
         }
 
     def test_quoted_value_uses_match_phrase(
-        self, kwarg: str, path: str, sub_field: str,
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
     ) -> None:
         result = build_search_query(**{kwarg: '"foo bar"'})  # type: ignore[arg-type]
         nested = _find_nested_filter(result["bool"]["filter"], path)
         assert nested["nested"]["query"] == {"match_phrase": {sub_field: "foo bar"}}
 
     def test_symbol_value_auto_phrases(
-        self, kwarg: str, path: str, sub_field: str,
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
     ) -> None:
         # 記号 (-/.+:) 含み → 自動 phrase 化.
         result = build_search_query(**{kwarg: "HIF-1"})  # type: ignore[arg-type]
@@ -1581,7 +1590,10 @@ class TestBuildSearchQueryNestedTextParams:
         assert nested["nested"]["query"] == {"match_phrase": {sub_field: "HIF-1"}}
 
     def test_comma_separated_values_use_should(
-        self, kwarg: str, path: str, sub_field: str,
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
     ) -> None:
         # カンマ区切り → bool.should + minimum_should_match=1.
         result = build_search_query(**{kwarg: "alpha,beta"})  # type: ignore[arg-type]
@@ -1592,7 +1604,10 @@ class TestBuildSearchQueryNestedTextParams:
         assert len(inner["bool"]["should"]) == 2
 
     def test_keyword_operator_or_does_not_affect_inner_match(
-        self, kwarg: str, path: str, sub_field: str,
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
     ) -> None:
         # keyword_operator は keywords (multi_match) のカンマ区切り token 間 operator
         # にのみ影響し、nested 4 text param の inner match.operator は常に "and"

@@ -1206,6 +1206,18 @@
 **回帰元**: `docs/db-portal-api-spec.md § クエリ文法 § Tier 1 organism_name`
 **関連 unit テスト**: `tests/unit/search/dsl/test_compiler_es.py` (TestOrganismFields)
 
+### IT-DSL-22: 空白区切りの連続 bare word が 1 FreeText に畳まれ値内空白を AND 結合する
+
+**endpoint**: `GET /db-portal/parse?q=cancer tumor` / `GET /db-portal/search?q=cancer tumor&db=bioproject&perPage=20`
+
+**不変条件**:
+- `/db-portal/parse?q=cancer tumor` は単一 FreeText (`{op: free_text, value: "cancer tumor", is_phrase: false}`) を返す (bug 期は 400 `unexpected-token`)
+- `q=cancer tumor` の `total` は `q=cancer` / `q=tumor` 各単独の `total` 以下 (値内 AND で両語を含む doc に絞られる)
+- 明示 `q=cancer AND tumor` は FreeText 2 個で 400 `duplicate-freetext` (空白区切りとの非対称性)
+
+**回帰元**: `docs/db-portal-api-spec.md § FreeText のトークン分割と値内空白の AND 結合`
+**関連 unit テスト**: `tests/unit/search/dsl/test_grammar.py` (TestFreeTextMultiWord), `tests/unit/search/dsl/test_compiler_es.py` (TestCompileToEsFreeTextNode)
+
 ---
 
 ## IT-DBPORTAL-*: db-portal 横断 / DB 指定

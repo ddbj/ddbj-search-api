@@ -555,3 +555,61 @@ class TestFreeTextPhraseFlag:
         assert len(free_text_children) == 1
         assert free_text_children[0].is_phrase is False
         assert free_text_children[0].value == "cancer"
+
+
+class TestFreeTextMultiWord:
+    """空白区切りの連続 bare word は 1 つの FreeText 値に畳まれる (``free_text_atom: WORD+``).
+
+    db-portal-api-spec.md § FreeText のトークン分割と値内空白の AND 結合。compiler が
+    値内の空白を ``multi_match.operator=and`` で AND 結合する前提で、parser 段では空白
+    区切りを単一 FreeText (is_phrase=False) に保持する。
+    """
+
+    def test_two_bare_words_become_single_free_text(self) -> None:
+        ast = parse("cancer tumor")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer tumor"
+        assert ast.is_phrase is False
+
+    def test_three_bare_words_become_single_free_text(self) -> None:
+        ast = parse("cancer tumor mouse")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer tumor mouse"
+        assert ast.is_phrase is False
+
+    def test_consecutive_spaces_normalized_to_single(self) -> None:
+        # ``%ignore /\s+/`` で空白は捨てられ、token 列を単一空白で join する.
+        ast = parse("cancer   tumor")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer tumor"
+        assert ast.is_phrase is False
+
+    def test_single_word_unchanged(self) -> None:
+        # 回帰: 単一語は従来通り単一 FreeText.
+        ast = parse("cancer")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer"
+        assert ast.is_phrase is False
+
+    def test_explicit_and_not_absorbed_into_multiword(self) -> None:
+        # ``AND`` (priority 10) は WORD+ に吸収されず operator として lex される.
+        # ``cancer AND tumor`` は 2 つの FreeText の AND (後段 validator が duplicate-freetext).
+        ast = parse("cancer AND tumor")
+        assert isinstance(ast, BoolOp)
+        assert ast.op == "AND"
+        free_texts = [c for c in ast.children if isinstance(c, FreeText)]
+        assert len(free_texts) == 2
+        assert [f.value for f in free_texts] == ["cancer", "tumor"]
+
+    def test_multiword_free_text_with_field_clause_under_and(self) -> None:
+        # 空白区切り bare word (1 FreeText) + FieldClause の AND は parse できる.
+        ast = parse("cancer tumor AND organism_id:9606")
+        assert isinstance(ast, BoolOp)
+        assert ast.op == "AND"
+        free_texts = [c for c in ast.children if isinstance(c, FreeText)]
+        field_clauses = [c for c in ast.children if isinstance(c, FieldClause)]
+        assert len(free_texts) == 1
+        assert free_texts[0].value == "cancer tumor"
+        assert free_texts[0].is_phrase is False
+        assert len(field_clauses) == 1
+        assert field_clauses[0].field == "organism_id"

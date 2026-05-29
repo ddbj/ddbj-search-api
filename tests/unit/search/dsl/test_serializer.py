@@ -117,11 +117,20 @@ class TestSerializeSpecExamples:
 
 
 class TestFreeTextQuoting:
-    def test_value_with_space_must_quote(self) -> None:
-        # WORD regex に match しない (空白) のため quote 必須.
-        # quote しないと parser が "cancer tumor" を 2 個の FreeText に分解し
-        # duplicate-freetext で round-trip が破綻する.
-        assert ast_to_dsl(_free("cancer tumor")) == '"cancer tumor"'
+    def test_value_with_space_bare_multiword(self) -> None:
+        # 空白区切りの各 token が bare 出力可能なら bare のまま. parser の
+        # ``free_text_atom: WORD+`` が 1 つの FreeText (is_phrase=False) に復元するので
+        # quote 不要 (round-trip 安定).
+        assert ast_to_dsl(_free("cancer tumor")) == "cancer tumor"
+
+    def test_value_with_collision_token_must_quote(self) -> None:
+        # 空白区切りでも token に operator literal / DATE shape が混じると bare 化できず quote.
+        assert ast_to_dsl(_free("cancer AND")) == '"cancer AND"'
+        assert ast_to_dsl(_free("cancer 2024-01-01")) == '"cancer 2024-01-01"'
+
+    def test_value_with_consecutive_spaces_must_quote(self) -> None:
+        # 連続空白は単一空白正規形でないため quote (bare だと re-parse で空白が畳まれ drift).
+        assert ast_to_dsl(_free("cancer  tumor")) == '"cancer  tumor"'
 
     def test_value_with_colon_must_quote(self) -> None:
         assert ast_to_dsl(_free("a:b")) == '"a:b"'
@@ -176,6 +185,17 @@ class TestFreeTextPhraseSerialization:
         reparsed = parse(dsl)
         assert isinstance(reparsed, FreeText)
         assert reparsed.value == "cancer"
+        assert reparsed.is_phrase is False
+
+    def test_is_phrase_false_multiword_parse_reparse_round_trip(self) -> None:
+        # 空白区切りの複数 bare word は bare 出力 → parse で is_phrase=False の
+        # 単一 FreeText に戻る (``free_text_atom: WORD+``).
+        ast = FreeText(value="cancer tumor mouse", is_phrase=False)
+        dsl = ast_to_dsl(ast)
+        assert dsl == "cancer tumor mouse"
+        reparsed = parse(dsl)
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "cancer tumor mouse"
         assert reparsed.is_phrase is False
 
     def test_is_phrase_true_inside_and_serialized(self) -> None:
@@ -328,9 +348,7 @@ class TestPrecedenceAndParens:
         # inner3: _and(inner2, x)            → "(title:x AND title:x OR title:x) AND title:x" (OR は AND より低 → 括弧)
         # inner4: _or(inner3, x)             → "(title:x AND title:x OR title:x) AND title:x OR title:x"
         # outer:  _and(inner4, x)            → "((title:x AND title:x OR title:x) AND title:x OR title:x) AND title:x"
-        expected = (
-            "((title:x AND title:x OR title:x) AND title:x OR title:x) AND title:x"
-        )
+        expected = "((title:x AND title:x OR title:x) AND title:x OR title:x) AND title:x"
         assert ast_to_dsl(ast) == expected
 
 
