@@ -31,7 +31,17 @@ from ddbj_search_converter.schema import (
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from ddbj_search_api.es.query import VALID_FACET_FIELDS
+from ddbj_search_api.schemas.common import FacetBucket, Facets
 from ddbj_search_api.schemas.queries import KeywordOperator
+from ddbj_search_api.solr.query import DB_PORTAL_SOLR_FACET_NAMES
+
+# Wire-level allowlist for the db-portal ``facets`` query parameter: the ES
+# facet vocabulary (es.query.VALID_FACET_FIELDS) plus the Solr-backed facets
+# (division / molecularType / rank / kingdom).  Typos against this set are
+# 422; scope-mismatch (a valid name on the wrong db) is 400 and resolved in
+# routers.db_portal (docs/db-portal-api-spec.md § facet 集計).
+DB_PORTAL_VALID_FACET_FIELDS: frozenset[str] = VALID_FACET_FIELDS | DB_PORTAL_SOLR_FACET_NAMES
 
 
 class DbPortalDb(str, Enum):
@@ -68,6 +78,9 @@ class DbPortalErrorType(str, Enum):
     cursor_not_supported = "https://ddbj.nig.ac.jp/problems/cursor-not-supported"
     unexpected_parameter = "https://ddbj.nig.ac.jp/problems/unexpected-parameter"
     missing_db = "https://ddbj.nig.ac.jp/problems/missing-db"
+    # facets parameter selected a facet not applicable to the target scope
+    # (cross / single-DB).  Allowlist typos are 422; this is the 400 case.
+    facet_not_applicable = "https://ddbj.nig.ac.jp/problems/facet-not-applicable"
     # POST /db-portal/serialize request body schema violation.
     invalid_ast = "https://ddbj.nig.ac.jp/problems/invalid-ast"
     # Query parser error types.
@@ -84,6 +97,43 @@ class DbPortalErrorType(str, Enum):
 
 ALLOWED_DB_PORTAL_SORTS: frozenset[str] = frozenset({"datePublished:desc", "datePublished:asc"})
 ALLOWED_DB_PORTAL_PER_PAGE: frozenset[int] = frozenset({20, 50, 100})
+
+
+class DbPortalFacets(Facets):
+    """Facet aggregation results for db-portal endpoints.
+
+    Extends the shared :class:`~ddbj_search_api.schemas.common.Facets`
+    (ES-backed facets) with the four Solr-backed facets that only
+    db-portal exposes: ``division`` / ``molecularType`` (trad / ARSA) and
+    ``rank`` / ``kingdom`` (taxonomy / TXSearch).  The same convention
+    applies to every field: ``null`` = not aggregated, ``[]`` = aggregated
+    with zero buckets.  See docs/db-portal-api-spec.md § facet 集計.
+    """
+
+    division: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "BCT", "count": 1200}]],
+        description="Trad division count (db=trad only). INSDC division code (ARSA ``Division`` field).",
+    )
+    molecular_type: list[FacetBucket] | None = Field(
+        default=None,
+        alias="molecularType",
+        examples=[[{"value": "genomic DNA", "count": 800}]],
+        description=(
+            "Trad molecular type count (db=trad only, ARSA ``MolecularType`` field). "
+            "Re-inject a bucket value as ``molecular_type:<value>`` in the DSL ``q``."
+        ),
+    )
+    rank: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "species", "count": 5000}]],
+        description="Taxonomy rank count (db=taxonomy only, TXSearch ``rank`` field).",
+    )
+    kingdom: list[FacetBucket] | None = Field(
+        default=None,
+        examples=[[{"value": "Bacteria", "count": 300}]],
+        description="Taxonomy kingdom count (db=taxonomy only, TXSearch ``kingdom`` field).",
+    )
 
 
 _Q_DESC = (
@@ -106,6 +156,60 @@ _Q_DESC = (
     "``field-not-available-in-cross-db`` / ``invalid-freetext-position`` / "
     "``duplicate-freetext`` etc.)."
 )
+
+_FACETS_DESC_CROSS = (
+    "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; "
+    "omitting it returns no facets).  Cross-search accepts ``organism`` / ``accessibility`` / "
+    "``type`` only (ES entries-alias aggregation); any other name returns 400 "
+    "``facet-not-applicable``.  Allowlist typos return 422.  See "
+    "``docs/db-portal-api-spec.md`` § facet 集計."
+)
+
+_FACETS_DESC_SINGLE = (
+    "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; "
+    "omitting it returns no facets).  Accepted names depend on ``db``: ES DBs allow the "
+    "common facets (``organism`` / ``accessibility``) plus that DB's type-specific facets "
+    "(e.g. ``db=sra`` → ``libraryStrategy`` etc.); ``db=trad`` allows ``division`` / "
+    "``molecularType``; ``db=taxonomy`` allows ``rank`` / ``kingdom``.  An out-of-scope name "
+    "returns 400 ``facet-not-applicable``; an allowlist typo returns 422.  Compatible with "
+    "``cursor``.  See ``docs/db-portal-api-spec.md`` § facet 集計."
+)
+
+_FACETS_SIZE_DESC = (
+    "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies "
+    "uniformly to every facet selected via ``facets``.  The ``organism`` label "
+    "sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``."
+)
+
+
+def _normalize_db_portal_facets(facets: str | None) -> str | None:
+    """Validate the db-portal ``facets`` query value against the wire allowlist.
+
+    ``None`` / ``""`` pass through unchanged (both mean "no aggregation").
+    Otherwise the value is split on commas, blanks are dropped, and any
+    name outside :data:`DB_PORTAL_VALID_FACET_FIELDS` raises 422 (the typo
+    class).  Scope applicability (a valid name vs. the target ``db``) is
+    enforced later in the router as 400 ``facet-not-applicable``.  Returns
+    the normalized comma-joined value so the router does not re-strip.
+    """
+    if facets is None or facets == "":
+        return facets
+    requested = [f.strip() for f in facets.split(",")]
+    requested = [f for f in requested if f]
+    if not requested:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid facets: empty value after splitting commas.",
+        )
+    invalid = [f for f in requested if f not in DB_PORTAL_VALID_FACET_FIELDS]
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Invalid facets: {', '.join(invalid)}. Allowed: {', '.join(sorted(DB_PORTAL_VALID_FACET_FIELDS))}."
+            ),
+        )
+    return ",".join(requested)
 
 
 class DbPortalCrossSearchQuery:
@@ -154,10 +258,25 @@ class DbPortalCrossSearchQuery:
                 "does not accept this parameter (the parsed AST does not carry operator state)."
             ),
         ),
+        facets: str | None = Query(
+            default=None,
+            examples=["organism,type"],
+            description=_FACETS_DESC_CROSS,
+        ),
+        facets_size: int | None = Query(
+            default=None,
+            ge=1,
+            le=1000,
+            alias="facetsSize",
+            examples=[100],
+            description=_FACETS_SIZE_DESC,
+        ),
     ) -> None:
         self.q = q
         self.top_hits = top_hits
         self.keyword_operator = keyword_operator
+        self.facets = _normalize_db_portal_facets(facets)
+        self.facets_size = facets_size
 
 
 class DbPortalSearchQuery:
@@ -235,6 +354,19 @@ class DbPortalSearchQuery:
                 "when not at default (OR)."
             ),
         ),
+        facets: str | None = Query(
+            default=None,
+            examples=["organism,libraryStrategy"],
+            description=_FACETS_DESC_SINGLE,
+        ),
+        facets_size: int | None = Query(
+            default=None,
+            ge=1,
+            le=1000,
+            alias="facetsSize",
+            examples=[100],
+            description=_FACETS_SIZE_DESC,
+        ),
     ) -> None:
         # Pydantic's Literal[int] does not coerce HTTP query strings to int,
         # so per_page is typed ``int`` and constrained explicitly here while
@@ -260,6 +392,8 @@ class DbPortalSearchQuery:
         self.cursor = cursor
         self.sort = sort
         self.keyword_operator = keyword_operator
+        self.facets = _normalize_db_portal_facets(facets)
+        self.facets_size = facets_size
 
 
 class DbPortalCount(BaseModel):
@@ -305,6 +439,16 @@ class DbPortalCrossSearchResponse(BaseModel):
             ],
         ],
         description=("Per-database count and (when topHits>=1) lightweight hits.  Fixed length 8, fixed order."),
+    )
+    facets: DbPortalFacets | None = Field(
+        default=None,
+        examples=[None],
+        description=(
+            "Facet aggregation over the ES entries alias (organism / accessibility / type only) "
+            "when the ``facets`` parameter is supplied; ``null`` otherwise.  Solr-backed DBs "
+            "(trad / taxonomy) are not included.  ``null`` if the aggregation request failed or "
+            "timed out (the count fan-out still returns 200).  See db-portal-api-spec.md § facet 集計."
+        ),
     )
 
 
@@ -755,6 +899,15 @@ class DbPortalHitsResponse(BaseModel):
         alias="hasNext",
         examples=[True],
         description="Whether more pages are available.",
+    )
+    facets: DbPortalFacets | None = Field(
+        default=None,
+        examples=[None],
+        description=(
+            "Facet aggregation scoped to the current ``q`` when the ``facets`` parameter is "
+            "supplied; ``null`` otherwise.  Population matches the hits query (same compiled "
+            "query + status filter).  See db-portal-api-spec.md § facet 集計."
+        ),
     )
 
 

@@ -649,6 +649,49 @@ _TYPE_SPECIFIC_FACET_SCOPE: dict[str, frozenset[str]] = {
     "vendor": frozenset({"jga-study"}),
 }
 
+# db-portal exposes 6 ES-backed databases whose ``db`` value spans one or
+# more ``type`` subtypes (e.g. ``db=sra`` covers the 6 ``sra-*`` subtypes).
+# A type-specific facet is allowed for a db-portal scope when its
+# ``_TYPE_SPECIFIC_FACET_SCOPE`` intersects the scope's subtypes, so the
+# db-portal allowlist stays derived from the ES SSOT above rather than
+# hardcoded (docs/db-portal-api-spec.md § facet 集計).
+_DB_PORTAL_ES_SUBTYPES: dict[str, frozenset[str]] = {
+    "bioproject": frozenset({"bioproject"}),
+    "biosample": frozenset({"biosample"}),
+    "sra": frozenset(
+        {"sra-submission", "sra-study", "sra-experiment", "sra-run", "sra-sample", "sra-analysis"},
+    ),
+    "jga": frozenset({"jga-study", "jga-dataset", "jga-dac", "jga-policy"}),
+    "gea": frozenset({"gea"}),
+    "metabobank": frozenset({"metabobank"}),
+}
+
+
+def db_portal_es_facet_allowlist(db: str | None) -> frozenset[str]:
+    """Facet names accepted for a db-portal ES scope.
+
+    ``db=None`` is the cross-search scope: common facets (organism,
+    accessibility) plus ``type``.  A single ES-backed ``db`` value
+    (``bioproject`` / ``biosample`` / ``sra`` / ``jga`` / ``gea`` /
+    ``metabobank``) allows the common facets plus every type-specific
+    facet whose :data:`_TYPE_SPECIFIC_FACET_SCOPE` overlaps the db's
+    subtypes.  ``type`` is cross-only and never appears in a single-DB
+    allowlist.
+
+    Raises:
+        KeyError: when ``db`` is not a db-portal ES database name (Solr
+        DBs ``trad`` / ``taxonomy`` have their own allowlist and must not
+        reach this function).
+    """
+    if db is None:
+        return _COMMON_FACET_NAMES | _CROSS_TYPE_ONLY_FACET_NAMES
+    subtypes = _DB_PORTAL_ES_SUBTYPES[db]
+    allowed = set(_COMMON_FACET_NAMES)
+    for name, scope in _TYPE_SPECIFIC_FACET_SCOPE.items():
+        if scope & subtypes:
+            allowed.add(name)
+    return frozenset(allowed)
+
 
 def resolve_facets_size(facets_size: int | None) -> int:
     """Map the ``facetsSize`` query value to an effective bucket size.

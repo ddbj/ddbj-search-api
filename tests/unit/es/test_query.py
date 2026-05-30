@@ -13,6 +13,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from ddbj_search_api.es.query import (
+    _COMMON_FACET_NAMES,
+    _CROSS_TYPE_ONLY_FACET_NAMES,
+    _DB_PORTAL_ES_SUBTYPES,
+    _TYPE_SPECIFIC_FACET_SCOPE,
     DEFAULT_FACET_SIZE,
     _parse_keywords,
     build_facet_aggs,
@@ -21,6 +25,7 @@ from ddbj_search_api.es.query import (
     build_sort_with_tiebreaker,
     build_source_filter,
     build_status_filter,
+    db_portal_es_facet_allowlist,
     inject_status_filter,
     pagination_to_from_size,
     resolve_facets_size,
@@ -1897,3 +1902,72 @@ class TestBuildSearchQueryTextMatchFilters:
         # keyword multi_match goes under must, host match under filter
         assert "must" in result["bool"]
         assert _find_text_match_clause(result["bool"]["filter"], "host") is not None
+
+
+# === db-portal facet scope allowlist (db → ES subtype 展開) ===
+
+
+class TestDbPortalEsFacetAllowlist:
+    """db_portal_es_facet_allowlist: db-portal の db 値 → 許容 ES facet 集合."""
+
+    def test_cross_is_common_plus_type(self) -> None:
+        assert db_portal_es_facet_allowlist(None) == frozenset({"organism", "accessibility", "type"})
+
+    @pytest.mark.parametrize(
+        "db, expected",
+        [
+            ("bioproject", {"organism", "accessibility", "objectType", "relevance", "projectType"}),
+            ("biosample", {"organism", "accessibility", "package", "model", "host"}),
+            (
+                "sra",
+                {
+                    "organism",
+                    "accessibility",
+                    "libraryStrategy",
+                    "librarySource",
+                    "librarySelection",
+                    "platform",
+                    "instrumentModel",
+                    "libraryLayout",
+                    "analysisType",
+                },
+            ),
+            ("jga", {"organism", "accessibility", "studyType", "datasetType", "vendor"}),
+            ("gea", {"organism", "accessibility", "experimentType"}),
+            ("metabobank", {"organism", "accessibility", "experimentType", "studyType", "submissionType"}),
+        ],
+    )
+    def test_single_db_exact_set(self, db: str, expected: set[str]) -> None:
+        assert db_portal_es_facet_allowlist(db) == frozenset(expected)
+
+    def test_type_never_in_single_db(self) -> None:
+        for db in _DB_PORTAL_ES_SUBTYPES:
+            assert "type" not in db_portal_es_facet_allowlist(db)
+
+    def test_common_always_present(self) -> None:
+        for db in [None, *_DB_PORTAL_ES_SUBTYPES]:
+            assert db_portal_es_facet_allowlist(db) >= _COMMON_FACET_NAMES
+
+    def test_solr_db_value_raises_keyerror(self) -> None:
+        # trad / taxonomy must be routed to the Solr facet scope; reaching
+        # the ES allowlist with them is a programming error, not a 0-facet
+        # silent fallthrough.
+        for solr_db in ("trad", "taxonomy"):
+            with pytest.raises(KeyError):
+                db_portal_es_facet_allowlist(solr_db)
+
+    def test_derivation_matches_type_specific_scope(self) -> None:
+        """Property: a type-specific facet is in db's allowlist iff its scope
+        intersects db's subtypes (the allowlist is derived, not hardcoded)."""
+        for db, subtypes in _DB_PORTAL_ES_SUBTYPES.items():
+            allowed = db_portal_es_facet_allowlist(db)
+            for facet, scope in _TYPE_SPECIFIC_FACET_SCOPE.items():
+                assert (facet in allowed) == bool(scope & subtypes)
+
+    def test_cross_excludes_type_specific(self) -> None:
+        cross = db_portal_es_facet_allowlist(None)
+        for facet in _TYPE_SPECIFIC_FACET_SCOPE:
+            assert facet not in cross
+
+    def test_cross_type_only_member_present_for_cross(self) -> None:
+        assert db_portal_es_facet_allowlist(None) >= _CROSS_TYPE_ONLY_FACET_NAMES

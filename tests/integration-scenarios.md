@@ -1435,6 +1435,36 @@
 
 ---
 
+### IT-DBPORTAL-21: ES 単一 DB / 横断の facet 集計と母集団一致
+
+**endpoint**: `GET /db-portal/search?db=bioproject&facets=organism` / `GET /db-portal/cross-search?facets=organism,type`
+
+**不変条件**:
+- `facets` 指定で `body.facets` が dict、要求した facet が list (非 null)。`facets` 未指定では `body.facets == null`
+- 各 facet bucket の `count <= total` (単一 DB) / `<= sum(databases[].count)` (横断は ES 6 DB union のみなので厳密一致は保証しない)
+- **母集団一致**: `organism` bucket の `value` (taxID) を `q=organism_id:<value>` として再注入 (facets 無し) すると `total == bucket.count` (同じ status filter / public_only で集計されている)
+- 横断は `organism` / `accessibility` / `type` のみ受け付け、type-specific facet (`facets=libraryStrategy`) は 400 `facet-not-applicable`
+- 単一 DB で scope 外 facet (`db=bioproject&facets=package`) は 400 `facet-not-applicable`、allowlist 外名は 422
+
+**回帰元**: `docs/db-portal-api-spec.md § facet 集計`
+**関連 unit テスト**: `tests/unit/routers/test_db_portal_facets.py`, `tests/unit/es/test_query.py`, `tests/unit/test_utils.py`
+
+---
+
+### IT-DBPORTAL-22: Solr (trad / taxonomy) の facet 集計
+
+**endpoint**: `GET /db-portal/search?db=trad&facets=division,molecularType` / `GET /db-portal/search?db=taxonomy&facets=rank,kingdom` (Solr backend、`staging_only`)
+
+**不変条件**:
+- `body.facets` が dict、要求した facet が list (非 null)。各 bucket の `count <= total`
+- trad は `division` / `molecularType` のみ、taxonomy は `rank` / `kingdom` のみ受け付け、それ以外 (`db=trad&facets=organism`) は 400 `facet-not-applicable`
+- **母集団一致**: `division` bucket の `value` を `q=division:<value>` (facets 無し) で再注入すると `total == bucket.count` (8 shard 分散集計でも一致)
+
+**回帰元**: `docs/db-portal-api-spec.md § facet 集計`
+**関連 unit テスト**: `tests/unit/solr/test_query.py`, `tests/unit/test_utils.py`
+
+---
+
 ## IT-STATUS-*: status filter
 
 ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) のアクセス制御。`/entries/*` と `/db-portal/*` (ES 6 DB) で同等のロジック、`/db-portal/*` の Solr 2 DB は no-op。

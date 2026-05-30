@@ -13,9 +13,12 @@ import logging
 from typing import Any
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from ddbj_search_api.schemas.common import Facets
-from ddbj_search_api.utils import parse_facets
+from ddbj_search_api.schemas.db_portal import DbPortalFacets
+from ddbj_search_api.utils import parse_db_portal_es_facets, parse_facets, parse_solr_facets
 
 
 def _aggregations(**buckets_per_field: list[dict[str, Any]]) -> dict[str, Any]:
@@ -247,3 +250,109 @@ class TestParseFacetsOrganism:
         assert facets.organism[0].value == "9606"
         # Falls back to value, like the empty-sub-agg case.
         assert facets.organism[0].label == "9606"
+
+
+# === db-portal facet parsers ===
+
+
+class TestParseDbPortalEsFacets:
+    """parse_db_portal_es_facets: ES aggs → DbPortalFacets (Solr fields stay None)."""
+
+    def test_returns_db_portal_facets(self) -> None:
+        assert isinstance(parse_db_portal_es_facets({}), DbPortalFacets)
+
+    def test_es_facet_populated(self) -> None:
+        aggs = _aggregations(objectType=[{"key": "BioProject", "doc_count": 5}])
+        facets = parse_db_portal_es_facets(aggs)
+        assert facets.object_type is not None
+        assert facets.object_type[0].value == "BioProject"
+        assert facets.object_type[0].count == 5
+
+    def test_solr_fields_stay_none(self) -> None:
+        """ES aggs never carry the Solr-only facets; they must remain None
+        (not []) so the envelope honors the null = not-aggregated rule."""
+        facets = parse_db_portal_es_facets(_aggregations(objectType=[{"key": "BioProject", "doc_count": 1}]))
+        assert facets.division is None
+        assert facets.molecular_type is None
+        assert facets.rank is None
+        assert facets.kingdom is None
+
+    def test_absent_es_agg_is_none(self) -> None:
+        facets = parse_db_portal_es_facets({})
+        assert facets.organism is None
+        assert facets.type is None
+        assert facets.accessibility is None
+
+    def test_organism_label_path(self) -> None:
+        aggs = {
+            "organism": {
+                "buckets": [
+                    {"key": "9606", "doc_count": 3, "name": {"buckets": [{"key": "Homo sapiens", "doc_count": 3}]}},
+                ],
+            },
+        }
+        facets = parse_db_portal_es_facets(aggs)
+        assert facets.organism is not None
+        assert facets.organism[0].value == "9606"
+        assert facets.organism[0].label == "Homo sapiens"
+
+
+class TestParseSolrFacets:
+    """parse_solr_facets: Solr facet_counts (flat [v, c, ...]) → DbPortalFacets."""
+
+    def test_flat_array_to_buckets(self) -> None:
+        facet_counts = {"facet_fields": {"Division": ["BCT", 100, "VRL", 50]}}
+        facets = parse_solr_facets(facet_counts, {"division": "Division"})
+        assert facets.division is not None
+        assert [(b.value, b.count) for b in facets.division] == [("BCT", 100), ("VRL", 50)]
+
+    def test_unrequested_facet_is_none(self) -> None:
+        facets = parse_solr_facets({"facet_fields": {"Division": ["BCT", 1]}}, {"division": "Division"})
+        assert facets.molecular_type is None
+        assert facets.rank is None
+
+    def test_requested_but_empty_is_empty_list(self) -> None:
+        """A requested facet with no buckets is [] (aggregated, zero) not None."""
+        facets = parse_solr_facets({"facet_fields": {"Division": []}}, {"division": "Division"})
+        assert facets.division == []
+
+    def test_missing_field_in_response_is_empty_list(self) -> None:
+        facets = parse_solr_facets({"facet_fields": {}}, {"division": "Division"})
+        assert facets.division == []
+
+    def test_missing_facet_counts_block_is_empty_list(self) -> None:
+        facets = parse_solr_facets({}, {"rank": "rank"})
+        assert facets.rank == []
+
+    def test_molecular_type_alias_key(self) -> None:
+        facet_counts = {"facet_fields": {"MolecularType": ["genomic DNA", 7]}}
+        facets = parse_solr_facets(facet_counts, {"molecularType": "MolecularType"})
+        assert facets.molecular_type is not None
+        assert facets.molecular_type[0].value == "genomic DNA"
+        assert facets.molecular_type[0].count == 7
+
+    def test_odd_trailing_entry_is_ignored(self) -> None:
+        # Malformed flat array (missing the last count) must not raise.
+        facets = parse_solr_facets({"facet_fields": {"rank": ["species", 5, "genus"]}}, {"rank": "rank"})
+        assert facets.rank is not None
+        assert [(b.value, b.count) for b in facets.rank] == [("species", 5)]
+
+    def test_numeric_value_coerced_to_str(self) -> None:
+        # FacetBucket.value is a string; Solr may surface numeric-looking values.
+        facets = parse_solr_facets({"facet_fields": {"rank": [12345, 3]}}, {"rank": "rank"})
+        assert facets.rank is not None
+        assert facets.rank[0].value == "12345"
+
+    @given(
+        st.lists(
+            st.tuples(st.text(min_size=1, max_size=20), st.integers(min_value=0, max_value=10**9)),
+            max_size=30,
+        ),
+    )
+    def test_pbt_pairs_roundtrip(self, pairs: list[tuple[str, int]]) -> None:
+        flat: list[Any] = []
+        for value, count in pairs:
+            flat.extend([value, count])
+        facets = parse_solr_facets({"facet_fields": {"rank": flat}}, {"rank": "rank"})
+        assert facets.rank is not None
+        assert [(b.value, b.count) for b in facets.rank] == [(v, c) for v, c in pairs]

@@ -336,3 +336,77 @@ class TestCrossSearchHitsUniqueness:
         assert len(hits) >= 1, "jga hits が空: テスト前提のデータ不足"
         pairs = [(h["identifier"], h["type"]) for h in hits]
         assert len(pairs) == len(set(pairs)), f"jga hits に重複: {pairs}"
+
+
+class TestDbPortalEsFacets:
+    """IT-DBPORTAL-21: ES 単一 DB / 横断の facet 集計と母集団一致."""
+
+    def test_search_facets_param_returns_lists(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: facets 指定で要求 facet が list (非 null) で返る."""
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "organism,objectType"})
+        assert resp.status_code == 200
+        facets = resp.json()["facets"]
+        assert isinstance(facets, dict)
+        assert isinstance(facets["organism"], list)
+        assert isinstance(facets["objectType"], list)
+        # Solr-only facet stays null on an ES DB.
+        assert facets["division"] is None
+
+    def test_search_without_facets_is_null(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: facets 未指定では facets フィールドが null."""
+        resp = app.get("/db-portal/search", params={"db": "bioproject"})
+        assert resp.status_code == 200
+        assert resp.json()["facets"] is None
+
+    def test_facet_count_not_greater_than_total(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: 各 facet bucket の count は total を超えない."""
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "organism", "perPage": 20})
+        assert resp.status_code == 200
+        body = resp.json()
+        total = body["total"]
+        for bucket in body["facets"]["organism"]:
+            assert bucket["count"] <= total
+
+    def test_organism_facet_reinjection_reproduces_count(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21 母集団一致: organism bucket の value を
+        ``organism_id:<value>`` で再注入すると total が bucket.count と一致する
+        (facet が hits と同じ status filter / public_only で集計されている)。
+        """
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "organism"})
+        assert resp.status_code == 200
+        buckets = resp.json()["facets"]["organism"]
+        if not buckets:
+            pytest.skip("bioproject organism facet が空: テスト前提のデータ不足")
+        bucket = buckets[0]
+        reinjected = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": f"organism_id:{bucket['value']}"},
+        )
+        assert reinjected.status_code == 200
+        assert reinjected.json()["total"] == bucket["count"]
+
+    def test_cross_search_facets(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: 横断は organism / type の facet を返す (ES 6 DB union)."""
+        resp = app.get("/db-portal/cross-search", params={"facets": "organism,type", "topHits": 0})
+        assert resp.status_code == 200
+        facets = resp.json()["facets"]
+        assert isinstance(facets, dict)
+        assert isinstance(facets["organism"], list)
+        assert isinstance(facets["type"], list)
+
+    def test_cross_search_rejects_type_specific_facet(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: 横断で type-specific facet は 400 facet-not-applicable."""
+        resp = app.get("/db-portal/cross-search", params={"facets": "libraryStrategy"})
+        assert resp.status_code == 400
+        assert "facet-not-applicable" in resp.json().get("type", "")
+
+    def test_single_db_out_of_scope_facet_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: db=bioproject で package (biosample 専属) は 400."""
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "package"})
+        assert resp.status_code == 400
+        assert "facet-not-applicable" in resp.json().get("type", "")
+
+    def test_unknown_facet_name_422(self, app: TestClient) -> None:
+        """IT-DBPORTAL-21: allowlist 外 facet 名は 422."""
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "__not_a_facet__"})
+        assert resp.status_code == 422

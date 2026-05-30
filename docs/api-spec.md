@@ -457,6 +457,8 @@ ES の terms aggregation は `organism.identifier` を bucket key にし、各 b
 
 cross-type endpoint (`GET /facets`, `GET /entries/?includeFacets=true`) では、いずれかの index でそのフィールドが存在すれば許可し、該当 index のみで集計する。
 
+`/facets` は flat param (`keywords` / `organism` 等) 専用で、母集団を `status:public` 固定で集計する。DSL `q` で絞った facet 集計 (母集団を検索ヒットと一致させ、ES + Solr 両 backend に対応) が必要な場合は db-portal 系を使う ([db-portal-api-spec.md § facet 集計](db-portal-api-spec.md))。
+
 背景・設計判断の詳細は [overview.md § ファセット default の設計](overview.md) を参照。
 
 #### ファセット bucket 数の指定 (`facetsSize` パラメータ)

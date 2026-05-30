@@ -19092,6 +19092,50 @@
               "default": "OR"
             },
             "description": "Default boolean operator for connecting comma-separated FreeText tokens (e.g. ``q=cancer,tumor``).  Default **OR** (matches Google-like behaviour and the same parameter on ``/entries/*``).  ``AND`` requires every token to match; ``OR`` requires at least one. Tokens inside a single FreeText value (e.g. ``q=cancer tumor``) are always AND-combined regardless of this setting (use double quotes for phrase match).  The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL are unaffected.  ``/db-portal/parse`` does not accept this parameter (the parsed AST does not carry operator state)."
+          },
+          {
+            "name": "facets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; omitting it returns no facets).  Cross-search accepts ``organism`` / ``accessibility`` / ``type`` only (ES entries-alias aggregation); any other name returns 400 ``facet-not-applicable``.  Allowlist typos return 422.  See ``docs/db-portal-api-spec.md`` § facet 集計.",
+              "examples": [
+                "organism,type"
+              ],
+              "title": "Facets"
+            },
+            "description": "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; omitting it returns no facets).  Cross-search accepts ``organism`` / ``accessibility`` / ``type`` only (ES entries-alias aggregation); any other name returns 400 ``facet-not-applicable``.  Allowlist typos return 422.  See ``docs/db-portal-api-spec.md`` § facet 集計."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies uniformly to every facet selected via ``facets``.  The ``organism`` label sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies uniformly to every facet selected via ``facets``.  The ``organism`` label sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``."
           }
         ],
         "responses": {
@@ -19346,6 +19390,50 @@
               "default": "OR"
             },
             "description": "Default boolean operator for connecting comma-separated FreeText tokens (e.g. ``q=cancer,tumor``).  Default **OR**.  ``AND`` requires every token to match; ``OR`` requires at least one.  Tokens inside a single FreeText value (e.g. ``q=cancer tumor``) are always AND-combined regardless of this setting (use double quotes for phrase match).  The explicit ``AND`` / ``OR`` / ``NOT`` operators inside the DSL are unaffected.  Exclusive with cursor when not at default (OR)."
+          },
+          {
+            "name": "facets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; omitting it returns no facets).  Accepted names depend on ``db``: ES DBs allow the common facets (``organism`` / ``accessibility``) plus that DB's type-specific facets (e.g. ``db=sra`` → ``libraryStrategy`` etc.); ``db=trad`` allows ``division`` / ``molecularType``; ``db=taxonomy`` allows ``rank`` / ``kingdom``.  An out-of-scope name returns 400 ``facet-not-applicable``; an allowlist typo returns 422.  Compatible with ``cursor``.  See ``docs/db-portal-api-spec.md`` § facet 集計.",
+              "examples": [
+                "organism,libraryStrategy"
+              ],
+              "title": "Facets"
+            },
+            "description": "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; omitting it returns no facets).  Accepted names depend on ``db``: ES DBs allow the common facets (``organism`` / ``accessibility``) plus that DB's type-specific facets (e.g. ``db=sra`` → ``libraryStrategy`` etc.); ``db=trad`` allows ``division`` / ``molecularType``; ``db=taxonomy`` allows ``rank`` / ``kingdom``.  An out-of-scope name returns 400 ``facet-not-applicable``; an allowlist typo returns 422.  Compatible with ``cursor``.  See ``docs/db-portal-api-spec.md`` § facet 集計."
+          },
+          {
+            "name": "facetsSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies uniformly to every facet selected via ``facets``.  The ``organism`` label sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``.",
+              "examples": [
+                100
+              ],
+              "title": "Facetssize"
+            },
+            "description": "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies uniformly to every facet selected via ``facets``.  The ``organism`` label sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``."
           }
         ],
         "responses": {
@@ -21795,6 +21883,20 @@
                 }
               ]
             ]
+          },
+          "facets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbPortalFacets"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Facet aggregation over the ES entries alias (organism / accessibility / type only) when the ``facets`` parameter is supplied; ``null`` otherwise.  Solr-backed DBs (trad / taxonomy) are not included.  ``null`` if the aggregation request failed or timed out (the count fan-out still returns 200).  See db-portal-api-spec.md § facet 集計.",
+            "examples": [
+              null
+            ]
           }
         },
         "type": "object",
@@ -21818,6 +21920,609 @@
         ],
         "title": "DbPortalDb",
         "description": "Database identifier for db-portal search (8 values)."
+      },
+      "DbPortalFacets": {
+        "properties": {
+          "type": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type",
+            "description": "Entry count per database type (cross-type search only; null when not aggregated).",
+            "examples": [
+              [
+                {
+                  "count": 1234,
+                  "value": "bioproject"
+                },
+                {
+                  "count": 567,
+                  "value": "biosample"
+                }
+              ]
+            ]
+          },
+          "organism": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OrganismFacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organism",
+            "description": "Entry count per organism. ``value`` is the NCBI Taxonomy ID (string), ``label`` is the scientific name; ``value`` can be re-injected into ``?organism=`` directly. Null when not aggregated (e.g. excluded from an explicit ``facets`` selection).",
+            "examples": [
+              [
+                {
+                  "count": 1000,
+                  "label": "Homo sapiens",
+                  "value": "9606"
+                }
+              ]
+            ]
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibility",
+            "description": "Entry count per accessibility level. Null when not aggregated.",
+            "examples": [
+              [
+                {
+                  "count": 1000,
+                  "value": "public-access"
+                },
+                {
+                  "count": 50,
+                  "value": "controlled-access"
+                }
+              ]
+            ]
+          },
+          "objectType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objecttype",
+            "description": "Umbrella / non-umbrella count (bioproject only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 900,
+                  "value": "BioProject"
+                },
+                {
+                  "count": 100,
+                  "value": "UmbrellaBioProject"
+                }
+              ]
+            ]
+          },
+          "libraryStrategy": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarystrategy",
+            "description": "Library strategy count (sra-experiment only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 500,
+                  "value": "WGS"
+                }
+              ]
+            ]
+          },
+          "librarySource": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarysource",
+            "description": "Library source count (sra-experiment only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 800,
+                  "value": "GENOMIC"
+                }
+              ]
+            ]
+          },
+          "librarySelection": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Libraryselection",
+            "description": "Library selection count (sra-experiment only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 600,
+                  "value": "RANDOM"
+                }
+              ]
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform",
+            "description": "Sequencing platform count (sra-experiment only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 950,
+                  "value": "ILLUMINA"
+                }
+              ]
+            ]
+          },
+          "instrumentModel": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrumentmodel",
+            "description": "Instrument model count (sra-experiment only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 200,
+                  "value": "HiSeq X Ten"
+                }
+              ]
+            ]
+          },
+          "experimentType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experimenttype",
+            "description": "Experiment type count (gea / metabobank, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 50,
+                  "value": "RNA-Seq of coding RNA"
+                }
+              ]
+            ]
+          },
+          "studyType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Studytype",
+            "description": "Study type count (jga-study / metabobank, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 30,
+                  "value": "GWAS"
+                }
+              ]
+            ]
+          },
+          "submissionType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submissiontype",
+            "description": "Submission type count (metabobank only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 20,
+                  "value": "open"
+                }
+              ]
+            ]
+          },
+          "relevance": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance",
+            "description": "BioProject relevance count (bioproject only, opt-in). INSDC controlled values: Agricultural / Medical / Industrial / Environmental / Evolution / ModelOrganism / Other.",
+            "examples": [
+              [
+                {
+                  "count": 1500,
+                  "value": "Medical"
+                },
+                {
+                  "count": 800,
+                  "value": "ModelOrganism"
+                }
+              ]
+            ]
+          },
+          "package": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package",
+            "description": "BioSample package count (biosample only, opt-in). bucket value is the package name (``package.name`` keyword).",
+            "examples": [
+              [
+                {
+                  "count": 4000,
+                  "value": "MIGS.ba"
+                }
+              ]
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "BioSample model count (biosample only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 5000,
+                  "value": "Generic.1.0"
+                }
+              ]
+            ]
+          },
+          "libraryLayout": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Librarylayout",
+            "description": "Library layout count (sra-experiment only, opt-in). Cardinality 2.",
+            "examples": [
+              [
+                {
+                  "count": 800,
+                  "value": "PAIRED"
+                },
+                {
+                  "count": 200,
+                  "value": "SINGLE"
+                }
+              ]
+            ]
+          },
+          "analysisType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysistype",
+            "description": "Analysis type count (sra-analysis only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 300,
+                  "value": "REFERENCE_ALIGNMENT"
+                }
+              ]
+            ]
+          },
+          "datasetType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasettype",
+            "description": "JGA dataset type count (jga-dataset only, opt-in).",
+            "examples": [
+              [
+                {
+                  "count": 250,
+                  "value": "Whole genome sequencing"
+                }
+              ]
+            ]
+          },
+          "projectType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projecttype",
+            "description": "BioProject projectType count (bioproject only, opt-in). bucket value is the ``projectType.keyword`` exact value; the paired search parameter ``projectType`` performs analyzed text match, so re-injecting a bucket value may return a superset of the bucket (use ``?projectType=\"<value>\"`` to force phrase match).",
+            "examples": [
+              [
+                {
+                  "count": 1200,
+                  "value": "metagenome"
+                }
+              ]
+            ]
+          },
+          "host": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host",
+            "description": "BioSample host count (biosample only, opt-in). bucket value is the ``host.keyword`` exact value (cardinality ~134K); the paired search parameter ``host`` performs analyzed text match, so re-injecting a bucket value may return a superset of the bucket (use ``?host=\"<value>\"`` to force phrase match). Due to the high cardinality, large ``facetsSize`` values (e.g. 1000) trigger expensive shard-level aggregation; prefer the default ``facetsSize=100`` and narrow the query (keywords / organism / etc.) before requesting this facet.",
+            "examples": [
+              [
+                {
+                  "count": 3000,
+                  "value": "Homo sapiens"
+                }
+              ]
+            ]
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor",
+            "description": "JGA vendor count (jga-study only, opt-in). bucket value is the ``vendor.keyword`` exact value; the paired search parameter ``vendor`` performs analyzed text match.",
+            "examples": [
+              [
+                {
+                  "count": 90,
+                  "value": "Illumina"
+                }
+              ]
+            ]
+          },
+          "division": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Division",
+            "description": "Trad division count (db=trad only). INSDC division code (ARSA ``Division`` field).",
+            "examples": [
+              [
+                {
+                  "count": 1200,
+                  "value": "BCT"
+                }
+              ]
+            ]
+          },
+          "molecularType": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moleculartype",
+            "description": "Trad molecular type count (db=trad only, ARSA ``MolecularType`` field). Re-inject a bucket value as ``molecular_type:<value>`` in the DSL ``q``.",
+            "examples": [
+              [
+                {
+                  "count": 800,
+                  "value": "genomic DNA"
+                }
+              ]
+            ]
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank",
+            "description": "Taxonomy rank count (db=taxonomy only, TXSearch ``rank`` field).",
+            "examples": [
+              [
+                {
+                  "count": 5000,
+                  "value": "species"
+                }
+              ]
+            ]
+          },
+          "kingdom": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FacetBucket"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kingdom",
+            "description": "Taxonomy kingdom count (db=taxonomy only, TXSearch ``kingdom`` field).",
+            "examples": [
+              [
+                {
+                  "count": 300,
+                  "value": "Bacteria"
+                }
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "title": "DbPortalFacets",
+        "description": "Facet aggregation results for db-portal endpoints.\n\nExtends the shared :class:`~ddbj_search_api.schemas.common.Facets`\n(ES-backed facets) with the four Solr-backed facets that only\ndb-portal exposes: ``division`` / ``molecularType`` (trad / ARSA) and\n``rank`` / ``kingdom`` (taxonomy / TXSearch).  The same convention\napplies to every field: ``null`` = not aggregated, ``[]`` = aggregated\nwith zero buckets.  See docs/db-portal-api-spec.md § facet 集計."
       },
       "DbPortalHitBioProject": {
         "properties": {
@@ -24794,6 +25499,20 @@
             "default": false,
             "examples": [
               true
+            ]
+          },
+          "facets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbPortalFacets"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Facet aggregation scoped to the current ``q`` when the ``facets`` parameter is supplied; ``null`` otherwise.  Population matches the hits query (same compiled query + status filter).  See db-portal-api-spec.md § facet 集計.",
+            "examples": [
+              null
             ]
           }
         },

@@ -37,11 +37,15 @@ from ddbj_search_api.cursor import compute_next_cursor, decode_cursor
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_open_pit, es_search, es_search_with_pit
 from ddbj_search_api.es.query import (
+    DEFAULT_FACET_SIZE,
     StatusMode,
+    build_facet_aggs,
     build_search_query,
     build_sort_with_tiebreaker,
+    db_portal_es_facet_allowlist,
     inject_status_filter,
     pagination_to_from_size,
+    resolve_facets_size,
 )
 from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.db_portal import (
@@ -51,6 +55,7 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalCrossSearchResponse,
     DbPortalDb,
     DbPortalErrorType,
+    DbPortalFacets,
     DbPortalHit,
     DbPortalHitsResponse,
     DbPortalLightweightHit,
@@ -85,9 +90,12 @@ from ddbj_search_api.solr.mappers import (
     txsearch_response_to_envelope,
 )
 from ddbj_search_api.solr.query import (
+    arsa_facet_field_map,
     build_arsa_request_params,
     build_txsearch_request_params,
+    txsearch_facet_field_map,
 )
+from ddbj_search_api.utils import parse_db_portal_es_facets, parse_solr_facets
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +129,14 @@ _DB_TO_INDEX: dict[DbPortalDb, str] = {
 }
 
 _SOLR_DBS: frozenset[DbPortalDb] = frozenset({DbPortalDb.trad, DbPortalDb.taxonomy})
+
+# Solr-backed db-portal facet scope: trad / taxonomy each own their facets,
+# derived from the solr.query field maps so the scope stays in sync with the
+# request/parse code (docs/db-portal-api-spec.md § facet 集計).
+_DB_PORTAL_SOLR_FACET_SCOPE: dict[DbPortalDb, frozenset[str]] = {
+    DbPortalDb.trad: frozenset(arsa_facet_field_map()),
+    DbPortalDb.taxonomy: frozenset(txsearch_facet_field_map()),
+}
 
 # Cross-search lightweight hit `_source` allowlist (12 fields shared with the
 # DbPortalHitBase contract).  Db-specific extras (`projectType`, `division`,
@@ -232,7 +248,7 @@ def _map_httpx_error(exc: Exception) -> DbPortalCountError:
     return DbPortalCountError.unknown
 
 
-_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "topHits", "keywordOperator"})
+_CROSS_SEARCH_ALLOWED_PARAMS: frozenset[str] = frozenset({"q", "topHits", "keywordOperator", "facets", "facetsSize"})
 
 
 def _reject_unexpected_cross_params(request: Request) -> None:
@@ -255,6 +271,48 @@ def _reject_unexpected_cross_params(request: Request) -> None:
             "Use /db-portal/search?db=<id> for db-specific paginated hits."
         ),
     )
+
+
+def _db_portal_facet_allowlist(db: DbPortalDb | None) -> frozenset[str]:
+    """Facet names accepted for a db-portal scope (cross or one of the 8 DBs).
+
+    ES scopes (cross + the 6 ES DBs) derive from
+    :func:`db_portal_es_facet_allowlist`; Solr DBs (trad / taxonomy) use
+    their own facet field maps.
+    """
+    if db in _DB_PORTAL_SOLR_FACET_SCOPE:
+        return _DB_PORTAL_SOLR_FACET_SCOPE[db]
+    return db_portal_es_facet_allowlist(None if db is None else db.value)
+
+
+def resolve_db_portal_facets(facets_param: str | None, *, db: DbPortalDb | None) -> list[str] | None:
+    """Resolve the wire ``facets`` value into the explicit facet list for a scope.
+
+    Returns ``None`` (parameter omitted) or ``[]`` (empty string) — both
+    mean "no aggregation" for db-portal — or the parsed list of facet
+    names.  Names have already passed the wire allowlist (422) in
+    ``DbPortalSearchQuery`` / ``DbPortalCrossSearchQuery``; here a valid
+    name that is out of scope for the target ``db`` raises 400
+    ``facet-not-applicable`` (docs/db-portal-api-spec.md § facet 集計).
+    """
+    if facets_param is None:
+        return None
+    if facets_param == "":
+        return []
+    requested = [f.strip() for f in facets_param.split(",")]
+    requested = [f for f in requested if f]
+    allowed = _db_portal_facet_allowlist(db)
+    invalid = [f for f in requested if f not in allowed]
+    if invalid:
+        scope = "cross-search" if db is None else f"db={db.value}"
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType.facet_not_applicable,
+            detail=(
+                f"Facet(s) not available for {scope}: {', '.join(invalid)}. Allowed here: {', '.join(sorted(allowed))}."
+            ),
+        )
+    return requested
 
 
 def _parse_and_validate_query(
@@ -613,6 +671,47 @@ async def _count_one_db_unified(
     return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
 
 
+async def _cross_facets_agg(
+    es_client: httpx.AsyncClient,
+    config: AppConfig,
+    es_query_body: dict[str, Any],
+    requested_facets: list[str],
+    facets_size: int,
+) -> DbPortalFacets | None:
+    """Aggregate cross-search facets against the ``entries`` alias (size=0).
+
+    Reuses the same compiled ES query (status filter included) as the count
+    fan-out, so the facet population matches the ES 6-DB union.  Returns
+    ``None`` on failure / timeout so cross-search stays 200 on the count
+    fan-out result (docs/db-portal-api-spec.md § facet 集計).
+    """
+    aggs = build_facet_aggs(is_cross_type=True, requested_facets=requested_facets, size=facets_size)
+    body: dict[str, Any] = {"query": es_query_body, "size": 0, "aggs": aggs}
+    # The response parse is inside the try so a 200-with-malformed-aggregation
+    # (unexpected bucket shape, non-int doc_count, mapping drift) also degrades
+    # to ``facets=null`` rather than 500-ing the whole cross-search — matching
+    # the count fan-out's own response-shape guards and the docstring's
+    # "returns None on failure" promise.
+    try:
+        resp = await asyncio.wait_for(
+            es_search(es_client, "entries", body),
+            timeout=config.es_search_timeout,
+        )
+        return parse_db_portal_es_facets(resp.get("aggregations", {}))
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal cross-search facet aggregation timed out (es_search_timeout=%.2fs)",
+            config.es_search_timeout,
+        )
+        return None
+    except Exception as exc:
+        logger.warning(
+            "db-portal cross-search facet aggregation failed: %s",
+            type(exc).__name__,
+        )
+        return None
+
+
 async def _cross_search_dispatch(
     es_client: httpx.AsyncClient,
     solr_client: httpx.AsyncClient,
@@ -621,11 +720,17 @@ async def _cross_search_dispatch(
     top_hits: int,
     *,
     free_text_operator: Literal["AND", "OR"] = "AND",
+    requested_facets: list[str] | None = None,
+    facets_size: int = DEFAULT_FACET_SIZE,
 ) -> DbPortalCrossSearchResponse:
     """cross-search 単一 dispatch (AST → 8 DB fan-out).
 
     ``ast=None`` (``q`` 未指定) は ``match_all`` (ES) / ``*:*`` (Solr) でカウントだけ取る。
     ``free_text_operator`` は AST 中の FreeText ノードのトークン連結演算子を制御する。
+
+    ``requested_facets`` が非空のとき、count fan-out と並行して entries alias へ
+    size=0 の facet 集計を 1 本発行する (organism / accessibility / type のみ)。
+    集計が失敗 / timeout しても fan-out 結果で応答を返し ``facets=None`` にする。
     """
     status_mode = _resolve_status_mode(ast)
     es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_operator)
@@ -648,17 +753,31 @@ async def _cross_search_dispatch(
             ),
         )
         task_map[task] = db
-    done, pending = await asyncio.wait(
-        task_map.keys(),
+    # The facet aggregation rides the same total-timeout window as the
+    # count fan-out; it carries its own per-request timeout and never
+    # raises (returns None on failure), so it is awaited alongside the
+    # count tasks but kept out of ``task_map`` (it is not a per-DB count).
+    facet_task: asyncio.Task[DbPortalFacets | None] | None = None
+    wait_set: set[asyncio.Task[Any]] = set(task_map.keys())
+    if requested_facets:
+        facet_task = asyncio.create_task(
+            _cross_facets_agg(es_client, config, es_query_body, requested_facets, facets_size),
+        )
+        wait_set.add(facet_task)
+    done, _pending = await asyncio.wait(
+        wait_set,
         timeout=config.cross_search_total_timeout,
         return_when=asyncio.ALL_COMPLETED,
     )
+    # Resolve per-DB counts via ``task_map`` membership (rather than iterating
+    # ``done``/``pending`` and identity-checking the facet task) so the facet
+    # task stays cleanly separated from the per-DB count tasks.
     results: dict[DbPortalDb, DbPortalCount] = {}
-    for task in done:
-        results[task_map[task]] = task.result()
-    for task in pending:
+    for task, db in task_map.items():
+        if task in done:
+            results[db] = task.result()
+            continue
         task.cancel()
-        db = task_map[task]
         logger.warning(
             "db-portal cross-search hit total timeout for db=%s (cancelled, total_timeout=%.2fs)",
             db.value,
@@ -670,13 +789,26 @@ async def _cross_search_dispatch(
             error=DbPortalCountError.timeout,
             hits=_empty_hits_or_none(top_hits),
         )
+    # Resolve (and, if still pending at the total timeout, cancel) the facet
+    # task BEFORE the all-failed 502 check so a pending facet request is never
+    # orphaned when every count task failed.
+    facets: DbPortalFacets | None = None
+    if facet_task is not None:
+        if facet_task in done and not facet_task.cancelled():
+            facets = facet_task.result()
+        else:
+            facet_task.cancel()
+            logger.warning(
+                "db-portal cross-search facet aggregation cancelled at total timeout (%.2fs)",
+                config.cross_search_total_timeout,
+            )
     databases = [results[db] for db in _DB_ORDER]
     if all(item.error is not None for item in databases):
         raise HTTPException(
             status_code=502,
             detail="All databases failed to respond.",
         )
-    return DbPortalCrossSearchResponse(databases=databases)
+    return DbPortalCrossSearchResponse(databases=databases, facets=facets)
 
 
 # === DB-specific hits (AST 経由 dispatch) ===
@@ -694,13 +826,21 @@ async def _search_arsa_unified(
     q_string: str,
     *,
     with_uf: bool,
+    requested_facets: list[str] | None,
+    facets_size: int,
 ) -> DbPortalHitsResponse:
-    """ARSA db-specific search の hits 検索発行."""
+    """ARSA db-specific search の hits 検索発行.
+
+    ``requested_facets`` が非空のとき、hits 検索と同一リクエストに terms
+    faceting を相乗りさせ (母集団 = hits と同一)、``facet_counts`` を
+    ``DbPortalFacets`` にパースして envelope に詰める。
+    """
     if not config.solr_arsa_base_url:
         raise HTTPException(
             status_code=502,
             detail="ARSA backend is not configured.",
         )
+    name_to_field = {name: arsa_facet_field_map()[name] for name in requested_facets} if requested_facets else {}
     params = build_arsa_request_params(
         q=q_string,
         page=query.page,
@@ -708,6 +848,8 @@ async def _search_arsa_unified(
         sort=query.sort,
         shards=config.solr_arsa_shards,
         with_uf=with_uf,
+        facet_fields=list(name_to_field.values()),
+        facet_limit=facets_size,
     )
     try:
         resp = await arsa_search(
@@ -727,12 +869,15 @@ async def _search_arsa_unified(
             status_code=502,
             detail=f"ARSA upstream failure: {error.value}",
         ) from exc
-    return arsa_response_to_envelope(
+    envelope = arsa_response_to_envelope(
         resp,
         page=query.page,
         per_page=query.per_page,
         sort=query.sort,
     )
+    if name_to_field:
+        envelope.facets = parse_solr_facets(resp.get("facet_counts", {}), name_to_field)
+    return envelope
 
 
 async def _search_txsearch_unified(
@@ -742,19 +887,28 @@ async def _search_txsearch_unified(
     q_string: str,
     *,
     with_uf: bool,
+    requested_facets: list[str] | None,
+    facets_size: int,
 ) -> DbPortalHitsResponse:
-    """TXSearch db-specific search の hits 検索発行."""
+    """TXSearch db-specific search の hits 検索発行.
+
+    ``requested_facets`` 指定時の facet 相乗りは :func:`_search_arsa_unified`
+    と同じ (TXSearch は rank / kingdom のみ)。
+    """
     if not config.solr_txsearch_url:
         raise HTTPException(
             status_code=502,
             detail="TXSearch backend is not configured.",
         )
+    name_to_field = {name: txsearch_facet_field_map()[name] for name in requested_facets} if requested_facets else {}
     params = build_txsearch_request_params(
         q=q_string,
         page=query.page,
         per_page=query.per_page,
         sort=query.sort,
         with_uf=with_uf,
+        facet_fields=list(name_to_field.values()),
+        facet_limit=facets_size,
     )
     try:
         resp = await txsearch_search(
@@ -773,23 +927,32 @@ async def _search_txsearch_unified(
             status_code=502,
             detail=f"TXSearch upstream failure: {error.value}",
         ) from exc
-    return txsearch_response_to_envelope(
+    envelope = txsearch_response_to_envelope(
         resp,
         page=query.page,
         per_page=query.per_page,
         sort=query.sort,
     )
+    if name_to_field:
+        envelope.facets = parse_solr_facets(resp.get("facet_counts", {}), name_to_field)
+    return envelope
 
 
 async def _db_specific_search_es_unified(
     client: httpx.AsyncClient,
     query: DbPortalSearchQuery,
     es_query_body: dict[str, Any],
+    *,
+    requested_facets: list[str] | None,
+    facets_size: int,
 ) -> DbPortalHitsResponse:
     """ES hits envelope (offset mode).
 
     cursor 経路は ``_db_specific_search_cursor`` (cursor token に焼き込んだ
     query を decode して使う) に分離されているため、こちらは offset のみ扱う。
+
+    ``requested_facets`` が非空のとき、hits 検索と同一 body に aggs を相乗りさせ
+    (母集団 = hits と同一 query)、``DbPortalFacets`` にパースして詰める。
     """
     assert query.db is not None
     _validate_deep_paging(query.page, query.per_page)
@@ -801,6 +964,8 @@ async def _db_specific_search_es_unified(
         "size": size,
         "sort": sort_body,
     }
+    if requested_facets:
+        body["aggs"] = build_facet_aggs(requested_facets=requested_facets, size=facets_size)
     es_resp = await es_search(client, _db_to_index(query.db), body)
     raw_hits = es_resp["hits"]["hits"]
     total = int(es_resp["hits"]["total"]["value"])
@@ -814,6 +979,7 @@ async def _db_specific_search_es_unified(
         query=es_query_body,
         pit_id=None,
     )
+    facets = parse_db_portal_es_facets(es_resp.get("aggregations", {})) if requested_facets else None
     return DbPortalHitsResponse(  # type: ignore[call-arg]
         total=total,
         hits=hits,
@@ -822,6 +988,7 @@ async def _db_specific_search_es_unified(
         per_page=query.per_page,
         next_cursor=next_cursor,
         has_next=has_next,
+        facets=facets,
     )
 
 
@@ -831,6 +998,9 @@ async def _db_specific_search_dispatch(
     config: AppConfig,
     query: DbPortalSearchQuery,
     ast: DslNode | None,
+    *,
+    requested_facets: list[str] | None,
+    facets_size: int,
 ) -> DbPortalHitsResponse:
     """db-specific 単一 dispatch (AST → 単一 backend).
 
@@ -839,6 +1009,9 @@ async def _db_specific_search_dispatch(
     cursor 経路は ``_db_specific_search_cursor`` (cursor token に焼き込んだ
     ES query を decode して使う) に分離されているため、本 dispatch には
     含めない。
+
+    ``requested_facets`` / ``facets_size`` は backend 別の facet 相乗りに
+    そのまま渡す (scope 検証は handler の ``resolve_db_portal_facets`` 済み)。
     """
     assert query.db is not None
     with_uf = ast is not None and ast_has_field_clause(ast)
@@ -852,6 +1025,8 @@ async def _db_specific_search_dispatch(
                 query,
                 _build_solr_q_for_ast(ast, dialect="arsa", free_text_operator=free_text_op),
                 with_uf=with_uf,
+                requested_facets=requested_facets,
+                facets_size=facets_size,
             )
         return await _search_txsearch_unified(
             solr_client,
@@ -859,15 +1034,26 @@ async def _db_specific_search_dispatch(
             query,
             _build_solr_q_for_ast(ast, dialect="txsearch", free_text_operator=free_text_op),
             with_uf=with_uf,
+            requested_facets=requested_facets,
+            facets_size=facets_size,
         )
     status_mode = _resolve_status_mode(ast)
     es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_op)
-    return await _db_specific_search_es_unified(es_client, query, es_query_body)
+    return await _db_specific_search_es_unified(
+        es_client,
+        query,
+        es_query_body,
+        requested_facets=requested_facets,
+        facets_size=facets_size,
+    )
 
 
 async def _db_specific_search_cursor(
     client: httpx.AsyncClient,
     query: DbPortalSearchQuery,
+    *,
+    requested_facets: list[str] | None,
+    facets_size: int,
 ) -> DbPortalHitsResponse:
     assert query.db is not None
     assert query.cursor is not None
@@ -889,6 +1075,11 @@ async def _db_specific_search_cursor(
         "pit": {"id": pit_id, "keep_alive": "5m"},
         "search_after": cursor.search_after,
     }
+    # Facet aggregation rides the PIT search body; the population is the
+    # cursor's baked-in query (status filter included), so it matches the
+    # original offset request's facets across cursor continuation.
+    if requested_facets:
+        body["aggs"] = build_facet_aggs(requested_facets=requested_facets, size=facets_size)
     try:
         es_resp = await es_search_with_pit(client, body)
     except httpx.HTTPStatusError as exc:
@@ -911,6 +1102,7 @@ async def _db_specific_search_cursor(
         query=cursor.query,
         pit_id=updated_pit_id,
     )
+    facets = parse_db_portal_es_facets(es_resp.get("aggregations", {})) if requested_facets else None
     return DbPortalHitsResponse(  # type: ignore[call-arg]
         total=total,
         hits=hits,
@@ -919,6 +1111,7 @@ async def _db_specific_search_cursor(
         per_page=query.per_page,
         next_cursor=next_cursor,
         has_next=has_next,
+        facets=facets,
     )
 
 
@@ -949,6 +1142,7 @@ async def _cross_search_handler(
     """
     _reject_unexpected_cross_params(request)
     ast = _parse_and_validate_query(query.q, db=None, config=config) if query.q else None
+    requested_facets = resolve_db_portal_facets(query.facets, db=None)
     return await _cross_search_dispatch(
         es_client,
         solr_client,
@@ -956,6 +1150,8 @@ async def _cross_search_handler(
         ast,
         query.top_hits,
         free_text_operator=query.keyword_operator.value,
+        requested_facets=requested_facets,
+        facets_size=resolve_facets_size(query.facets_size),
     )
 
 
@@ -992,9 +1188,24 @@ async def _db_search_handler(
                 ),
             )
         _validate_cursor_exclusivity(query)
-        return await _db_specific_search_cursor(es_client, query)
+        requested_facets = resolve_db_portal_facets(query.facets, db=query.db)
+        return await _db_specific_search_cursor(
+            es_client,
+            query,
+            requested_facets=requested_facets,
+            facets_size=resolve_facets_size(query.facets_size),
+        )
     ast = _parse_and_validate_query(query.q, db=query.db, config=config) if query.q else None
-    return await _db_specific_search_dispatch(es_client, solr_client, config, query, ast)
+    requested_facets = resolve_db_portal_facets(query.facets, db=query.db)
+    return await _db_specific_search_dispatch(
+        es_client,
+        solr_client,
+        config,
+        query,
+        ast,
+        requested_facets=requested_facets,
+        facets_size=resolve_facets_size(query.facets_size),
+    )
 
 
 _CROSS_SEARCH_EXAMPLE: dict[str, Any] = {

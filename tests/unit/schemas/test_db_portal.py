@@ -16,14 +16,17 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.schemas.common import FacetBucket, Facets
 from ddbj_search_api.schemas.db_portal import (
     ALLOWED_DB_PORTAL_SORTS,
+    DB_PORTAL_VALID_FACET_FIELDS,
     DbPortalCount,
     DbPortalCountError,
     DbPortalCrossSearchQuery,
     DbPortalCrossSearchResponse,
     DbPortalDb,
     DbPortalErrorType,
+    DbPortalFacets,
     DbPortalHitBase,
     DbPortalHitBioProject,
     DbPortalHitsResponse,
@@ -84,17 +87,21 @@ class TestDbPortalCountError:
 
 
 class TestDbPortalErrorType:
-    """DbPortalErrorType: 3 routing + 1 serialize body + 9 query parser slugs = 13 URIs."""
+    """DbPortalErrorType: 4 routing/facets + 1 serialize body + 9 query parser slugs = 14 URIs."""
 
     def test_has_all_members(self) -> None:
         # routing 3 (cursor-not-supported, unexpected-parameter, missing-db)
+        # + facets 1 (facet-not-applicable, scope-mismatch on the facets param)
         # + serialize body 1 (invalid-ast, POST /db-portal/serialize)
         # + query parser 9 (incl. invalid-freetext-position / duplicate-freetext)
-        # = 13.
-        assert len(DbPortalErrorType) == 13
+        # = 14.
+        assert len(DbPortalErrorType) == 14
 
     def test_invalid_ast_uri(self) -> None:
         assert DbPortalErrorType.invalid_ast.value == "https://ddbj.nig.ac.jp/problems/invalid-ast"
+
+    def test_facet_not_applicable_uri(self) -> None:
+        assert DbPortalErrorType.facet_not_applicable.value == "https://ddbj.nig.ac.jp/problems/facet-not-applicable"
 
     def test_prefix_is_ddbj_problems(self) -> None:
         prefix = "https://ddbj.nig.ac.jp/problems/"
@@ -139,6 +146,8 @@ def _search_query(**overrides: Any) -> DbPortalSearchQuery:
         "per_page": 20,
         "cursor": None,
         "sort": None,
+        "facets": None,
+        "facets_size": None,
     }
     defaults.update(overrides)
     return DbPortalSearchQuery(**defaults)
@@ -149,6 +158,8 @@ def _cross_query(**overrides: Any) -> DbPortalCrossSearchQuery:
     defaults: dict[str, Any] = {
         "q": None,
         "top_hits": 10,
+        "facets": None,
+        "facets_size": None,
     }
     defaults.update(overrides)
     return DbPortalCrossSearchQuery(**defaults)
@@ -609,3 +620,121 @@ class TestDbPortalCursorRoundTrip:
         assert decoded.pit_id == pit_id
         assert decoded.sort == sort_body
         assert decoded.query == query_body
+
+
+# === DbPortalFacets (Facets 拡張) ===
+
+
+class TestDbPortalFacets:
+    """DbPortalFacets: Facets を継承し Solr 4 facet を追加."""
+
+    def test_is_facets_subclass(self) -> None:
+        assert issubclass(DbPortalFacets, Facets)
+
+    def test_inherits_es_facet_fields(self) -> None:
+        f = DbPortalFacets()
+        # a few inherited ES facets default to None
+        assert f.organism is None
+        assert f.type is None
+        assert f.accessibility is None
+        assert f.object_type is None
+
+    def test_solr_fields_default_none(self) -> None:
+        f = DbPortalFacets()
+        assert f.division is None
+        assert f.molecular_type is None
+        assert f.rank is None
+        assert f.kingdom is None
+
+    def test_molecular_type_alias_in_and_out(self) -> None:
+        f = DbPortalFacets.model_validate({"molecularType": [{"value": "DNA", "count": 1}]})
+        assert f.molecular_type == [FacetBucket(value="DNA", count=1)]
+        dumped = f.model_dump(by_alias=True)
+        assert "molecularType" in dumped
+        assert "molecular_type" not in dumped
+
+    def test_null_vs_empty_distinction(self) -> None:
+        f = DbPortalFacets.model_validate({"division": []})
+        assert f.division == []
+        assert f.molecular_type is None
+
+    def test_single_word_solr_fields_have_no_alias(self) -> None:
+        f = DbPortalFacets.model_validate({"division": [{"value": "BCT", "count": 2}], "rank": [], "kingdom": []})
+        dumped = f.model_dump(by_alias=True)
+        assert dumped["division"] == [{"value": "BCT", "count": 2}]
+        assert dumped["rank"] == []
+        assert dumped["kingdom"] == []
+
+
+class TestDbPortalFacetsAllowlist:
+    """DB_PORTAL_VALID_FACET_FIELDS: wire-level facets allowlist (ES + Solr names)."""
+
+    def test_includes_solr_facets(self) -> None:
+        assert {"division", "molecularType", "rank", "kingdom"} <= DB_PORTAL_VALID_FACET_FIELDS
+
+    def test_includes_common_es_facets(self) -> None:
+        assert {"organism", "accessibility", "type", "objectType", "libraryStrategy"} <= DB_PORTAL_VALID_FACET_FIELDS
+
+
+class TestDbPortalFacetsParam:
+    """facets / facetsSize パラメタの正規化 (422 typo, scope は router)."""
+
+    def test_none_passes_through(self) -> None:
+        assert _cross_query(facets=None).facets is None
+        assert _search_query(facets=None).facets is None
+
+    def test_empty_string_passes_through(self) -> None:
+        assert _cross_query(facets="").facets == ""
+
+    def test_valid_names_normalized(self) -> None:
+        assert _search_query(facets=" organism , objectType ").facets == "organism,objectType"
+
+    def test_solr_name_is_wire_valid(self) -> None:
+        # division is in the wire allowlist; scope (trad-only) is enforced in
+        # the router, not here — so even a cross query stores it at this layer.
+        assert _cross_query(facets="division").facets == "division"
+
+    def test_unknown_name_422(self) -> None:
+        with pytest.raises(HTTPException) as exc:
+            _cross_query(facets="bogusFacet")
+        assert exc.value.status_code == 422
+
+    def test_partly_unknown_name_422(self) -> None:
+        with pytest.raises(HTTPException) as exc:
+            _search_query(facets="organism,bogus")
+        assert exc.value.status_code == 422
+
+    def test_facets_size_stored(self) -> None:
+        assert _search_query(facets_size=50).facets_size == 50
+        assert _cross_query(facets_size=7).facets_size == 7
+
+    def test_facets_size_default_none(self) -> None:
+        assert _search_query().facets_size is None
+
+
+class TestDbPortalResponsesFacetField:
+    """HitsResponse / CrossSearchResponse の facets フィールド (既定 null)."""
+
+    def test_hits_response_facets_defaults_none(self) -> None:
+        resp = DbPortalHitsResponse.model_validate(
+            {"total": 0, "hits": [], "hardLimitReached": False, "page": 1, "perPage": 20},
+        )
+        assert resp.facets is None
+
+    def test_hits_response_accepts_db_portal_facets(self) -> None:
+        resp = DbPortalHitsResponse.model_validate(
+            {
+                "total": 1,
+                "hits": [],
+                "hardLimitReached": False,
+                "page": 1,
+                "perPage": 20,
+                "facets": {"rank": [{"value": "species", "count": 1}]},
+            },
+        )
+        assert resp.facets is not None
+        assert resp.facets.rank == [FacetBucket(value="species", count=1)]
+
+    def test_cross_response_facets_defaults_none(self) -> None:
+        resp = DbPortalCrossSearchResponse.model_validate({"databases": []})
+        assert resp.facets is None

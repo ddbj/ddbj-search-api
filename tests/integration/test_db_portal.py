@@ -265,3 +265,53 @@ class TestCrossSearchPerBackendTimeout:
         assert resp.status_code in {200, 502}
         # Documented overall timeout is 20s; allow generous slack for slow CI.
         assert elapsed < 30.0
+
+
+class TestSolrFacets:
+    """IT-DBPORTAL-22: Solr (trad / taxonomy) の facet 集計 (staging_only)."""
+
+    def test_trad_facets_returns_lists(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22: db=trad で division / molecularType が list で返る."""
+        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division,molecularType", "perPage": 20})
+        assert resp.status_code == 200
+        facets = resp.json()["facets"]
+        assert isinstance(facets, dict)
+        assert isinstance(facets["division"], list)
+        assert isinstance(facets["molecularType"], list)
+
+    def test_taxonomy_facets_returns_lists(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22: db=taxonomy で rank / kingdom が list で返る."""
+        resp = app.get("/db-portal/search", params={"db": "taxonomy", "facets": "rank,kingdom", "perPage": 20})
+        assert resp.status_code == 200
+        facets = resp.json()["facets"]
+        assert isinstance(facets["rank"], list)
+        assert isinstance(facets["kingdom"], list)
+
+    def test_trad_facet_count_not_greater_than_total(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22: 各 division bucket の count は total を超えない."""
+        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division", "perPage": 20})
+        assert resp.status_code == 200
+        body = resp.json()
+        for bucket in body["facets"]["division"]:
+            assert bucket["count"] <= body["total"]
+
+    def test_trad_facet_reinjection_reproduces_count(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22 母集団一致: division bucket の value を
+        ``division:<value>`` で再注入すると total が bucket.count と一致する
+        (8 shard 分散集計でも整合)。
+        """
+        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division"})
+        assert resp.status_code == 200
+        buckets = resp.json()["facets"]["division"]
+        if not buckets:
+            pytest.skip("trad division facet が空: テスト前提のデータ不足")
+        bucket = buckets[0]
+        reinjected = app.get("/db-portal/search", params={"db": "trad", "q": f"division:{bucket['value']}"})
+        assert reinjected.status_code == 200
+        assert reinjected.json()["total"] == bucket["count"]
+
+    def test_trad_out_of_scope_facet_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22: db=trad で organism (ARSA に無い) は 400 facet-not-applicable."""
+        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "organism"})
+        assert resp.status_code == 400
+        assert "facet-not-applicable" in resp.json().get("type", "")
