@@ -2,7 +2,7 @@
 
 SSOT: search-backends.md §バックエンド変換.
 
-- Tier 1 は 9 flat (identifier/title/description/organism_id/organism_name/date_published/
+- Tier 1 は 10 flat (identifier/title/name/description/organism_id/organism_name/date_published/
   date_modified/date_created/accessibility) + 1 or_flat (date alias)。
 - Tier 2 は 2 nested (submitter: organization, publication: publication)。
 - Tier 3 (ES 対象) は 24 flat (BioProject object_type/project_type/relevance / BioSample 7
@@ -61,6 +61,9 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     # === Tier 1 ===
     "identifier": _ESStrategy(kind="flat", path="identifier"),
     "title": _ESStrategy(kind="flat", path="title"),
+    # ES common の name は text+keyword だが、text 型 (contains = match_phrase) で開放するため
+    # analyzed の top-level `name` に当てる (.keyword suffix 不要)。
+    "name": _ESStrategy(kind="flat", path="name"),
     "description": _ESStrategy(kind="flat", path="description"),
     # 生物種は taxID と学名で別 field に分割。organism_id は identifier 型 (keyword に term)、
     # organism_name は text 型 (text に match_phrase 経由で standard analyzer を通す)。
@@ -77,11 +80,13 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "submitter": _ESStrategy(kind="nested", path="organization", sub="organization.name"),
     "publication": _ESStrategy(kind="nested", path="publication", sub="publication.title"),
     # === Tier 3 flat ===
-    # SRA / GEA / MetaboBank の enum 系 (libraryStrategy 等) は ES mapping が text+keyword
-    # multi-field のため、term query には `.keyword` サブフィールドを使う必要がある
-    # (analyzer 適用後の lowercase token と uppercase 値が一致しないため)。
-    # text 型 (instrumentModel / libraryName / etc) は match_phrase で analyzer 経由する
-    # ので suffix 不要。keyword 単独 (objectType / relevance) も suffix 不要。
+    # SRA / JGA / GEA / MetaboBank の enum 系 (libraryStrategy / instrumentModel /
+    # analysisType / datasetType / experimentType / submissionType 等) は ES mapping が
+    # text+keyword multi-field のため、term query には `.keyword` サブフィールドを使う
+    # 必要がある (analyzer 適用後の lowercase token と uppercase 値が一致しないため)。
+    # text 型 (libraryName / libraryConstructionProtocol / vendor / projectType 等) は
+    # match_phrase で analyzer 経由するので suffix 不要。keyword 単独 (objectType /
+    # relevance) も suffix 不要。
     #
     # NOTE: DSL の `object_type` は ES `objectType` field を叩く
     # (BioProject / UmbrellaBioProject の Umbrella 区分。REST API の `?objectTypes=` と同じ field)。
@@ -97,15 +102,15 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     # library_selection は sra-experiment のみ field 存在 (INSDC controlled vocab)
     "library_selection": _ESStrategy(kind="flat", path="librarySelection.keyword"),
     "platform": _ESStrategy(kind="flat", path="platform.keyword"),
-    "instrument_model": _ESStrategy(kind="flat", path="instrumentModel"),
+    "instrument_model": _ESStrategy(kind="flat", path="instrumentModel.keyword"),
     "library_name": _ESStrategy(kind="flat", path="libraryName"),
     "library_construction_protocol": _ESStrategy(kind="flat", path="libraryConstructionProtocol"),
-    "analysis_type": _ESStrategy(kind="flat", path="analysisType"),
+    "analysis_type": _ESStrategy(kind="flat", path="analysisType.keyword"),
     "study_type": _ESStrategy(kind="flat", path="studyType.keyword"),
     "vendor": _ESStrategy(kind="flat", path="vendor"),
-    "dataset_type": _ESStrategy(kind="flat", path="datasetType"),
-    "experiment_type": _ESStrategy(kind="flat", path="experimentType"),
-    "submission_type": _ESStrategy(kind="flat", path="submissionType"),
+    "dataset_type": _ESStrategy(kind="flat", path="datasetType.keyword"),
+    "experiment_type": _ESStrategy(kind="flat", path="experimentType.keyword"),
+    "submission_type": _ESStrategy(kind="flat", path="submissionType.keyword"),
     # BioSample 7 (converter 0.3.0 で top-level 化、geo_loc_name / collection_date は SRA-sample と共通、
     # package は object{name:keyword, displayName:keyword} で `package.name` keyword 単独に解決)
     "host": _ESStrategy(kind="flat", path="host"),
@@ -132,10 +137,11 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
         sub="grant.agency.name",
     ),
     # === Tier 3 nested ===
-    # BioProject / JGA 共通: externalLink[].label。converter mapping は keyword だが、
-    # allowlist で text 型扱いとして公開しているため、contains 経由で match_phrase
-    # (順序保持) になる。普通 search 側の `externalLinkLabel` は match (analyzer 経由)
-    # なので analyzer 差はあるが、portal DSL の演算子セマンティクスを優先する。
+    # BioProject / JGA 共通: externalLink[].label。converter mapping は text
+    # (common.py externalLink.label)。allowlist でも text 型なので contains 経由で
+    # match_phrase (順序保持) になる。普通 search 側の `externalLinkLabel` は match
+    # (順序非保持) で、どちらも analyzer 経由だが phrase か否かが異なる。portal DSL の
+    # 演算子セマンティクス (contains = phrase) を優先する。
     "external_link_label": _ESStrategy(
         kind="nested",
         path="externalLink",

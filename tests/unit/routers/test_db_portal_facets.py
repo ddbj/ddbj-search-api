@@ -114,10 +114,19 @@ class TestResolveDbPortalFacets:
         assert exc.value.status_code == 400
         assert exc.value.type_uri == _FACET_NOT_APPLICABLE
 
-    def test_single_es_rejects_type(self) -> None:
-        # type is cross-only.
-        with pytest.raises(DbPortalHTTPException):
-            resolve_db_portal_facets("type", db=DbPortalDb.sra)
+    def test_single_es_type_allowed_for_sra_jga(self) -> None:
+        # type facet は複数 subtype を跨ぐ sra / jga で subtype 別集計として許可される。
+        assert resolve_db_portal_facets("type", db=DbPortalDb.sra) == ["type"]
+        assert resolve_db_portal_facets("type", db=DbPortalDb.jga) == ["type"]
+
+    def test_single_es_type_rejected_for_single_subtype_db(self) -> None:
+        # 単一 subtype の DB (bioproject / biosample / gea / metabobank) は subtype 分解の
+        # 意味が無いので type facet を要求すると 400 facet-not-applicable のまま。
+        for db in (DbPortalDb.bioproject, DbPortalDb.biosample, DbPortalDb.gea, DbPortalDb.metabobank):
+            with pytest.raises(DbPortalHTTPException) as exc:
+                resolve_db_portal_facets("type", db=db)
+            assert exc.value.status_code == 400
+            assert exc.value.type_uri == _FACET_NOT_APPLICABLE
 
     def test_solr_trad_valid(self) -> None:
         assert resolve_db_portal_facets("division,molecularType", db=DbPortalDb.trad) == [
@@ -171,6 +180,39 @@ class TestDbPortalSearchEsFacets:
         assert facets["objectType"][0] == {"value": "BioProject", "count": 5}
         # Solr-only facet stays null on an ES DB response.
         assert facets["division"] is None
+
+    def test_type_facet_on_sra_returns_200_with_buckets(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # type facet は複数 subtype を跨ぐ sra で subtype 別集計として許可され、
+        # 集計は hits リクエスト body に相乗りする。
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=4,
+            aggregations={"type": _terms_agg("sra-experiment", 4)},
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "sra", "facets": "type"},
+        )
+        assert resp.status_code == 200
+        facets = resp.json()["facets"]
+        assert facets is not None
+        assert facets["type"][0] == {"value": "sra-experiment", "count": 4}
+        assert set(get_es_search_body(mock_es_search_db_portal)["aggs"]) == {"type"}
+
+    def test_type_facet_on_single_subtype_db_returns_400(
+        self,
+        app_with_db_portal: TestClient,
+    ) -> None:
+        # 単一 subtype の DB (bioproject) は subtype 分解の意味が無いので type facet 要求は 400。
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "facets": "type"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["type"] == _FACET_NOT_APPLICABLE
 
     def test_aggs_added_to_request_body(
         self,

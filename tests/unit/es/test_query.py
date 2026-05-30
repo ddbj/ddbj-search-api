@@ -1930,9 +1930,11 @@ class TestDbPortalEsFacetAllowlist:
                     "instrumentModel",
                     "libraryLayout",
                     "analysisType",
+                    # sra は複数 subtype を跨ぐので type facet で subtype 別集計を許す
+                    "type",
                 },
             ),
-            ("jga", {"organism", "accessibility", "studyType", "datasetType", "vendor"}),
+            ("jga", {"organism", "accessibility", "studyType", "datasetType", "vendor", "type"}),
             ("gea", {"organism", "accessibility", "experimentType"}),
             ("metabobank", {"organism", "accessibility", "experimentType", "studyType", "submissionType"}),
         ],
@@ -1940,8 +1942,13 @@ class TestDbPortalEsFacetAllowlist:
     def test_single_db_exact_set(self, db: str, expected: set[str]) -> None:
         assert db_portal_es_facet_allowlist(db) == frozenset(expected)
 
-    def test_type_never_in_single_db(self) -> None:
-        for db in _DB_PORTAL_ES_SUBTYPES:
+    def test_type_in_sra_jga_only_among_single_dbs(self) -> None:
+        # ``type`` facet は複数 subtype を跨ぐ per-db scope sra / jga にだけ開く。
+        # 単一 subtype の db (bioproject / biosample / gea / metabobank) では
+        # subtype 分解の意味が無いので従来どおり非許可 (400)。
+        assert "type" in db_portal_es_facet_allowlist("sra")
+        assert "type" in db_portal_es_facet_allowlist("jga")
+        for db in ("bioproject", "biosample", "gea", "metabobank"):
             assert "type" not in db_portal_es_facet_allowlist(db)
 
     def test_common_always_present(self) -> None:
@@ -1966,7 +1973,12 @@ class TestDbPortalEsFacetAllowlist:
 
     def test_cross_excludes_type_specific(self) -> None:
         cross = db_portal_es_facet_allowlist(None)
+        # ``type`` is intentionally a member of both the cross-only set and
+        # the type-specific scope; every *other* type-specific facet stays
+        # out of the cross allowlist.
         for facet in _TYPE_SPECIFIC_FACET_SCOPE:
+            if facet == "type":
+                continue
             assert facet not in cross
 
     def test_cross_type_only_member_present_for_cross(self) -> None:

@@ -1,7 +1,8 @@
 """Tier-based field allowlist and operator matrix.
 
 3 段構成:
-- Tier 1 (横断可、10 field): identifier / text / organism_id / organism_name / date 系の基本 field + accessibility。
+- Tier 1 (横断可、11 field): identifier / title / description / name / organism_id /
+  organism_name / date 系の基本 field + accessibility。
 - Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
 - Tier 3 (単一 DB 指定必須、44 unique / per-DB 集計 53 field): DB 特化 field。
 
@@ -24,6 +25,9 @@ TIER1_FIELDS: frozenset[str] = frozenset(
     {
         "identifier",
         "title",
+        # 全 DB 共通の name (ES common text+keyword)。free-text 既定 5 field の 1 つでもあるが、
+        # field-scoped DSL アクセス用に Tier1 text として開放する (学名の organism_name とは別 field)。
+        "name",
         "description",
         # 生物種は identifier (taxID exact) / name (学名 match) で 2 field に分ける.
         # REST API の `?organism=<taxId>` は organism_id 側と同じ field を叩く.
@@ -51,6 +55,8 @@ FIELD_TYPES: dict[str, FieldType] = {
     # === Tier 1 (cross) ===
     "identifier": "identifier",
     "title": "text",
+    # ES common の name (text+keyword) を text 型 (contains = match_phrase) で開放する。
+    "name": "text",
     "description": "text",
     # 生物種 (taxID): keyword `organism.identifier` に term。REST API の `?organism=<taxId>` と同じ.
     "organism_id": "identifier",
@@ -77,9 +83,9 @@ FIELD_TYPES: dict[str, FieldType] = {
     "grant_title": "text",
     "grant_agency": "text",
     "relevance": "enum",
-    # BioProject + JGA 共通: externalLink nested の label。converter mapping は keyword だが、
-    # ラベル値 ("GEO" / "dbGaP" / "GEO Sample" など) はラベル名そのまま検索したい用途が
-    # 多いので text 型 (contains = match_phrase) で開放する。
+    # BioProject + JGA 共通: externalLink nested の label。converter mapping は text
+    # (converter common.py の externalLink.label)。ラベル値 ("GEO" / "dbGaP" / "GEO Sample"
+    # など) をそのまま検索する用途に合わせ text 型 (contains = match_phrase) で開放する。
     "external_link_label": "text",
     # === Tier 3 BioSample (converter 0.3.0 で top-level 化) ===
     # converter mapping は text + keyword:256 (host/strain/isolate) または text 単独 (geo_loc_name/
@@ -100,28 +106,35 @@ FIELD_TYPES: dict[str, FieldType] = {
     # library_selection は sra-experiment のみ field 存在、INSDC controlled vocab (RANDOM / PCR 等)
     "library_selection": "enum",
     "platform": "enum",
-    "instrument_model": "text",
+    # instrument_model は sra-experiment の controlled vocab。facet bucket (.keyword の exact 値)
+    # を op=eq で再注入するため enum (term は instrumentModel.keyword に当てる: compiler_es.py)。
+    # 値域 validation は ES 側に委譲し、未知値は 0 件で返る。
+    "instrument_model": "enum",
     "library_name": "text",
     "library_construction_protocol": "text",
     # BioSample + SRA (sra-sample) 共通: derivedFrom nested の identifier (例: SAMD00012345)。
     # converter mapping は keyword なので identifier 型 (eq / wildcard) で開放する。
     "derived_from_id": "identifier",
-    # analysis_type / dataset_type は controlled vocab に近い使われ方をするが、converter 側で
-    # free string として受けるため、API 側でも text 型で開放する。
-    "analysis_type": "text",
+    # analysis_type / dataset_type は controlled vocab。facet bucket (.keyword の exact 値) を
+    # op=eq で再注入するため enum (term は analysisType.keyword / datasetType.keyword に当てる:
+    # compiler_es.py)。値域 validation は ES 側に委譲し、未知値は 0 件で返る (既存 type / model と同方針)。
+    "analysis_type": "enum",
     # === Tier 3 JGA ===
     "study_type": "enum",
     "vendor": "text",
-    "dataset_type": "text",
+    # dataset_type は jga-dataset の controlled vocab。enum (term は datasetType.keyword)。
+    "dataset_type": "enum",
     # === Tier 3 SRA / JGA 共通 ===
     # type は subtype 識別子 (SRA: sra-submission..sra-analysis、JGA: jga-study..jga-policy)。
     # 値域 validation は ES 側に委譲、未知値は 0 件で返る。
     "type": "enum",
     # === Tier 3 GEA / MetaboBank ===
-    # experiment_type は spec 上 SRA 同等の enum 想定だが、converter 実装は list[str]。
-    # ここでは text 型として開放し、enum 値域検証は converter 側での正規化完了後に導入する。
-    "experiment_type": "text",
-    "submission_type": "text",
+    # experiment_type / submission_type は controlled vocab。facet bucket (.keyword の exact 値) を
+    # op=eq で再注入するため enum (term は experimentType.keyword / submissionType.keyword に当てる:
+    # compiler_es.py)。converter 実装は list[str] だが ES は array/scalar を同じ mapping で扱うので
+    # .keyword term が効く。値域 validation は ES 側に委譲し、未知値は 0 件で返る。
+    "experiment_type": "enum",
+    "submission_type": "enum",
     # === Tier 3 Trad (ARSA) ===
     "division": "enum",
     "molecular_type": "enum",

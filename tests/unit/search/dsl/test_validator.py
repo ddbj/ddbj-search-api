@@ -22,6 +22,7 @@ class TestAllowedFields:
         [
             "identifier",
             "title",
+            "name",
             "description",
             "organism_id",
             "organism_name",
@@ -666,6 +667,13 @@ _ENUM_FIELDS = [
     "model",
     "type",
     "library_selection",
+    # controlled vocab を facet bucket (.keyword exact) と op=eq で揃えた enum 系。
+    # word は eq で受理、wildcard は (enum, wildcard) 不在で invalid-operator-for-field。
+    "instrument_model",
+    "analysis_type",
+    "dataset_type",
+    "experiment_type",
+    "submission_type",
 ]
 
 

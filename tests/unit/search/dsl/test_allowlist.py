@@ -1,6 +1,6 @@
 """Tests for ddbj_search_api.search.dsl.allowlist.
 
-3 段構成の Tier 1/2/3 allowlist (Tier 1 10 + Tier 2 2 + Tier 3 44 unique / per-DB 53、
+3 段構成の Tier 1/2/3 allowlist (Tier 1 11 + Tier 2 2 + Tier 3 44 unique / per-DB 53、
 Tier 3 unique 40 / per-DB 46) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
 db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
 """
@@ -28,8 +28,13 @@ from ddbj_search_api.search.dsl.ast import ValueKind
 
 
 class TestTierFrozensets:
-    def test_tier1_has_10_fields(self) -> None:
-        assert len(TIER1_FIELDS) == 10
+    def test_tier1_has_11_fields(self) -> None:
+        assert len(TIER1_FIELDS) == 11
+
+    def test_tier1_includes_name(self) -> None:
+        # name (ES common text+keyword) は field-scoped DSL アクセス用に Tier1 text
+        # として開放する (free-text 既定 5 field の 1 つでもある)。
+        assert "name" in TIER1_FIELDS
 
     def test_tier1_includes_accessibility(self) -> None:
         # accessibility は ES backed 6 DB 共通 (cross 可)、Solr backed (Trad / Taxonomy)
@@ -127,6 +132,12 @@ class TestFieldTypesMapping:
         extra = FIELD_TYPES.keys() - ALL_ALLOWED_FIELDS
         assert extra == set(), f"stale FIELD_TYPES keys: {extra}"
 
+    def test_tier1_name_is_text(self) -> None:
+        # name は ES common の text+keyword を text 型 (contains = match_phrase) として
+        # 開放する (学名の organism_name とは別 field)。
+        assert "name" in TIER1_FIELDS
+        assert FIELD_TYPES["name"] == "text"
+
     def test_field_type_values_are_literals(self) -> None:
         valid = set(get_args(FieldType))
         assert valid == {"identifier", "text", "date", "enum", "number"}
@@ -156,21 +167,23 @@ class TestFieldTypesMapping:
             ("type", "enum"),
             ("library_selection", "enum"),
             ("accessibility", "enum"),
+            # controlled vocab を facet bucket (.keyword exact) と op=eq で揃えるため enum 化
+            # (term は <field>.keyword に当てる: compiler_es.py)
+            ("instrument_model", "enum"),
+            ("analysis_type", "enum"),
+            ("dataset_type", "enum"),
+            ("experiment_type", "enum"),
+            ("submission_type", "enum"),
             # Tier 3 number
             ("sequence_length", "number"),
             # Tier 3 text
-            ("instrument_model", "text"),
             ("library_name", "text"),
             ("library_construction_protocol", "text"),
-            ("analysis_type", "text"),
             ("grant_title", "text"),
             ("grant_agency", "text"),
             ("external_link_label", "text"),
             ("derived_from_id", "identifier"),
-            ("experiment_type", "text"),
-            ("submission_type", "text"),
             ("vendor", "text"),
-            ("dataset_type", "text"),
             ("host", "text"),
             ("strain", "text"),
             ("isolate", "text"),

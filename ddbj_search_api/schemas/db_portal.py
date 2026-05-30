@@ -141,7 +141,7 @@ _Q_DESC = (
     "``AND``/``OR``/``NOT`` (uppercase) / parenthesized groups in a single "
     "expression.  Bare words and phrases are matched as free text against "
     "indexed fields; ``field:value`` constrains to a specific field.  "
-    "Tier 1 (cross): ``identifier``, ``title``, ``description``, ``organism_id``, "
+    "Tier 1 (cross): ``identifier``, ``title``, ``name``, ``description``, ``organism_id``, "
     "``organism_name``, ``date_published``, ``date_modified``, ``date_created``, ``date``.  "
     "Tier 2 (cross): ``submitter``, ``publication``.  "
     "Tier 3 (single-DB only): BioProject ``object_type`` / ``project_type`` / ``grant_title`` / ``grant_agency`` / "

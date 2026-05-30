@@ -141,7 +141,11 @@ class Facets(BaseModel):
     type: list[FacetBucket] | None = Field(
         default=None,
         examples=[[{"value": "bioproject", "count": 1234}, {"value": "biosample", "count": 567}]],
-        description="Entry count per database type (cross-type search only; null when not aggregated).",
+        description=(
+            "Entry count per database type / subtype. Aggregated on cross-type search "
+            "(database-type buckets) and on the db-portal db=sra / db=jga scopes "
+            "(subtype buckets, e.g. sra-experiment / jga-dataset). Null when not aggregated."
+        ),
     )
     organism: list[OrganismFacetBucket] | None = Field(
         default=None,

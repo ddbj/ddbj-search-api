@@ -534,6 +534,12 @@ class TestInvalidOperatorForField:
         assert resp.status_code == 400, q_str
         assert "invalid-operator-for-field" in resp.json().get("type", ""), q_str
 
+    def test_enum_field_wildcard_returns_invalid_operator(self, app: TestClient) -> None:
+        """IT-DSL-16: enum 化した field は wildcard を失う ((enum, wildcard) 不在)。"""
+        resp = app.get("/db-portal/parse", params={"q": "instrument_model:Nova*", "db": "sra"})
+        assert resp.status_code == 400
+        assert "invalid-operator-for-field" in resp.json().get("type", "")
+
 
 class TestNestDepthExceeded:
     """IT-DSL-17: AND/OR/NOT nest depth limit (max_depth = 5)."""

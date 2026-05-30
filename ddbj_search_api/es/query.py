@@ -624,6 +624,23 @@ _CROSS_TYPE_ONLY_FACET_NAMES: frozenset[str] = frozenset({"type"})
 # stay in sync without manual duplication.
 VALID_FACET_FIELDS: frozenset[str] = frozenset(_FACET_AGG_SPECS)
 
+# db-portal exposes 6 ES-backed databases whose ``db`` value spans one or
+# more ``type`` subtypes (e.g. ``db=sra`` covers the 6 ``sra-*`` subtypes).
+# A type-specific facet is allowed for a db-portal scope when its
+# ``_TYPE_SPECIFIC_FACET_SCOPE`` intersects the scope's subtypes, so the
+# db-portal allowlist stays derived from the ES SSOT (``_TYPE_SPECIFIC_FACET_SCOPE``)
+# rather than hardcoded (docs/db-portal-api-spec.md § facet 集計).
+_DB_PORTAL_ES_SUBTYPES: dict[str, frozenset[str]] = {
+    "bioproject": frozenset({"bioproject"}),
+    "biosample": frozenset({"biosample"}),
+    "sra": frozenset(
+        {"sra-submission", "sra-study", "sra-experiment", "sra-run", "sra-sample", "sra-analysis"},
+    ),
+    "jga": frozenset({"jga-study", "jga-dataset", "jga-dac", "jga-policy"}),
+    "gea": frozenset({"gea"}),
+    "metabobank": frozenset({"metabobank"}),
+}
+
 # Mapping from a type-specific facet to the DbType values that own it on
 # their indices. cross-type endpoints accept the union of these (the
 # router treats them as loosely scoped — empty buckets fall out
@@ -647,23 +664,17 @@ _TYPE_SPECIFIC_FACET_SCOPE: dict[str, frozenset[str]] = {
     "projectType": frozenset({"bioproject"}),
     "host": frozenset({"biosample"}),
     "vendor": frozenset({"jga-study"}),
-}
-
-# db-portal exposes 6 ES-backed databases whose ``db`` value spans one or
-# more ``type`` subtypes (e.g. ``db=sra`` covers the 6 ``sra-*`` subtypes).
-# A type-specific facet is allowed for a db-portal scope when its
-# ``_TYPE_SPECIFIC_FACET_SCOPE`` intersects the scope's subtypes, so the
-# db-portal allowlist stays derived from the ES SSOT above rather than
-# hardcoded (docs/db-portal-api-spec.md § facet 集計).
-_DB_PORTAL_ES_SUBTYPES: dict[str, frozenset[str]] = {
-    "bioproject": frozenset({"bioproject"}),
-    "biosample": frozenset({"biosample"}),
-    "sra": frozenset(
-        {"sra-submission", "sra-study", "sra-experiment", "sra-run", "sra-sample", "sra-analysis"},
-    ),
-    "jga": frozenset({"jga-study", "jga-dataset", "jga-dac", "jga-policy"}),
-    "gea": frozenset({"gea"}),
-    "metabobank": frozenset({"metabobank"}),
+    # ``type`` (the subtype identifier) is opened to the db-portal per-db sra /
+    # jga scopes so a single ``db`` that spans multiple subtypes can be broken
+    # down into sra-* / jga-* buckets. Its scope is deliberately limited to the
+    # sra + jga subtypes: those two dbs' subtypes intersect it (→ allowed),
+    # while the single-subtype dbs (bioproject / biosample / gea / metabobank)
+    # do not, so they keep returning 400 for ``facets=type`` (a single-value
+    # bucket carries no information). ``type`` also stays in
+    # ``_CROSS_TYPE_ONLY_FACET_NAMES`` so the cross scope (db=None) keeps
+    # aggregating it over the ES 6-DB union (resolve_requested_facets short-
+    # circuits on the cross-only set, so REST /facets stays cross-only).
+    "type": _DB_PORTAL_ES_SUBTYPES["sra"] | _DB_PORTAL_ES_SUBTYPES["jga"],
 }
 
 
@@ -675,7 +686,9 @@ def db_portal_es_facet_allowlist(db: str | None) -> frozenset[str]:
     (``bioproject`` / ``biosample`` / ``sra`` / ``jga`` / ``gea`` /
     ``metabobank``) allows the common facets plus every type-specific
     facet whose :data:`_TYPE_SPECIFIC_FACET_SCOPE` overlaps the db's
-    subtypes.  ``type`` is cross-only and never appears in a single-DB
+    subtypes.  ``type`` is scoped to the sra + jga subtypes, so it
+    additionally appears in the ``sra`` / ``jga`` single-DB allowlists
+    (their subtypes intersect that scope) but in no other single-DB
     allowlist.
 
     Raises:

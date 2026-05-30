@@ -40,17 +40,26 @@ class TestIdentifierField:
 
 
 class TestTextFields:
-    @pytest.mark.parametrize(("field", "es_field"), [("title", "title"), ("description", "description")])
+    @pytest.mark.parametrize(
+        ("field", "es_field"),
+        [("title", "title"), ("name", "name"), ("description", "description")],
+    )
     def test_word_becomes_match_phrase(self, field: str, es_field: str) -> None:
         assert _compile(f"{field}:cancer") == {"match_phrase": {es_field: "cancer"}}
 
-    @pytest.mark.parametrize(("field", "es_field"), [("title", "title"), ("description", "description")])
+    @pytest.mark.parametrize(
+        ("field", "es_field"),
+        [("title", "title"), ("name", "name"), ("description", "description")],
+    )
     def test_phrase_becomes_match_phrase(self, field: str, es_field: str) -> None:
         assert _compile(f'{field}:"cancer treatment"') == {
             "match_phrase": {es_field: "cancer treatment"},
         }
 
-    @pytest.mark.parametrize(("field", "es_field"), [("title", "title"), ("description", "description")])
+    @pytest.mark.parametrize(
+        ("field", "es_field"),
+        [("title", "title"), ("name", "name"), ("description", "description")],
+    )
     def test_wildcard(self, field: str, es_field: str) -> None:
         assert _compile(f"{field}:canc*") == {
             "wildcard": {es_field: {"value": "canc*", "case_insensitive": True}},
@@ -386,6 +395,13 @@ class TestTier3FlatEnum:
             ("library_selection:RANDOM", "librarySelection.keyword", "RANDOM"),
             # db-portal sidebar 第 2 弾: accessibility (Tier 1 cross 可、keyword 単独で suffix 不要)
             ("accessibility:public-access", "accessibility", "public-access"),
+            # text+keyword multi-field の enum (facet bucket .keyword exact を op=eq で
+            # 再注入)。term は <field>.keyword に当てる (libraryStrategy 等と同じ理由)。
+            ("instrument_model:NovaSeq", "instrumentModel.keyword", "NovaSeq"),
+            ("analysis_type:variation", "analysisType.keyword", "variation"),
+            ("dataset_type:fastq", "datasetType.keyword", "fastq"),
+            ("experiment_type:ChIP-Seq", "experimentType.keyword", "ChIP-Seq"),
+            ("submission_type:metabolite", "submissionType.keyword", "metabolite"),
         ],
     )
     def test_enum_eq(self, dsl: str, es_field: str, value: str) -> None:
@@ -402,10 +418,6 @@ class TestTier3FlatText:
     @pytest.mark.parametrize(
         ("dsl", "es_field"),
         [
-            # 既存
-            ("instrument_model:NovaSeq", "instrumentModel"),
-            ("experiment_type:ChIP-Seq", "experimentType"),
-            ("submission_type:metabolite", "submissionType"),
             # BioSample exclusive (converter 0.3.0 top-level)
             ("host:Homo", "host"),
             ("strain:C57BL", "strain"),
@@ -416,9 +428,7 @@ class TestTier3FlatText:
             # SRA exclusive
             ("library_name:test_lib", "libraryName"),
             ("library_construction_protocol:Illumina", "libraryConstructionProtocol"),
-            ("analysis_type:variation", "analysisType"),
             # JGA exclusive
-            ("dataset_type:fastq", "datasetType"),
             ("vendor:Illumina", "vendor"),
             # BioProject INSDC controlled vocab (text+keyword)、object_type とは別 field
             ("project_type:genome", "projectType"),
@@ -437,9 +447,10 @@ class TestTier3WildcardExpansion:
             "wildcard": {"host": {"value": "Homo*", "case_insensitive": True}},
         }
 
-    def test_analysis_type_wildcard(self) -> None:
-        assert _compile("analysis_type:var*") == {
-            "wildcard": {"analysisType": {"value": "var*", "case_insensitive": True}},
+    def test_project_type_wildcard(self) -> None:
+        # project_type は text のまま (enum 化対象外)、wildcard query 経路を維持する。
+        assert _compile("project_type:gen*") == {
+            "wildcard": {"projectType": {"value": "gen*", "case_insensitive": True}},
         }
 
 

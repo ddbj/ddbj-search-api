@@ -15,6 +15,13 @@ import itertools
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.integration.conftest import (
+    GEA_EXPERIMENT_TYPE,
+    METABOBANK_EXPERIMENT_TYPE,
+    SRA_INSTRUMENT_MODEL,
+    require_value,
+)
+
 
 class TestCrossSearchUnexpectedParameter:
     """IT-DBPORTAL-13: cross-search rejects DB-specific parameters."""
@@ -278,6 +285,57 @@ class TestUfAllowlistCompletenessSraAnalysis:
         assert adv_total < baseline_total
 
 
+class TestEnumKeywordExactMatch:
+    """enum 化した text+keyword field は ``<field>.keyword`` の exact term でヒットする。
+
+    instrument_model / experiment_type は converter で text+keyword multi-field。
+    DSL enum の eq term を analyzed text field に当てると analyzer 適用後の token と
+    元値が一致せず 0 件になるため、compiler は ``<field>.keyword`` に term する。term が
+    当たること (= 0 件にならないこと) を確認し、``.keyword`` 付与 (compiler) の必要性を固定する。
+    """
+
+    def test_instrument_model_eq_hits(self, app: TestClient) -> None:
+        value = require_value("SRA_INSTRUMENT_MODEL", SRA_INSTRUMENT_MODEL)
+        adv_resp = app.get(
+            "/db-portal/search",
+            params={"db": "sra", "q": f'instrument_model:"{value}"', "perPage": 20},
+        )
+        assert adv_resp.status_code == 200
+        adv_total = adv_resp.json()["total"]
+        assert adv_total > 0
+
+        # 広い baseline (cancer) より小さいことで、誤った全件 / wrong-field fallback を検知する。
+        baseline_resp = app.get(
+            "/db-portal/search",
+            params={"db": "sra", "q": "cancer", "perPage": 20},
+        )
+        assert baseline_resp.status_code == 200
+        assert adv_total < baseline_resp.json()["total"]
+
+    @pytest.mark.parametrize(
+        ("db", "const_name", "value"),
+        [
+            ("gea", "GEA_EXPERIMENT_TYPE", GEA_EXPERIMENT_TYPE),
+            ("metabobank", "METABOBANK_EXPERIMENT_TYPE", METABOBANK_EXPERIMENT_TYPE),
+        ],
+    )
+    def test_experiment_type_eq_hits_in_both_dbs(
+        self,
+        app: TestClient,
+        db: str,
+        const_name: str,
+        value: str,
+    ) -> None:
+        # experimentType は gea / metabobank 両方で .keyword を保持。両 DB で exact term が当たる。
+        resolved = require_value(const_name, value)
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": db, "q": f'experiment_type:"{resolved}"', "perPage": 20},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] > 0
+
+
 _ES_DBS_FOR_UNIQUENESS: tuple[str, ...] = (
     "sra",
     "bioproject",
@@ -403,6 +461,32 @@ class TestDbPortalEsFacets:
     def test_single_db_out_of_scope_facet_400(self, app: TestClient) -> None:
         """IT-DBPORTAL-21: db=bioproject で package (biosample 専属) は 400."""
         resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "package"})
+        assert resp.status_code == 400
+        assert "facet-not-applicable" in resp.json().get("type", "")
+
+    def test_single_db_sra_type_facet(self, app: TestClient) -> None:
+        """db=sra で facets=type は 200、bucket は sra-* subtype 別。"""
+        resp = app.get("/db-portal/search", params={"db": "sra", "facets": "type"})
+        assert resp.status_code == 200
+        buckets = resp.json()["facets"]["type"]
+        assert isinstance(buckets, list)
+        if not buckets:
+            pytest.skip("sra type facet が空: テスト前提のデータ不足")
+        assert all(b["value"].startswith("sra-") for b in buckets)
+
+    def test_single_db_jga_type_facet(self, app: TestClient) -> None:
+        """db=jga で facets=type は 200、bucket は jga-* subtype 別。"""
+        resp = app.get("/db-portal/search", params={"db": "jga", "facets": "type"})
+        assert resp.status_code == 200
+        buckets = resp.json()["facets"]["type"]
+        assert isinstance(buckets, list)
+        if not buckets:
+            pytest.skip("jga type facet が空: テスト前提のデータ不足")
+        assert all(b["value"].startswith("jga-") for b in buckets)
+
+    def test_single_db_type_facet_rejected_for_single_subtype_db(self, app: TestClient) -> None:
+        """単一 subtype の db=bioproject では facets=type は 400 (subtype 分解の意味が無い)。"""
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "type"})
         assert resp.status_code == 400
         assert "facet-not-applicable" in resp.json().get("type", "")
 
