@@ -15,13 +15,6 @@ import itertools
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.integration.conftest import (
-    GEA_EXPERIMENT_TYPE,
-    METABOBANK_EXPERIMENT_TYPE,
-    SRA_INSTRUMENT_MODEL,
-    require_value,
-)
-
 
 class TestCrossSearchUnexpectedParameter:
     """IT-DBPORTAL-13: cross-search rejects DB-specific parameters."""
@@ -266,10 +259,15 @@ class TestUfAllowlistCompletenessSraAnalysis:
     """IT-DBPORTAL-20: SRA Tier 3 (analysis_type) is reachable via the ES allowlist."""
 
     def test_analysis_type_filters_actually_apply(self, app: TestClient) -> None:
-        """IT-DBPORTAL-20: ``adv=analysis_type:reference_alignment`` shrinks ``total`` vs a broad baseline."""
+        """IT-DBPORTAL-20: ``adv=analysis_type:REFERENCE_ALIGNMENT`` shrinks ``total`` vs a broad baseline.
+
+        analysis_type は enum (``analysisType.keyword`` への eq term) なので、INSDC controlled
+        vocab の値をそのままの表記 (大文字 ``REFERENCE_ALIGNMENT``) で渡す。analyzed text への
+        match ではないため大文字小文字は正規化されない。
+        """
         adv_resp = app.get(
             "/db-portal/search",
-            params={"db": "sra", "q": "analysis_type:reference_alignment", "perPage": 20},
+            params={"db": "sra", "q": "analysis_type:REFERENCE_ALIGNMENT", "perPage": 20},
         )
         assert adv_resp.status_code == 200
         adv_total = adv_resp.json()["total"]
@@ -286,54 +284,39 @@ class TestUfAllowlistCompletenessSraAnalysis:
 
 
 class TestEnumKeywordExactMatch:
-    """enum 化した text+keyword field は ``<field>.keyword`` の exact term でヒットする。
+    """enum 化した text+keyword field の eq term は facet (``<field>.keyword`` 集計) と一致する。
 
-    instrument_model / experiment_type は converter で text+keyword multi-field。
-    DSL enum の eq term を analyzed text field に当てると analyzer 適用後の token と
-    元値が一致せず 0 件になるため、compiler は ``<field>.keyword`` に term する。term が
-    当たること (= 0 件にならないこと) を確認し、``.keyword`` 付与 (compiler) の必要性を固定する。
+    instrument_model / experiment_type は converter で text+keyword multi-field。DSL enum の
+    eq term を analyzed text field に当てると analyzer 適用後の token と元値が一致せず 0 件に
+    なるため、compiler は ``<field>.keyword`` に term する。facet bucket 値を eq に再注入して
+    total が bucket count と一致することで、eq term が facet と同じ ``.keyword`` を見ている
+    (= ``.keyword`` 付与が効いている) ことを固定する。``.keyword`` が外れていれば total は 0 に
+    なり count と一致しない。
     """
 
-    def test_instrument_model_eq_hits(self, app: TestClient) -> None:
-        value = require_value("SRA_INSTRUMENT_MODEL", SRA_INSTRUMENT_MODEL)
-        adv_resp = app.get(
+    @staticmethod
+    def _assert_facet_reinject_matches(app: TestClient, db: str, facet: str, dsl_field: str) -> None:
+        facet_resp = app.get("/db-portal/search", params={"db": db, "facets": facet, "perPage": 20})
+        assert facet_resp.status_code == 200
+        buckets = facet_resp.json()["facets"][facet]
+        if not buckets:
+            pytest.skip(f"{db} {facet} facet が空: テスト前提のデータ不足")
+        bucket = buckets[0]
+        assert bucket["count"] > 0
+        reinjected = app.get(
             "/db-portal/search",
-            params={"db": "sra", "q": f'instrument_model:"{value}"', "perPage": 20},
+            params={"db": db, "q": f'{dsl_field}:"{bucket["value"]}"', "perPage": 20},
         )
-        assert adv_resp.status_code == 200
-        adv_total = adv_resp.json()["total"]
-        assert adv_total > 0
+        assert reinjected.status_code == 200
+        assert reinjected.json()["total"] == bucket["count"]
 
-        # 広い baseline (cancer) より小さいことで、誤った全件 / wrong-field fallback を検知する。
-        baseline_resp = app.get(
-            "/db-portal/search",
-            params={"db": "sra", "q": "cancer", "perPage": 20},
-        )
-        assert baseline_resp.status_code == 200
-        assert adv_total < baseline_resp.json()["total"]
+    def test_instrument_model_facet_reinject_matches_count(self, app: TestClient) -> None:
+        self._assert_facet_reinject_matches(app, "sra", "instrumentModel", "instrument_model")
 
-    @pytest.mark.parametrize(
-        ("db", "const_name", "value"),
-        [
-            ("gea", "GEA_EXPERIMENT_TYPE", GEA_EXPERIMENT_TYPE),
-            ("metabobank", "METABOBANK_EXPERIMENT_TYPE", METABOBANK_EXPERIMENT_TYPE),
-        ],
-    )
-    def test_experiment_type_eq_hits_in_both_dbs(
-        self,
-        app: TestClient,
-        db: str,
-        const_name: str,
-        value: str,
-    ) -> None:
-        # experimentType は gea / metabobank 両方で .keyword を保持。両 DB で exact term が当たる。
-        resolved = require_value(const_name, value)
-        resp = app.get(
-            "/db-portal/search",
-            params={"db": db, "q": f'experiment_type:"{resolved}"', "perPage": 20},
-        )
-        assert resp.status_code == 200
-        assert resp.json()["total"] > 0
+    @pytest.mark.parametrize("db", ["gea", "metabobank"])
+    def test_experiment_type_facet_reinject_matches_count(self, app: TestClient, db: str) -> None:
+        # experimentType は gea / metabobank 両方で .keyword を保持。
+        self._assert_facet_reinject_matches(app, db, "experimentType", "experiment_type")
 
 
 _ES_DBS_FOR_UNIQUENESS: tuple[str, ...] = (

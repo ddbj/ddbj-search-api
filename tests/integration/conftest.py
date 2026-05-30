@@ -105,9 +105,11 @@ PUBLIC_JGA_STUDY_ID: str = "JGAS000001"
 PUBLIC_JGA_DATASET_ID: str = "JGAD000001"
 PUBLIC_JGA_DAC_ID: str = "JGAC000001"
 PUBLIC_JGA_POLICY_ID: str = "JGAP000001"
-# Long-form alias document (``_id`` = long form, ``_source.identifier`` =
-# short Primary). Drives the alias / sameAs scenarios.
-SECONDARY_JGA_STUDY_ID: str = "JGAS00000000001"
+# JGA-study Secondary accession ingested as an alias ES document: ``_id`` is
+# the Secondary while ``_source.identifier`` is the Primary it resolves to
+# (currently ``JGAS000556`` → ``JGAS000561``; same ``JGAS`` + 6-digit format,
+# not a zero-padded long form). Drives the alias / sameAs scenarios.
+SECONDARY_JGA_STUDY_ID: str = "JGAS000556"
 
 # GEA / MetaboBank
 PUBLIC_GEA_ID: str = "E-GEAD-282"

@@ -98,18 +98,17 @@ class TestDetailVariantContent:
 
 
 class TestSameAsFallback:
-    """IT-DETAIL-03: Secondary ID resolves via sameAs nested query.
+    """IT-DETAIL-03: a JGA-study Secondary ID resolves to its Primary.
 
-    JGA-study carries a long-form sameAs (e.g. ``JGAS000001`` ↔
-    ``JGAS00000000001``); the long form is the documented Secondary
-    that should resolve back to the short-form Primary. BioProject
-    sameAs entries point to external DBs (GEO etc.) and are not in
-    the API fallback path on staging — see the coverage note in
+    A Secondary JGA-study accession (e.g. ``JGAS000556``) resolves back to
+    its Primary (``JGAS000561``) through the sameAs resolution pipeline.
+    BioProject sameAs entries point to external DBs (GEO etc.) and are not
+    in the API fallback path on staging — see the coverage note in
     tests/integration-note.md.
     """
 
     def test_secondary_id_resolves_to_primary(self, app: TestClient) -> None:
-        """IT-DETAIL-03: Secondary returns 200 with the Primary identifier."""
+        """IT-DETAIL-03: Secondary returns 200 with a different Primary identifier."""
         secondary = require_accession(
             "SECONDARY_JGA_STUDY_ID",
             SECONDARY_JGA_STUDY_ID,
@@ -122,29 +121,29 @@ class TestSameAsFallback:
 class TestAliasDocument:
     """IT-DETAIL-04: converter-side alias document hit.
 
-    ddbj-search-converter ingests JGA Secondary IDs as alias ES documents
-    whose ``_id`` is the long form but whose ``_source.identifier`` is
-    the short Primary. Hitting the long-form path must therefore resolve
-    via the direct ``_doc/{long}`` lookup (step 1 of the resolution
-    pipeline in api-spec.md § sameAs), without falling through to the
-    nested-query fallback.
+    ddbj-search-converter ingests a JGA Secondary accession as an alias ES
+    document whose ``_id`` is the Secondary but whose ``_source.identifier``
+    is the Primary it resolves to. Hitting the Secondary path therefore
+    resolves via the direct ``_doc/{id}`` lookup (step 1 of the resolution
+    pipeline in api-spec.md § sameAs), returning the Primary identifier.
     """
 
     def test_alias_resolves_to_canonical(self, app: TestClient) -> None:
-        """IT-DETAIL-04: long-form alias returns 200 with the Primary identifier."""
-        long_form = require_accession(
+        """IT-DETAIL-04: the alias ``_id`` returns 200 with the Primary identifier."""
+        secondary = require_accession(
             "SECONDARY_JGA_STUDY_ID",
             SECONDARY_JGA_STUDY_ID,
         )
-        resp = app.get(f"/entries/jga-study/{long_form}")
+        resp = app.get(f"/entries/jga-study/{secondary}")
         assert resp.status_code == 200
         body = resp.json()
-        # ``identifier`` must be the short-form Primary (alias ``_source``
-        # is identical to the Primary document's ``_source``).
-        assert body["identifier"] != long_form
-        # Smoke: the canonical short form looks like JGAS\\d+ and is
-        # shorter than the long-form alias.
-        assert len(body["identifier"]) < len(long_form)
+        # ``identifier`` is the Primary (the alias ``_source`` mirrors the
+        # Primary document's ``_source``), distinct from the queried Secondary.
+        canonical = body["identifier"]
+        assert canonical != secondary
+        # Smoke: the canonical Primary is a JGA-study accession (JGAS + digits).
+        assert canonical.startswith("JGAS")
+        assert canonical[len("JGAS"):].isdigit()
 
 
 class TestNotFound:
