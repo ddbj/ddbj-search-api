@@ -9,9 +9,16 @@ dict に組み立てる。q 文字列の組み立て自体は ``ddbj_search_api.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
-from ddbj_search_api.search.dsl import arsa_uf_fields, txsearch_uf_fields
+from ddbj_search_api.search.dsl import (
+    arsa_uf_fields,
+    compile_to_solr,
+    split_top_level_field,
+    txsearch_uf_fields,
+)
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Node
 
 _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^5 Organism^3 ReferenceTitle^2"
 # ``fl`` must include every source field that ``arsa_docs_to_hits`` reads;
@@ -51,6 +58,20 @@ _TXSEARCH_FACET_FIELD_MAP: dict[str, str] = {
     "kingdom": "kingdom",
 }
 
+# Facet wire-name → DSL allowlist field (snake_case)。self-exclusion
+# (docs/db-portal-api-spec.md § 集計母集団と self-exclusion) で、``split_top_level_field``
+# に渡して ``q`` から分離する clause の DSL field を引くのに使う。各 ``*_FACET_FIELD_MAP``
+# と 1:1 対応 (``molecularType`` → ``molecular_type``、他は同名)。値が DSL allowlist に
+# 無いとコンパイルできないため整合は unit test で担保する。
+_ARSA_FACET_TO_DSL_FIELD: dict[str, str] = {
+    "division": "division",
+    "molecularType": "molecular_type",
+}
+_TXSEARCH_FACET_TO_DSL_FIELD: dict[str, str] = {
+    "rank": "rank",
+    "kingdom": "kingdom",
+}
+
 # Public allowlist of Solr-backed db-portal facet names.  Consumed by the
 # wire-level ``facets`` validation (schemas.db_portal) and the scope
 # resolver (routers.db_portal); kept here so the field maps stay the SSOT.
@@ -70,6 +91,132 @@ def arsa_facet_field_map() -> dict[str, str]:
 def txsearch_facet_field_map() -> dict[str, str]:
     """Return a copy of the TXSearch (taxonomy) facet name → Solr field map."""
     return dict(_TXSEARCH_FACET_FIELD_MAP)
+
+
+def arsa_facet_dsl_field_map() -> dict[str, str]:
+    """Return a copy of the ARSA facet name → DSL allowlist field map (self-exclusion)."""
+    return dict(_ARSA_FACET_TO_DSL_FIELD)
+
+
+def txsearch_facet_dsl_field_map() -> dict[str, str]:
+    """Return a copy of the TXSearch facet name → DSL allowlist field map (self-exclusion)."""
+    return dict(_TXSEARCH_FACET_TO_DSL_FIELD)
+
+
+# dialect → (facet wire-name → Solr field, facet wire-name → DSL field).  The
+# two maps share keys (the facet wire-names) so ``build_solr_facet_plan`` can
+# resolve both the response field and the self-exclusion clause for one facet.
+_SOLR_FACET_MAPS: dict[str, tuple[dict[str, str], dict[str, str]]] = {
+    "arsa": (_ARSA_FACET_FIELD_MAP, _ARSA_FACET_TO_DSL_FIELD),
+    "txsearch": (_TXSEARCH_FACET_FIELD_MAP, _TXSEARCH_FACET_TO_DSL_FIELD),
+}
+
+
+@dataclass(frozen=True)
+class SolrFacetPlan:
+    """Resolved Solr request pieces for one db-specific search's facets.
+
+    ``q`` is the edismax query string (``*:*`` when the AST is empty).  Without
+    self-exclusion it compiles the whole AST and ``fq`` is empty.  Under
+    self-exclusion the top-level field clauses matching a requested facet move
+    out of ``q`` into tagged ``fq``, so each facet can drop its own filter via
+    ``{!ex}`` while the hit population (``q`` ∧ all ``fq``) stays equal to the
+    full query (docs/db-portal-api-spec.md § 集計母集団と self-exclusion).
+
+    - ``facet_fields``: ``facet.field`` specs — a bare Solr field, or
+      ``{!ex=<tag> key=<field>}<field>`` for a self-excluded facet.  ``key``
+      keeps the response key equal to the Solr field so :func:`parse_solr_facets`
+      still finds it.
+    - ``fq``: tagged filter queries (``{!tag=<tag>}<compiled clause>``).
+    - ``name_to_field``: facet wire-name → Solr field, for the response parse.
+    """
+
+    q: str
+    facet_fields: list[str]
+    fq: list[str]
+    name_to_field: dict[str, str]
+
+
+def _compile_solr_q(
+    ast: Node | None,
+    dialect: Literal["arsa", "txsearch"],
+    free_text_operator: Literal["AND", "OR"],
+) -> str:
+    """Compile an AST to an edismax ``q`` string; empty AST → ``*:*`` (all docs)."""
+    if ast is None:
+        return "*:*"
+    return compile_to_solr(ast, dialect=dialect, free_text_operator=free_text_operator)
+
+
+def _self_exclude_tag(dsl_field: str) -> str:
+    """Solr ``{!tag}`` / ``{!ex}`` tag for a self-excluded facet's clause."""
+    return f"selfex_{dsl_field}"
+
+
+def build_solr_facet_plan(
+    ast: Node | None,
+    requested_facets: Sequence[str] | None,
+    *,
+    dialect: Literal["arsa", "txsearch"],
+    free_text_operator: Literal["AND", "OR"] = "AND",
+    self_exclude: bool = False,
+) -> SolrFacetPlan:
+    """Resolve the ``q`` / ``fq`` / ``facet.field`` pieces for a Solr search.
+
+    Without ``self_exclude`` (or with no facets / no AST) this compiles the
+    whole AST into ``q`` and requests each facet on its bare Solr field — the
+    population is the hits themselves.
+
+    With ``self_exclude`` the top-level-AND clauses whose DSL field backs a
+    requested facet are split out of ``q`` (via
+    :func:`split_top_level_field`) into tagged ``fq``, and those facets request
+    ``{!ex=<tag> key=<field>}<field>`` so their aggregation ignores their own
+    filter.  Clauses under OR / NOT or nested AND are not split (they stay in
+    ``q``), so those facets degrade to the full population
+    (docs/db-portal-api-spec.md § 集計母集団と self-exclusion).
+    """
+    field_map, dsl_map = _SOLR_FACET_MAPS[dialect]
+    facets = list(requested_facets or [])
+    name_to_field = {name: field_map[name] for name in facets}
+    if not (self_exclude and ast is not None and facets):
+        return SolrFacetPlan(
+            q=_compile_solr_q(ast, dialect, free_text_operator),
+            facet_fields=[name_to_field[name] for name in facets],
+            fq=[],
+            name_to_field=name_to_field,
+        )
+    target_dsl = {dsl_map[name] for name in facets}
+    remaining, extracted = split_top_level_field(ast, target_dsl)
+    fq: list[str] = []
+    dsl_to_tag: dict[str, str] = {}
+    for dsl_field, clauses in extracted.items():
+        clause_ast: Node = clauses[0] if len(clauses) == 1 else _and_clauses(clauses)
+        tag = _self_exclude_tag(dsl_field)
+        compiled = compile_to_solr(clause_ast, dialect=dialect, free_text_operator=free_text_operator)
+        fq.append(f"{{!tag={tag}}}{compiled}")
+        dsl_to_tag[dsl_field] = tag
+    facet_fields: list[str] = []
+    for name in facets:
+        solr_field = name_to_field[name]
+        ex_tag = dsl_to_tag.get(dsl_map[name])
+        facet_fields.append(f"{{!ex={ex_tag} key={solr_field}}}{solr_field}" if ex_tag is not None else solr_field)
+    return SolrFacetPlan(
+        q=_compile_solr_q(remaining, dialect, free_text_operator),
+        facet_fields=facet_fields,
+        fq=fq,
+        name_to_field=name_to_field,
+    )
+
+
+def _and_clauses(clauses: list[FieldClause]) -> BoolOp:
+    """AND-combine multiple top-level clauses on the same field for one ``fq``.
+
+    Two top-level-AND terms on the same field (e.g. ``division:BCT AND
+    division:GSS``) are an intersection; re-joining them with AND keeps
+    ``q`` ∧ ``fq`` equal to the original query.  ``position`` is borrowed from
+    the first clause (compilers only read it for error context, not output).
+    """
+    return BoolOp(op="AND", children=tuple(clauses), position=clauses[0].position)
 
 
 def _apply_facet_params(
@@ -106,6 +253,7 @@ def build_arsa_request_params(
     with_uf: bool,
     facet_fields: Sequence[str] = (),
     facet_limit: int = _DEFAULT_FACET_LIMIT,
+    fq: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Build Solr query params for ARSA ``/collection1/select`` from a pre-compiled ``q`` string.
 
@@ -119,6 +267,11 @@ def build_arsa_request_params(
     ``facet_fields`` が非空のとき terms faceting (``facet.field`` 群 +
     ``facet.mincount=1`` + ``facet.limit=facet_limit``) を相乗りさせる。Solr 側で
     8 shard 分散集計される (docs/db-portal-api-spec.md § facet 集計)。
+
+    ``fq`` は self-exclusion で ``q`` から分離した tagged フィルタ
+    (``{!tag=...}...``) を渡す。hits には全 ``fq`` が効くので母集団は ``q`` ∧ ``fq``
+    のまま不変で、facet 側だけ ``{!ex=...}`` で当該フィルタを外す
+    (:func:`build_solr_facet_plan`)。
     """
     start, rows = _pagination_to_start_rows(page, per_page)
     params: dict[str, Any] = {
@@ -129,6 +282,8 @@ def build_arsa_request_params(
     }
     if with_uf:
         params["uf"] = _ARSA_ADV_UF
+    if fq:
+        params["fq"] = list(fq)
     params["start"] = str(start)
     params["rows"] = str(rows)
     params["wt"] = "json"
@@ -149,13 +304,15 @@ def build_txsearch_request_params(
     with_uf: bool,
     facet_fields: Sequence[str] = (),
     facet_limit: int = _DEFAULT_FACET_LIMIT,
+    fq: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Build Solr query params for TXSearch ``/ncbi_taxonomy/select`` from a pre-compiled ``q`` string.
 
     ``sort`` は Taxonomy に日付フィールドが無いため silently ignored (caller symmetry
     のため引数だけ受ける)。``with_uf`` の判定基準は
     :func:`build_arsa_request_params` と同じ。``facet_fields`` が非空のとき
-    terms faceting を相乗りさせる (docs/db-portal-api-spec.md § facet 集計)。
+    terms faceting を相乗りさせる (docs/db-portal-api-spec.md § facet 集計)。``fq`` は
+    self-exclusion の tagged フィルタ (:func:`build_arsa_request_params` と同じ意味)。
     """
     _ = sort
     start, rows = _pagination_to_start_rows(page, per_page)
@@ -167,6 +324,8 @@ def build_txsearch_request_params(
     }
     if with_uf:
         params["uf"] = _TXSEARCH_ADV_UF
+    if fq:
+        params["fq"] = list(fq)
     params["start"] = str(start)
     params["rows"] = str(rows)
     params["wt"] = "json"

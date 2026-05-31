@@ -181,6 +181,15 @@ _FACETS_SIZE_DESC = (
     "sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``."
 )
 
+_FACET_SELF_EXCLUDE_DESC = (
+    "When ``true``, drop each facet's own ``q`` filter from that facet's aggregation "
+    "population (self-exclusion for multi-select sidebars); other conditions (other "
+    "facets, free text, ``status``) still apply, and the hits themselves stay filtered by "
+    "the full ``q``.  Default ``false`` keeps the population identical to the hits.  "
+    "Compatible with ``cursor`` but not applied on the cursor path (the cursor token "
+    "carries no AST).  See ``docs/db-portal-api-spec.md`` § 集計母集団と self-exclusion."
+)
+
 
 def _normalize_db_portal_facets(facets: str | None) -> str | None:
     """Validate the db-portal ``facets`` query value against the wire allowlist.
@@ -271,12 +280,18 @@ class DbPortalCrossSearchQuery:
             examples=[100],
             description=_FACETS_SIZE_DESC,
         ),
+        facet_self_exclude: bool = Query(
+            default=False,
+            alias="facetSelfExclude",
+            description=_FACET_SELF_EXCLUDE_DESC,
+        ),
     ) -> None:
         self.q = q
         self.top_hits = top_hits
         self.keyword_operator = keyword_operator
         self.facets = _normalize_db_portal_facets(facets)
         self.facets_size = facets_size
+        self.facet_self_exclude = facet_self_exclude
 
 
 class DbPortalSearchQuery:
@@ -367,6 +382,11 @@ class DbPortalSearchQuery:
             examples=[100],
             description=_FACETS_SIZE_DESC,
         ),
+        facet_self_exclude: bool = Query(
+            default=False,
+            alias="facetSelfExclude",
+            description=_FACET_SELF_EXCLUDE_DESC,
+        ),
     ) -> None:
         # Pydantic's Literal[int] does not coerce HTTP query strings to int,
         # so per_page is typed ``int`` and constrained explicitly here while
@@ -394,6 +414,7 @@ class DbPortalSearchQuery:
         self.keyword_operator = keyword_operator
         self.facets = _normalize_db_portal_facets(facets)
         self.facets_size = facets_size
+        self.facet_self_exclude = facet_self_exclude
 
 
 class DbPortalCount(BaseModel):

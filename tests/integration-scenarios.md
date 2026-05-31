@@ -1465,6 +1465,37 @@
 
 ---
 
+### IT-DBPORTAL-23: ES facet の self-exclusion (`facetSelfExclude`)
+
+**endpoint**: `GET /db-portal/search?db=bioproject&q=organism_id:<v>&facets=organism,objectType&facetSelfExclude=true` / `GET /db-portal/cross-search?q=organism_id:<v>&facets=organism&facetSelfExclude=true`
+
+**不変条件** (固定件数ではなく self-exclusion 有無の差分で検証):
+- `facetSelfExclude=true`: ある facet を 1 値で絞っても、その facet の bucket に選択値以外が残る (multi-select で追加選択が可能)。選択値も bucket に残る
+- `facetSelfExclude` 省略 / `false` (既定): 同 facet は選択値だけに潰れる (従来の self-filtering)
+- **hits 不変**: `facetSelfExclude` 有無で `total` は変わらない (self-exclusion は facet 集計母集団にしか効かず、hits は `q` 全フィルタ適用のまま)
+- **drill-down 維持**: self-exclusion 対象でない facet (`objectType`) の bucket は、self-exclusion 有効時も `q=organism_id:<v>` だけの plain 集計と一致する (他 facet の絞り込みは効く)
+- 横断 (entries union) でも同じ挙動
+
+**回帰元**: `docs/db-portal-api-spec.md § 集計母集団と self-exclusion`
+**関連 unit テスト**: `tests/unit/es/test_query.py` (`TestBuildSelfExcludingFacetAggs`), `tests/unit/routers/test_db_portal_facets.py` (`TestDbPortalEsSelfExclusion`)
+
+---
+
+### IT-DBPORTAL-24: Solr facet の self-exclusion (`facetSelfExclude`、`staging_only`)
+
+**endpoint**: `GET /db-portal/search?db=trad&q=division:<v>&facets=division&facetSelfExclude=true` (Solr backend)
+
+**不変条件**:
+- `facetSelfExclude=true`: トップレベル AND 直下の facet 句 (`division:<v>`) を `{!tag}` 付き `fq` に分離し `{!ex}` で当該 facet の集計から外すため、division facet に選択値以外が残る
+- `facetSelfExclude` 省略 / `false`: division facet は選択値だけに潰れる
+- **hits 不変**: 分離した句は `fq` として hits には効く (`q` ∧ `fq` = 元の `q`) ので `total` は self-exclusion 有無で変わらない
+- OR multi-select (`(division:A OR division:B)`) はトップレベル AND 直下の `FieldClause` ではないため分離されず degrade (full population で集計) — db-portal sidebar は単一選択を AND で畳むため実用ケースはカバーされる
+
+**回帰元**: `docs/db-portal-api-spec.md § 集計母集団と self-exclusion`
+**関連 unit テスト**: `tests/unit/solr/test_query.py` (`TestBuildSolrFacetPlanSelfExclude`), `tests/unit/routers/test_db_portal_facets.py` (`TestDbPortalSolrSelfExclusion`)
+
+---
+
 ## IT-STATUS-*: status filter
 
 ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) のアクセス制御。`/entries/*` と `/db-portal/*` (ES 6 DB) で同等のロジック、`/db-portal/*` の Solr 2 DB は no-op。

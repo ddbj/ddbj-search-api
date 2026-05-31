@@ -8,7 +8,9 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal
 
-from ddbj_search_api.search.dsl.compiler_es import compile_free_text
+from ddbj_search_api.search.dsl.ast import Node
+from ddbj_search_api.search.dsl.compiler_es import compile_free_text, compile_to_es
+from ddbj_search_api.search.dsl.transform import exclude_field_from_ast
 from ddbj_search_api.search.phrase import (
     ES_AUTO_PHRASE_CHARS,
     parse_keywords_with_autophrase,
@@ -607,6 +609,47 @@ _FACET_AGG_SPECS: dict[str, dict[str, Any]] = {
     "vendor": {"terms": {"field": "vendor.keyword"}},
 }
 
+# Facet 名 → bucket 値を再注入する DSL allowlist field (docs/db-portal-api-spec.md
+# § facet 値の DSL 再注入)。self-exclusion (§ 集計母集団と self-exclusion) で、
+# facet F の母集団から外すべき ``q`` フィルタの DSL field を引くのに使う。キーは
+# ``_FACET_AGG_SPECS`` と 1:1 対応 (organism は organism_id、accessibility / type
+# は同名)。値が DSL allowlist (``FIELD_TYPES``) に無いとコンパイルできないため、両者
+# の整合は unit test で担保する。
+_FACET_TO_DSL_FIELD: dict[str, str] = {
+    "organism": "organism_id",
+    "accessibility": "accessibility",
+    "type": "type",
+    "objectType": "object_type",
+    "libraryStrategy": "library_strategy",
+    "librarySource": "library_source",
+    "librarySelection": "library_selection",
+    "platform": "platform",
+    "instrumentModel": "instrument_model",
+    "experimentType": "experiment_type",
+    "studyType": "study_type",
+    "submissionType": "submission_type",
+    "relevance": "relevance",
+    "projectType": "project_type",
+    "package": "package",
+    "model": "model",
+    "host": "host",
+    "libraryLayout": "library_layout",
+    "analysisType": "analysis_type",
+    "datasetType": "dataset_type",
+    "vendor": "vendor",
+}
+
+
+def facet_to_dsl_field(facet_name: str) -> str:
+    """ES facet 名を、bucket 値を再注入する DSL allowlist field 名に変換する。
+
+    self-exclusion で facet 自身の ``q`` フィルタを母集団から外す際、どの DSL field の
+    clause を除外するかを引く (docs/db-portal-api-spec.md § 集計母集団と self-exclusion)。
+    facet 名は ``resolve_requested_facets`` で allowlist 済みのものが渡る前提。
+    """
+    return _FACET_TO_DSL_FIELD[facet_name]
+
+
 # Default common facets when ``requested_facets`` is omitted. ``type`` is
 # appended on cross-type endpoints inside :func:`build_facet_aggs`.
 _DEFAULT_COMMON_FACETS: tuple[str, ...] = ("organism", "accessibility")
@@ -814,4 +857,59 @@ def build_facet_aggs(
         agg = copy.deepcopy(spec)
         agg["terms"]["size"] = size
         aggs[name] = agg
+    return aggs
+
+
+def es_query_from_ast(
+    ast: Node | None,
+    status_mode: StatusMode,
+    *,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> dict[str, Any]:
+    """AST から ES query body を生成し status filter を注入する。
+
+    ``ast=None`` (``q`` 未指定) は keyword 無し + status filter のみの bool query
+    (:func:`build_search_query` の ``keywords=None`` と同形)。それ以外は
+    :func:`compile_to_es` 出力に :func:`inject_status_filter` を被せる。``/db-portal/*``
+    の hits 検索と facet 集計 (self-exclusion を含む) で同一の母集団 query を組むため
+    共有する。
+    """
+    if ast is None:
+        return build_search_query(keywords=None, keyword_operator="AND", status_mode=status_mode)
+
+    return inject_status_filter(
+        compile_to_es(ast, free_text_operator=free_text_operator),
+        status_mode,
+    )
+
+
+def build_self_excluding_facet_aggs(
+    *,
+    ast: Node | None,
+    status_mode: StatusMode,
+    is_cross_type: bool = False,
+    requested_facets: list[str] | None = None,
+    size: int = DEFAULT_FACET_SIZE,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> dict[str, Any]:
+    """各 facet を ``filter`` aggregation で包み self-exclusion を適用した aggs を返す。
+
+    facet ``F`` ごとに、``F`` に対応する DSL field (:func:`facet_to_dsl_field`) の clause
+    を ``ast`` から除外した ES query を ``filter`` に被せ、その下に ``F`` の terms 集計
+    (:func:`build_facet_aggs` と同一 spec) を置く。母集団は ``F`` 自身のフィルタを外し、
+    他条件・status filter は維持する (docs/db-portal-api-spec.md § 集計母集団と
+    self-exclusion)。除外で ``ast`` が空になれば status filter のみの母集団になる。
+
+    内側 terms 集計の名前を facet 名と同じにするため、レスポンスは
+    ``aggregations[F][F]["buckets"]`` の 2 段構造になる。
+    :func:`ddbj_search_api.utils._unwrap_terms_agg` が素 terms / filter-wrap の両構造を
+    吸収するので ``parse_db_portal_es_facets`` のシグネチャは不変。
+    """
+    inner = build_facet_aggs(is_cross_type=is_cross_type, requested_facets=requested_facets, size=size)
+    aggs: dict[str, Any] = {}
+    for name, terms_agg in inner.items():
+        excluded = exclude_field_from_ast(ast, facet_to_dsl_field(name))
+        filter_query = es_query_from_ast(excluded, status_mode, free_text_operator=free_text_operator)
+        aggs[name] = {"filter": filter_query, "aggs": {name: terms_agg}}
+
     return aggs

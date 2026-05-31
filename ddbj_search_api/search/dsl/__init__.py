@@ -23,6 +23,7 @@ from ddbj_search_api.search.dsl.inspect import ast_has_field_clause
 from ddbj_search_api.search.dsl.parser import DEFAULT_MAX_LENGTH, parse
 from ddbj_search_api.search.dsl.serde import ast_to_json, json_to_ast
 from ddbj_search_api.search.dsl.serializer import ast_to_dsl
+from ddbj_search_api.search.dsl.transform import exclude_field_from_ast, split_top_level_field
 from ddbj_search_api.search.dsl.validator import DEFAULT_MAX_DEPTH, ValidationMode, validate
 
 __all__ = [
@@ -45,8 +46,10 @@ __all__ = [
     "compile_free_text_solr",
     "compile_to_es",
     "compile_to_solr",
+    "exclude_field_from_ast",
     "json_to_ast",
     "parse",
+    "split_top_level_field",
     "txsearch_uf_fields",
     "type_uri",
     "validate",

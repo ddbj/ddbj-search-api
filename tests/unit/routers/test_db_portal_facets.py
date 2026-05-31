@@ -595,3 +595,284 @@ class TestDbPortalCursorFacets:
         assert pit_body["query"] == baked_query
         # facetsSize flows into the agg terms.size on the cursor path too.
         assert pit_body["aggs"]["organism"]["terms"]["size"] == 13
+
+
+# === Self-exclusion wiring (facetSelfExclude) ===
+
+
+def _term_fields(node: Any) -> list[str]:
+    """Collect every ``term`` clause field name anywhere in an ES query dict."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "term" and isinstance(value, dict):
+                found.extend(value.keys())
+            else:
+                found.extend(_term_fields(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_term_fields(item))
+    return found
+
+
+def _filter_wrapped(name: str, inner: dict[str, Any], doc_count: int) -> dict[str, Any]:
+    """Shape an ES ``filter`` aggregation response (self-exclusion wrap)."""
+    return {"doc_count": doc_count, name: inner}
+
+
+class TestDbPortalEsSelfExclusion:
+    """facetSelfExclude=true wraps each ES facet in a ``filter`` aggregation
+    that drops the facet's own clause; the top-level hits ``query`` is unchanged
+    (docs § 集計母集団と self-exclusion)."""
+
+    def test_self_exclude_wraps_each_facet_in_filter(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=3,
+            aggregations={
+                "organism": _filter_wrapped("organism", _organism_agg("9606", 3, "Homo sapiens"), 3),
+                "package": _filter_wrapped("package", _terms_agg("SAMPLE", 3), 3),
+            },
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "biosample",
+                "q": "organism_id:9606 AND package:SAMPLE",
+                "facets": "organism,package",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_db_portal)
+        # Each facet is now a filter aggregation with an inner same-named terms agg.
+        for name in ("organism", "package"):
+            assert "filter" in body["aggs"][name]
+            assert "terms" in body["aggs"][name]["aggs"][name]
+        # organism facet drops its own clause from the population, keeps package + status.
+        organism_filter = body["aggs"]["organism"]["filter"]
+        assert "organism.identifier" not in _term_fields(organism_filter)
+        assert "package.name" in _term_fields(organism_filter)
+        assert "status" in _term_fields(organism_filter)
+        # Response is parsed through the filter-wrap shape.
+        assert resp.json()["facets"]["organism"][0]["value"] == "9606"
+
+    def test_self_exclude_keeps_hits_query_unchanged(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """Bug guard: only the aggs change; the top-level query (= hit population)
+        stays identical to the non-self-exclude request."""
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=1,
+            aggregations={"organism": _filter_wrapped("organism", _organism_agg("9606", 1, "H"), 1)},
+        )
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "biosample", "q": "organism_id:9606", "facets": "organism", "facetSelfExclude": "true"},
+        )
+        body_excl = get_es_search_body(mock_es_search_db_portal)
+
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=1,
+            aggregations={"organism": _organism_agg("9606", 1, "H")},
+        )
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "biosample", "q": "organism_id:9606", "facets": "organism"},
+        )
+        body_plain = get_es_search_body(mock_es_search_db_portal)
+
+        assert body_excl["query"] == body_plain["query"]
+        assert "organism.identifier" in _term_fields(body_excl["query"])
+        # The aggregations differ: filter-wrapped vs plain terms.
+        assert "filter" in body_excl["aggs"]["organism"]
+        assert "filter" not in body_plain["aggs"]["organism"]
+
+    def test_default_is_plain_terms_agg(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=1,
+            aggregations={"organism": _organism_agg("9606", 1, "H")},
+        )
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "biosample", "q": "organism_id:9606", "facets": "organism"},
+        )
+        body = get_es_search_body(mock_es_search_db_portal)
+        assert "filter" not in body["aggs"]["organism"]
+        assert "terms" in body["aggs"]["organism"]
+
+    def test_cross_self_exclude_wraps_entries_aggs(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        async def _es(_client: Any, index: str, _body: dict[str, Any]) -> dict[str, Any]:
+            if index == "entries":
+                return make_es_search_response(
+                    aggregations={"organism": _filter_wrapped("organism", _organism_agg("9606", 5, "H"), 5)},
+                )
+            return make_es_search_response(total=5)
+
+        mock_es_search_db_portal.side_effect = _es
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "organism_id:9606", "facets": "organism", "topHits": "0", "facetSelfExclude": "true"},
+        )
+        assert resp.status_code == 200
+        entries_body = _find_es_body_by_index(mock_es_search_db_portal, "entries")
+        assert entries_body is not None
+        assert "filter" in entries_body["aggs"]["organism"]
+        # organism's own clause is dropped from the facet population.
+        assert "organism.identifier" not in _term_fields(entries_body["aggs"]["organism"]["filter"])
+        # Top-level query (hit/count population) still carries the clause and equals
+        # a per-DB count body.
+        assert "organism.identifier" in _term_fields(entries_body["query"])
+        count_body = _find_es_body_by_index(mock_es_search_db_portal, "bioproject")
+        assert count_body is not None
+        assert entries_body["query"] == count_body["query"]
+
+    def test_cursor_ignores_self_exclude(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_with_pit_db_portal: AsyncMock,
+    ) -> None:
+        """cursor token carries no AST, so facetSelfExclude is a no-op on the
+        cursor path (plain terms agg, docs § 集計母集団と self-exclusion)."""
+        baked_query = {"bool": {"filter": [_PUBLIC_ONLY_CLAUSE]}}
+        token = encode_cursor(
+            CursorPayload(
+                pit_id="pit-1",
+                search_after=["2024-01-15", "PRJDB1"],
+                sort=[{"datePublished": {"order": "desc"}}, {"identifier": {"order": "asc"}}],
+                query=baked_query,
+            )
+        )
+        mock_es_search_with_pit_db_portal.return_value = make_es_search_response(
+            hits=[],
+            total=2,
+            aggregations={"organism": _organism_agg("9606", 2, "H")},
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "cursor": token, "facets": "organism", "facetSelfExclude": "true"},
+        )
+        assert resp.status_code == 200
+        pit_body = mock_es_search_with_pit_db_portal.call_args.args[1]
+        assert "filter" not in pit_body["aggs"]["organism"]
+        assert "terms" in pit_body["aggs"]["organism"]
+
+
+class TestDbPortalSolrSelfExclusion:
+    """facetSelfExclude=true splits a Solr facet's top-level clause into a tagged
+    ``fq`` and excludes it on that facet via ``{!ex}`` (docs § 集計母集団と
+    self-exclusion)."""
+
+    def test_trad_self_exclude_adds_ex_and_fq(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        resp_doc = make_solr_arsa_response(num_found=1)
+        resp_doc["facet_counts"] = {"facet_fields": {"Division": ["BCT", 1], "MolecularType": ["genomic DNA", 1]}}
+        mock_arsa_search_db_portal.return_value = resp_doc
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "trad",
+                "q": 'division:BCT AND molecular_type:"genomic DNA"',
+                "facets": "division,molecularType",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert params["facet.field"] == [
+            "{!ex=selfex_division key=Division}Division",
+            "{!ex=selfex_molecular_type key=MolecularType}MolecularType",
+        ]
+        assert params["fq"] == [
+            '{!tag=selfex_division}Division:"BCT"',
+            '{!tag=selfex_molecular_type}MolecularType:"genomic DNA"',
+        ]
+        # Both clauses were split out, so q collapses to all-docs; fq re-applies
+        # them to the hits so the population is unchanged.
+        assert params["q"] == "*:*"
+        # Response still parses under the bare field keys (key=<field> preserved).
+        assert resp.json()["facets"]["division"] == [{"value": "BCT", "count": 1}]
+
+    def test_trad_default_has_no_ex_or_fq(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        resp_doc = make_solr_arsa_response(num_found=1)
+        resp_doc["facet_counts"] = {"facet_fields": {"Division": ["BCT", 1]}}
+        mock_arsa_search_db_portal.return_value = resp_doc
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={"db": "trad", "q": "division:BCT", "facets": "division"},
+        )
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        assert params["facet.field"] == ["Division"]
+        assert "fq" not in params
+
+    def test_trad_multiselect_or_degrades(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+    ) -> None:
+        """OR multi-select は分離できず {!ex} 無し (degrade)。他 facet は self-exclude される."""
+        resp_doc = make_solr_arsa_response(num_found=1)
+        resp_doc["facet_counts"] = {"facet_fields": {"Division": ["BCT", 1], "MolecularType": ["genomic DNA", 1]}}
+        mock_arsa_search_db_portal.return_value = resp_doc
+        app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "trad",
+                "q": '(division:BCT OR division:GSS) AND molecular_type:"genomic DNA"',
+                "facets": "division,molecularType",
+                "facetSelfExclude": "true",
+            },
+        )
+        params = mock_arsa_search_db_portal.call_args.kwargs["params"]
+        # division stays plain (OR group not split); molecularType is self-excluded.
+        assert params["facet.field"] == ["Division", "{!ex=selfex_molecular_type key=MolecularType}MolecularType"]
+        assert params["fq"] == ['{!tag=selfex_molecular_type}MolecularType:"genomic DNA"']
+        assert "Division" in params["q"]
+
+    def test_taxonomy_self_exclude(
+        self,
+        app_with_db_portal: TestClient,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        resp_doc = make_solr_txsearch_response(num_found=2)
+        resp_doc["facet_counts"] = {"facet_fields": {"rank": ["species", 2], "kingdom": ["Bacteria", 2]}}
+        mock_txsearch_search_db_portal.return_value = resp_doc
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "taxonomy",
+                "q": "rank:species AND kingdom:Bacteria",
+                "facets": "rank,kingdom",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
+        assert params["facet.field"] == [
+            "{!ex=selfex_rank key=rank}rank",
+            "{!ex=selfex_kingdom key=kingdom}kingdom",
+        ]
+        assert params["fq"] == [
+            '{!tag=selfex_rank}rank:"species"',
+            '{!tag=selfex_kingdom}kingdom:"Bacteria"',
+        ]

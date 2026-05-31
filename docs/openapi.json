@@ -19136,6 +19136,18 @@
               "title": "Facetssize"
             },
             "description": "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies uniformly to every facet selected via ``facets``.  The ``organism`` label sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``."
+          },
+          {
+            "name": "facetSelfExclude",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "When ``true``, drop each facet's own ``q`` filter from that facet's aggregation population (self-exclusion for multi-select sidebars); other conditions (other facets, free text, ``status``) still apply, and the hits themselves stay filtered by the full ``q``.  Default ``false`` keeps the population identical to the hits.  Compatible with ``cursor`` but not applied on the cursor path (the cursor token carries no AST).  See ``docs/db-portal-api-spec.md`` § 集計母集団と self-exclusion.",
+              "default": false,
+              "title": "Facetselfexclude"
+            },
+            "description": "When ``true``, drop each facet's own ``q`` filter from that facet's aggregation population (self-exclusion for multi-select sidebars); other conditions (other facets, free text, ``status``) still apply, and the hits themselves stay filtered by the full ``q``.  Default ``false`` keeps the population identical to the hits.  Compatible with ``cursor`` but not applied on the cursor path (the cursor token carries no AST).  See ``docs/db-portal-api-spec.md`` § 集計母集団と self-exclusion."
           }
         ],
         "responses": {
@@ -19434,6 +19446,18 @@
               "title": "Facetssize"
             },
             "description": "Maximum number of buckets returned per facet (1-1000, server default 100).  Applies uniformly to every facet selected via ``facets``.  The ``organism`` label sub-aggregation always uses size 1 and is unaffected.  Compatible with ``cursor``."
+          },
+          {
+            "name": "facetSelfExclude",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "When ``true``, drop each facet's own ``q`` filter from that facet's aggregation population (self-exclusion for multi-select sidebars); other conditions (other facets, free text, ``status``) still apply, and the hits themselves stay filtered by the full ``q``.  Default ``false`` keeps the population identical to the hits.  Compatible with ``cursor`` but not applied on the cursor path (the cursor token carries no AST).  See ``docs/db-portal-api-spec.md`` § 集計母集団と self-exclusion.",
+              "default": false,
+              "title": "Facetselfexclude"
+            },
+            "description": "When ``true``, drop each facet's own ``q`` filter from that facet's aggregation population (self-exclusion for multi-select sidebars); other conditions (other facets, free text, ``status``) still apply, and the hits themselves stay filtered by the full ``q``.  Default ``false`` keeps the population identical to the hits.  Compatible with ``cursor`` but not applied on the cursor path (the cursor token carries no AST).  See ``docs/db-portal-api-spec.md`` § 集計母集団と self-exclusion."
           }
         ],
         "responses": {

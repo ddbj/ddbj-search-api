@@ -477,3 +477,117 @@ class TestDbPortalEsFacets:
         """IT-DBPORTAL-21: allowlist 外 facet 名は 422."""
         resp = app.get("/db-portal/search", params={"db": "bioproject", "facets": "__not_a_facet__"})
         assert resp.status_code == 422
+
+
+class TestDbPortalEsSelfExclusion:
+    """IT-DBPORTAL-23: facetSelfExclude による ES facet の self-exclusion.
+
+    各 facet の集計母集団から「その facet 自身の ``q`` フィルタだけ」を外す
+    (docs/db-portal-api-spec.md § 集計母集団と self-exclusion)。固定件数では
+    なく「self-exclusion 有無で bucket 集合がどう変わるか」の構造的不変条件で検証する。
+    """
+
+    @staticmethod
+    def _organism_values(app: TestClient, db: str, size: int = 50) -> list[str]:
+        resp = app.get("/db-portal/search", params={"db": db, "facets": "organism", "facetsSize": size})
+        assert resp.status_code == 200
+        return [b["value"] for b in resp.json()["facets"]["organism"]]
+
+    def test_self_exclude_retains_other_facet_values(self, app: TestClient) -> None:
+        """単一 facet を 1 値で絞っても、self-exclusion 有効なら同 facet に他候補が残る
+        (multi-select で追加選択が可能)。"""
+        values = self._organism_values(app, "bioproject")
+        if len(values) < 2:
+            pytest.skip("self-exclusion 検証には organism が 2 値以上必要")
+        selected = values[0]
+        resp = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": f"organism_id:{selected}",
+                "facets": "organism",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        on_vals = {b["value"] for b in resp.json()["facets"]["organism"]}
+        assert selected in on_vals
+        assert on_vals - {selected}
+
+    def test_default_collapses_to_selected(self, app: TestClient) -> None:
+        """self-exclusion 無効 (既定) では organism facet が選択値だけに潰れる (従来挙動)。"""
+        values = self._organism_values(app, "bioproject")
+        if not values:
+            pytest.skip("bioproject organism facet が空: テスト前提のデータ不足")
+        selected = values[0]
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": f"organism_id:{selected}", "facets": "organism"},
+        )
+        assert resp.status_code == 200
+        assert {b["value"] for b in resp.json()["facets"]["organism"]} == {selected}
+
+    def test_self_exclude_does_not_change_hits(self, app: TestClient) -> None:
+        """self-exclusion は facet 集計母集団にしか効かず、hits は ``q`` 全フィルタ適用の
+        まま → total は self-exclusion 有無で不変。"""
+        values = self._organism_values(app, "bioproject")
+        if not values:
+            pytest.skip("bioproject organism facet が空: テスト前提のデータ不足")
+        selected = values[0]
+        params = {"db": "bioproject", "q": f"organism_id:{selected}", "facets": "organism"}
+        off = app.get("/db-portal/search", params=params)
+        on = app.get("/db-portal/search", params={**params, "facetSelfExclude": "true"})
+        assert off.status_code == 200
+        assert on.status_code == 200
+        assert on.json()["total"] == off.json()["total"]
+
+    def test_other_facet_still_drilled_down(self, app: TestClient) -> None:
+        """self-exclusion 対象でない facet (objectType) は ``q`` 全体で絞られたまま:
+        organism を self-exclude しても objectType の bucket は plain な
+        ``q=organism_id:<v>`` の objectType と一致する (drill-down が効く)。"""
+        values = self._organism_values(app, "bioproject")
+        if not values:
+            pytest.skip("bioproject organism facet が空: テスト前提のデータ不足")
+        selected = values[0]
+        se = app.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": f"organism_id:{selected}",
+                "facets": "organism,objectType",
+                "facetSelfExclude": "true",
+            },
+        )
+        plain = app.get(
+            "/db-portal/search",
+            params={"db": "bioproject", "q": f"organism_id:{selected}", "facets": "objectType"},
+        )
+        assert se.status_code == 200
+        assert plain.status_code == 200
+        se_obj = {b["value"]: b["count"] for b in se.json()["facets"]["objectType"]}
+        plain_obj = {b["value"]: b["count"] for b in plain.json()["facets"]["objectType"]}
+        assert se_obj == plain_obj
+
+    def test_cross_self_exclude_retains_other_organisms(self, app: TestClient) -> None:
+        """横断 (entries union) でも self-exclusion で同 facet の他候補が残り、
+        無効では選択値に潰れる。"""
+        base = app.get("/db-portal/cross-search", params={"facets": "organism", "topHits": 0, "facetsSize": 50})
+        assert base.status_code == 200
+        values = [b["value"] for b in base.json()["facets"]["organism"]]
+        if len(values) < 2:
+            pytest.skip("cross organism が 2 値以上必要")
+        selected = values[0]
+        on = app.get(
+            "/db-portal/cross-search",
+            params={"q": f"organism_id:{selected}", "facets": "organism", "topHits": 0, "facetSelfExclude": "true"},
+        )
+        assert on.status_code == 200
+        on_vals = {b["value"] for b in on.json()["facets"]["organism"]}
+        assert selected in on_vals
+        assert on_vals - {selected}
+        off = app.get(
+            "/db-portal/cross-search",
+            params={"q": f"organism_id:{selected}", "facets": "organism", "topHits": 0},
+        )
+        assert off.status_code == 200
+        assert {b["value"] for b in off.json()["facets"]["organism"]} == {selected}

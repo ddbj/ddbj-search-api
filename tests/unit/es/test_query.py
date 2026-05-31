@@ -16,22 +16,28 @@ from ddbj_search_api.es.query import (
     _COMMON_FACET_NAMES,
     _CROSS_TYPE_ONLY_FACET_NAMES,
     _DB_PORTAL_ES_SUBTYPES,
+    _FACET_AGG_SPECS,
+    _FACET_TO_DSL_FIELD,
     _TYPE_SPECIFIC_FACET_SCOPE,
     DEFAULT_FACET_SIZE,
     _parse_keywords,
     build_facet_aggs,
     build_search_query,
+    build_self_excluding_facet_aggs,
     build_sort,
     build_sort_with_tiebreaker,
     build_source_filter,
     build_status_filter,
     db_portal_es_facet_allowlist,
+    facet_to_dsl_field,
     inject_status_filter,
     pagination_to_from_size,
     resolve_facets_size,
     resolve_requested_facets,
     validate_keyword_fields,
 )
+from ddbj_search_api.search.dsl import parse, validate
+from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES
 from ddbj_search_api.search.phrase import ES_AUTO_PHRASE_CHARS
 from tests.unit.strategies import alphanumeric_no_trigger, text_with_trigger
 
@@ -701,6 +707,27 @@ class TestBuildSearchQueryCombined:
 # ===================================================================
 # build_facet_aggs
 # ===================================================================
+
+
+class TestFacetToDslField:
+    """facet 名 → DSL field 逆引き表と agg-spec / allowlist の整合 (self-exclusion)."""
+
+    def test_keys_match_facet_agg_specs(self) -> None:
+        """逆引き表のキーは全 facet (``_FACET_AGG_SPECS``) と 1:1 対応する。"""
+        assert set(_FACET_TO_DSL_FIELD) == set(_FACET_AGG_SPECS)
+
+    def test_values_are_allowlisted_dsl_fields(self) -> None:
+        """再注入先 DSL field は全て allowlist に存在する (除外後に compile 可能)。"""
+        assert set(_FACET_TO_DSL_FIELD.values()) <= set(FIELD_TYPES)
+
+    def test_known_facets_map_to_expected_field(self) -> None:
+        assert facet_to_dsl_field("organism") == "organism_id"
+        assert facet_to_dsl_field("objectType") == "object_type"
+        assert facet_to_dsl_field("accessibility") == "accessibility"
+
+    def test_unknown_facet_raises_key_error(self) -> None:
+        with pytest.raises(KeyError):
+            facet_to_dsl_field("no_such_facet")
 
 
 class TestBuildFacetAggs:
@@ -1983,3 +2010,143 @@ class TestDbPortalEsFacetAllowlist:
 
     def test_cross_type_only_member_present_for_cross(self) -> None:
         assert db_portal_es_facet_allowlist(None) >= _CROSS_TYPE_ONLY_FACET_NAMES
+
+
+# ===================================================================
+# build_self_excluding_facet_aggs (facet self-exclusion)
+# ===================================================================
+
+
+def _single_ast(q: str) -> Any:
+    ast = parse(q)
+    validate(ast, mode="single")
+    return ast
+
+
+def _term_fields(node: Any) -> list[str]:
+    """Collect every ``term`` clause field name anywhere in an ES query dict."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "term" and isinstance(value, dict):
+                found.extend(value.keys())
+            else:
+                found.extend(_term_fields(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_term_fields(item))
+    return found
+
+
+class TestBuildSelfExcludingFacetAggs:
+    """build_self_excluding_facet_aggs: each facet's terms agg is wrapped in a
+    ``filter`` aggregation whose population drops that facet's own clause but
+    keeps the other clauses + status filter (docs § 集計母集団と self-exclusion).
+    """
+
+    def test_each_facet_wrapped_in_filter_with_inner_terms(self) -> None:
+        ast = _single_ast("organism_id:9606 AND package:foo")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            requested_facets=["organism", "package"],
+            size=100,
+        )
+        assert set(aggs) == {"organism", "package"}
+        for name in ("organism", "package"):
+            assert "filter" in aggs[name]
+            # The inner terms aggregation keeps the facet's own name so
+            # _unwrap_terms_agg can normalise both shapes.
+            assert name in aggs[name]["aggs"]
+            assert "terms" in aggs[name]["aggs"][name]
+
+    def test_facet_population_excludes_own_clause_keeps_others(self) -> None:
+        ast = _single_ast("organism_id:9606 AND package:foo")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            requested_facets=["organism", "package"],
+            size=100,
+        )
+        organism_filter = aggs["organism"]["filter"]
+        package_filter = aggs["package"]["filter"]
+        # organism facet drops its own organism.identifier clause but keeps package.
+        assert "organism.identifier" not in _term_fields(organism_filter)
+        assert "package.name" in _term_fields(organism_filter)
+        # package facet drops its own package.name clause but keeps organism.
+        assert "package.name" not in _term_fields(package_filter)
+        assert "organism.identifier" in _term_fields(package_filter)
+
+    def test_status_filter_applied_to_every_facet(self) -> None:
+        ast = _single_ast("organism_id:9606 AND package:foo")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            requested_facets=["organism", "package"],
+            size=100,
+        )
+        # status is injected independently of the DSL q, so it survives
+        # self-exclusion for every facet.
+        assert "status" in _term_fields(aggs["organism"]["filter"])
+        assert "status" in _term_fields(aggs["package"]["filter"])
+
+    def test_inner_terms_size_flows_and_organism_label_fixed(self) -> None:
+        ast = _single_ast("package:foo")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            requested_facets=["organism", "package"],
+            size=7,
+        )
+        assert aggs["package"]["aggs"]["package"]["terms"]["size"] == 7
+        assert aggs["organism"]["aggs"]["organism"]["terms"]["size"] == 7
+        # organism's label sub-aggregation stays size 1 regardless of facetsSize.
+        assert aggs["organism"]["aggs"]["organism"]["aggs"]["name"]["terms"]["size"] == 1
+
+    def test_only_own_clause_yields_status_only_population(self) -> None:
+        """q=organism_id:9606 単独で organism を集計すると、母集団は status のみ
+        (全 organism が候補に残る self-exclusion の核心ケース)。"""
+        ast = _single_ast("organism_id:9606")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            requested_facets=["organism"],
+            size=100,
+        )
+        fields = _term_fields(aggs["organism"]["filter"])
+        assert "organism.identifier" not in fields
+        assert fields == ["status"]
+
+    def test_or_multiselect_fully_excluded(self) -> None:
+        """organism_id:9606 OR organism_id:10090 を organism 集計から外すと、
+        母集団から organism 句が完全に消える (OR 全体が除外される)。"""
+        ast = _single_ast("organism_id:9606 OR organism_id:10090")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            requested_facets=["organism"],
+            size=100,
+        )
+        assert "organism.identifier" not in _term_fields(aggs["organism"]["filter"])
+
+    def test_ast_none_population_is_status_only(self) -> None:
+        aggs = build_self_excluding_facet_aggs(
+            ast=None,
+            status_mode="public_only",
+            requested_facets=["organism", "accessibility"],
+            size=100,
+        )
+        for name in ("organism", "accessibility"):
+            assert _term_fields(aggs[name]["filter"]) == ["status"]
+
+    def test_cross_type_includes_type_facet(self) -> None:
+        ast = _single_ast("organism_id:9606")
+        aggs = build_self_excluding_facet_aggs(
+            ast=ast,
+            status_mode="public_only",
+            is_cross_type=True,
+            requested_facets=["organism", "type"],
+            size=100,
+        )
+        assert set(aggs) == {"organism", "type"}
+        assert aggs["type"]["aggs"]["type"]["terms"]["field"] == "type"

@@ -315,3 +315,56 @@ class TestSolrFacets:
         resp = app.get("/db-portal/search", params={"db": "trad", "facets": "organism"})
         assert resp.status_code == 400
         assert "facet-not-applicable" in resp.json().get("type", "")
+
+
+class TestSolrSelfExclusion:
+    """IT-DBPORTAL-24: Solr facet の self-exclusion (staging_only).
+
+    トップレベル AND 直下の facet 句を ``{!tag}`` 付き ``fq`` に分離し、その facet の
+    集計だけ ``{!ex}`` で当該フィルタを外す (docs/db-portal-api-spec.md § 集計母集団と
+    self-exclusion)。hits 母集団 (``q`` ∧ ``fq``) は不変。
+    """
+
+    @staticmethod
+    def _division_values(app: TestClient, size: int = 50) -> list[str]:
+        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division", "facetsSize": size})
+        assert resp.status_code == 200
+        return [b["value"] for b in resp.json()["facets"]["division"]]
+
+    def test_self_exclude_retains_other_divisions(self, app: TestClient) -> None:
+        """division を 1 値で絞っても self-exclusion 有効なら他 division が残る。"""
+        values = self._division_values(app)
+        if len(values) < 2:
+            pytest.skip("self-exclusion 検証には division が 2 値以上必要")
+        selected = values[0]
+        resp = app.get(
+            "/db-portal/search",
+            params={"db": "trad", "q": f"division:{selected}", "facets": "division", "facetSelfExclude": "true"},
+        )
+        assert resp.status_code == 200
+        on_vals = {b["value"] for b in resp.json()["facets"]["division"]}
+        assert selected in on_vals
+        assert on_vals - {selected}
+
+    def test_default_collapses_to_selected(self, app: TestClient) -> None:
+        """self-exclusion 無効 (既定) では division facet が選択値だけに潰れる。"""
+        values = self._division_values(app)
+        if not values:
+            pytest.skip("trad division facet が空: テスト前提のデータ不足")
+        selected = values[0]
+        resp = app.get("/db-portal/search", params={"db": "trad", "q": f"division:{selected}", "facets": "division"})
+        assert resp.status_code == 200
+        assert {b["value"] for b in resp.json()["facets"]["division"]} == {selected}
+
+    def test_self_exclude_does_not_change_hits(self, app: TestClient) -> None:
+        """fq に分離した句が hits には効くので total は self-exclusion 有無で不変。"""
+        values = self._division_values(app)
+        if not values:
+            pytest.skip("trad division facet が空: テスト前提のデータ不足")
+        selected = values[0]
+        params = {"db": "trad", "q": f"division:{selected}", "facets": "division"}
+        off = app.get("/db-portal/search", params=params)
+        on = app.get("/db-portal/search", params={**params, "facetSelfExclude": "true"})
+        assert off.status_code == 200
+        assert on.status_code == 200
+        assert on.json()["total"] == off.json()["total"]

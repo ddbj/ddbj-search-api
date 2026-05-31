@@ -34,13 +34,40 @@ def format_xref_dict(type_: str, accession: str) -> dict[str, Any]:
     return xref.model_dump(by_alias=True)
 
 
+def _unwrap_terms_agg(aggregations: dict[str, Any], agg_name: str) -> dict[str, Any] | None:
+    """Return the terms aggregation body for ``agg_name`` (or ``None`` if absent).
+
+    Handles both shapes the db-portal facet path can produce:
+
+    - plain terms (``facetSelfExclude`` off): ``aggregations[name]`` already
+      carries ``buckets`` directly.
+    - self-exclusion filter-wrap (``facetSelfExclude`` on): ``aggregations[name]``
+      is a ``filter`` aggregation (``{"doc_count": N, name: {"buckets": ...}}``),
+      so the inner same-named terms aggregation holds the buckets (see
+      :func:`ddbj_search_api.es.query.build_self_excluding_facet_aggs`).
+
+    Returning ``None`` when the name is missing lets callers distinguish "not
+    aggregated" from "aggregated but empty".
+    """
+    agg: dict[str, Any] | None = aggregations.get(agg_name)
+    if agg is None:
+        return None
+    if "buckets" in agg:
+        return agg
+    inner = agg.get(agg_name)
+
+    return inner if isinstance(inner, dict) else None
+
+
 def _optional_organism(aggregations: dict[str, Any]) -> list[OrganismFacetBucket] | None:
     """Build the ``organism`` facet bucket list from an ES aggregation.
 
     The aggregation is expected to be ``terms`` on ``organism.identifier``
     with a ``name`` sub-aggregation (``terms`` on ``organism.name.keyword``,
     ``size=1``) — see ``_FACET_AGG_SPECS["organism"]`` in
-    :mod:`ddbj_search_api.es.query`.
+    :mod:`ddbj_search_api.es.query`.  Under ``facetSelfExclude`` the terms
+    aggregation is wrapped in a ``filter`` aggregation; :func:`_unwrap_terms_agg`
+    normalises both shapes.
 
     If the sub-aggregation produces no buckets for an entry (a rare data-
     quality case where ``organism.identifier`` is set but ``organism.name``
@@ -49,9 +76,9 @@ def _optional_organism(aggregations: dict[str, Any]) -> list[OrganismFacetBucket
     ``label`` required).  The fallback is logged at ``WARNING`` level to
     surface the data-quality issue.
     """
-    if "organism" not in aggregations:
+    agg = _unwrap_terms_agg(aggregations, "organism")
+    if agg is None:
         return None
-    agg = aggregations["organism"]
     buckets: list[OrganismFacetBucket] = []
     for b in agg.get("buckets", []):
         tax_id = b["key"]
@@ -73,11 +100,13 @@ def _buckets_or_none(aggregations: dict[str, Any], agg_name: str) -> list[FacetB
 
     Returns ``None`` when the aggregation is absent from the ES response
     (so callers can distinguish "not aggregated" from "aggregated but no
-    buckets", ``[]``).
+    buckets", ``[]``).  Both plain terms and self-exclusion filter-wrap
+    shapes are accepted via :func:`_unwrap_terms_agg`.
     """
-    if agg_name not in aggregations:
+    agg = _unwrap_terms_agg(aggregations, agg_name)
+    if agg is None:
         return None
-    agg = aggregations[agg_name]
+
     return [FacetBucket(value=b["key"], count=b["doc_count"]) for b in agg.get("buckets", [])]
 
 
