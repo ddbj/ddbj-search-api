@@ -40,6 +40,7 @@ from ddbj_search_api.es.query import (
     DEFAULT_FACET_SIZE,
     StatusMode,
     build_facet_aggs,
+    build_facet_base_query,
     build_search_query,
     build_self_excluding_facet_aggs,
     build_sort_with_tiebreaker,
@@ -689,16 +690,28 @@ async def _cross_facets_agg(
 ) -> DbPortalFacets | None:
     """Aggregate cross-search facets against the ``entries`` alias (size=0).
 
-    Reuses the same compiled ES query (status filter included) as the count
-    fan-out for the top-level ``query``, so the facet population matches the
-    ES 6-DB union.  Under ``facet_self_exclude`` each facet's terms agg is
-    wrapped in a ``filter`` aggregation that drops the facet's own clause from
-    the population (docs/db-portal-api-spec.md § 集計母集団と self-exclusion);
-    the top-level ``query`` (and therefore the hit population) is unchanged.
+    Without ``facet_self_exclude`` this reuses the same compiled ES query
+    (status filter included) as the count fan-out for the top-level ``query``,
+    so the facet population matches the ES 6-DB union.
+
+    Under ``facet_self_exclude`` the top-level ``query`` is the **base** query
+    (every requested facet's own clause removed, :func:`build_facet_base_query`)
+    and each facet's terms agg is wrapped in a ``filter`` aggregation that
+    re-adds the *other* facets' clauses — ES filter aggs can only narrow the
+    top-level query, so the facet selections must live below it, not in it
+    (docs/db-portal-api-spec.md § 集計母集団と self-exclusion).  This is a
+    size=0 request so no hit population is involved.
+
     Returns ``None`` on failure / timeout so cross-search stays 200 on the
     count fan-out result (docs/db-portal-api-spec.md § facet 集計).
     """
     if facet_self_exclude:
+        query = build_facet_base_query(
+            ast,
+            status_mode,
+            requested_facets=requested_facets,
+            free_text_operator=free_text_operator,
+        )
         aggs = build_self_excluding_facet_aggs(
             ast=ast,
             status_mode=status_mode,
@@ -708,8 +721,9 @@ async def _cross_facets_agg(
             free_text_operator=free_text_operator,
         )
     else:
+        query = es_query_body
         aggs = build_facet_aggs(is_cross_type=True, requested_facets=requested_facets, size=facets_size)
-    body: dict[str, Any] = {"query": es_query_body, "size": 0, "aggs": aggs}
+    body: dict[str, Any] = {"query": query, "size": 0, "aggs": aggs}
     # The response parse is inside the try so a 200-with-malformed-aggregation
     # (unexpected bucket shape, non-int doc_count, mapping drift) also degrades
     # to ``facets=null`` rather than 500-ing the whole cross-search — matching
@@ -1013,10 +1027,17 @@ async def _db_specific_search_es_unified(
     query を decode して使う) に分離されているため、こちらは offset のみ扱う。
 
     ``requested_facets`` が非空のとき、hits 検索と同一 body に aggs を相乗りさせ
-    ``DbPortalFacets`` にパースして詰める。既定では母集団 = hits と同一 query。
-    ``facet_self_exclude`` が True のとき各 facet を ``filter`` aggregation で包み、
-    その facet 自身の clause を除いた母集団で集計する (top-level ``query`` は不変なので
-    hits は ``q`` 全フィルタ適用のまま)。
+    ``DbPortalFacets`` にパースして詰める。既定では top-level ``query`` = ``es_query_body``
+    (= hits と同一 query) で集計する。
+
+    ``facet_self_exclude`` が True のときは top-level ``query`` を base
+    (全 requested facet を除外した query, :func:`build_facet_base_query`) に差し替え、
+    ``post_filter`` で hits だけ ``q`` 全フィルタに絞り直す。ES の ``filter`` aggregation は
+    top-level query を超えて母集団を広げられないため、facet 選択を top-level query から
+    抜き、各 facet の filter agg で他 facet 句を足し戻すことで「``q`` から自 facet の句だけを
+    外した母集団」を実現する。``post_filter`` は aggregation に影響しないので、hits / total /
+    cursor は ``q`` 全フィルタ適用のまま (docs/db-portal-api-spec.md § 集計母集団と
+    self-exclusion)。
     """
     assert query.db is not None
     _validate_deep_paging(query.page, query.per_page)
@@ -1030,6 +1051,17 @@ async def _db_specific_search_es_unified(
     }
     if requested_facets:
         if facet_self_exclude:
+            body["query"] = build_facet_base_query(
+                ast,
+                status_mode,
+                requested_facets=requested_facets,
+                free_text_operator=free_text_operator,
+            )
+            if ast is not None:
+                # Restore the hit population to the full ``q`` for hits / total
+                # only; ``post_filter`` does not touch the aggregations, which
+                # keep seeing the base query.
+                body["post_filter"] = compile_to_es(ast, free_text_operator=free_text_operator)
             body["aggs"] = build_self_excluding_facet_aggs(
                 ast=ast,
                 status_mode=status_mode,

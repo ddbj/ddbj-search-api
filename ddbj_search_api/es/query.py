@@ -883,6 +883,36 @@ def es_query_from_ast(
     )
 
 
+def build_facet_base_query(
+    ast: Node | None,
+    status_mode: StatusMode,
+    *,
+    requested_facets: list[str] | None = None,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+) -> dict[str, Any]:
+    """Top-level ``query`` for a self-excluding facet request.
+
+    ES ``filter`` aggregations can only *narrow* the documents already selected
+    by the top-level ``query`` — they cannot widen the population back out. So
+    for self-exclusion the top-level query must drop **every** requested facet's
+    own clause; each facet's ``filter`` aggregation then re-adds the *other*
+    facets' clauses (:func:`build_self_excluding_facet_aggs`), making the
+    population for facet ``F`` exactly "``q`` minus ``F``"
+    (docs/db-portal-api-spec.md § 集計母集団と self-exclusion).
+
+    The hit population (``q`` の全フィルタ) is restored separately — by
+    ``post_filter`` on a hits-bearing request, or it simply does not apply on the
+    cross-search size=0 aggregation request.
+    """
+    base = ast
+    for name in requested_facets or []:
+        dsl_field = _FACET_TO_DSL_FIELD.get(name)
+        if dsl_field is not None:
+            base = exclude_field_from_ast(base, dsl_field)
+
+    return es_query_from_ast(base, status_mode, free_text_operator=free_text_operator)
+
+
 def build_self_excluding_facet_aggs(
     *,
     ast: Node | None,
@@ -896,9 +926,13 @@ def build_self_excluding_facet_aggs(
 
     facet ``F`` ごとに、``F`` に対応する DSL field (:func:`facet_to_dsl_field`) の clause
     を ``ast`` から除外した ES query を ``filter`` に被せ、その下に ``F`` の terms 集計
-    (:func:`build_facet_aggs` と同一 spec) を置く。母集団は ``F`` 自身のフィルタを外し、
-    他条件・status filter は維持する (docs/db-portal-api-spec.md § 集計母集団と
-    self-exclusion)。除外で ``ast`` が空になれば status filter のみの母集団になる。
+    (:func:`build_facet_aggs` と同一 spec) を置く。これは **top-level ``query`` が
+    :func:`build_facet_base_query` の出力 (全 requested facet を除外した base)** であることを
+    前提にする: ES の filter aggregation は top-level query を超えて母集団を広げられないため、
+    base を top-level に置き、各 filter agg で「``F`` 以外の facet 句」を足し戻すことで
+    母集団 = ``q`` から ``F`` の句だけを外した集合になる (docs/db-portal-api-spec.md
+    § 集計母集団と self-exclusion)。``ast`` が空 (全 facet 除外で残らない) なら status の
+    みの母集団になる。
 
     内側 terms 集計の名前を facet 名と同じにするため、レスポンスは
     ``aggregations[F][F]["buckets"]`` の 2 段構造になる。

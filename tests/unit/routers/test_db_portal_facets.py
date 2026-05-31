@@ -621,11 +621,13 @@ def _filter_wrapped(name: str, inner: dict[str, Any], doc_count: int) -> dict[st
 
 
 class TestDbPortalEsSelfExclusion:
-    """facetSelfExclude=true wraps each ES facet in a ``filter`` aggregation
-    that drops the facet's own clause; the top-level hits ``query`` is unchanged
+    """facetSelfExclude=true moves the facet selections out of the top-level
+    ``query`` (ES filter aggs can only narrow it) into a ``base`` query, wraps
+    each facet in a ``filter`` aggregation that re-adds the *other* facets'
+    clauses, and restores the hit population via ``post_filter``
     (docs § 集計母集団と self-exclusion)."""
 
-    def test_self_exclude_wraps_each_facet_in_filter(
+    def test_self_exclude_moves_selections_below_query(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -648,25 +650,43 @@ class TestDbPortalEsSelfExclusion:
         )
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal)
-        # Each facet is now a filter aggregation with an inner same-named terms agg.
+        # Top-level query is the base: BOTH facet selections are removed (ES
+        # filter aggs cannot widen past it), but status survives.
+        top_fields = _term_fields(body["query"])
+        assert "organism.identifier" not in top_fields
+        assert "package.name" not in top_fields
+        assert "status" in top_fields
+        # post_filter restores the full q for the hits (both clauses back).
+        post_fields = _term_fields(body["post_filter"])
+        assert "organism.identifier" in post_fields
+        assert "package.name" in post_fields
+        # Each facet is a filter aggregation with an inner same-named terms agg,
+        # re-adding the OTHER facet's clause only.
         for name in ("organism", "package"):
             assert "filter" in body["aggs"][name]
             assert "terms" in body["aggs"][name]["aggs"][name]
-        # organism facet drops its own clause from the population, keeps package + status.
         organism_filter = body["aggs"]["organism"]["filter"]
         assert "organism.identifier" not in _term_fields(organism_filter)
         assert "package.name" in _term_fields(organism_filter)
-        assert "status" in _term_fields(organism_filter)
+        package_filter = body["aggs"]["package"]["filter"]
+        assert "package.name" not in _term_fields(package_filter)
+        assert "organism.identifier" in _term_fields(package_filter)
         # Response is parsed through the filter-wrap shape.
         assert resp.json()["facets"]["organism"][0]["value"] == "9606"
 
-    def test_self_exclude_keeps_hits_query_unchanged(
+    def test_self_exclude_restores_hits_via_post_filter(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
     ) -> None:
-        """Bug guard: only the aggs change; the top-level query (= hit population)
-        stays identical to the non-self-exclude request."""
+        """Bug guard: hits stay filtered by the full ``q`` (via post_filter) even
+        though the self-excluded facet's clause is gone from the top-level query.
+
+        Earlier the facet was wrapped in a filter agg while the top-level query
+        kept the facet clause — but ES filter aggs only narrow the top-level
+        population, so the self-exclusion was a no-op.  The fix moves the
+        selection below the query and restores hits with post_filter.
+        """
         mock_es_search_db_portal.return_value = make_es_search_response(
             total=1,
             aggregations={"organism": _filter_wrapped("organism", _organism_agg("9606", 1, "H"), 1)},
@@ -687,9 +707,13 @@ class TestDbPortalEsSelfExclusion:
         )
         body_plain = get_es_search_body(mock_es_search_db_portal)
 
-        assert body_excl["query"] == body_plain["query"]
-        assert "organism.identifier" in _term_fields(body_excl["query"])
-        # The aggregations differ: filter-wrapped vs plain terms.
+        # Self-exclude: top-level query no longer carries the facet clause...
+        assert "organism.identifier" not in _term_fields(body_excl["query"])
+        # ...but post_filter does, so hits/total stay on the full q.
+        assert "organism.identifier" in _term_fields(body_excl["post_filter"])
+        # Non-self-exclude: the facet clause is in the top-level query, no post_filter.
+        assert "organism.identifier" in _term_fields(body_plain["query"])
+        assert "post_filter" not in body_plain
         assert "filter" in body_excl["aggs"]["organism"]
         assert "filter" not in body_plain["aggs"]["organism"]
 
@@ -709,8 +733,9 @@ class TestDbPortalEsSelfExclusion:
         body = get_es_search_body(mock_es_search_db_portal)
         assert "filter" not in body["aggs"]["organism"]
         assert "terms" in body["aggs"]["organism"]
+        assert "post_filter" not in body
 
-    def test_cross_self_exclude_wraps_entries_aggs(
+    def test_cross_self_exclude_uses_base_query(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -730,15 +755,18 @@ class TestDbPortalEsSelfExclusion:
         assert resp.status_code == 200
         entries_body = _find_es_body_by_index(mock_es_search_db_portal, "entries")
         assert entries_body is not None
+        assert entries_body["size"] == 0
         assert "filter" in entries_body["aggs"]["organism"]
-        # organism's own clause is dropped from the facet population.
+        # size=0 facet request: top-level query is the base (no facet clause), no
+        # post_filter (no hits to restore).
+        assert "organism.identifier" not in _term_fields(entries_body["query"])
+        assert "post_filter" not in entries_body
         assert "organism.identifier" not in _term_fields(entries_body["aggs"]["organism"]["filter"])
-        # Top-level query (hit/count population) still carries the clause and equals
-        # a per-DB count body.
-        assert "organism.identifier" in _term_fields(entries_body["query"])
+        # The per-DB count population still carries the full q (counts are not
+        # self-excluded).
         count_body = _find_es_body_by_index(mock_es_search_db_portal, "bioproject")
         assert count_body is not None
-        assert entries_body["query"] == count_body["query"]
+        assert "organism.identifier" in _term_fields(count_body["query"])
 
     def test_cursor_ignores_self_exclude(
         self,

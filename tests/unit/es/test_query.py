@@ -22,6 +22,7 @@ from ddbj_search_api.es.query import (
     DEFAULT_FACET_SIZE,
     _parse_keywords,
     build_facet_aggs,
+    build_facet_base_query,
     build_search_query,
     build_self_excluding_facet_aggs,
     build_sort,
@@ -2150,3 +2151,43 @@ class TestBuildSelfExcludingFacetAggs:
         )
         assert set(aggs) == {"organism", "type"}
         assert aggs["type"]["aggs"]["type"]["terms"]["field"] == "type"
+
+
+class TestBuildFacetBaseQuery:
+    """build_facet_base_query: top-level query that drops EVERY requested
+    facet's own clause (the population the filter aggs narrow back down)."""
+
+    def test_drops_all_requested_facet_clauses(self) -> None:
+        ast = _single_ast("organism_id:9606 AND package:foo")
+        q = build_facet_base_query(ast, "public_only", requested_facets=["organism", "package"])
+        # both facet clauses removed; only status survives.
+        assert _term_fields(q) == ["status"]
+
+    def test_keeps_non_requested_facet_clause(self) -> None:
+        """Only the requested facets are excluded; a clause whose facet is not
+        requested stays in the base (it is a fixed condition, not a facet)."""
+        ast = _single_ast("organism_id:9606 AND package:foo")
+        q = build_facet_base_query(ast, "public_only", requested_facets=["organism"])
+        fields = _term_fields(q)
+        assert "organism.identifier" not in fields
+        assert "package.name" in fields
+        assert "status" in fields
+
+    def test_keeps_free_text_and_non_facet_fields(self) -> None:
+        ast = _single_ast("cancer AND organism_id:9606")
+        q = build_facet_base_query(ast, "public_only", requested_facets=["organism"])
+        # organism dropped, but the free-text part of the query remains.
+        assert "organism.identifier" not in _term_fields(q)
+        assert q != build_search_query(keywords=None, keyword_operator="AND", status_mode="public_only")
+
+    def test_none_ast_is_status_only(self) -> None:
+        q = build_facet_base_query(None, "public_only", requested_facets=["organism"])
+        assert _term_fields(q) == ["status"]
+
+    def test_no_requested_facets_returns_full_query(self) -> None:
+        ast = _single_ast("organism_id:9606")
+        base = build_facet_base_query(ast, "public_only", requested_facets=[])
+        full = build_facet_base_query(ast, "public_only", requested_facets=None)
+        # Nothing excluded → identical to compiling the full query.
+        assert "organism.identifier" in _term_fields(base)
+        assert base == full

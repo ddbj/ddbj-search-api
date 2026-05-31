@@ -326,7 +326,7 @@ facet 集計の母集団は `facetSelfExclude` パラメータ (boolean, 既定 
 
 除外の粒度は backend ごとに異なる:
 
-- **ES (6 DB + cross)**: `q` の AST 中に現れる `F` 対応 field の clause を、出現位置 (AND / OR / NOT / ネスト) に関わらずすべて母集団から外す。除外後に条件が空になれば全件 (`status` のみ適用) を母集団とする。各 facet を個別の `filter` aggregation で集計し 1 リクエストで完結する。
+- **ES (6 DB + cross)**: `q` の AST 中に現れる `F` 対応 field の clause を、出現位置 (AND / OR / NOT / ネスト) に関わらずすべて母集団から外す。除外後に条件が空になれば全件 (`status` のみ適用) を母集団とする。ES の `filter` aggregation は top-level `query` で選ばれた文書集合をさらに**絞る**ことしかできず母集団を広げられないため、top-level `query` を「**全 requested facet の clause を除いた base**」に置き、各 facet を `filter` aggregation で包んで「`F` 以外の facet 句」を足し戻す。これで facet `F` の母集団 = 「`q` から `F` の句だけを外した集合」になる。hits 側の母集団 (= `q` 全フィルタ) は `post_filter` (aggregation には効かない) で復元するため、hits / total / cursor は `q` 全フィルタ適用のまま不変。1 リクエストで完結する (横断は size=0 集計リクエストなので `post_filter` 不要)。
 - **Solr (trad / taxonomy)**: `q` の**トップレベル AND 直下**にある `F` 対応 field clause のみを self-exclusion 対象とする (`{!tag}` / `{!ex}` local params で分離)。OR / NOT 配下やネスト深部の clause は分離できないため self-exclusion されず、その facet は全フィルタ適用の母集団で集計される (degrade)。db-portal の sidebar は選択を AND で畳み込むため実用上のケースはカバーされる。
 - **cursor 経路 (ES single-DB)**: cursor token は AST を持たず compiled query のみを焼き込むため、`facetSelfExclude=true` を併用しても self-exclusion は適用されず、従来どおり cursor の母集団で集計する ([§ ページネーション](#ページネーション))。
 
@@ -392,9 +392,9 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
 
 ### 集計の発行と失敗時挙動
 
-- **単一 DB (ES)**: hits 検索と同一の ES リクエストに aggs を相乗りさせる。`facetSelfExclude=false` では母集団 = hits と同一 query。`true` では各 facet を `filter` aggregation で包み、その facet 自身の clause を除いた query を filter に被せる (hits の `query` 自体は不変)。
+- **単一 DB (ES)**: hits 検索と同一の ES リクエストに aggs を相乗りさせる。`facetSelfExclude=false` では母集団 = hits と同一 query。`true` では top-level `query` を base (全 requested facet を除外) に差し替え、各 facet を `filter` aggregation で包んで他 facet 句を足し戻し、hits だけ `post_filter` で `q` 全フィルタに絞り直す (`post_filter` は aggregation に影響しないため hits / total は不変)。
 - **単一 DB (Solr)**: hits 検索と同一の Solr リクエストに `facet=true` + `facet.field` + `facet.mincount=1` + `facet.limit=<facetsSize>` を付与し `facet_counts` をパースする。ARSA は 8 shard 分散集計。`facetSelfExclude=true` では self-exclusion 対象 facet の clause を `q` から `{!tag=…}` 付きの `fq` に分離し、`facet.field` に `{!ex=…}` を付けてその facet の集計時だけ当該フィルタを外す (hits 母集団 = `q` ∧ `fq` で不変)。
-- **横断 (cross)**: 8 DB count fan-out とは別に、entries alias へ size=0 の集計リクエストを 1 本追加発行する (fan-out と同じ compiled ES query + status filter)。`facetSelfExclude=true` では単一 DB (ES) と同じく facet ごとの `filter` aggregation で集計する。この集計が失敗 / timeout した場合は `facets=null` を返し、cross-search 自体は 200 (count fan-out の結果) を維持する。
+- **横断 (cross)**: 8 DB count fan-out とは別に、entries alias へ size=0 の集計リクエストを 1 本追加発行する。`facetSelfExclude=false` では fan-out と同じ compiled ES query + status filter を母集団にする。`true` では top-level `query` を base (全 requested facet を除外) に差し替え facet ごとの `filter` aggregation で他 facet 句を足し戻す (size=0 で hits を返さないため `post_filter` は不要)。この集計が失敗 / timeout した場合は `facets=null` を返し、cross-search 自体は 200 (count fan-out の結果) を維持する。
 
 ## クエリ文法
 
