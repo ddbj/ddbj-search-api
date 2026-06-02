@@ -824,3 +824,40 @@ class TestIncludeDbXrefsOnList:
         for item in resp.json()["items"]:
             assert "dbXrefs" not in item
             assert "dbXrefsCount" not in item
+
+
+class TestNestedParamScope:
+    """common nested param (organization / publication / grant) の DB scope と 0 件化。
+
+    publication / grant は実在 DB のみ受け付け対象外は 422、organization は全 DB 共通。
+    対応 nested path を持たない index (cross-type alias、型グループ内の非実在 subtype) でも
+    ignore_unmapped により 500 を返さない (docs/api-spec.md § nested フィールド検索)。
+    """
+
+    @pytest.mark.parametrize("param", ["organization", "publication", "grant"])
+    @pytest.mark.parametrize("type_", _ALL_TYPES)
+    def test_single_db_nested_param_never_500(self, app: TestClient, type_: str, param: str) -> None:
+        # scope 外は 422、scope 内は 200 (path 非実在 subtype は 0 件化)。500 は返さない。
+        resp = app.get(f"/entries/{type_}/", params={param: "x"})
+        assert resp.status_code in (200, 422), f"{type_} {param} -> {resp.status_code}"
+
+    def test_biosample_grant_returns_422(self, app: TestClient) -> None:
+        resp = app.get("/entries/biosample/", params={"grant": "AMED"})
+        assert resp.status_code == 422
+
+    def test_biosample_publication_returns_422(self, app: TestClient) -> None:
+        resp = app.get("/entries/biosample/", params={"publication": "cancer"})
+        assert resp.status_code == 422
+
+    def test_biosample_organization_returns_200(self, app: TestClient) -> None:
+        resp = app.get("/entries/biosample/", params={"organization": ORGANIZATION_NAME})
+        assert resp.status_code == 200
+
+    def test_cross_type_grant_returns_200(self, app: TestClient) -> None:
+        # 横断 entries alias は grant path 非実在 index を含むが ignore_unmapped で 0 件化する。
+        resp = app.get("/entries/", params={"grant": "AMED"})
+        assert resp.status_code == 200
+
+    def test_bioproject_grant_returns_200(self, app: TestClient) -> None:
+        resp = app.get("/entries/bioproject/", params={"grant": "AMED"})
+        assert resp.status_code == 200

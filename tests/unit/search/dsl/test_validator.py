@@ -528,6 +528,100 @@ class TestTier3SingleModeAccepted:
         validate(parse("sequence_length:1000"), mode="single")
 
 
+class TestSingleModeDbScope:
+    """single mode で db を指定すると、その db に実在しない field は field-not-available-for-db で reject される。
+
+    db 未指定 (db=None) では従来どおり scope 検証をスキップする (TestTier3SingleModeAccepted)。
+    db 内 subtype による分散 (db=jga の grant は jga-study のみ実在等) は db 粒度では弾かず、
+    ES nested の ignore_unmapped で 0 件化に委ねる。
+    """
+
+    @pytest.mark.parametrize(
+        ("dsl", "db"),
+        [
+            # Tier 3: その field を持たない db に投げると reject
+            ("grant_title:CREST", "biosample"),
+            ("grant_title:CREST", "sra"),
+            ("grant_title:CREST", "gea"),
+            ("grant_agency:JSPS", "metabobank"),
+            ("library_strategy:WGS", "jga"),
+            ("platform:ILLUMINA", "bioproject"),
+            ("host:Homo", "bioproject"),
+            ("dataset_type:fastq", "sra"),
+            ("vendor:Illumina", "bioproject"),
+            ("division:BCT", "taxonomy"),
+            ("rank:species", "trad"),
+            ("derived_from_id:SAMD00012345", "jga"),
+            ("external_link_label:GEO", "sra"),
+            # Tier 2: publication は biosample に nested 不在
+            ("publication:cancer", "biosample"),
+        ],
+    )
+    def test_field_rejected_for_wrong_db(self, dsl: str, db: str) -> None:
+        with pytest.raises(DslError) as exc_info:
+            validate(parse(dsl), mode="single", db=db)
+        assert exc_info.value.type == ErrorType.field_not_available_for_db
+
+    @pytest.mark.parametrize(
+        ("dsl", "db"),
+        [
+            # Tier 3: 実在する db (db 粒度。jga-study のみの grant も db=jga では通す)
+            ("grant_title:CREST", "bioproject"),
+            ("grant_title:CREST", "jga"),
+            ("grant_agency:JSPS", "bioproject"),
+            ("grant_agency:JSPS", "jga"),
+            ("library_strategy:WGS", "sra"),
+            ("host:Homo", "biosample"),
+            ("dataset_type:fastq", "jga"),
+            ("study_type:Cohort", "jga"),
+            ("study_type:Cohort", "metabobank"),
+            ("derived_from_id:SAMD00012345", "biosample"),
+            ("derived_from_id:SAMD00012345", "sra"),
+            ("external_link_label:GEO", "bioproject"),
+            ("external_link_label:GEO", "jga"),
+            ("division:BCT", "trad"),
+            ("rank:species", "taxonomy"),
+            # Tier 2 publication: biosample 以外の ES db
+            ("publication:cancer", "bioproject"),
+            ("publication:cancer", "sra"),
+            ("publication:cancer", "jga"),
+            ("publication:cancer", "gea"),
+            ("publication:cancer", "metabobank"),
+            # Tier 2 publication: Solr db は degenerate で通す (弾かない)
+            ("publication:cancer", "trad"),
+            ("publication:cancer", "taxonomy"),
+            # Tier 2 submitter は全 db common
+            ('submitter:"Tokyo University"', "biosample"),
+            ('submitter:"Tokyo University"', "trad"),
+            # Tier 1 は全 db common
+            ("title:cancer", "biosample"),
+            ("identifier:PRJDB1", "taxonomy"),
+        ],
+    )
+    def test_field_accepted_for_correct_db(self, dsl: str, db: str) -> None:
+        validate(parse(dsl), mode="single", db=db)
+
+    def test_detail_lists_candidate_dbs(self) -> None:
+        with pytest.raises(DslError) as exc_info:
+            validate(parse("grant_title:CREST"), mode="single", db="biosample")
+        assert exc_info.value.type == ErrorType.field_not_available_for_db
+        assert "use db=bioproject or db=jga" in exc_info.value.detail
+
+    def test_detail_mentions_target_db(self) -> None:
+        with pytest.raises(DslError) as exc_info:
+            validate(parse("publication:cancer"), mode="single", db="biosample")
+        assert "db='biosample'" in exc_info.value.detail
+
+    def test_db_none_skips_scope_check(self) -> None:
+        # db 未指定 (db=None) の single mode は scope 検証をスキップする。
+        validate(parse("grant_title:CREST"), mode="single", db=None)
+
+    def test_field_in_bool_expression_checked(self) -> None:
+        with pytest.raises(DslError) as exc_info:
+            validate(parse("title:cancer AND grant_title:CREST"), mode="single", db="biosample")
+        assert exc_info.value.type == ErrorType.field_not_available_for_db
+
+
 class TestEnumValueKindCompat:
     """enum 型フィールドは word / phrase のみ accept。"""
 

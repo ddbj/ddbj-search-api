@@ -259,6 +259,7 @@ class TestTier2Submitter:
             "nested": {
                 "path": "organization",
                 "query": {"match_phrase": {"organization.name": "Tokyo University"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -267,6 +268,7 @@ class TestTier2Submitter:
             "nested": {
                 "path": "organization",
                 "query": {"match_phrase": {"organization.name": "National Institute"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -277,6 +279,7 @@ class TestTier2Submitter:
                 "query": {
                     "wildcard": {"organization.name": {"value": "Tok*", "case_insensitive": True}},
                 },
+                "ignore_unmapped": True,
             },
         }
 
@@ -289,6 +292,7 @@ class TestTier2Publication:
             "nested": {
                 "path": "publication",
                 "query": {"match_phrase": {"publication.title": "cancer"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -297,6 +301,7 @@ class TestTier2Publication:
             "nested": {
                 "path": "publication",
                 "query": {"match_phrase": {"publication.title": "whole genome sequencing"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -307,6 +312,7 @@ class TestTier2Publication:
                 "query": {
                     "wildcard": {"publication.title": {"value": "canc*", "case_insensitive": True}},
                 },
+                "ignore_unmapped": True,
             },
         }
 
@@ -323,6 +329,7 @@ class TestTier3ExternalLinkLabel:
             "nested": {
                 "path": "externalLink",
                 "query": {"match_phrase": {"externalLink.label": "GEO"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -331,6 +338,7 @@ class TestTier3ExternalLinkLabel:
             "nested": {
                 "path": "externalLink",
                 "query": {"match_phrase": {"externalLink.label": "GEO Sample"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -341,6 +349,7 @@ class TestTier3ExternalLinkLabel:
                 "query": {
                     "wildcard": {"externalLink.label": {"value": "GE*", "case_insensitive": True}},
                 },
+                "ignore_unmapped": True,
             },
         }
 
@@ -353,6 +362,7 @@ class TestTier3DerivedFromId:
             "nested": {
                 "path": "derivedFrom",
                 "query": {"term": {"derivedFrom.identifier": "SAMD00012345"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -365,6 +375,7 @@ class TestTier3DerivedFromId:
                         "derivedFrom.identifier": {"value": "SAMD*", "case_insensitive": True},
                     },
                 },
+                "ignore_unmapped": True,
             },
         }
 
@@ -475,6 +486,7 @@ class TestTier3GrantTitleNested:
             "nested": {
                 "path": "grant",
                 "query": {"match_phrase": {"grant.title": "CREST"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -483,6 +495,7 @@ class TestTier3GrantTitleNested:
             "nested": {
                 "path": "grant",
                 "query": {"match_phrase": {"grant.title": "JST CREST"}},
+                "ignore_unmapped": True,
             },
         }
 
@@ -493,6 +506,7 @@ class TestTier3GrantTitleNested:
                 "query": {
                     "wildcard": {"grant.title": {"value": "CRES*", "case_insensitive": True}},
                 },
+                "ignore_unmapped": True,
             },
         }
 
@@ -502,10 +516,12 @@ class TestTier3GrantAgencyNested2:
         assert _compile("grant_agency:JSPS") == {
             "nested": {
                 "path": "grant",
+                "ignore_unmapped": True,
                 "query": {
                     "nested": {
                         "path": "grant.agency",
                         "query": {"match_phrase": {"grant.agency.name": "JSPS"}},
+                        "ignore_unmapped": True,
                     },
                 },
             },
@@ -515,10 +531,12 @@ class TestTier3GrantAgencyNested2:
         assert _compile('grant_agency:"National Institutes"') == {
             "nested": {
                 "path": "grant",
+                "ignore_unmapped": True,
                 "query": {
                     "nested": {
                         "path": "grant.agency",
                         "query": {"match_phrase": {"grant.agency.name": "National Institutes"}},
+                        "ignore_unmapped": True,
                     },
                 },
             },
@@ -541,6 +559,7 @@ class TestTier3NotEnum:
                         "nested": {
                             "path": "organization",
                             "query": {"match_phrase": {"organization.name": "Xyz Labs"}},
+                            "ignore_unmapped": True,
                         },
                     },
                 ],
@@ -579,6 +598,7 @@ class TestTier3BoolCombinations:
                         "nested": {
                             "path": "organization",
                             "query": {"match_phrase": {"organization.name": "DDBJ"}},
+                            "ignore_unmapped": True,
                         },
                     },
                     {"match_phrase": {"title": "cancer"}},
@@ -627,6 +647,7 @@ class TestWildcardCaseInsensitive:
         assert _compile("grant_agency:JSPS*") == {
             "nested": {
                 "path": "grant",
+                "ignore_unmapped": True,
                 "query": {
                     "nested": {
                         "path": "grant.agency",
@@ -638,6 +659,7 @@ class TestWildcardCaseInsensitive:
                                 },
                             },
                         },
+                        "ignore_unmapped": True,
                     },
                 },
             },

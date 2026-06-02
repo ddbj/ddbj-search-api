@@ -806,3 +806,39 @@ class TestFreeTextMultiWord:
         ng = app.get("/db-portal/parse", params={"q": "cancer AND tumor"})
         assert ng.status_code == 400
         assert "duplicate-freetext" in ng.json().get("type", "")
+
+
+class TestDbPortalSingleDbFieldScope:
+    """single-DB で db に存在しない field は 400 field-not-available-for-db、
+    DB 内 subtype 差 (db=jga の grant は jga-study のみ実在) は ignore_unmapped で 0 件化し
+    shard exception (400/500) にしない。"""
+
+    def test_grant_title_on_biosample_returns_400(self, app: TestClient) -> None:
+        resp = app.get("/db-portal/search", params={"db": "biosample", "q": "grant_title:AMED"})
+        assert resp.status_code == 400
+        assert "field-not-available-for-db" in resp.json().get("type", "")
+
+    def test_publication_on_biosample_returns_400(self, app: TestClient) -> None:
+        resp = app.get("/db-portal/search", params={"db": "biosample", "q": "publication:cancer"})
+        assert resp.status_code == 400
+        assert "field-not-available-for-db" in resp.json().get("type", "")
+
+    def test_grant_title_on_jga_returns_200(self, app: TestClient) -> None:
+        # db=jga は jga-study/dataset/dac/policy に展開。grant は jga-study のみだが
+        # ignore_unmapped で他 subtype は 0 件化し、shard exception にしない。
+        resp = app.get("/db-portal/search", params={"db": "jga", "q": "grant_title:AMED"})
+        assert resp.status_code == 200
+
+    def test_grant_title_on_bioproject_returns_200(self, app: TestClient) -> None:
+        resp = app.get("/db-portal/search", params={"db": "bioproject", "q": "grant_title:AMED"})
+        assert resp.status_code == 200
+
+    def test_publication_on_jga_returns_200(self, app: TestClient) -> None:
+        # publication は jga-study のみ実在。db=jga の他 subtype は 0 件化する。
+        resp = app.get("/db-portal/search", params={"db": "jga", "q": "publication:cancer"})
+        assert resp.status_code == 200
+
+    def test_cross_search_publication_returns_200(self, app: TestClient) -> None:
+        # 横断は publication 非実在 DB (biosample 等) を含むが ignore_unmapped で 500 にしない。
+        resp = app.get("/db-portal/cross-search", params={"q": "publication:cancer"})
+        assert resp.status_code == 200

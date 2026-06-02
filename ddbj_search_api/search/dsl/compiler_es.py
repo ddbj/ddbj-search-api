@@ -313,23 +313,29 @@ def _compile_leaf(clause: FieldClause) -> dict[str, Any]:
     if strategy.kind == "nested":
         assert strategy.path is not None
         assert strategy.sub is not None
+        # ``ignore_unmapped`` で、対応 nested path を持たない index (db=sra / db=jga が
+        # 展開する非実在 subtype など) を shard exception でなく 0 件化する
+        # (docs/db-portal-api-spec.md § フィールド allowlist).
         return {
             "nested": {
                 "path": strategy.path,
                 "query": _basic_leaf(strategy.sub, clause),
+                "ignore_unmapped": True,
             },
         }
-    # nested2
+    # nested2: 外側・内側どちらの path が unmapped でも shard exception になるため両方に付ける
     assert strategy.path is not None
     assert strategy.inner_path is not None
     assert strategy.sub is not None
     return {
         "nested": {
             "path": strategy.path,
+            "ignore_unmapped": True,
             "query": {
                 "nested": {
                     "path": strategy.inner_path,
                     "query": _basic_leaf(strategy.sub, clause),
+                    "ignore_unmapped": True,
                 },
             },
         },

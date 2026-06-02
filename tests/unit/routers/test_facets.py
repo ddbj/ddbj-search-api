@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from ddbj_search_api.routers._query_validation import facets_allowed_query_params
+from ddbj_search_api.schemas.common import DbType
 from tests.unit.conftest import (
     get_es_search_body,
     get_es_search_index,
@@ -1187,6 +1189,56 @@ class TestFacetsTypeGroupRejections:
         ],
     )
     def test_out_of_group_param_returns_422(
+        self,
+        app_with_facets: TestClient,
+        endpoint: str,
+        param: str,
+    ) -> None:
+        resp = app_with_facets.get(f"/facets/{endpoint}?{param}=X")
+        assert resp.status_code == 422
+
+
+class TestFacetsNestedParamScope:
+    """facets_allowed_query_params の nested param scope (entries と同じ型グループ単位)。
+
+    organization は全 type 共通。publication / grant は実在する型グループのみ。
+    """
+
+    def test_grant_only_in_bioproject_and_jga(self) -> None:
+        assert "grant" in facets_allowed_query_params(DbType.bioproject)
+        assert "grant" in facets_allowed_query_params(DbType.jga_study)
+        assert "grant" in facets_allowed_query_params(DbType.jga_dataset)
+        for db in (DbType.biosample, DbType.sra_run, DbType.gea, DbType.metabobank):
+            assert "grant" not in facets_allowed_query_params(db)
+
+    def test_publication_excludes_only_biosample(self) -> None:
+        assert "publication" not in facets_allowed_query_params(DbType.biosample)
+        for db in (
+            DbType.bioproject,
+            DbType.sra_run,
+            DbType.jga_study,
+            DbType.gea,
+            DbType.metabobank,
+        ):
+            assert "publication" in facets_allowed_query_params(db)
+
+    def test_organization_in_every_scope(self) -> None:
+        for db in (None, DbType.biosample, DbType.bioproject, DbType.jga_dataset):
+            assert "organization" in facets_allowed_query_params(db)
+
+    def test_cross_type_includes_publication_and_grant(self) -> None:
+        assert {"organization", "publication", "grant"} <= facets_allowed_query_params(None)
+
+    @pytest.mark.parametrize(
+        ("endpoint", "param"),
+        [
+            ("biosample", "grant"),
+            ("biosample", "publication"),
+            ("sra-run", "grant"),
+            ("gea", "grant"),
+        ],
+    )
+    def test_out_of_scope_nested_param_returns_422(
         self,
         app_with_facets: TestClient,
         endpoint: str,

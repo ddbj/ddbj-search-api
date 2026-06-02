@@ -87,6 +87,7 @@ class DbPortalErrorType(str, Enum):
     unexpected_token = "https://ddbj.nig.ac.jp/problems/unexpected-token"
     unknown_field = "https://ddbj.nig.ac.jp/problems/unknown-field"
     field_not_available_in_cross_db = "https://ddbj.nig.ac.jp/problems/field-not-available-in-cross-db"
+    field_not_available_for_db = "https://ddbj.nig.ac.jp/problems/field-not-available-for-db"
     invalid_date_format = "https://ddbj.nig.ac.jp/problems/invalid-date-format"
     invalid_operator_for_field = "https://ddbj.nig.ac.jp/problems/invalid-operator-for-field"
     nest_depth_exceeded = "https://ddbj.nig.ac.jp/problems/nest-depth-exceeded"

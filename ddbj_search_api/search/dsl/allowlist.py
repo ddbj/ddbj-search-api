@@ -51,6 +51,15 @@ TIER2_FIELDS: frozenset[str] = frozenset(
     },
 )
 
+# Tier 2 field のうち、single-DB モードで実在 DB が限定されるものの db scope。
+# ``submitter`` は全 ES DB に organization nested があるため含めない (全 db で有効)。
+# ``publication`` は biosample に publication nested が不在。Solr DB (trad / taxonomy) は
+# ES nested を持たず degenerate (0 件) のため scope に含めて従来どおり 0 件で通し、
+# single-mode で弾くのは biosample のみとする。
+TIER2_FIELD_DBS: dict[str, tuple[str, ...]] = {
+    "publication": ("bioproject", "sra", "jga", "gea", "metabobank", "trad", "taxonomy"),
+}
+
 FIELD_TYPES: dict[str, FieldType] = {
     # === Tier 1 (cross) ===
     "identifier": "identifier",

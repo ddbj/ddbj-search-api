@@ -505,16 +505,19 @@ def _build_filter_clauses(
         ("grant", "grant.title", grant),
         ("externalLink", "externalLink.label", external_link_label),
     ]
+    # ``ignore_unmapped`` で、対応 nested path を持たない index (cross-type の
+    # entries alias、型グループ内の非実在 subtype) では shard exception を出さず
+    # 0 件化する (docs/api-spec.md § nested フィールド検索).
     for path, sub_field, value in nested_text_specs:
         inner = _build_text_match_clause(sub_field, value)
         if inner is not None:
-            clauses.append({"nested": {"path": path, "query": inner}})
+            clauses.append({"nested": {"path": path, "query": inner, "ignore_unmapped": True}})
 
     # derivedFromId は accession ID の完全一致用 (derivedFrom.identifier は
     # keyword field). カンマ区切りで複数 accession の OR (terms) を表現する.
     derived_inner = _build_term_clause("derivedFrom.identifier", derived_from_id)
     if derived_inner is not None:
-        clauses.append({"nested": {"path": "derivedFrom", "query": derived_inner}})
+        clauses.append({"nested": {"path": "derivedFrom", "query": derived_inner, "ignore_unmapped": True}})
 
     term_values: dict[str, str | None] = {
         "library_strategy": library_strategy,

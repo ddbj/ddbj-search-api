@@ -1651,6 +1651,18 @@ class TestBuildSearchQueryNestedTextParams:
             "match": {sub_field: {"query": "foo bar", "operator": "and"}},
         }
 
+    def test_nested_clause_sets_ignore_unmapped(
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
+    ) -> None:
+        # 対応 nested path を持たない index (cross-type alias・型グループ内の非実在
+        # subtype) で shard exception を出さず 0 件化するため ignore_unmapped を立てる.
+        result = build_search_query(**{kwarg: "foo"})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        assert nested["nested"]["ignore_unmapped"] is True
+
 
 class TestBuildSearchQueryNestedTextParamsCombined:
     """nested 4 text param が同時指定で 4 nested clause を生成する."""
@@ -1691,6 +1703,11 @@ class TestBuildSearchQueryDerivedFromId:
         assert nested["nested"]["query"] == {
             "term": {"derivedFrom.identifier": "SAMD00012345"},
         }
+
+    def test_nested_clause_sets_ignore_unmapped(self) -> None:
+        result = build_search_query(derived_from_id="SAMD00012345")
+        nested = _find_nested_filter(result["bool"]["filter"], "derivedFrom")
+        assert nested["nested"]["ignore_unmapped"] is True
 
     def test_multiple_values_use_terms(self) -> None:
         result = build_search_query(derived_from_id="SAMD00012345,SAMD00067890")

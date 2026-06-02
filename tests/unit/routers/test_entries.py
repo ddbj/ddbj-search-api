@@ -17,7 +17,9 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.cursor import CursorPayload, encode_cursor
+from ddbj_search_api.routers._query_validation import entries_allowed_query_params
 from ddbj_search_api.routers.entries import _CURSOR_EXCLUSIVE_FILTER_FIELDS
+from ddbj_search_api.schemas.common import DbType
 from ddbj_search_api.schemas.queries import TypeSpecificFilters
 from tests.unit.conftest import get_es_search_body, get_es_search_index, make_es_search_response
 from tests.unit.strategies import db_type_values, valid_per_page
@@ -2356,3 +2358,108 @@ class TestEntriesFacetsPick:
         app_with_es.get("/entries/bioproject/?facets=objectType")
         body = get_es_search_body(mock_es_search)
         assert "aggs" not in body
+
+
+class TestEntriesNestedParamScope:
+    """publication / grant は実在する型グループでのみ受け付け、対象外の単一 type は 422。
+
+    organization は全 type 共通なので全 endpoint で通る。cross-type endpoint では
+    publication / grant も受け付ける (docs/api-spec.md § nested フィールド検索)。
+    """
+
+    @pytest.mark.parametrize(
+        ("type_path", "param"),
+        [
+            ("biosample", "grant"),
+            ("biosample", "publication"),
+            ("sra-run", "grant"),
+            ("sra-experiment", "grant"),
+            ("gea", "grant"),
+            ("metabobank", "grant"),
+        ],
+    )
+    def test_param_out_of_scope_returns_422(
+        self,
+        app_with_es: TestClient,
+        type_path: str,
+        param: str,
+    ) -> None:
+        resp = app_with_es.get(f"/entries/{type_path}/", params={param: "X"})
+        assert resp.status_code == 422
+
+    @pytest.mark.parametrize(
+        ("type_path", "param"),
+        [
+            ("bioproject", "grant"),
+            ("bioproject", "publication"),
+            ("jga-study", "grant"),
+            ("jga-dataset", "grant"),
+            ("sra-run", "publication"),
+            ("gea", "publication"),
+            ("metabobank", "publication"),
+            ("biosample", "organization"),
+        ],
+    )
+    def test_param_in_scope_accepted(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        type_path: str,
+        param: str,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(total=0)
+        resp = app_with_es.get(f"/entries/{type_path}/", params={param: "X"})
+        assert resp.status_code == 200
+
+    @pytest.mark.parametrize("param", ["organization", "publication", "grant"])
+    def test_cross_type_accepts_nested_params(
+        self,
+        app_with_es: TestClient,
+        mock_es_search: AsyncMock,
+        param: str,
+    ) -> None:
+        mock_es_search.return_value = make_es_search_response(total=0)
+        resp = app_with_es.get("/entries/", params={param: "X"})
+        assert resp.status_code == 200
+
+
+class TestEntriesAllowedQueryParamScope:
+    """entries_allowed_query_params の nested param scope を直接検証する。"""
+
+    @pytest.mark.parametrize(
+        "db_type",
+        [
+            None,
+            DbType.bioproject,
+            DbType.biosample,
+            DbType.sra_run,
+            DbType.jga_dataset,
+            DbType.gea,
+            DbType.metabobank,
+        ],
+    )
+    def test_organization_allowed_in_every_scope(self, db_type: DbType | None) -> None:
+        assert "organization" in entries_allowed_query_params(db_type)
+
+    def test_grant_only_in_bioproject_and_jga(self) -> None:
+        assert "grant" in entries_allowed_query_params(DbType.bioproject)
+        assert "grant" in entries_allowed_query_params(DbType.jga_study)
+        assert "grant" in entries_allowed_query_params(DbType.jga_dataset)
+        for db in (DbType.biosample, DbType.sra_run, DbType.gea, DbType.metabobank):
+            assert "grant" not in entries_allowed_query_params(db)
+
+    def test_publication_in_all_groups_but_biosample(self) -> None:
+        assert "publication" not in entries_allowed_query_params(DbType.biosample)
+        for db in (
+            DbType.bioproject,
+            DbType.sra_run,
+            DbType.jga_study,
+            DbType.jga_dataset,
+            DbType.gea,
+            DbType.metabobank,
+        ):
+            assert "publication" in entries_allowed_query_params(db)
+
+    def test_cross_type_includes_publication_and_grant(self) -> None:
+        cross = entries_allowed_query_params(None)
+        assert {"organization", "publication", "grant"} <= cross

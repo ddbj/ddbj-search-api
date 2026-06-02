@@ -93,9 +93,9 @@ class TestDbPortalErrorType:
         # routing 3 (cursor-not-supported, unexpected-parameter, missing-db)
         # + facets 1 (facet-not-applicable, scope-mismatch on the facets param)
         # + serialize body 1 (invalid-ast, POST /db-portal/serialize)
-        # + query parser 9 (incl. invalid-freetext-position / duplicate-freetext)
-        # = 14.
-        assert len(DbPortalErrorType) == 14
+        # + query parser 10 (incl. invalid-freetext-position / duplicate-freetext / field-not-available-for-db)
+        # = 15.
+        assert len(DbPortalErrorType) == 15
 
     def test_invalid_ast_uri(self) -> None:
         assert DbPortalErrorType.invalid_ast.value == "https://ddbj.nig.ac.jp/problems/invalid-ast"

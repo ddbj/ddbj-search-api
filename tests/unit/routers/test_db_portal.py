@@ -2235,6 +2235,7 @@ class TestDbPortalAdvTier2Tier3:
                         "nested": {
                             "path": "organization",
                             "query": {"match_phrase": {"organization.name": "Tokyo University"}},
+                            "ignore_unmapped": True,
                         },
                     },
                 ],

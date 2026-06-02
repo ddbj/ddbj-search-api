@@ -3,6 +3,7 @@
 チェック項目:
 1. フィールド名が allowlist (Tier 1/2/3) に含まれるか → unknown-field
 2. mode=cross で Tier 3 フィールドを使用していないか → field-not-available-in-cross-db
+   mode=single で指定 db に存在しない field を使用していないか → field-not-available-for-db
 3. (field_type, value_kind) が OPERATOR_BY_KIND に含まれるか → invalid-operator-for-field
 4. date 型の値が YYYY-MM-DD 厳密一致 + 実在日付 (閏年含む) → invalid-date-format
 5. phrase 値が empty でないか → missing-value
@@ -21,6 +22,7 @@ from ddbj_search_api.search.dsl.allowlist import (
     ALL_ALLOWED_FIELDS,
     FIELD_TYPES,
     OPERATOR_BY_KIND,
+    TIER2_FIELD_DBS,
     TIER3_FIELD_DBS,
     TIER3_FIELDS,
 )
@@ -49,13 +51,19 @@ def validate(
     ast: Node,
     *,
     mode: ValidationMode,
+    db: str | None = None,
     max_depth: int = DEFAULT_MAX_DEPTH,
     max_nodes: int = DEFAULT_MAX_NODES,
 ) -> None:
-    """Validate an AST in place. Raises DslError on violation."""
+    """Validate an AST in place. Raises DslError on violation.
+
+    ``db`` is the db-portal DB name (a ``DbPortalDb`` value) in single mode;
+    it scopes Tier 2/3 fields to the DBs that actually own them. ``None``
+    (cross mode, or single mode without a target) skips the db-scope check.
+    """
     _check_total_nodes(ast, max_nodes=max_nodes)
     _check_depth(ast, current=1, max_depth=max_depth)
-    _check_nodes(ast, mode=mode)
+    _check_nodes(ast, mode=mode, db=db)
     _check_freetext_position(ast)
 
 
@@ -93,19 +101,19 @@ def _check_depth(node: Node, *, current: int, max_depth: int) -> None:
         _check_depth(child, current=current + 1, max_depth=max_depth)
 
 
-def _check_nodes(node: Node, *, mode: ValidationMode) -> None:
+def _check_nodes(node: Node, *, mode: ValidationMode, db: str | None) -> None:
     if isinstance(node, FreeText):
         return
     if isinstance(node, BoolOp):
         for child in node.children:
-            _check_nodes(child, mode=mode)
+            _check_nodes(child, mode=mode, db=db)
         return
-    _check_field(node, mode=mode)
+    _check_field(node, mode=mode, db=db)
     _check_value_kind_and_operator(node)
     _check_value(node)
 
 
-def _check_field(clause: FieldClause, *, mode: ValidationMode) -> None:
+def _check_field(clause: FieldClause, *, mode: ValidationMode, db: str | None) -> None:
     if clause.field not in ALL_ALLOWED_FIELDS:
         allowed = ", ".join(sorted(ALL_ALLOWED_FIELDS))
         raise DslError(
@@ -129,6 +137,31 @@ def _check_field(clause: FieldClause, *, mode: ValidationMode) -> None:
             column=clause.position.column,
             length=clause.position.length,
         )
+    if mode == "single" and db is not None:
+        scope = _single_db_field_scope(clause.field)
+        if scope is not None and db not in scope:
+            hint = " or ".join(f"db={d}" for d in scope)
+            raise DslError(
+                type=ErrorType.field_not_available_for_db,
+                detail=(
+                    f"field {clause.field!r} is not available for db={db!r} "
+                    f"at column {clause.position.column} (length {clause.position.length}). use {hint}."
+                ),
+                column=clause.position.column,
+                length=clause.position.length,
+            )
+
+
+def _single_db_field_scope(field: str) -> tuple[str, ...] | None:
+    """single-mode で ``field`` が実在する db の許可リスト。``None`` は全 db で有効。
+
+    Tier 3 は :data:`TIER3_FIELD_DBS`、scope を持つ Tier 2 (``publication``) は
+    :data:`TIER2_FIELD_DBS` を参照する。Tier 1 と ``submitter`` は全 db common なので
+    ``None`` を返し、scope 検証をスキップする。
+    """
+    if field in TIER3_FIELD_DBS:
+        return TIER3_FIELD_DBS[field]
+    return TIER2_FIELD_DBS.get(field)
 
 
 def _check_value_kind_and_operator(clause: FieldClause) -> None:

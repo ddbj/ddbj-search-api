@@ -17,6 +17,7 @@ class ErrorType(str, Enum):
     unexpected_token = "unexpected-token"
     unknown_field = "unknown-field"
     field_not_available_in_cross_db = "field-not-available-in-cross-db"
+    field_not_available_for_db = "field-not-available-for-db"
     invalid_date_format = "invalid-date-format"
     invalid_operator_for_field = "invalid-operator-for-field"
     nest_depth_exceeded = "nest-depth-exceeded"

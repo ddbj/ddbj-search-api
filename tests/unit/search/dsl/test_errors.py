@@ -37,6 +37,7 @@ class TestErrorTypeEnum:
             "unexpected-token",
             "unknown-field",
             "field-not-available-in-cross-db",
+            "field-not-available-for-db",
             "invalid-date-format",
             "invalid-operator-for-field",
             "nest-depth-exceeded",

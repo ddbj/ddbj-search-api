@@ -336,6 +336,7 @@ def _parse_and_validate_query(
         validate(
             ast,
             mode="cross" if db is None else "single",
+            db=db.value if db is not None else None,
             max_depth=config.dsl_max_depth,
             max_nodes=config.dsl_max_nodes,
         )
@@ -1576,6 +1577,7 @@ async def _serialize_db_portal(
         validate(
             ast,
             mode="cross" if db is None else "single",
+            db=db.value if db is not None else None,
             max_depth=config.dsl_max_depth,
             max_nodes=config.dsl_max_nodes,
         )

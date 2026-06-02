@@ -26,6 +26,10 @@ from ddbj_search_api.schemas.queries import TypeSpecificFilters
 # Wire-level (alias) names accepted by each Depends() class. Keep these
 # synchronised with the ``Query()`` aliases on each parameter.
 _PAGINATION_PARAM_NAMES = frozenset({"page", "perPage", "cursor"})
+# ``organization`` は全 DB に nested が実在するため共通 (全 endpoint で受け付け)。
+# ``publication`` / ``grant`` は実在 DB が限定的なので型グループ単位の許可とし
+# (``TYPE_GROUP_PARAM_NAMES`` / ``_CROSS_TYPE_NESTED_PARAM_NAMES``)、ここには含めない
+# (docs/api-spec.md § nested フィールド検索)。
 _SEARCH_FILTER_PARAM_NAMES = frozenset(
     {
         "keywords",
@@ -34,8 +38,6 @@ _SEARCH_FILTER_PARAM_NAMES = frozenset(
         "organism",
         "accessibility",
         "organization",
-        "publication",
-        "grant",
         "datePublishedFrom",
         "datePublishedTo",
         "dateModifiedFrom",
@@ -45,9 +47,15 @@ _SEARCH_FILTER_PARAM_NAMES = frozenset(
 _RESPONSE_CONTROL_PARAM_NAMES = frozenset({"sort", "fields", "includeProperties", "includeFacets"})
 _DB_XREFS_LIMIT_PARAM_NAMES = frozenset({"dbXrefsLimit", "includeDbXrefs"})
 _TYPES_FILTER_PARAM_NAMES = frozenset({"types"})
+# cross-type endpoint でのみ追加で受け付ける nested 検索パラメータ。型グループ限定だが、
+# 横断では対応 nested path を持つ index にだけ効き、他は ES 側で 0 件化される
+# (docs/api-spec.md § nested フィールド検索)。
+_CROSS_TYPE_NESTED_PARAM_NAMES = frozenset({"publication", "grant"})
 _FACETS_PARAM_NAMES = frozenset({"facets", "facetsSize"})
 
-_BIOPROJECT_EXTRA_PARAM_NAMES = frozenset({"objectTypes", "externalLinkLabel", "projectType", "relevance"})
+_BIOPROJECT_EXTRA_PARAM_NAMES = frozenset(
+    {"objectTypes", "externalLinkLabel", "projectType", "relevance", "publication", "grant"}
+)
 _BIOSAMPLE_EXTRA_PARAM_NAMES = frozenset(
     {
         "derivedFromId",
@@ -74,11 +82,12 @@ _SRA_EXTRA_PARAM_NAMES = frozenset(
         "libraryConstructionProtocol",
         "geoLocName",
         "collectionDate",
+        "publication",
     }
 )
-_JGA_EXTRA_PARAM_NAMES = frozenset({"studyType", "datasetType", "externalLinkLabel", "vendor"})
-_GEA_EXTRA_PARAM_NAMES = frozenset({"experimentType"})
-_METABOBANK_EXTRA_PARAM_NAMES = frozenset({"studyType", "experimentType", "submissionType"})
+_JGA_EXTRA_PARAM_NAMES = frozenset({"studyType", "datasetType", "externalLinkLabel", "vendor", "publication", "grant"})
+_GEA_EXTRA_PARAM_NAMES = frozenset({"experimentType", "publication"})
+_METABOBANK_EXTRA_PARAM_NAMES = frozenset({"studyType", "experimentType", "submissionType", "publication"})
 
 # DbType → set of accepted type-specific parameter names. Members of the
 # same type group share the same set (sra-* / jga-*).
@@ -114,7 +123,7 @@ def entries_allowed_query_params(db_type: DbType | None) -> frozenset[str]:
         | _FACETS_PARAM_NAMES
     )
     if db_type is None:
-        return base | _TYPES_FILTER_PARAM_NAMES
+        return base | _TYPES_FILTER_PARAM_NAMES | _CROSS_TYPE_NESTED_PARAM_NAMES
     return base | TYPE_GROUP_PARAM_NAMES[db_type]
 
 
@@ -125,7 +134,7 @@ def facets_allowed_query_params(db_type: DbType | None) -> frozenset[str]:
     """
     base = _SEARCH_FILTER_PARAM_NAMES | _FACETS_PARAM_NAMES
     if db_type is None:
-        return base | _TYPES_FILTER_PARAM_NAMES
+        return base | _TYPES_FILTER_PARAM_NAMES | _CROSS_TYPE_NESTED_PARAM_NAMES
     return base | TYPE_GROUP_PARAM_NAMES[db_type]
 
 
