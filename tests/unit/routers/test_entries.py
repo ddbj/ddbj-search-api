@@ -2015,9 +2015,15 @@ class TestEntriesCrossTypeNestedAccepted:
         nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == nested_path]
         assert len(match) == 1
-        # text match と統一: 値内空白 AND (operator=and).
+        # bare word (4文字以上) → match_phrase + match_phrase_prefix の should wrapper.
         assert match[0]["nested"]["query"] == {
-            "match": {sub_field: {"query": "DDBJ", "operator": "and"}},
+            "bool": {
+                "should": [
+                    {"match_phrase": {sub_field: "DDBJ"}},
+                    {"match_phrase_prefix": {sub_field: "DDBJ"}},
+                ],
+                "minimum_should_match": 1,
+            },
         }
 
 
@@ -2134,8 +2140,15 @@ class TestEntriesNewNestedFilters:
         nested = [c for c in _es_filters(mock_es_search) if "nested" in c]
         match = [c for c in nested if c["nested"]["path"] == "externalLink"]
         assert len(match) == 1
+        # bare word (3文字以上) → match_phrase + match_phrase_prefix の should wrapper.
         assert match[0]["nested"]["query"] == {
-            "match": {"externalLink.label": {"query": "GEO", "operator": "and"}},
+            "bool": {
+                "should": [
+                    {"match_phrase": {"externalLink.label": "GEO"}},
+                    {"match_phrase_prefix": {"externalLink.label": "GEO"}},
+                ],
+                "minimum_should_match": 1,
+            },
         }
 
     def test_external_link_label_on_jga_study(
@@ -2238,14 +2251,18 @@ class TestEntriesTextMatchReflected:
         param: str,
         es_field: str,
     ) -> None:
-        # 単一 token (記号なし) は ``match`` clause + operator=and を組む
+        # bare word "cancer" (6文字以上) → match_phrase + match_phrase_prefix の should wrapper.
         resp = app_with_es.get(f"/entries/{endpoint}/?{param}=cancer")
         assert resp.status_code == 200
         filters = _es_filters(mock_es_search)
-        match = [f for f in filters if isinstance(f.get("match"), dict) and es_field in f["match"]]
-        assert len(match) == 1
-        assert match[0]["match"][es_field]["query"] == "cancer"
-        assert match[0]["match"][es_field]["operator"] == "and"
+        prefix = [
+            f for f in filters
+            if isinstance(f.get("bool"), dict)
+            and any(es_field in s.get("match_phrase", {}) for s in f["bool"].get("should", []))
+        ]
+        assert len(prefix) == 1
+        assert prefix[0]["bool"]["should"][0]["match_phrase"][es_field] == "cancer"
+        assert prefix[0]["bool"]["should"][1]["match_phrase_prefix"][es_field] == "cancer"
 
     def test_text_match_auto_phrase_on_hyphen(
         self,
@@ -2261,23 +2278,30 @@ class TestEntriesTextMatchReflected:
         assert len(phrase) == 1
         assert phrase[0]["match_phrase"]["host"] == "HIF-1"
 
-    def test_text_match_operator_is_and_regardless_of_keyword_operator(
+    def test_text_match_unaffected_by_keyword_operator(
         self,
         app_with_es: TestClient,
         mock_es_search: AsyncMock,
     ) -> None:
-        """``keywordOperator`` は text match の値内空白 operator に影響しない.
+        """``keywordOperator`` は text match のクエリ形式に影響しない.
 
-        text match の値内空白は常に AND (api-spec.md § セマンティクス共通ルール).
+        text match は keywordOperator に依らず同じ prefix should wrapper を返す
+        (api-spec.md § セマンティクス共通ルール).
         ``keywordOperator`` は keywords (multi_match) のカンマ区切り token 間
         operator にのみ影響する.
         """
-        resp = app_with_es.get("/entries/biosample/?host=Homo sapiens&keywordOperator=OR")
-        assert resp.status_code == 200
-        filters = _es_filters(mock_es_search)
-        match = [f for f in filters if isinstance(f.get("match"), dict) and "host" in f["match"]]
-        assert len(match) == 1
-        assert match[0]["match"]["host"]["operator"] == "and"
+        resp_and = app_with_es.get("/entries/biosample/?host=Homo sapiens&keywordOperator=AND")
+        resp_or = app_with_es.get("/entries/biosample/?host=Homo sapiens&keywordOperator=OR")
+        assert resp_and.status_code == 200
+        assert resp_or.status_code == 200
+        # どちらも同じ host の prefix clause を持つ
+        filters_and = _es_filters(mock_es_search)
+        prefix_and = [
+            f for f in filters_and
+            if isinstance(f.get("bool"), dict)
+            and any("host" in s.get("match_phrase", {}) for s in f["bool"].get("should", []))
+        ]
+        assert len(prefix_and) == 1
 
 
 class TestEntriesFacetsPick:

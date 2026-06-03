@@ -336,6 +336,11 @@ def build_search_query(
     return {"bool": bool_query}
 
 
+# 前方一致を相乗りさせる最小 literal 長 (compiler_es._MIN_PREFIX_LITERAL_LEN と同基準)。
+# 1 文字 prefix は ES の max_expansions で頭打ちになり Solr では全 term スキャンを誘発するため
+# 最小 2 文字を要求する (wildcard ガード validator._MIN_WILDCARD_LITERAL_LEN = 2 と同基準)。
+_MIN_PREFIX_LITERAL_LEN: int = 2
+
 # Mapping from API parameter name to the ES ``*.keyword`` field used as a
 # term filter. Keys are kwarg-style identifiers that match the
 # ``_build_filter_clauses`` signature.
@@ -387,28 +392,34 @@ def _build_term_clause(field: str, value: str | None) -> dict[str, Any] | None:
 def _build_text_match_clause(
     field: str,
     value: str | None,
-    operator: str = "and",
 ) -> dict[str, Any] | None:
-    """Build a match / match_phrase clause with auto-phrase semantics.
+    """Build a match_phrase / (match_phrase + match_phrase_prefix) clause with auto-phrase semantics.
 
-    ``operator`` is the in-token operator (``and`` / ``or``) applied to
-    every non-phrase ``match`` leaf. Default ``"and"`` to match the
-    "値内空白 = AND 固定" rule documented in
-    ``docs/api-spec.md § セマンティクス共通ルール``; callers should not
-    override it for production wire paths (only retained for unit tests
-    that need to probe the underlying ES semantics). Comma-separated
-    input values are split into multiple per-value clauses OR'd
-    together via ``bool.should`` with ``minimum_should_match=1``.
+    DSL 経路 (_basic_leaf / contains) と同じ前方一致ルールを適用する
+    (docs/api-spec.md § 前方一致):
+    - quoted / 記号含み (auto-phrase) トークン → ``match_phrase`` 単独 (厳密一致)。
+    - bare word 1 文字 → ``match_phrase`` 単独 (全 term スキャン回避)。
+    - bare word 2 文字以上 → ``bool.should[match_phrase, match_phrase_prefix]`` (前方一致付き)。
+
+    カンマ区切り入力値は複数の per-value 句に分割され ``bool.should`` で OR 結合される。
     """
     parsed = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
     if not parsed:
         return None
     per_value_clauses: list[dict[str, Any]] = []
     for token, is_phrase in parsed:
-        if is_phrase:
+        if is_phrase or len(token) < _MIN_PREFIX_LITERAL_LEN:
             per_value_clauses.append({"match_phrase": {field: token}})
         else:
-            per_value_clauses.append({"match": {field: {"query": token, "operator": operator}}})
+            per_value_clauses.append({
+                "bool": {
+                    "should": [
+                        {"match_phrase": {field: token}},
+                        {"match_phrase_prefix": {field: token}},
+                    ],
+                    "minimum_should_match": 1,
+                },
+            })
     if len(per_value_clauses) == 1:
         return per_value_clauses[0]
     return {"bool": {"should": per_value_clauses, "minimum_should_match": 1}}

@@ -673,9 +673,15 @@ class TestBuildSearchQueryBioProject:
         filters = result["bool"]["filter"]
         nested = _find_nested_filter(filters, "organization")
         inner_query = nested["nested"]["query"]
-        # 単一値・記号なし → match + operator=and (値内空白 AND).
+        # bare word (4文字以上) → match_phrase + match_phrase_prefix の should wrapper.
         assert inner_query == {
-            "match": {"organization.name": {"query": "DDBJ", "operator": "and"}},
+            "bool": {
+                "should": [
+                    {"match_phrase": {"organization.name": "DDBJ"}},
+                    {"match_phrase_prefix": {"organization.name": "DDBJ"}},
+                ],
+                "minimum_should_match": 1,
+            },
         }
 
     def test_publication_nested_query(self) -> None:
@@ -685,7 +691,13 @@ class TestBuildSearchQueryBioProject:
         nested = _find_nested_filter(filters, "publication")
         inner_query = nested["nested"]["query"]
         assert inner_query == {
-            "match": {"publication.title": {"query": "genome", "operator": "and"}},
+            "bool": {
+                "should": [
+                    {"match_phrase": {"publication.title": "genome"}},
+                    {"match_phrase_prefix": {"publication.title": "genome"}},
+                ],
+                "minimum_should_match": 1,
+            },
         }
 
     def test_grant_nested_query(self) -> None:
@@ -695,7 +707,13 @@ class TestBuildSearchQueryBioProject:
         nested = _find_nested_filter(filters, "grant")
         assert nested is not None
         assert nested["nested"]["query"] == {
-            "match": {"grant.title": {"query": "NIH", "operator": "and"}},
+            "bool": {
+                "should": [
+                    {"match_phrase": {"grant.title": "NIH"}},
+                    {"match_phrase_prefix": {"grant.title": "NIH"}},
+                ],
+                "minimum_should_match": 1,
+            },
         }
 
 
@@ -1647,17 +1665,23 @@ class TestBuildSearchQueryAutoPhrase:
 class TestBuildSearchQueryNestedTextParams:
     """nested 4 text param が _build_text_match_clause + nested wrapper で組まれる."""
 
-    def test_single_token_uses_match_with_operator_and(
+    def test_bare_word_uses_prefix_match(
         self,
         kwarg: str,
         path: str,
         sub_field: str,
     ) -> None:
-        # 値内空白あり (記号なし) → match + operator=and.
+        # bare word (記号なし、2文字以上) → match_phrase + match_phrase_prefix の should wrapper.
         result = build_search_query(**{kwarg: "foo bar"})  # type: ignore[arg-type]
         nested = _find_nested_filter(result["bool"]["filter"], path)
         assert nested["nested"]["query"] == {
-            "match": {sub_field: {"query": "foo bar", "operator": "and"}},
+            "bool": {
+                "should": [
+                    {"match_phrase": {sub_field: "foo bar"}},
+                    {"match_phrase_prefix": {sub_field: "foo bar"}},
+                ],
+                "minimum_should_match": 1,
+            },
         }
 
     def test_quoted_value_uses_match_phrase(
@@ -1695,20 +1719,20 @@ class TestBuildSearchQueryNestedTextParams:
         assert inner["bool"]["minimum_should_match"] == 1
         assert len(inner["bool"]["should"]) == 2
 
-    def test_keyword_operator_or_does_not_affect_inner_match(
+    def test_keyword_operator_does_not_affect_nested_text(
         self,
         kwarg: str,
         path: str,
         sub_field: str,
     ) -> None:
         # keyword_operator は keywords (multi_match) のカンマ区切り token 間 operator
-        # にのみ影響し、nested 4 text param の inner match.operator は常に "and"
-        # (値内空白 = AND 固定、api-spec.md § セマンティクス共通ルール).
-        result = build_search_query(keyword_operator="OR", **{kwarg: "foo bar"})  # type: ignore[arg-type]
-        nested = _find_nested_filter(result["bool"]["filter"], path)
-        assert nested["nested"]["query"] == {
-            "match": {sub_field: {"query": "foo bar", "operator": "and"}},
-        }
+        # にのみ影響し、nested text param のクエリ形式は変わらない
+        # (api-spec.md § セマンティクス共通ルール).
+        result_and = build_search_query(keyword_operator="AND", **{kwarg: "foo bar"})  # type: ignore[arg-type]
+        result_or = build_search_query(keyword_operator="OR", **{kwarg: "foo bar"})  # type: ignore[arg-type]
+        nested_and = _find_nested_filter(result_and["bool"]["filter"], path)
+        nested_or = _find_nested_filter(result_or["bool"]["filter"], path)
+        assert nested_and["nested"]["query"] == nested_or["nested"]["query"]
 
     def test_nested_clause_sets_ignore_unmapped(
         self,
@@ -1721,6 +1745,17 @@ class TestBuildSearchQueryNestedTextParams:
         result = build_search_query(**{kwarg: "foo"})  # type: ignore[arg-type]
         nested = _find_nested_filter(result["bool"]["filter"], path)
         assert nested["nested"]["ignore_unmapped"] is True
+
+    def test_single_char_bare_word_uses_match_phrase_only(
+        self,
+        kwarg: str,
+        path: str,
+        sub_field: str,
+    ) -> None:
+        # 1文字 bare word は全 term スキャン回避のため前方一致なし → match_phrase 単独.
+        result = build_search_query(**{kwarg: "a"})  # type: ignore[arg-type]
+        nested = _find_nested_filter(result["bool"]["filter"], path)
+        assert nested["nested"]["query"] == {"match_phrase": {sub_field: "a"}}
 
 
 class TestBuildSearchQueryNestedTextParamsCombined:
@@ -1903,13 +1938,17 @@ class TestBuildSearchQueryTypeSpecificTermFilters:
 # ===================================================================
 
 
-def _find_text_match_clause(
+def _find_prefix_match_clause(
     filters: list[dict[str, Any]],
     field: str,
 ) -> dict[str, Any] | None:
+    """Find a bool.should[match_phrase, match_phrase_prefix] clause for a top-level field."""
     for clause in filters:
-        match = clause.get("match", {})
-        if isinstance(match, dict) and field in match:
+        b = clause.get("bool", {})
+        should = b.get("should", [])
+        has_phrase = any(field in s.get("match_phrase", {}) for s in should)
+        has_prefix = any(field in s.get("match_phrase_prefix", {}) for s in should)
+        if has_phrase and has_prefix:
             return clause
     return None
 
@@ -1926,14 +1965,15 @@ def _find_match_phrase_clause(
 
 
 class TestBuildSearchQueryTextMatchFilters:
-    """Type-specific text match filters use auto-phrase + match/match_phrase."""
+    """Type-specific text match filters use auto-phrase + match_phrase/prefix."""
 
-    def test_host_simple_token_uses_match_with_and_operator(self) -> None:
+    def test_host_bare_word_uses_prefix_match(self) -> None:
+        # bare word (記号なし、2文字以上) → match_phrase + match_phrase_prefix の should wrapper.
         result = build_search_query(host="Homo sapiens")
-        clause = _find_text_match_clause(result["bool"]["filter"], "host")
+        clause = _find_prefix_match_clause(result["bool"]["filter"], "host")
         assert clause is not None
-        assert clause["match"]["host"]["query"] == "Homo sapiens"
-        assert clause["match"]["host"]["operator"] == "and"
+        assert clause["bool"]["should"][0]["match_phrase"]["host"] == "Homo sapiens"
+        assert clause["bool"]["should"][1]["match_phrase_prefix"]["host"] == "Homo sapiens"
 
     def test_host_with_quoted_phrase_uses_match_phrase(self) -> None:
         result = build_search_query(host='"Homo sapiens"')
@@ -1948,6 +1988,7 @@ class TestBuildSearchQueryTextMatchFilters:
         assert clause["match_phrase"]["host"] == "HIF-1"
 
     def test_host_comma_separated_or_combines(self) -> None:
+        # カンマ区切り → 外側 bool.should の should が 2 件 (各トークンが prefix should wrapper).
         result = build_search_query(host="Homo,Mus musculus")
         bool_clause = next(
             (c for c in result["bool"]["filter"] if "bool" in c and "should" in c.get("bool", {})),
@@ -1956,24 +1997,24 @@ class TestBuildSearchQueryTextMatchFilters:
         assert bool_clause is not None
         assert len(bool_clause["bool"]["should"]) == 2
         assert bool_clause["bool"]["minimum_should_match"] == 1
-        # one phrase ("Mus musculus" is plain → match), one match.
-        # Ensure both refer to the host field.
+        # 各サブ句が "host" フィールドを持つ should wrapper であることを確認.
         for sub in bool_clause["bool"]["should"]:
-            target = sub.get("match") or sub.get("match_phrase") or {}
-            assert "host" in target
+            inner_should = sub.get("bool", {}).get("should", [])
+            assert any("host" in s.get("match_phrase", {}) for s in inner_should)
 
-    def test_text_match_operator_is_and_regardless_of_keyword_operator(self) -> None:
+    def test_keyword_operator_does_not_affect_text_match(self) -> None:
         # keyword_operator は keywords (multi_match) のカンマ区切り token 間
-        # operator にのみ影響し、text match の値内空白 operator は常に "and"
+        # operator にのみ影響し、text match のクエリ形式は変わらない
         # (api-spec.md § セマンティクス共通ルール).
-        result = build_search_query(host="Homo sapiens", keyword_operator="OR")
-        clause = _find_text_match_clause(result["bool"]["filter"], "host")
-        assert clause is not None
-        assert clause["match"]["host"]["operator"] == "and"
+        result_and = build_search_query(host="Homo sapiens", keyword_operator="AND")
+        result_or = build_search_query(host="Homo sapiens", keyword_operator="OR")
+        clause_and = _find_prefix_match_clause(result_and["bool"]["filter"], "host")
+        clause_or = _find_prefix_match_clause(result_or["bool"]["filter"], "host")
+        assert clause_and == clause_or
 
     def test_text_match_empty_string_skipped(self) -> None:
         result = build_search_query(host="")
-        assert _find_text_match_clause(result["bool"]["filter"], "host") is None
+        assert _find_prefix_match_clause(result["bool"]["filter"], "host") is None
         assert _find_match_phrase_clause(result["bool"]["filter"], "host") is None
 
     @pytest.mark.parametrize(
@@ -1994,18 +2035,35 @@ class TestBuildSearchQueryTextMatchFilters:
         kwarg: str,
         es_field: str,
     ) -> None:
+        # bare word "value" (5文字) → should wrapper でフィールドに正しく到達する.
         result = build_search_query(**{kwarg: "value"})  # type: ignore[arg-type]
-        clause = _find_text_match_clause(result["bool"]["filter"], es_field)
+        clause = _find_prefix_match_clause(result["bool"]["filter"], es_field)
         assert clause is not None
-        assert clause["match"][es_field]["query"] == "value"
+        assert clause["bool"]["should"][0]["match_phrase"][es_field] == "value"
 
     def test_text_match_in_filter_section(self) -> None:
         # text match clauses should live under bool.filter so they
         # behave as AND constraints alongside the status filter.
         result = build_search_query(keywords="cancer", host="Homo sapiens")
-        # keyword multi_match goes under must, host match under filter
+        # keyword multi_match goes under must, host prefix match under filter
         assert "must" in result["bool"]
-        assert _find_text_match_clause(result["bool"]["filter"], "host") is not None
+        assert _find_prefix_match_clause(result["bool"]["filter"], "host") is not None
+
+    def test_single_char_bare_word_uses_match_phrase_only(self) -> None:
+        # 1文字 bare word は全 term スキャン回避のため前方一致なし → match_phrase 単独.
+        result = build_search_query(host="a")
+        clause = _find_match_phrase_clause(result["bool"]["filter"], "host")
+        assert clause is not None
+        assert clause["match_phrase"]["host"] == "a"
+        assert _find_prefix_match_clause(result["bool"]["filter"], "host") is None
+
+    def test_two_char_bare_word_uses_prefix_match(self) -> None:
+        # 2文字 bare word は最小長を満たすため前方一致 should wrapper.
+        result = build_search_query(host="ab")
+        clause = _find_prefix_match_clause(result["bool"]["filter"], "host")
+        assert clause is not None
+        assert clause["bool"]["should"][0]["match_phrase"]["host"] == "ab"
+        assert clause["bool"]["should"][1]["match_phrase_prefix"]["host"] == "ab"
 
 
 # === db-portal facet scope allowlist (db → ES subtype 展開) ===
