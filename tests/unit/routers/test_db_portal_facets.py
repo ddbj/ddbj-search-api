@@ -37,6 +37,7 @@ from tests.unit.conftest import (
 
 _FACET_NOT_APPLICABLE = DbPortalErrorType.facet_not_applicable.value
 _PUBLIC_ONLY_CLAUSE = {"term": {"status": "public"}}
+_INCLUDE_SUPPRESSED = {"terms": {"status": ["public", "suppressed"]}}
 
 
 def _organism_agg(tax_id: str, count: int, label: str) -> dict[str, Any]:
@@ -615,6 +616,33 @@ def _term_fields(node: Any) -> list[str]:
     return found
 
 
+def _clause_fields(node: Any, clause: str) -> list[str]:
+    """Collect every ``<clause>`` (e.g. match_phrase / match_phrase_prefix) field name."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == clause and isinstance(value, dict):
+                found.extend(value.keys())
+            else:
+                found.extend(_clause_fields(value, clause))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_clause_fields(item, clause))
+    return found
+
+
+def _has_freetext_prefix(node: Any) -> bool:
+    """ツリー内に FreeText 前方一致 (``multi_match`` type=phrase_prefix) があるか."""
+    if isinstance(node, dict):
+        mm = node.get("multi_match")
+        if isinstance(mm, dict) and mm.get("type") == "phrase_prefix":
+            return True
+        return any(_has_freetext_prefix(v) for v in node.values())
+    if isinstance(node, list):
+        return any(_has_freetext_prefix(v) for v in node)
+    return False
+
+
 def _filter_wrapped(name: str, inner: dict[str, Any], doc_count: int) -> dict[str, Any]:
     """Shape an ES ``filter`` aggregation response (self-exclusion wrap)."""
     return {"doc_count": doc_count, name: inner}
@@ -673,6 +701,105 @@ class TestDbPortalEsSelfExclusion:
         assert "organism.identifier" in _term_fields(package_filter)
         # Response is parsed through the filter-wrap shape.
         assert resp.json()["facets"]["organism"][0]["value"] == "9606"
+
+    def test_text_facet_self_exclude_nests_prefix_wrapper(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """text 型 facet (host) が self-exclusion で再注入されるとき、その clause は
+        前方一致 should-wrapper (match_phrase + match_phrase_prefix) として正しく入れ子に
+        なる。enum facet (package) の term clause と混在しても base / post_filter /
+        各 filter agg の母集団が崩れないことを確認する (前方一致導入の回帰ガード)。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=2,
+            aggregations={
+                "host": _filter_wrapped("host", _terms_agg("Homo sapiens", 2), 2),
+                "package": _filter_wrapped("package", _terms_agg("SAMPLE", 2), 2),
+            },
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "biosample",
+                "q": "host:Homo AND package:SAMPLE",
+                "facets": "host,package",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_db_portal)
+        # base (top-level query): 両 facet 句を除外 (status のみ残る)。
+        assert "host" not in _clause_fields(body["query"], "match_phrase_prefix")
+        assert "package.name" not in _term_fields(body["query"])
+        assert "status" in _term_fields(body["query"])
+        # post_filter: 全 q を復元 — host は前方一致 should-wrapper、package は term。
+        assert "host" in _clause_fields(body["post_filter"], "match_phrase")
+        assert "host" in _clause_fields(body["post_filter"], "match_phrase_prefix")
+        assert "package.name" in _term_fields(body["post_filter"])
+        # host facet の母集団は host 句を除外 (前方一致も消える) し package 句のみ足し戻す。
+        host_filter = body["aggs"]["host"]["filter"]
+        assert "host" not in _clause_fields(host_filter, "match_phrase_prefix")
+        assert "package.name" in _term_fields(host_filter)
+        # package facet の母集団は host の前方一致 should-wrapper を保持し package 句を除外。
+        package_filter = body["aggs"]["package"]["filter"]
+        assert "host" in _clause_fields(package_filter, "match_phrase_prefix")
+        assert "package.name" not in _term_fields(package_filter)
+
+    def test_post_filter_suppresses_freetext_prefix_on_accession_unlock(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        """self-exclusion の post_filter も、accession 完全一致で suppressed を解禁した
+        クエリでは FreeText 前方一致を出さない (base query と同じゲート)。post_filter は
+        hit 母集団を復元するので、ここで prefix が漏れると別 accession の suppressed に
+        当たる (docs § データ可視性。db_portal.py post_filter レーンの回帰ガード)。"""
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=1,
+            aggregations={"relevance": _filter_wrapped("relevance", _terms_agg("reference", 1), 1)},
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": "PRJDB1234 AND relevance:reference",
+                "facets": "relevance",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_db_portal)
+        assert "post_filter" in body
+        # 解禁 (status terms) されていること、かつ post_filter / base に FreeText 前方一致が
+        # 無いことを pin (常時 prefix ON の mutation を検出)。
+        assert _INCLUDE_SUPPRESSED in _status_filter_clauses(body["query"])
+        assert not _has_freetext_prefix(body["post_filter"])
+        assert not _has_freetext_prefix(body["query"])
+
+    def test_post_filter_keeps_freetext_prefix_without_accession(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # positive control: accession でない free-text + self-exclusion では post_filter に
+        # FreeText 前方一致が残る (ゲートが条件付きで常時 OFF の mutation を排除)。
+        mock_es_search_db_portal.return_value = make_es_search_response(
+            total=1,
+            aggregations={"relevance": _filter_wrapped("relevance", _terms_agg("reference", 1), 1)},
+        )
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={
+                "db": "bioproject",
+                "q": "cancer AND relevance:reference",
+                "facets": "relevance",
+                "facetSelfExclude": "true",
+            },
+        )
+        assert resp.status_code == 200
+        body = get_es_search_body(mock_es_search_db_portal)
+        assert _has_freetext_prefix(body["post_filter"])
 
     def test_self_exclude_restores_hits_via_post_filter(
         self,
@@ -900,7 +1027,9 @@ class TestDbPortalSolrSelfExclusion:
             "{!ex=selfex_rank key=rank}rank",
             "{!ex=selfex_kingdom key=kingdom}kingdom",
         ]
+        # rank は enum (eq) なので完全一致のまま。kingdom は text contains の simple word
+        # なので前方一致を相乗りした (kingdom:"Bacteria" OR kingdom:Bacteria*) になる。
         assert params["fq"] == [
             '{!tag=selfex_rank}rank:"species"',
-            '{!tag=selfex_kingdom}kingdom:"Bacteria"',
+            '{!tag=selfex_kingdom}(kingdom:"Bacteria" OR kingdom:Bacteria*)',
         ]

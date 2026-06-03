@@ -321,7 +321,13 @@ def build_search_query(
         op_upper: Literal["AND", "OR"] = "OR" if keyword_operator == "OR" else "AND"
         # keyword_list が non-empty な時点で keywords は non-None.
         assert keywords is not None
-        free_text_dict = compile_free_text(keywords, operator=op_upper, fields=fields)
+        # accession 完全一致で suppressed を解禁したクエリ (status_mode=include_suppressed)
+        # では free-text の前方一致を抑止する。解禁した accession の prefix で別 accession の
+        # suppressed を漏らさないため (docs/api-spec.md § データ可視性)。
+        enable_prefix = status_mode != "include_suppressed"
+        free_text_dict = compile_free_text(
+            keywords, operator=op_upper, fields=fields, enable_prefix=enable_prefix,
+        )
         bool_query.update(free_text_dict["bool"])
 
     if filters:
@@ -880,8 +886,14 @@ def es_query_from_ast(
     if ast is None:
         return build_search_query(keywords=None, keyword_operator="AND", status_mode=status_mode)
 
+    # suppressed 解禁時 (accession 完全一致) は FreeText の前方一致を抑止する
+    # (docs/api-spec.md § データ可視性。build_search_query と同じ規則)。
     return inject_status_filter(
-        compile_to_es(ast, free_text_operator=free_text_operator),
+        compile_to_es(
+            ast,
+            free_text_operator=free_text_operator,
+            enable_prefix=status_mode != "include_suppressed",
+        ),
         status_mode,
     )
 

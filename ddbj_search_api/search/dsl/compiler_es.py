@@ -24,7 +24,11 @@ from typing import Any, Literal
 
 from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
-from ddbj_search_api.search.phrase import ES_AUTO_PHRASE_CHARS, parse_keywords_with_autophrase
+from ddbj_search_api.search.phrase import (
+    ES_AUTO_PHRASE_CHARS,
+    has_auto_phrase_trigger,
+    parse_keywords_with_autophrase,
+)
 
 # シンプル検索 (q) を multi_match に展開するときのデフォルトフィールド集合.
 # db-portal handler は keyword_fields を渡さず常にこのデフォルトで検索する.
@@ -160,19 +164,61 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
 }
 
 
+# 前方一致を相乗りさせる末尾語の最小 literal 長。1 文字 prefix は ES では
+# ``max_expansions`` で頭打ちになるが、Solr (legacy ARSA / TXSearch、~3 億件) では
+# 全 term スキャンを誘発するため、既存の wildcard ガード
+# (``validator._MIN_WILDCARD_LITERAL_LEN`` = 2) と同基準で 2 文字以上を要求する。
+_MIN_PREFIX_LITERAL_LEN = 2
+
+
+def _keyword_token_clause(text: str, fields: list[str], *, enable_prefix: bool = True) -> dict[str, Any]:
+    """記号なし bare word トークンを「完全語 (+ 末尾前方一致)」に展開する.
+
+    - ``multi_match{operator:and}``: 値内空白を AND 結合した完全トークン一致 (語順不問)。
+    - ``multi_match{type:phrase_prefix}``: 末尾トークンを前方一致 (打ちかけ・部分入力対応、
+      ``Huma`` → ``Human`` / ``Homo sap`` → ``Homo sapiens``)。
+
+    ``enable_prefix=False`` (accession 完全一致で suppressed を解禁したクエリ。
+    docs/api-spec.md § データ可視性) または末尾語が ``_MIN_PREFIX_LITERAL_LEN`` 未満の
+    ときは前方一致を付けず完全語 ``multi_match{operator:and}`` 単独を返す。前者は解禁した
+    accession の prefix で別 accession の suppressed を漏らさないため、後者は短 prefix の
+    全 term スキャンを避けるため。
+
+    前方一致付与時は完全一致が両 should を満たすため relevance 順で自然に上位に来る
+    (明示 boost なし)。前方一致の展開数は ES の ``max_expansions`` (default 50) に従う。
+    default fields に ``identifier`` (keyword) を含むため accession の前方入力にもヒットする。
+    """
+    and_clause: dict[str, Any] = {"multi_match": {"query": text, "fields": fields, "operator": "and"}}
+    words = text.split()
+    last_word = words[-1] if words else text
+    if not enable_prefix or len(last_word) < _MIN_PREFIX_LITERAL_LEN:
+        return and_clause
+    return {
+        "bool": {
+            "should": [
+                and_clause,
+                {"multi_match": {"query": text, "fields": fields, "type": "phrase_prefix"}},
+            ],
+            "minimum_should_match": 1,
+        },
+    }
+
+
 def compile_free_text(
     value: str,
     *,
     operator: Literal["AND", "OR"] = "AND",
     fields: list[str] | tuple[str, ...] | None = None,
     is_phrase: bool = False,
+    enable_prefix: bool = True,
 ) -> dict[str, Any]:
     """Convert a raw search keyword string (``q``) to an ES bool query.
 
-    ``value`` を auto-phrase 適用付きでトークン化し、各トークンを ``multi_match``
-    (記号含みは ``type=phrase``) に展開、``operator`` で ``bool.must`` /
-    ``bool.should`` を選ぶ。db-portal / entries / facets / AST 経路 (FreeText
-    ノード) で同じロジックを共有する。
+    ``value`` を auto-phrase 適用付きでトークン化し、``operator`` で ``bool.must`` /
+    ``bool.should`` を選ぶ。記号含み / quoted トークンは ``multi_match{type=phrase}``
+    (完全一致)、記号なし bare word トークンは ``_keyword_token_clause`` で
+    「完全語 + 末尾前方一致」の ``bool.should`` に展開する (打ちかけ対応)。
+    db-portal / entries / facets / AST 経路 (FreeText ノード) で同じロジックを共有する。
 
     ``fields`` を省略すると ``_FREE_TEXT_DEFAULT_FIELDS`` (5 field、
     ``identifier`` / ``title`` / ``name`` / ``description`` / ``organism.name``) を使う。
@@ -206,17 +252,14 @@ def compile_free_text(
             raise ValueError(f"empty free-text value (after tokenization): {value!r}")
         multi_matches = []
         for text, token_is_phrase in tokens:
-            mm: dict[str, Any] = {"query": text, "fields": used_fields}
             if token_is_phrase:
-                mm["type"] = "phrase"
+                # quoted / 記号含み (auto-phrase) トークンは順序保持の完全一致 phrase。
+                # クオート = 厳密一致の意図なので前方一致は付けない。
+                multi_matches.append(
+                    {"multi_match": {"query": text, "fields": used_fields, "type": "phrase"}},
+                )
             else:
-                # 1 multi_match 内 (= 1 keyword 値内) の空白を AND 結合する.
-                # multi_match の ES default は OR で、stop word に近い token を
-                # 含む長めの keyword で誤爆が大きいため明示する.
-                # phrase 系は順序固定なので operator は意味を持たない (ES 仕様で
-                # phrase に対する operator は無視される) ため付けない.
-                mm["operator"] = "and"
-            multi_matches.append({"multi_match": mm})
+                multi_matches.append(_keyword_token_clause(text, used_fields, enable_prefix=enable_prefix))
     if operator == "OR":
         return {"bool": {"should": multi_matches, "minimum_should_match": 1}}
     return {"bool": {"must": multi_matches}}
@@ -226,6 +269,7 @@ def compile_to_es(
     ast: Node,
     *,
     free_text_operator: Literal["AND", "OR"] = "AND",
+    enable_prefix: bool = True,
 ) -> dict[str, Any]:
     """Convert a validated AST to an ES query body (value of the ``query`` key).
 
@@ -239,40 +283,58 @@ def compile_to_es(
     ``bool.should`` + ``minimum_should_match=1``.  The explicit ``AND`` / ``OR`` /
     ``NOT`` BoolOps inside the AST are unaffected.
 
+    ``enable_prefix=False`` で FreeText の前方一致展開を抑止する (accession 完全一致で
+    suppressed を解禁したクエリ用。docs/api-spec.md § データ可視性)。field-scoped
+    ``contains`` の前方一致は AND 制約で守られるため ``enable_prefix`` の影響を受けない。
+
     トップレベル AND の直下に FreeText が混じった AST (``cancer AND organism_id:9606`` 等)
     では、``free_text_operator=AND`` のときに限り FreeText 子の ``bool.must`` 中身を
     上位 ``bool.must`` に flatten して単一 bool 句にまとめる。OR の場合は FreeText の
     ``bool.should`` が semantics 上 inline 化できないので、入れ子の bool 句として残す。
     """
-    return _compile_node(ast, free_text_operator=free_text_operator)
+    return _compile_node(ast, free_text_operator=free_text_operator, enable_prefix=enable_prefix)
 
 
-def _compile_node(node: Node, *, free_text_operator: Literal["AND", "OR"] = "AND") -> dict[str, Any]:
+def _compile_node(
+    node: Node,
+    *,
+    free_text_operator: Literal["AND", "OR"] = "AND",
+    enable_prefix: bool = True,
+) -> dict[str, Any]:
     if isinstance(node, FreeText):
         return compile_free_text(
             node.value,
             operator=free_text_operator,
             is_phrase=node.is_phrase,
+            enable_prefix=enable_prefix,
         )
     if isinstance(node, FieldClause):
         return _compile_leaf(node)
     if node.op == "AND":
         return {
             "bool": {
-                "must": _compile_and_children(node.children, free_text_operator=free_text_operator),
+                "must": _compile_and_children(
+                    node.children, free_text_operator=free_text_operator, enable_prefix=enable_prefix,
+                ),
             },
         }
     if node.op == "OR":
         return {
             "bool": {
-                "should": [_compile_node(c, free_text_operator=free_text_operator) for c in node.children],
+                "should": [
+                    _compile_node(c, free_text_operator=free_text_operator, enable_prefix=enable_prefix)
+                    for c in node.children
+                ],
                 "minimum_should_match": 1,
             },
         }
     # NOT
     return {
         "bool": {
-            "must_not": [_compile_node(c, free_text_operator=free_text_operator) for c in node.children],
+            "must_not": [
+                _compile_node(c, free_text_operator=free_text_operator, enable_prefix=enable_prefix)
+                for c in node.children
+            ],
         },
     }
 
@@ -281,6 +343,7 @@ def _compile_and_children(
     children: tuple[Node, ...],
     *,
     free_text_operator: Literal["AND", "OR"] = "AND",
+    enable_prefix: bool = True,
 ) -> list[dict[str, Any]]:
     """AND の子ノードを compile し、FreeText 由来の ``bool.must`` を flatten する.
 
@@ -292,7 +355,7 @@ def _compile_and_children(
     """
     clauses: list[dict[str, Any]] = []
     for child in children:
-        compiled = _compile_node(child, free_text_operator=free_text_operator)
+        compiled = _compile_node(child, free_text_operator=free_text_operator, enable_prefix=enable_prefix)
         if isinstance(child, FreeText) and free_text_operator == "AND":
             inner = compiled.get("bool", {}).get("must")
             if isinstance(inner, list):
@@ -358,6 +421,26 @@ def _basic_leaf(es_field: str, clause: FieldClause) -> dict[str, Any]:
     if op == "eq":
         return {"term": {es_field: value}}
     if op == "contains":
+        # text 型 field-scoped contains: 記号なし simple word は「完全一致 + 末尾前方一致」
+        # の should に展開 (keyword box と同じ「simple word のみ前方一致」原則)。
+        # quoted 値 (value_kind=phrase) と記号含み語 (auto-phrase trigger) は順序保持の
+        # match_phrase 単独 (クオート = 厳密一致の意図を尊重)。flat / nested いずれの text
+        # フィールドも _basic_leaf を通るため同一規則が適用される。
+        assert isinstance(value, str)
+        if (
+            clause.value_kind == "word"
+            and not has_auto_phrase_trigger(value, ES_AUTO_PHRASE_CHARS)
+            and len(value) >= _MIN_PREFIX_LITERAL_LEN
+        ):
+            return {
+                "bool": {
+                    "should": [
+                        {"match_phrase": {es_field: value}},
+                        {"match_phrase_prefix": {es_field: value}},
+                    ],
+                    "minimum_should_match": 1,
+                },
+            }
         return {"match_phrase": {es_field: value}}
     if op == "wildcard":
         # ES wildcard does not apply the analyzer to the value, so text-type

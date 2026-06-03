@@ -26,6 +26,40 @@ def _compile(dsl: str) -> dict[str, Any]:
     return compile_to_es(parse(dsl))
 
 
+def _contains_should(es_field: str, value: str) -> dict[str, Any]:
+    """text 型 field-scoped contains の記号なし single word が展開する should ラッパ.
+
+    完全一致 (match_phrase) + 末尾前方一致 (match_phrase_prefix) を ``minimum_should_match=1``
+    で結合する。
+    """
+    return {
+        "bool": {
+            "should": [
+                {"match_phrase": {es_field: value}},
+                {"match_phrase_prefix": {es_field: value}},
+            ],
+            "minimum_should_match": 1,
+        },
+    }
+
+
+def _keyword_should(text: str, fields: list[str]) -> dict[str, Any]:
+    """keyword box の記号なし bare word トークンが展開する should ラッパ.
+
+    完全語一致 (multi_match operator=and) + 末尾前方一致 (multi_match type=phrase_prefix) を
+    ``minimum_should_match=1`` で結合する。
+    """
+    return {
+        "bool": {
+            "should": [
+                {"multi_match": {"query": text, "fields": fields, "operator": "and"}},
+                {"multi_match": {"query": text, "fields": fields, "type": "phrase_prefix"}},
+            ],
+            "minimum_should_match": 1,
+        },
+    }
+
+
 class TestIdentifierField:
     def test_word(self) -> None:
         assert _compile("identifier:PRJDB1") == {"term": {"identifier": "PRJDB1"}}
@@ -45,7 +79,7 @@ class TestTextFields:
         [("title", "title"), ("name", "name"), ("description", "description")],
     )
     def test_word_becomes_match_phrase(self, field: str, es_field: str) -> None:
-        assert _compile(f"{field}:cancer") == {"match_phrase": {es_field: "cancer"}}
+        assert _compile(f"{field}:cancer") == _contains_should(es_field, "cancer")
 
     @pytest.mark.parametrize(
         ("field", "es_field"),
@@ -85,9 +119,10 @@ class TestOrganismFields:
         }
 
     def test_organism_name_word(self) -> None:
-        # text 型 contains は match_phrase 経由で analyzer を通す。term だと
-        # lowercase tokenize 後の inverted index と単一値が不一致で 0 件になる。
-        assert _compile("organism_name:human") == {"match_phrase": {"organism.name": "human"}}
+        # text 型 contains の記号なし single word は完全一致 + 末尾前方一致の should に展開。
+        # match_phrase は analyzer を通すため、term だと lowercase tokenize 後の inverted
+        # index と単一値が不一致で 0 件になる経路を避けつつ、打ちかけ入力にも応える。
+        assert _compile("organism_name:human") == _contains_should("organism.name", "human")
 
     def test_organism_name_phrase(self) -> None:
         assert _compile('organism_name:"Homo sapiens"') == {
@@ -147,8 +182,8 @@ class TestBoolOperators:
         assert _compile("title:cancer AND description:tumor") == {
             "bool": {
                 "must": [
-                    {"match_phrase": {"title": "cancer"}},
-                    {"match_phrase": {"description": "tumor"}},
+                    _contains_should("title", "cancer"),
+                    _contains_should("description", "tumor"),
                 ],
             },
         }
@@ -157,8 +192,8 @@ class TestBoolOperators:
         assert _compile("title:cancer OR title:tumor") == {
             "bool": {
                 "should": [
-                    {"match_phrase": {"title": "cancer"}},
-                    {"match_phrase": {"title": "tumor"}},
+                    _contains_should("title", "cancer"),
+                    _contains_should("title", "tumor"),
                 ],
                 "minimum_should_match": 1,
             },
@@ -166,21 +201,23 @@ class TestBoolOperators:
 
     def test_not(self) -> None:
         assert _compile("NOT title:cancer") == {
-            "bool": {"must_not": [{"match_phrase": {"title": "cancer"}}]},
+            "bool": {"must_not": [_contains_should("title", "cancer")]},
         }
 
 
 class TestPrecedence:
+    # 値は 2 文字以上にして前方一致 (should-wrapper) を exercise する
+    # (1 文字値は最小 prefix 長未満で match_phrase 単独になり precedence の主題から逸れる)。
     def test_and_before_or(self) -> None:
-        assert _compile("title:a OR title:b AND title:c") == {
+        assert _compile("title:aa OR title:bb AND title:cc") == {
             "bool": {
                 "should": [
-                    {"match_phrase": {"title": "a"}},
+                    _contains_should("title", "aa"),
                     {
                         "bool": {
                             "must": [
-                                {"match_phrase": {"title": "b"}},
-                                {"match_phrase": {"title": "c"}},
+                                _contains_should("title", "bb"),
+                                _contains_should("title", "cc"),
                             ],
                         },
                     },
@@ -190,19 +227,19 @@ class TestPrecedence:
         }
 
     def test_parens_override(self) -> None:
-        assert _compile("(title:a OR title:b) AND title:c") == {
+        assert _compile("(title:aa OR title:bb) AND title:cc") == {
             "bool": {
                 "must": [
                     {
                         "bool": {
                             "should": [
-                                {"match_phrase": {"title": "a"}},
-                                {"match_phrase": {"title": "b"}},
+                                _contains_should("title", "aa"),
+                                _contains_should("title", "bb"),
                             ],
                             "minimum_should_match": 1,
                         },
                     },
-                    {"match_phrase": {"title": "c"}},
+                    _contains_should("title", "cc"),
                 ],
             },
         }
@@ -219,17 +256,28 @@ def _is_valid_iso_date(s: str) -> bool:
 class TestCompilerPBT:
     @given(
         field=st.sampled_from(["title", "description"]),
+        # 2 文字以上 (1 文字は最小 prefix 長未満で match_phrase 単独。別途 1 文字ガードを検証)
         word=st.text(
             alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
-            min_size=1,
+            min_size=2,
             max_size=20,
         ),
     )
     @settings(max_examples=30, deadline=None)
-    def test_text_word_always_match_phrase(self, field: str, word: str) -> None:
+    def test_text_word_expands_to_phrase_and_prefix_should(self, field: str, word: str) -> None:
+        # 記号なし 2 文字以上の single word の text 型 contains は、完全一致 (match_phrase) と
+        # 末尾前方一致 (match_phrase_prefix) の 2 句を持つ minimum_should_match=1 の
+        # bool.should に必ず展開される。
         q = _compile(f"{field}:{word}")
-        assert "match_phrase" in q
-        assert q["match_phrase"] == {field: word}
+        assert q == {
+            "bool": {
+                "should": [
+                    {"match_phrase": {field: word}},
+                    {"match_phrase_prefix": {field: word}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
 
     @given(
         d=st.dates(min_value=datetime.date(1000, 1, 1), max_value=datetime.date(9999, 12, 31)),
@@ -291,7 +339,7 @@ class TestTier2Publication:
         assert _compile("publication:cancer") == {
             "nested": {
                 "path": "publication",
-                "query": {"match_phrase": {"publication.title": "cancer"}},
+                "query": _contains_should("publication.title", "cancer"),
                 "ignore_unmapped": True,
             },
         }
@@ -328,7 +376,7 @@ class TestTier3ExternalLinkLabel:
         assert _compile("external_link_label:GEO") == {
             "nested": {
                 "path": "externalLink",
-                "query": {"match_phrase": {"externalLink.label": "GEO"}},
+                "query": _contains_should("externalLink.label", "GEO"),
                 "ignore_unmapped": True,
             },
         }
@@ -446,8 +494,9 @@ class TestTier3FlatText:
         ],
     )
     def test_text_match_phrase(self, dsl: str, es_field: str) -> None:
+        # いずれも記号なし single word なので、完全一致 + 末尾前方一致の should に展開。
         value = dsl.split(":", 1)[1].strip('"')
-        assert _compile(dsl) == {"match_phrase": {es_field: value}}
+        assert _compile(dsl) == _contains_should(es_field, value)
 
 
 class TestTier3WildcardExpansion:
@@ -485,7 +534,7 @@ class TestTier3GrantTitleNested:
         assert _compile("grant_title:CREST") == {
             "nested": {
                 "path": "grant",
-                "query": {"match_phrase": {"grant.title": "CREST"}},
+                "query": _contains_should("grant.title", "CREST"),
                 "ignore_unmapped": True,
             },
         }
@@ -520,7 +569,7 @@ class TestTier3GrantAgencyNested2:
                 "query": {
                     "nested": {
                         "path": "grant.agency",
-                        "query": {"match_phrase": {"grant.agency.name": "JSPS"}},
+                        "query": _contains_should("grant.agency.name", "JSPS"),
                         "ignore_unmapped": True,
                     },
                 },
@@ -597,11 +646,11 @@ class TestTier3BoolCombinations:
                     {
                         "nested": {
                             "path": "organization",
-                            "query": {"match_phrase": {"organization.name": "DDBJ"}},
+                            "query": _contains_should("organization.name", "DDBJ"),
                             "ignore_unmapped": True,
                         },
                     },
-                    {"match_phrase": {"title": "cancer"}},
+                    _contains_should("title", "cancer"),
                 ],
             },
         }
@@ -675,32 +724,17 @@ class TestCompileFreeText:
 
         assert compile_free_text("cancer") == {
             "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                ],
+                "must": [_keyword_should("cancer", self._DEFAULT_FIELDS)],
             },
         }
 
     def test_single_token_with_spaces_has_operator_and(self) -> None:
-        """1 keyword 値内の空白は AND 結合 (multi_match.operator=and)."""
+        """1 keyword 値内の空白は完全語 should の operator=and 側で AND 結合し、
+        末尾トークンは phrase_prefix で前方一致する."""
 
         assert compile_free_text("whole genome") == {
             "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": "whole genome",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                ],
+                "must": [_keyword_should("whole genome", self._DEFAULT_FIELDS)],
             },
         }
 
@@ -745,20 +779,8 @@ class TestCompileFreeText:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                    {
-                        "multi_match": {
-                            "query": "human",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
+                    _keyword_should("cancer", self._DEFAULT_FIELDS),
+                    _keyword_should("human", self._DEFAULT_FIELDS),
                 ],
             },
         }
@@ -769,20 +791,8 @@ class TestCompileFreeText:
         assert compile_free_text("cancer, human", operator="OR") == {
             "bool": {
                 "should": [
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                    {
-                        "multi_match": {
-                            "query": "human",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
+                    _keyword_should("cancer", self._DEFAULT_FIELDS),
+                    _keyword_should("human", self._DEFAULT_FIELDS),
                 ],
                 "minimum_should_match": 1,
             },
@@ -792,15 +802,7 @@ class TestCompileFreeText:
 
         assert compile_free_text("cancer", fields=["title"]) == {
             "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": ["title"],
-                            "operator": "and",
-                        },
-                    },
-                ],
+                "must": [_keyword_should("cancer", ["title"])],
             },
         }
 
@@ -827,20 +829,13 @@ class TestCompileToEsFreeTextNode:
 
     def test_multiword_free_text_node_emits_operator_and(self) -> None:
         """空白区切り bare word が畳まれた ``FreeText(value="cancer tumor")`` は値内空白を
-        ``multi_match.operator=and`` で AND 結合する (parser → 1 FreeText → compile)."""
+        完全語 should の ``operator=and`` 側で AND 結合し、末尾トークンを phrase_prefix で
+        前方一致する (parser → 1 FreeText → compile)."""
 
         node = FreeText("cancer tumor")
         assert compile_to_es(node) == {
             "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer tumor",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                ],
+                "must": [_keyword_should("cancer tumor", self._DEFAULT_FIELDS)],
             },
         }
 
@@ -862,17 +857,11 @@ class TestCompileToEsFreeTextNode:
         assert result == {
             "bool": {
                 "must": [
-                    # adv_ast の compile 結果 (organism_name は text 型 contains → match_phrase)
+                    # adv_ast の compile 結果 (organism_name は text 型 + value_kind=phrase →
+                    # contains の phrase 経路 → match_phrase 単独。クオート値は前方一致しない)
                     {"match_phrase": {"organism.name": "Homo sapiens"}},
-                    # FreeText の multi_match が flatten されて並ぶ. operator=and は
-                    # 1 multi_match 内の token 内空白を AND 結合するため.
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
+                    # FreeText の bare word should ラッパが flatten されて並ぶ.
+                    _keyword_should("cancer", self._DEFAULT_FIELDS),
                 ],
             },
         }
@@ -895,7 +884,7 @@ class TestCompileToEsFreeTextNode:
         assert result == {
             "bool": {
                 "must": [
-                    {"match_phrase": {"title": "cancer"}},
+                    _contains_should("title", "cancer"),
                     {
                         "multi_match": {
                             "query": "HIF-1",
@@ -925,19 +914,11 @@ class TestCompileToEsFreeTextNode:
         assert result == {
             "bool": {
                 "should": [
-                    {"match_phrase": {"title": "cancer"}},
+                    _contains_should("title", "cancer"),
                     # FreeText の bool wrapper はそのまま (flatten しない)
                     {
                         "bool": {
-                            "must": [
-                                {
-                                    "multi_match": {
-                                        "query": "tumor",
-                                        "fields": self._DEFAULT_FIELDS,
-                                        "operator": "and",
-                                    },
-                                },
-                            ],
+                            "must": [_keyword_should("tumor", self._DEFAULT_FIELDS)],
                         },
                     },
                 ],
@@ -958,20 +939,8 @@ class TestCompileToEsFreeTextOperator:
         assert result == {
             "bool": {
                 "should": [
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                    {
-                        "multi_match": {
-                            "query": "tumor",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
+                    _keyword_should("cancer", self._DEFAULT_FIELDS),
+                    _keyword_should("tumor", self._DEFAULT_FIELDS),
                 ],
                 "minimum_should_match": 1,
             },
@@ -998,24 +967,12 @@ class TestCompileToEsFreeTextOperator:
         assert result == {
             "bool": {
                 "must": [
-                    {"match_phrase": {"title": "cancer"}},
+                    _contains_should("title", "cancer"),
                     {
                         "bool": {
                             "should": [
-                                {
-                                    "multi_match": {
-                                        "query": "apple",
-                                        "fields": self._DEFAULT_FIELDS,
-                                        "operator": "and",
-                                    },
-                                },
-                                {
-                                    "multi_match": {
-                                        "query": "banana",
-                                        "fields": self._DEFAULT_FIELDS,
-                                        "operator": "and",
-                                    },
-                                },
+                                _keyword_should("apple", self._DEFAULT_FIELDS),
+                                _keyword_should("banana", self._DEFAULT_FIELDS),
                             ],
                             "minimum_should_match": 1,
                         },
@@ -1044,21 +1001,9 @@ class TestCompileToEsFreeTextOperator:
         assert result_default == {
             "bool": {
                 "must": [
-                    {"match_phrase": {"title": "cancer"}},
-                    {
-                        "multi_match": {
-                            "query": "apple",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                    {
-                        "multi_match": {
-                            "query": "banana",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
+                    _contains_should("title", "cancer"),
+                    _keyword_should("apple", self._DEFAULT_FIELDS),
+                    _keyword_should("banana", self._DEFAULT_FIELDS),
                 ],
             },
         }
@@ -1199,26 +1144,20 @@ class TestCompileFreeTextNodePhrase:
                             "type": "phrase",
                         },
                     },
-                    # FIELD_TYPES["title"]="text" + value_kind="word" → "contains" → match_phrase.
-                    {"match_phrase": {"title": "cancer"}},
+                    # FIELD_TYPES["title"]="text" + value_kind="word" → "contains" →
+                    # 完全一致 + 末尾前方一致の should ラッパ.
+                    _contains_should("title", "cancer"),
                 ],
             },
         }
 
-    def test_bare_word_unchanged_emits_operator_and(self) -> None:
-        # 回帰: is_phrase=False の bare word は従来通り operator=and (順序非保持の AND match).
+    def test_bare_word_expands_to_phrase_prefix_should(self) -> None:
+        # is_phrase=False の bare word は完全語一致 (operator=and) と末尾前方一致
+        # (phrase_prefix) の 2 multi_match を持つ should ラッパに展開される (打ちかけ対応).
         result = compile_to_es(parse("cancer"))
         assert result == {
             "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                ],
+                "must": [_keyword_should("cancer", self._DEFAULT_FIELDS)],
             },
         }
 
@@ -1266,15 +1205,7 @@ class TestCompileFreeTextNodePhrase:
         assert result_implicit == result_explicit_false
         assert result_implicit == {
             "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer tumor",
-                            "fields": self._DEFAULT_FIELDS,
-                            "operator": "and",
-                        },
-                    },
-                ],
+                "must": [_keyword_should("cancer tumor", self._DEFAULT_FIELDS)],
             },
         }
 

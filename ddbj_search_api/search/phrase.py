@@ -89,9 +89,11 @@ def parse_keywords_with_autophrase(
 
     A token is flagged as phrase when it was originally quoted (either
     ``"..."`` or ``'...'``) *or* when it contains any character in
-    ``trigger_chars``.  Used by the ES query builder; Solr quotes
-    everything unconditionally so it should call
-    :func:`tokenize_keywords` instead.
+    ``trigger_chars``.  Both the ES and Solr query builders call this:
+    they pass their own ``trigger_chars`` (``ES_AUTO_PHRASE_CHARS`` /
+    ``SOLR_AUTO_PHRASE_CHARS``) and treat a phrase-flagged token as an
+    exact phrase, while a bare (non-flagged) token may additionally get a
+    trailing prefix match (前方一致).
     """
     if not keywords:
         return []

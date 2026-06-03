@@ -238,6 +238,12 @@ text match 9 param と nested 4 text param (`organization` / `publication` / `gr
 
 **フレーズマッチ** (`keywords`): 明示フレーズ (ダブルクオート) と自動フレーズ化 (記号含み) は ES `multi_match` の `type: "phrase"` で検索する (トークン順序を保持した完全一致、analyzer による token 分割で精度が下がるのを防ぐ)。混在可能: `keywords=HIF-1,"whole genome",cancer` → 前 2 つは phrase、最後はトークンベースマッチ (値内空白なし)。自動フレーズ化は `HIF-1` のように ES standard analyzer が `-` で token を分割して無関係な `HIF*` 系エントリーを拾ってしまう挙動を回避する。
 
+**前方一致** (`keywords` のみ): クオートなし・記号なしの bare word トークンは、完全トークン一致に加えて**末尾トークンの前方一致**でも検索する (打ちかけ・部分入力に対応)。各 bare word トークンを `bool.should` (`minimum_should_match: 1`) に展開し、`multi_match{operator:"and"}` (完全語、語順不問) と `multi_match{type:"phrase_prefix"}` (末尾トークン前方一致) を OR で並べる。これで `keywords=Huma` が `Human` に、`keywords=Homo sap` が `Homo sapiens` にヒットする。完全一致は両 should を満たしてスコアが高くなるため、relevance 順 (sort 未指定時) では完全一致が自然に上位に来る (明示 boost は付けない。`sort` 明示時は boost が効かず「ヒット範囲が広がる」だけになる)。default fields に `identifier` (keyword) を含むため、`keywords=PRJDB` のようなアクセッション前方入力も `PRJDB123...` にヒットする。前方一致の展開数には ES の `max_expansions` (default 50) が効くため、極端に短い prefix では展開が頭打ちになる。
+
+前方一致の境界条件: クオートで囲んだトークンと記号含みトークン (自動フレーズ化) は前方一致せず完全一致 (`type: "phrase"`) のまま (クオート = 厳密一致の意図を尊重)。**末尾語が 1 文字のトークンは前方一致しない** (全 term スキャン回避のため最小 2 文字、field-scoped wildcard `value*` の最小長と同基準)。インデックスは standard analyzer のみ (ngram / edge_ngram 不使用) のため、中間一致 (`uman` → `Human`) はサポートしない。**`keywords` が単一 accession ID と完全一致して `suppressed` を解禁した場合は前方一致を抑止する** (§ データ可視性。解禁した accession の prefix で別 accession の `suppressed` を漏らさないため)。
+
+前方一致が効くのは `keywords` (キーワード検索窓) のみ。nested 5 param / text match 9 param は完全トークン一致のままで前方一致しない (filter 用途のため精密側に倒す。前方一致が必要な場合は値域に応じて term filter や別パラメータを使う)。
+
 **`keywordFields` allowlist**: `identifier`, `title`, `name`, `description`, `organism.name` の 5 値のみ受け付ける (allowlist 外は 422)。`organism.name` は学名のテキストマッチで、term filter `organism` (TaxID 完全一致) とは独立して動作する。
 
 **`organism`**: `^\d+$` の NCBI Taxonomy ID (例: `9606`) のみ受け付ける。`/facets` の `organism` bucket の `value` をそのまま再注入できる (§ ファセット)。学名 (例: `Homo sapiens`) は 422 になる。
@@ -498,6 +504,8 @@ ES ドキュメントの `status` フィールドは INSDC の公開状態を示
 - ddbj-search-converter の `ID_PATTERN_MAP` に定義された正規表現のいずれかに完全一致する (例: `^PRJ[DEN][A-Z]\d+\Z`, `^[SDE]RA\d+\Z`, `^JGAS\d+\Z` 等)
 
 他の検索フィルタ (`organism`, `datePublishedFrom` など) と併用された場合でも、`keywords` が上記条件を満たせばアクセッション完全一致として扱い、`suppressed` を検索対象に含める。
+
+アクセッション完全一致で `suppressed` を解禁する場合、`keywords` の**前方一致 (§ 前方一致) は抑止する** (完全トークン一致のみで検索する)。前方一致を効かせたままだと、解禁した accession (例 `PRJDB1234`) の prefix が別の accession (例 `PRJDB12345`) にも当たり、その `suppressed` エントリーを意図せず露出させうるため。`identifier:` を使った field-scoped 完全一致 (db-portal の `identifier:PRJDB1234`) は元から `term` 完全一致で prefix 展開されないため影響しない。
 
 **404 による存在秘匿**:
 

@@ -53,16 +53,34 @@
 
 クエリ中で空白区切りに並べた連続 bare word (例 `q=cancer tumor`) は parser が 1 つの `FreeText` 値 (`value="cancer tumor"`) に畳む (`/db-portal/parse` のレスポンスでも単一 `op="free_text"` ノードになる)。明示 `AND` で区切った `cancer AND tumor` は 2 つの `FreeText` になり、[§ FreeText の位置制約](#freetext-の位置制約) の `duplicate-freetext` で 400 になる点に注意 (両方含めたいときは空白区切り or quote phrase を使う)。
 
-`FreeText` の値はまず **カンマ** で複数 token に分割される (引用符内のカンマは保持)。各 token は ES の `multi_match` 1 件に展開される (Solr では `("token1" OR/AND "token2")` の各句にマップ)。
+`FreeText` の値はまず **カンマ** で複数 token に分割される (引用符内のカンマは保持)。各 token は backend 句に展開される (記号なし bare word の具体形は [§ FreeText の前方一致](#freetext-の前方一致-打ちかけ対応))。
 
 - **トークン間 (カンマ区切り)** の連結演算子は `keywordOperator` パラメータで切替え (default **OR**、AND も指定可)
-- **bare token 内 (= クオートなしの 1 multi_match 内) のスペース** は常に **AND 固定** (ES では `multi_match.operator=and` 明示。`q=cancer tumor` は「cancer AND tumor 両方含む」を意味する)
+- **bare token 内 (= クオートなしの 1 token 内) のスペース** は常に **AND 固定** (ES では `multi_match.operator=and` 明示。`q=cancer tumor` は「cancer AND tumor 両方含む」を意味する)
 - 値内スペースを OR にしたい場合は **カンマ区切り** にする (`q=cancer,tumor` + `keywordOperator=OR`)
 - 値内スペースを「順序固定 phrase」として扱いたい場合は **クオート** (`q="cancer tumor"` で phrase match。AST 上で当該 FreeText に phrase フラグが立ち、ES では `multi_match.type=phrase` に展開される。引用符内のコンマはトークン分割対象から外れ、phrase の一部として保持)
 
-この方針は `/entries/*` 系 (`keywords` パラメータ) と統一されている (両 API で同じ `compile_free_text` 経路)。
+DSL 側の default fields は `identifier` / `title` / `name` / `description` / `organism.name` の 5 field (`/entries/*` 系の `keywordFields` 省略時と同じ集合)。db-portal API では `keywordFields` 相当の絞り込みパラメータは公開していない (常に default 5 field で検索)。
 
-DSL 側の default fields は `identifier` / `title` / `name` / `description` / `organism.name` の 5 field (`/entries/*` 系の `keywordFields` 省略時と同じ集合)。db-portal API では `keywordFields` 相当の絞り込みパラメータは公開していない (常に default 5 field で multi_match)。
+### FreeText の前方一致 (打ちかけ対応)
+
+クオートなし・記号なしの **ASCII 英数字 bare word トークン**は、完全トークン一致に加えて**末尾トークンの前方一致**でもヒットする。
+
+- **ES**: 各 bare token を `bool.should` (`minimum_should_match: 1`) に展開し、`multi_match{operator:and}` (完全語・語順不問) と `multi_match{type:phrase_prefix}` (末尾トークン前方一致) を OR で並べる。
+- **Solr** (ARSA / TXSearch): `("<exact phrase>" OR <prefix 展開>)` に展開する (単一語 `w` → `("w" OR w*)`、複数語 `w1 w2` → `("w1 w2" OR (w1 AND w2*))`)。
+
+これで `q=Huma` が `Human` に、`q=Homo sap` が `Homo sapiens` にヒットする。完全一致は両 should を満たしてスコアが高くなる (明示 boost なし)。
+
+挙動の境界 (重要):
+
+- **クオート / 記号含みトークン**は前方一致せず完全一致のまま (クオート = 厳密一致の意図を尊重)。前方一致対象は記号なし ASCII 英数字語に限る。`_` / `&` / `;` など `-/.+:` 以外の非英数字を含む語は、ES では analyzer 経由で前方一致しうるが Solr は完全一致に倒れる (backend で recall が割れる)。確実に 8 DB で揃えたいときは ASCII 英数字語を使う。
+- **最小 prefix 長は 2 文字**。末尾語が 1 文字のときは前方一致を付けない (完全一致のみ)。短すぎる prefix の全 term スキャンを避けるため (field-scoped wildcard `value*` の最小長と同基準)。
+- **複数語の前方一致は ES が順序保持 (`phrase_prefix`)、Solr が順序自由 (語 AND 展開)**。`q=Homo sap` は ES では `Homo` 直後に `sap...` が来る並びのみ、Solr では `Homo` と `sap*` を両方含めば語順不問でヒットする (Solr の方が広く拾う)。
+- ES インデックスは standard analyzer のみ (ngram 不使用) のため**中間一致** (`uman` → `Human`) は非対応、前方一致のみ。
+- ES の前方一致展開には `max_expansions` (default 50) が効くため、極端に短い prefix では展開が頭打ちになる。Solr (legacy ARSA / TXSearch) は同等の既定キャップを持たないため、短 prefix の負荷・大文字始まり prefix のヒット有無 (query 時 analyzer の有無に依存) は staging で実測して確認する。
+- **accession 完全一致で suppressed を解禁したクエリ** ([§ データ可視性](#データ可視性-status-制御)) では FreeText の前方一致を抑止する (解禁した accession の prefix で別 accession の suppressed を漏らさないため)。
+
+この方針は `/entries/*` 系 (`keywords` パラメータ) と統一されている (両 API で同じ `compile_free_text` 経路)。`/entries/*` の nested / text match パラメータは前方一致せず完全トークン一致のまま ([api-spec.md § セマンティクス共通ルール](api-spec.md))。
 
 ### status filter (suppressed 解禁) は AST と独立
 
@@ -437,16 +455,16 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
   - 許容外フィールドは 400 `unknown-field`、型と演算子の非互換は 400 `invalid-operator-for-field`
 - **演算子マトリクス** (型 → 許容演算子):
   - `identifier`: `eq` / `wildcard`
-  - `text`: `contains` / `wildcard`
+  - `text`: `contains` / `wildcard` (`contains` はクオートなし・記号なしの 1 語のとき完全一致 + 末尾前方一致、クオート値・記号含み語は完全一致のみ。§ FreeText の前方一致と同じ「simple word のみ前方一致」原則。GUI の `starts_with` (= wildcard `value*`) と前方一致範囲は重なるが、`contains` は exact もスコア上位に残す点が異なる)
   - `date`: `eq` / `between`
   - `enum`: `eq` (word / phrase、phrase は空白含み値 e.g. `"VIRAL RNA"` 用)
   - `number`: `eq` / `between` (digit のみ、非 digit は `invalid-operator-for-field` に流用)
   - GUI の `not_equals` は `NOT field:value` で表現 (Operator Literal 拡張なし)
   - GUI の `starts_with` は wildcard `value*` で表現
 - **バックエンド変換**:
-  - ES: フィールド型に応じて flat keyword / OR で複数 keyword field / nested / 2 段 nested の 4 pattern に分岐。`submitter` / `publication` / `grant_title` / `external_link_label` / `derived_from_id` は nested、`grant_agency` は 2 段 nested (`grant.agency.name` を `match_phrase` で叩く)、その他 Tier 3 は flat
-  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、number range はそのまま、対応外 field は `(-*:*)` degenerate、`uf` で allowlist 制御)
-  - TXSearch: AST → edismax `q` 文字列 (Tier 1 + Taxonomy Tier 3 のみ対応、他は `(-*:*)` degenerate、`uf` で allowlist 制御)
+  - ES: フィールド型に応じて flat keyword / OR で複数 keyword field / nested / 2 段 nested の 4 pattern に分岐。`submitter` / `publication` / `grant_title` / `external_link_label` / `derived_from_id` は nested、`grant_agency` は 2 段 nested (`grant.agency.name` を叩く)、その他 Tier 3 は flat。text 型 `contains` は simple word のとき `bool.should[match_phrase, match_phrase_prefix]` (完全一致 + 前方一致)、クオート値・記号含み語は `match_phrase` 単独 (前方一致は flat / nested いずれの text フィールドにも同じ規則で適用)
+  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、number range はそのまま、対応外 field は `(-*:*)` degenerate、`uf` で allowlist 制御)。text 型 `contains` の simple word は `(field:"w" OR field:w*)` で前方一致 (edismax メタ文字を含む語・クオート値は `field:"w"` 完全一致のみ)
+  - TXSearch: AST → edismax `q` 文字列 (Tier 1 + Taxonomy Tier 3 のみ対応、他は `(-*:*)` degenerate、`uf` で allowlist 制御)。`contains` 前方一致は ARSA と同じ規則
 - **横断モードでの Tier 3 拒否**: 400 `field-not-available-in-cross-db`、detail に候補 DB を列挙 (例: `field 'library_strategy' is only available in single-DB mode at column 1. use db=sra.`)。複数 DB に乗る field は ` or ` で連結 (例: `field 'geo_loc_name' is only available in single-DB mode at column 1. use db=biosample or db=sra.`)
 - **単一 DB モードでの field-DB 不整合拒否**: 400 `field-not-available-for-db`。指定 `db` の allowlist に無い Tier 3 field (例: `db=biosample` に `grant_title`) や、`publication` を `db=biosample` に使った場合に発動し、detail に有効な DB を列挙する。DB 内で subtype により field が分散する場合 (例: `db=jga` の `grant_title` / `grant_agency` は jga-study のみ、`db=sra` の `derived_from_id` は sra-sample のみ) は弾かず、対応 path を持たない subtype の index で 0 件化する
 - **エラー位置情報**: `ProblemDetails` スキーマは無変更、`detail` 文字列に自然言語で `at column N (length M)` を埋め込む (機械判別は type URI slug のみ)

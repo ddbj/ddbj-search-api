@@ -27,7 +27,11 @@ from typing import Literal, TypeAlias
 
 from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS, FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
-from ddbj_search_api.search.phrase import escape_solr_phrase, tokenize_keywords
+from ddbj_search_api.search.phrase import (
+    SOLR_AUTO_PHRASE_CHARS,
+    escape_solr_phrase,
+    parse_keywords_with_autophrase,
+)
 
 # Wildcard values flow into the edismax ``q`` string unquoted (Solr does not
 # evaluate wildcards inside phrases).  The validator already rejects values
@@ -96,6 +100,12 @@ _TXSEARCH_UNAVAILABLE: frozenset[str] = ALL_ALLOWED_FIELDS - frozenset(_TXSEARCH
 
 _NO_MATCH_LITERAL = "(-*:*)"
 
+# 前方一致を相乗りさせる末尾語の最小 literal 長。Solr 4.4.0 の prefix query は ES の
+# ``max_expansions`` のような既定キャップを持たず、AllText (ARSA ~3 億件) / text (TXSearch)
+# のような全文 field 上で 1 文字 prefix は term dictionary の広範囲をスキャンする。既存の
+# wildcard ガード (``validator._MIN_WILDCARD_LITERAL_LEN`` = 2) と同基準で 2 文字以上を要求する。
+_MIN_PREFIX_LITERAL_LEN = 2
+
 
 def arsa_uf_fields() -> tuple[str, ...]:
     """All ARSA Solr fields reachable through ``compile_to_solr(dialect="arsa")``.
@@ -121,33 +131,81 @@ def txsearch_uf_fields() -> tuple[str, ...]:
     return tuple(sorted(seen))
 
 
+def _solr_prefixable_words(token: str) -> list[str] | None:
+    """前方一致を相乗りさせて安全な ASCII alnum word 列を返す (不可なら ``None``).
+
+    edismax は bare token の Lucene メタ文字を解釈するため、unquoted で末尾 ``*`` を
+    付けて安全なのは ``[A-Za-z0-9]`` のみで構成された語 (空白区切りで複数可) に限る。
+    記号 (``-`` ``.`` ``:`` 等) を含む語や非 ASCII 語は ``None`` を返し、呼び出し側で
+    quoted 完全一致に倒す (``HIF-1`` 等の auto-phrase 対象と挙動を揃える)。
+    """
+    words = token.split()
+    if words and all(w.isascii() and w.isalnum() for w in words):
+        return words
+    return None
+
+
+def _solr_token_expr(token: str, token_is_phrase: bool) -> str:
+    """1 つの free-text トークンを edismax 句に変換する.
+
+    quoted / 記号含み (auto-phrase) トークン、または安全な alnum 語でないものは
+    ``"<escaped>"`` の完全一致 phrase に倒す。安全な alnum word トークンは
+    ``("<exact>" OR <prefix 展開>)`` で前方一致を相乗りさせる
+    (単一語 ``w`` → ``("w" OR w*)``、複数語 ``w1 w2`` → ``("w1 w2" OR (w1 AND w2*))``)。
+    ``"<exact>"`` を残すのは完全一致をスコア上位に置くため (ES の should[match_phrase,
+    match_phrase_prefix] と同じ意図)。
+    """
+    exact = f'"{escape_solr_phrase(token)}"'
+    if token_is_phrase:
+        return exact
+    words = _solr_prefixable_words(token)
+    if words is None or len(words[-1]) < _MIN_PREFIX_LITERAL_LEN:
+        return exact
+    if len(words) == 1:
+        prefix_expr = f"{words[0]}*"
+    else:
+        prefix_expr = "(" + " AND ".join([*words[:-1], f"{words[-1]}*"]) + ")"
+    return f"({exact} OR {prefix_expr})"
+
+
 def compile_free_text_solr(
     value: str,
     *,
     operator: Literal["AND", "OR"] = "AND",
+    is_phrase: bool = False,
 ) -> str:
     """シンプル検索 (``q``) を edismax ``q`` 文字列に変換する.
 
-    各トークンを ``escape_solr_phrase`` で escape して double-quote wrap し、
+    トークン化して各トークンを ``_solr_token_expr`` で edismax 句に展開し、
     ``operator`` ("AND" または "OR") で連結する。``ARSA`` / ``TXSearch`` どちらも
-    同形式で、dialect 依存しない。
+    同形式で、dialect 依存しない。記号なし・クオートなしの alnum word トークンは
+    ``("<exact>" OR <prefix>)`` で前方一致を相乗りさせる (打ちかけ対応、ES keyword box と
+    挙動を揃える)。quoted / 記号含みトークンは ``"<exact>"`` 完全一致のまま。
 
-    トークンが 1 つだけのときは括弧を省略する (escape されたフレーズそのまま)。
-    複数トークンの時は ``"(<t1> AND <t2> ...)"`` または ``"(<t1> OR <t2> ...)"`` の
-    形で外側括弧を付ける。Solr edismax の ``q.op`` には依存せず、token 間の演算子を
-    明示することで DSL の ``AND`` / ``OR`` BoolOp と挙動を干渉させない。
+    ``is_phrase=True`` (FreeText 全体が明示クオート) のときはコンマ分割・前方一致を
+    bypass し、``value`` 全体を 1 つの完全一致 phrase ``"<escaped>"`` として返す
+    (ES 側 ``compile_free_text(is_phrase=True)`` と対称)。
+
+    トークンが 1 つだけのときは外側括弧を省略する。複数トークンの時は
+    ``"(<e1> AND <e2> ...)"`` または ``"(<e1> OR <e2> ...)"`` で外側括弧を付ける。
+    Solr edismax の ``q.op`` には依存せず、token 間の演算子を明示することで DSL の
+    ``AND`` / ``OR`` BoolOp と挙動を干渉させない。
 
     入力がトークン化後に空 (None / "" / 空白のみ / カンマ区切り全部空) の場合は
     edismax all-docs ``*:*`` を返す。
     """
-    tokens = tokenize_keywords(value)
-    if not tokens:
+    if is_phrase:
+        if not value:
+            return _FREE_TEXT_EMPTY_FALLBACK
+        return f'"{escape_solr_phrase(value)}"'
+    parsed = parse_keywords_with_autophrase(value, SOLR_AUTO_PHRASE_CHARS)
+    if not parsed:
         return _FREE_TEXT_EMPTY_FALLBACK
-    quoted = [f'"{escape_solr_phrase(t)}"' for t in tokens]
-    if len(quoted) == 1:
-        return quoted[0]
+    exprs = [_solr_token_expr(token, token_is_phrase) for token, token_is_phrase in parsed]
+    if len(exprs) == 1:
+        return exprs[0]
     joiner = f" {operator} "
-    return "(" + joiner.join(quoted) + ")"
+    return "(" + joiner.join(exprs) + ")"
 
 
 def compile_to_solr(
@@ -177,7 +235,7 @@ def _compile_node(
     free_text_operator: Literal["AND", "OR"] = "AND",
 ) -> str:
     if isinstance(node, FreeText):
-        return compile_free_text_solr(node.value, operator=free_text_operator)
+        return compile_free_text_solr(node.value, operator=free_text_operator, is_phrase=node.is_phrase)
     if isinstance(node, FieldClause):
         return _compile_leaf(node, dialect=dialect)
     children_q = [_compile_node(c, dialect=dialect, free_text_operator=free_text_operator) for c in node.children]
@@ -232,7 +290,20 @@ def _basic_leaf(solr_field: str, clause: FieldClause) -> str:
         return f"{solr_field}:{value}"
     # word / phrase は両方 quote (Solr edismax metachar 解釈回避)
     escaped = escape_solr_phrase(value)
-    return f'{solr_field}:"{escaped}"'
+    exact = f'{solr_field}:"{escaped}"'
+    # text 型 contains の simple word (記号なし ASCII alnum) は前方一致を相乗り
+    # (keyword box と同じ「simple word のみ前方一致」原則)。記号含み語・クオート値・
+    # 非 ASCII 語は完全一致のまま (edismax メタ文字 escape を漏らさない)。grammar 上
+    # field 値の word は単一語なので複数語展開は不要。
+    if (
+        op == "contains"
+        and clause.value_kind == "word"
+        and value.isascii()
+        and value.isalnum()
+        and len(value) >= _MIN_PREFIX_LITERAL_LEN
+    ):
+        return f"({exact} OR {solr_field}:{value}*)"
+    return exact
 
 
 def _format_date_for_solr(iso: str) -> str:

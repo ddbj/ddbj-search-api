@@ -2019,7 +2019,11 @@ class TestDbPortalAdvValidDispatch:
         body = get_es_search_body(mock_es_search_db_portal)
         assert body["query"] == {
             "bool": {
-                "must": [{"match_phrase": {"title": "cancer"}}],
+                "should": [
+                    {"match_phrase": {"title": "cancer"}},
+                    {"match_phrase_prefix": {"title": "cancer"}},
+                ],
+                "minimum_should_match": 1,
                 "filter": [{"term": {"status": "public"}}],
             },
         }
@@ -2038,7 +2042,7 @@ class TestDbPortalAdvValidDispatch:
         assert call_args is not None
         params = call_args.kwargs.get("params")
         assert params is not None
-        assert params["q"] == 'Definition:"cancer"'
+        assert params["q"] == '(Definition:"cancer" OR Definition:cancer*)'
         assert params["defType"] == "edismax"
         # uf パラメータで allowlist 制御 (defense-in-depth)
         assert "uf" in params
@@ -2206,14 +2210,23 @@ class TestDbPortalAdvTier2Tier3:
         )
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal)
-        # 期待形: bool.must[0] = nested(grant) → nested(grant.agency) → match_phrase(grant.agency.name)
+        # 期待形: bool.must の先頭 = nested(grant) → nested(grant.agency) →
+        # grant.agency.name に対する前方一致対応の bool.should wrapper。
         outer_bool = body["query"]["bool"]
         assert outer_bool["filter"] == [{"term": {"status": "public"}}]
         outer = outer_bool["must"][0]
         assert outer["nested"]["path"] == "grant"
         inner = outer["nested"]["query"]
         assert inner["nested"]["path"] == "grant.agency"
-        assert inner["nested"]["query"] == {"match_phrase": {"grant.agency.name": "JSPS"}}
+        assert inner["nested"]["query"] == {
+            "bool": {
+                "should": [
+                    {"match_phrase": {"grant.agency.name": "JSPS"}},
+                    {"match_phrase_prefix": {"grant.agency.name": "JSPS"}},
+                ],
+                "minimum_should_match": 1,
+            },
+        }
 
     def test_tier2_submitter_nested_query_to_es(
         self,
@@ -2368,6 +2381,22 @@ _PUBLIC_ONLY_CLAUSE = {"term": {"status": "public"}}
 _INCLUDE_SUPPRESSED_CLAUSE = {"terms": {"status": ["public", "suppressed"]}}
 
 
+def _has_multi_match_phrase_prefix(node: Any) -> bool:
+    """ツリー内に FreeText 前方一致 (``multi_match`` で ``type=phrase_prefix``) があるか。
+
+    field-scoped contains の ``match_phrase_prefix`` とは別物 (こちらは keyword box の
+    前方一致で、suppressed 解禁時に抑止される対象)。
+    """
+    if isinstance(node, dict):
+        mm = node.get("multi_match")
+        if isinstance(mm, dict) and mm.get("type") == "phrase_prefix":
+            return True
+        return any(_has_multi_match_phrase_prefix(v) for v in node.values())
+    if isinstance(node, list):
+        return any(_has_multi_match_phrase_prefix(v) for v in node)
+    return False
+
+
 def _extract_status_clause(es_query: dict[str, Any]) -> dict[str, Any] | None:
     """ES query body から status filter clause を抽出する。
 
@@ -2451,6 +2480,38 @@ class TestDbPortalCrossSearchSimpleStatusFilter:
         assert resp.status_code == 200
         for call in mock_es_search_db_portal.call_args_list:
             assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+
+    def test_accession_q_disables_freetext_prefix(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # accession 完全一致で suppressed を解禁したクエリは FreeText の前方一致
+        # (multi_match{type:phrase_prefix}) を出してはならない。出すと PRJDB1234* が
+        # 別 accession PRJDB12345 の suppressed に当たり漏洩する (docs § データ可視性)。
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "PRJDB1234"})
+        assert resp.status_code == 200
+        assert mock_es_search_db_portal.call_args_list
+        for call in mock_es_search_db_portal.call_args_list:
+            # 解禁されていること (前提) と、前方一致が無いこと (本題) を両方 pin。
+            assert _extract_status_clause(call.args[2]["query"]) == _INCLUDE_SUPPRESSED_CLAUSE
+            assert not _has_multi_match_phrase_prefix(call.args[2]["query"])
+
+    def test_free_text_keeps_prefix(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # 解禁していない通常 free-text は前方一致を出す (ゲートが条件付きで、常時 OFF で
+        # 通ってしまう mutation を排除する positive control)。
+        mock_es_search_db_portal.return_value = make_es_search_response(total=0)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
+        assert resp.status_code == 200
+        assert mock_es_search_db_portal.call_args_list
+        for call in mock_es_search_db_portal.call_args_list:
+            assert _extract_status_clause(call.args[2]["query"]) == _PUBLIC_ONLY_CLAUSE
+            assert _has_multi_match_phrase_prefix(call.args[2]["query"])
 
     def test_multi_token_q_uses_public_only(
         self,
@@ -2928,6 +2989,67 @@ def _flatten_must(clause: dict[str, Any]) -> list[dict[str, Any]]:
     return [clause]
 
 
+def _free_text_token_query(wrapper: dict[str, Any]) -> str:
+    """Return the single token query carried by a bare-word FreeText wrapper.
+
+    Each bare-word keyword token compiles to a prefix-aware
+    ``bool.should`` of exactly two ``multi_match`` leaves over the same
+    fields: one ``operator=and`` (whole-word) and one
+    ``type=phrase_prefix`` (前方一致).  This unwraps that shape and
+    asserts the invariant, returning the shared ``query`` string.
+    """
+    inner = wrapper["bool"]
+    assert inner["minimum_should_match"] == 1
+    should = inner["should"]
+    assert len(should) == 2
+    word = should[0]["multi_match"]
+    prefix = should[1]["multi_match"]
+    assert word["operator"] == "and"
+    assert "type" not in word
+    assert prefix["type"] == "phrase_prefix"
+    assert "operator" not in prefix
+    assert word["query"] == prefix["query"]
+    assert word["fields"] == prefix["fields"]
+    query = word["query"]
+    assert isinstance(query, str)
+    return query
+
+
+def _field_contains_token(wrapper: dict[str, Any], es_field: str) -> str:
+    """Return the value carried by a text field contains wrapper.
+
+    A text-type ``field:word`` contains compiles to a prefix-aware
+    ``bool.should`` of exactly two leaves on the same field: one
+    ``match_phrase`` (whole-word) and one ``match_phrase_prefix``
+    (前方一致).  This unwraps that shape and asserts the invariant,
+    returning the shared value.
+    """
+    inner = wrapper["bool"]
+    assert inner["minimum_should_match"] == 1
+    should = inner["should"]
+    assert len(should) == 2
+    value = should[0]["match_phrase"][es_field]
+    assert should[1]["match_phrase_prefix"][es_field] == value
+    assert isinstance(value, str)
+    return value
+
+
+def _is_free_text_wrapper(clause: dict[str, Any]) -> bool:
+    """True when ``clause`` is a bare-word FreeText prefix-aware wrapper."""
+    should = clause.get("bool", {}).get("should")
+    return isinstance(should, list) and len(should) == 2 and "multi_match" in should[0]
+
+
+def _is_field_contains_wrapper(clause: dict[str, Any], es_field: str) -> bool:
+    """True when ``clause`` is a text field contains prefix-aware wrapper."""
+    should = clause.get("bool", {}).get("should")
+    return (
+        isinstance(should, list)
+        and len(should) == 2
+        and es_field in should[0].get("match_phrase", {})
+    )
+
+
 class TestKeywordOperatorOnDbPortal:
     """``keywordOperator`` パラメータが FreeText の token 連結演算子を切り替えるか.
 
@@ -2950,10 +3072,11 @@ class TestKeywordOperatorOnDbPortal:
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
         bool_clause = body["query"]["bool"]
-        # FreeText 単独 AST + OR → bool.should + minimum_should_match=1
+        # FreeText 単独 AST + OR → bool.should + minimum_should_match=1。
+        # 各 bare word token は前方一致対応の bool.should wrapper になる。
         should = bool_clause.get("should")
         assert isinstance(should, list)
-        queries = {c["multi_match"]["query"] for c in should if "multi_match" in c}
+        queries = {_free_text_token_query(c) for c in should}
         assert queries == {"cancer", "tumor"}
         assert bool_clause.get("minimum_should_match") == 1
         assert "must" not in bool_clause
@@ -2974,7 +3097,8 @@ class TestKeywordOperatorOnDbPortal:
         bool_clause = body["query"]["bool"]
         must = bool_clause.get("must")
         assert isinstance(must, list)
-        queries = {c["multi_match"]["query"] for c in must if "multi_match" in c}
+        # 各 bare word token は前方一致対応の bool.should wrapper になる。
+        queries = {_free_text_token_query(c) for c in must}
         assert queries == {"cancer", "tumor"}
         assert "should" not in bool_clause
 
@@ -2991,10 +3115,11 @@ class TestKeywordOperatorOnDbPortal:
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
         bool_clause = body["query"]["bool"]
-        # FreeText 単独 AST + OR → bool.should + minimum_should_match=1
+        # FreeText 単独 AST + OR → bool.should + minimum_should_match=1。
+        # 各 bare word token は前方一致対応の bool.should wrapper になる。
         should = bool_clause.get("should")
         assert isinstance(should, list)
-        queries = {c["multi_match"]["query"] for c in should if "multi_match" in c}
+        queries = {_free_text_token_query(c) for c in should}
         assert queries == {"cancer", "tumor"}
         assert bool_clause.get("minimum_should_match") == 1
 
@@ -3016,9 +3141,11 @@ class TestKeywordOperatorOnDbPortal:
         assert resp.status_code == 200
         body = _bioproject_es_body(mock_es_search_db_portal)
         bool_clause = body["query"]["bool"]
-        # 明示 OR は AST 上 BoolOp(OR, ...) → bool.should がトップ bool に直接出る
+        # 明示 OR は AST 上 BoolOp(OR, ...) → bool.should がトップ bool に直接出る。
+        # text 型 field の contains は前方一致対応の bool.should wrapper
+        # (match_phrase + match_phrase_prefix) になる。
         should = bool_clause["should"]
-        titles = {c["match_phrase"]["title"] for c in should if "match_phrase" in c}
+        titles = {_field_contains_token(c, "title") for c in should}
         assert titles == {"cancer", "tumor"}
         assert bool_clause.get("minimum_should_match") == 1
         # must は無い (filter は status のみ)
@@ -3042,9 +3169,10 @@ class TestKeywordOperatorOnDbPortal:
         # ES 側 (bioproject 等のいずれか) body を取って bool.should 構造を確認
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         bool_clause = body["query"]["bool"]
+        # 各 bare word token は前方一致対応の bool.should wrapper になる。
         should = bool_clause.get("should")
         assert isinstance(should, list)
-        queries = {c["multi_match"]["query"] for c in should if "multi_match" in c}
+        queries = {_free_text_token_query(c) for c in should}
         assert queries == {"cancer", "tumor"}
 
     def test_invalid_keyword_operator_returns_422(
@@ -3083,7 +3211,7 @@ class TestKeywordOperatorOnDbPortal:
         call = mock_arsa_search_db_portal.call_args
         params = call.kwargs.get("params") or call.args[-1]
         q_value = params.get("q") if isinstance(params, dict) else None
-        assert q_value == '("cancer" OR "tumor")', f"unexpected ARSA q: {q_value!r}"
+        assert q_value == '(("cancer" OR cancer*) OR ("tumor" OR tumor*))', f"unexpected ARSA q: {q_value!r}"
 
 
 class TestQueryAndJoin:
@@ -3114,14 +3242,21 @@ class TestQueryAndJoin:
         body = _bioproject_es_body(mock_es_search_db_portal)
         bool_clause = body["query"]["bool"]
         must = bool_clause["must"]
+        # bare word free-text と text field contains はどちらも前方一致対応の
+        # bool.should wrapper として AND-flatten 後の must に並ぶ。
         has_free_text = any(
-            isinstance(c, dict) and "multi_match" in c and c["multi_match"]["query"] == "human" for c in must
+            isinstance(c, dict) and "should" in c.get("bool", {}) and _free_text_token_query(c) == "human"
+            for c in must
+            if _is_free_text_wrapper(c)
         )
         has_field_clause = any(
-            isinstance(c, dict) and "match_phrase" in c and c["match_phrase"].get("title") == "cancer" for c in must
+            isinstance(c, dict)
+            and _is_field_contains_wrapper(c, "title")
+            and _field_contains_token(c, "title") == "cancer"
+            for c in must
         )
-        assert has_free_text, f"free-text multi_match missing from bool.must: {must}"
-        assert has_field_clause, f"field-clause match_phrase missing from bool.must: {must}"
+        assert has_free_text, f"free-text wrapper missing from bool.must: {must}"
+        assert has_field_clause, f"field-clause wrapper missing from bool.must: {must}"
         assert bool_clause["filter"] == [{"term": {"status": "public"}}]
 
     def test_cross_search_es_bool_must_has_free_text_and_field_clauses(
@@ -3142,8 +3277,15 @@ class TestQueryAndJoin:
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         must = body["query"]["bool"]["must"]
-        has_free_text = any("multi_match" in c and c["multi_match"]["query"] == "human" for c in must)
-        has_field_clause = any("match_phrase" in c and c["match_phrase"].get("title") == "cancer" for c in must)
+        # bare word free-text と text field contains はどちらも前方一致対応の
+        # bool.should wrapper として AND-flatten 後の must に並ぶ。
+        has_free_text = any(
+            _is_free_text_wrapper(c) and _free_text_token_query(c) == "human" for c in must
+        )
+        has_field_clause = any(
+            _is_field_contains_wrapper(c, "title") and _field_contains_token(c, "title") == "cancer"
+            for c in must
+        )
         assert has_free_text
         assert has_field_clause
 

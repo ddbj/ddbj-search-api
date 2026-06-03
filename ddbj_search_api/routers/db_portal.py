@@ -379,8 +379,14 @@ def _build_es_query_for_ast(
     """
     if ast is None:
         return build_search_query(keywords=None, keyword_operator="AND", status_mode=status_mode)
+    # suppressed 解禁時 (accession 完全一致) は FreeText の前方一致を抑止する
+    # (docs/api-spec.md § データ可視性)。
     return inject_status_filter(
-        compile_to_es(ast, free_text_operator=free_text_operator),
+        compile_to_es(
+            ast,
+            free_text_operator=free_text_operator,
+            enable_prefix=status_mode != "include_suppressed",
+        ),
         status_mode,
     )
 
@@ -1061,8 +1067,14 @@ async def _db_specific_search_es_unified(
             if ast is not None:
                 # Restore the hit population to the full ``q`` for hits / total
                 # only; ``post_filter`` does not touch the aggregations, which
-                # keep seeing the base query.
-                body["post_filter"] = compile_to_es(ast, free_text_operator=free_text_operator)
+                # keep seeing the base query.  Gate the FreeText prefix the same
+                # way as the base query so suppressed-unlock (accession exact)
+                # stays prefix-free on both lanes (docs § データ可視性).
+                body["post_filter"] = compile_to_es(
+                    ast,
+                    free_text_operator=free_text_operator,
+                    enable_prefix=status_mode != "include_suppressed",
+                )
             body["aggs"] = build_self_excluding_facet_aggs(
                 ast=ast,
                 status_mode=status_mode,

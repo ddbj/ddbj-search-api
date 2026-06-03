@@ -34,19 +34,22 @@ class TestArsaBasics:
         assert _c("identifier:PRJ*") == "PrimaryAccessionNumber:PRJ*"
 
     def test_title_word_quoted(self) -> None:
-        assert _c("title:cancer") == 'Definition:"cancer"'
+        assert _c("title:cancer") == '(Definition:"cancer" OR Definition:cancer*)'
 
     def test_title_phrase(self) -> None:
         assert _c('title:"cancer treatment"') == 'Definition:"cancer treatment"'
 
     def test_description_word(self) -> None:
-        assert _c("description:tumor") == 'AllText:"tumor"'
+        assert _c("description:tumor") == '(AllText:"tumor" OR AllText:tumor*)'
 
 
 class TestArsaOrganism:
     def test_organism_name_word_expands_to_2_fields(self) -> None:
-        # 学名は Organism + Lineage の OR phrase で広めに拾う.
-        assert _c("organism_name:human") == '(Organism:"human" OR Lineage:"human")'
+        # 学名は Organism + Lineage の OR で広めに拾う。各 field の simple word contains は
+        # 完全一致と前方一致 (打ちかけ) を OR で相乗りさせる。
+        assert _c("organism_name:human") == (
+            '((Organism:"human" OR Organism:human*) OR (Lineage:"human" OR Lineage:human*))'
+        )
 
     def test_organism_name_phrase_expands_to_2_fields(self) -> None:
         assert _c('organism_name:"Homo sapiens"') == '(Organism:"Homo sapiens" OR Lineage:"Homo sapiens")'
@@ -82,24 +85,37 @@ class TestArsaDate:
 class TestArsaBool:
     def test_and(self) -> None:
         assert _c("title:cancer AND organism_name:human") == (
-            '(Definition:"cancer" AND (Organism:"human" OR Lineage:"human"))'
+            '((Definition:"cancer" OR Definition:cancer*) AND '
+            '((Organism:"human" OR Organism:human*) OR (Lineage:"human" OR Lineage:human*)))'
         )
 
     def test_or(self) -> None:
-        assert _c("title:cancer OR title:tumor") == '(Definition:"cancer" OR Definition:"tumor")'
+        assert _c("title:cancer OR title:tumor") == (
+            '((Definition:"cancer" OR Definition:cancer*) OR (Definition:"tumor" OR Definition:tumor*))'
+        )
 
     def test_not(self) -> None:
-        assert _c("NOT title:cancer") == '(NOT Definition:"cancer")'
+        assert _c("NOT title:cancer") == '(NOT (Definition:"cancer" OR Definition:cancer*))'
 
+    # 値は 2 文字以上にして前方一致を exercise する (1 文字値は最小 prefix 長未満で
+    # 完全一致単独になり precedence の主題から逸れる)。
     def test_precedence(self) -> None:
-        assert _c("title:a OR title:b AND title:c") == ('(Definition:"a" OR (Definition:"b" AND Definition:"c"))')
+        assert _c("title:aa OR title:bb AND title:cc") == (
+            '((Definition:"aa" OR Definition:aa*) OR '
+            '((Definition:"bb" OR Definition:bb*) AND (Definition:"cc" OR Definition:cc*)))'
+        )
 
     def test_parens_override(self) -> None:
-        assert _c("(title:a OR title:b) AND title:c") == ('((Definition:"a" OR Definition:"b") AND Definition:"c")')
+        assert _c("(title:aa OR title:bb) AND title:cc") == (
+            '(((Definition:"aa" OR Definition:aa*) OR (Definition:"bb" OR Definition:bb*)) AND '
+            '(Definition:"cc" OR Definition:cc*))'
+        )
 
     def test_bool_with_degenerate_leaf(self) -> None:
         # title と date_modified の AND → 片方は degenerate、ツリー構造は維持
-        assert _c("title:cancer AND date_modified:2024-01-01") == ('(Definition:"cancer" AND (-*:*))')
+        assert _c("title:cancer AND date_modified:2024-01-01") == (
+            '((Definition:"cancer" OR Definition:cancer*) AND (-*:*))'
+        )
 
 
 class TestTxSearchBasics:
@@ -110,10 +126,10 @@ class TestTxSearchBasics:
         assert _c("identifier:96*", "txsearch") == "tax_id:96*"
 
     def test_title_word(self) -> None:
-        assert _c("title:human", "txsearch") == 'scientific_name:"human"'
+        assert _c("title:human", "txsearch") == '(scientific_name:"human" OR scientific_name:human*)'
 
     def test_description_word(self) -> None:
-        assert _c("description:tumor", "txsearch") == 'text:"tumor"'
+        assert _c("description:tumor", "txsearch") == '(text:"tumor" OR text:tumor*)'
 
 
 class TestTxSearchOrganism:
@@ -123,7 +139,7 @@ class TestTxSearchOrganism:
         assert _c("organism_id:9606", "txsearch") == 'tax_id:"9606"'
 
     def test_organism_name_word_hits_scientific_name(self) -> None:
-        assert _c("organism_name:human", "txsearch") == 'scientific_name:"human"'
+        assert _c("organism_name:human", "txsearch") == '(scientific_name:"human" OR scientific_name:human*)'
 
     def test_organism_name_phrase_hits_scientific_name(self) -> None:
         assert _c('organism_name:"Homo sapiens"', "txsearch") == 'scientific_name:"Homo sapiens"'
@@ -147,7 +163,9 @@ class TestTxSearchDegenerate:
 
     def test_bool_preserves_structure_with_degenerate_children(self) -> None:
         # TXSearch では accessibility が degenerate、構造は維持される.
-        assert _c("title:human AND accessibility:public-access", "txsearch") == ('(scientific_name:"human" AND (-*:*))')
+        assert _c("title:human AND accessibility:public-access", "txsearch") == (
+            '((scientific_name:"human" OR scientific_name:human*) AND (-*:*))'
+        )
 
 
 class TestPhraseEscaping:
@@ -198,7 +216,7 @@ class TestArsaTier3Trad:
         [
             ("division:BCT", 'Division:"BCT"'),
             ("molecular_type:DNA", 'MolecularType:"DNA"'),
-            ("feature_gene_name:BRCA1", 'FeatureQualifier:"BRCA1"'),
+            ("feature_gene_name:BRCA1", '(FeatureQualifier:"BRCA1" OR FeatureQualifier:BRCA1*)'),
             ('reference_journal:"Nature Methods"', 'ReferenceJournal:"Nature Methods"'),
         ],
     )
@@ -270,15 +288,15 @@ class TestTxSearchTier3Taxonomy:
         ("dsl", "expected"),
         [
             ("rank:species", 'rank:"species"'),
-            ("lineage:Eukaryota", 'lineage:"Eukaryota"'),
-            ("kingdom:Animalia", 'kingdom:"Animalia"'),
-            ("phylum:Chordata", 'phylum:"Chordata"'),
-            ("class:Mammalia", 'class:"Mammalia"'),
-            ("order:Primates", 'order:"Primates"'),
-            ("family:Hominidae", 'family:"Hominidae"'),
-            ("genus:Homo", 'genus:"Homo"'),
-            ("species:sapiens", 'species:"sapiens"'),
-            ("common_name:human", 'common_name:"human"'),
+            ("lineage:Eukaryota", '(lineage:"Eukaryota" OR lineage:Eukaryota*)'),
+            ("kingdom:Animalia", '(kingdom:"Animalia" OR kingdom:Animalia*)'),
+            ("phylum:Chordata", '(phylum:"Chordata" OR phylum:Chordata*)'),
+            ("class:Mammalia", '(class:"Mammalia" OR class:Mammalia*)'),
+            ("order:Primates", '(order:"Primates" OR order:Primates*)'),
+            ("family:Hominidae", '(family:"Hominidae" OR family:Hominidae*)'),
+            ("genus:Homo", '(genus:"Homo" OR genus:Homo*)'),
+            ("species:sapiens", '(species:"sapiens" OR species:sapiens*)'),
+            ("common_name:human", '(common_name:"human" OR common_name:human*)'),
         ],
     )
     def test_taxonomy_field_maps(self, dsl: str, expected: str) -> None:
@@ -335,68 +353,80 @@ class TestSolrBoolWithTier3Mixed:
 
     def test_trad_mixed(self) -> None:
         # division:BCT AND title:cancer → ARSA 両方あり
-        assert _c("division:BCT AND title:cancer", "arsa") == ('(Division:"BCT" AND Definition:"cancer")')
+        assert _c("division:BCT AND title:cancer", "arsa") == (
+            '(Division:"BCT" AND (Definition:"cancer" OR Definition:cancer*))'
+        )
 
     def test_taxonomy_mixed_on_txsearch(self) -> None:
         # rank:species AND title:Homo → TXSearch 両方あり
-        assert _c("rank:species AND title:Homo", "txsearch") == ('(rank:"species" AND scientific_name:"Homo")')
+        assert _c("rank:species AND title:Homo", "txsearch") == (
+            '(rank:"species" AND (scientific_name:"Homo" OR scientific_name:Homo*))'
+        )
 
 
 class TestCompilerSolrPBT:
     @given(
         field=st.sampled_from(["title", "description"]),
+        # 2 文字以上 (1 文字値は最小 prefix 長未満で完全一致単独になる)
         word=st.text(
             alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
-            min_size=1,
+            min_size=2,
             max_size=10,
         ),
     )
     @settings(max_examples=30, deadline=None)
     def test_arsa_text_word_quoted(self, field: str, word: str) -> None:
+        # text 型 contains の simple ASCII alnum word は完全一致 phrase と前方一致 (打ちかけ) を
+        # OR で相乗りさせる。
         result = _c(f"{field}:{word}", "arsa")
         expected_field = {"title": "Definition", "description": "AllText"}[field]
-        assert result == f'{expected_field}:"{word}"'
+        assert result == f'({expected_field}:"{word}" OR {expected_field}:{word}*)'
 
     @given(
         field=st.sampled_from(["title", "description"]),
+        # 2 文字以上 (1 文字値は最小 prefix 長未満で完全一致単独になる)
         word=st.text(
             alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z")),
-            min_size=1,
+            min_size=2,
             max_size=10,
         ),
     )
     @settings(max_examples=30, deadline=None)
     def test_txsearch_text_word_quoted(self, field: str, word: str) -> None:
+        # text 型 contains の simple ASCII alnum word は完全一致 phrase と前方一致 (打ちかけ) を
+        # OR で相乗りさせる。
         result = _c(f"{field}:{word}", "txsearch")
         expected_field = {"title": "scientific_name", "description": "text"}[field]
-        assert result == f'{expected_field}:"{word}"'
+        assert result == f'({expected_field}:"{word}" OR {expected_field}:{word}*)'
 
 
 class TestCompileFreeTextSolr:
     """compile_free_text_solr: トークンを quote し、operator (AND/OR) で連結して edismax ``q`` を返す."""
 
     def test_single_token(self) -> None:
-        assert compile_free_text_solr("cancer") == '"cancer"'
+        # 記号なし alnum 単語は完全一致 phrase と前方一致 (打ちかけ) を OR で相乗りさせる
+        assert compile_free_text_solr("cancer") == '("cancer" OR cancer*)'
 
     def test_multiple_tokens_default_and(self) -> None:
         # token 間は AND がデフォルト (DSL の明示 BoolOp とは独立)
-        assert compile_free_text_solr("cancer, human") == '("cancer" AND "human")'
+        assert compile_free_text_solr("cancer, human") == '(("cancer" OR cancer*) AND ("human" OR human*))'
 
     def test_multiple_tokens_or_operator(self) -> None:
         # operator="OR" で token 間を OR 連結
-        assert compile_free_text_solr("cancer, human", operator="OR") == '("cancer" OR "human")'
+        expected = '(("cancer" OR cancer*) OR ("human" OR human*))'
+        assert compile_free_text_solr("cancer, human", operator="OR") == expected
 
     def test_single_token_or_operator_omits_paren(self) -> None:
         # 1 token のときは連結も括弧も不要 (operator に依らない)
-        assert compile_free_text_solr("cancer", operator="OR") == '"cancer"'
+        assert compile_free_text_solr("cancer", operator="OR") == '("cancer" OR cancer*)'
 
     def test_stray_quote_in_token_stripped(self) -> None:
         """stray double-quote は tokenize_keywords が strip する (escape されない)."""
 
         # 'say "hello"' は phrase で囲まれていないため、_split_raw_tokens では
         # 1 トークンとして扱われ、stray ``"`` が strip された ``say hello`` が
-        # double-quote で wrap される
-        assert compile_free_text_solr('say "hello"') == '"say hello"'
+        # 完全一致 phrase と前方一致 (末尾語 prefix) の OR に展開される
+        assert compile_free_text_solr('say "hello"') == '("say hello" OR (say AND hello*))'
 
     def test_backslash_in_token_escaped(self) -> None:
         """backslash は escape_solr_phrase で重ねられる."""
@@ -417,8 +447,8 @@ class TestCompileToSolrFreeTextNode:
 
     def test_free_text_node_alone(self) -> None:
 
-        assert compile_to_solr(FreeText("cancer"), dialect="arsa") == '"cancer"'
-        assert compile_to_solr(FreeText("cancer"), dialect="txsearch") == '"cancer"'
+        assert compile_to_solr(FreeText("cancer"), dialect="arsa") == '("cancer" OR cancer*)'
+        assert compile_to_solr(FreeText("cancer"), dialect="txsearch") == '("cancer" OR cancer*)'
 
     def test_and_of_adv_and_free_text_arsa(self) -> None:
         """``BoolOp(AND, [adv_ast, FreeText(q)])`` で ``(<adv> AND <q_tokens>)`` 形式の単一括弧."""
@@ -435,7 +465,7 @@ class TestCompileToSolrFreeTextNode:
             position=Position(column=1, length=14),
         )
         result = compile_to_solr(composite, dialect="arsa")
-        assert result == '(Definition:"leukemia" AND "cancer")'
+        assert result == '((Definition:"leukemia" OR Definition:leukemia*) AND ("cancer" OR cancer*))'
 
     def test_and_of_adv_and_free_text_txsearch(self) -> None:
 
@@ -451,7 +481,7 @@ class TestCompileToSolrFreeTextNode:
             position=Position(column=1, length=10),
         )
         result = compile_to_solr(composite, dialect="txsearch")
-        assert result == '(scientific_name:"Homo" AND "sapiens")'
+        assert result == '((scientific_name:"Homo" OR scientific_name:Homo*) AND ("sapiens" OR sapiens*))'
 
     def test_and_of_adv_and_empty_free_text_falls_back_to_match_all(self) -> None:
         """FreeText("") は ``*:*`` にフォールバック (handler は通常 q="" を None 化するが安全側)."""
@@ -468,14 +498,18 @@ class TestCompileToSolrFreeTextNode:
             position=Position(column=1, length=12),
         )
         result = compile_to_solr(composite, dialect="arsa")
-        assert result == '(Definition:"cancer" AND *:*)'
+        assert result == '((Definition:"cancer" OR Definition:cancer*) AND *:*)'
 
     def test_free_text_multi_token_or_operator(self) -> None:
         """operator="OR" で FreeText の token 間が OR で連結される (token 区切りは
         カンマ。空白区切りでは 1 token のまま)。"""
         node = FreeText("cancer, tumor")
-        assert compile_to_solr(node, dialect="arsa", free_text_operator="OR") == '("cancer" OR "tumor")'
-        assert compile_to_solr(node, dialect="txsearch", free_text_operator="OR") == '("cancer" OR "tumor")'
+        assert compile_to_solr(node, dialect="arsa", free_text_operator="OR") == (
+            '(("cancer" OR cancer*) OR ("tumor" OR tumor*))'
+        )
+        assert compile_to_solr(node, dialect="txsearch", free_text_operator="OR") == (
+            '(("cancer" OR cancer*) OR ("tumor" OR tumor*))'
+        )
 
     def test_and_of_adv_and_free_text_or_keeps_inner_or(self) -> None:
         """BoolOp(AND, [adv, FreeText("a, b")], free_text_operator="OR") は
@@ -492,4 +526,7 @@ class TestCompileToSolrFreeTextNode:
             position=Position(column=1, length=14),
         )
         result = compile_to_solr(composite, dialect="arsa", free_text_operator="OR")
-        assert result == '(Definition:"leukemia" AND ("apple" OR "banana"))'
+        assert result == (
+            '((Definition:"leukemia" OR Definition:leukemia*) AND '
+            '(("apple" OR apple*) OR ("banana" OR banana*)))'
+        )
