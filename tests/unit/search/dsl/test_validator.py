@@ -553,8 +553,18 @@ class TestSingleModeDbScope:
             ("rank:species", "trad"),
             ("derived_from_id:SAMD00012345", "jga"),
             ("external_link_label:GEO", "sra"),
-            # Tier 2: publication は biosample に nested 不在
+            # Tier 2: publication は biosample に nested 不在 / taxonomy にも不在
+            # (trad は ReferenceTitle にマップされ available なので reject されない)。
             ("publication:cancer", "biosample"),
+            ("publication:cancer", "taxonomy"),
+            # Tier 2: submitter は Solr backed (trad / taxonomy) に organization 不在。
+            ('submitter:"Tokyo University"', "trad"),
+            ('submitter:"Tokyo University"', "taxonomy"),
+            # Tier 1: name / date 系は Solr backed に実 field 不在。
+            ("name:foo", "trad"),
+            ("name:foo", "taxonomy"),
+            ("date_published:2024-01-01", "taxonomy"),
+            ("date_modified:2024-01-01", "trad"),
         ],
     )
     def test_field_rejected_for_wrong_db(self, dsl: str, db: str) -> None:
@@ -581,21 +591,25 @@ class TestSingleModeDbScope:
             ("external_link_label:GEO", "jga"),
             ("division:BCT", "trad"),
             ("rank:species", "taxonomy"),
-            # Tier 2 publication: biosample 以外の ES db
+            # Tier 2 publication: ES 5 db (biosample 以外) + trad (ReferenceTitle にマップ)
             ("publication:cancer", "bioproject"),
             ("publication:cancer", "sra"),
             ("publication:cancer", "jga"),
             ("publication:cancer", "gea"),
             ("publication:cancer", "metabobank"),
-            # Tier 2 publication: Solr db は degenerate で通す (弾かない)
             ("publication:cancer", "trad"),
-            ("publication:cancer", "taxonomy"),
-            # Tier 2 submitter は全 db common
+            # Tier 2 submitter は ES db common (Solr backed は非対応 = reject 側)
             ('submitter:"Tokyo University"', "biosample"),
-            ('submitter:"Tokyo University"', "trad"),
-            # Tier 1 は全 db common
+            # Tier 1 identifier / title は全 db common
             ("title:cancer", "biosample"),
             ("identifier:PRJDB1", "taxonomy"),
+            # accessibility は Solr backed では固定値 (per-arm 簡約で突き合わせ) → single でも通す
+            ("accessibility:public-access", "trad"),
+            ("accessibility:public-access", "taxonomy"),
+            # Tier 3 同名 field: strain / synonym / domain は taxonomy でも有効
+            ("strain:K12", "taxonomy"),
+            ("synonym:foo", "taxonomy"),
+            ("domain:Bacteria", "taxonomy"),
         ],
     )
     def test_field_accepted_for_correct_db(self, dsl: str, db: str) -> None:

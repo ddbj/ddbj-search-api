@@ -43,9 +43,9 @@ def _parse_arsa_date(raw: Any) -> str | None:
 def _first_or_self(value: Any) -> Any:
     """Return ``value[0]`` if value is a non-empty list, else value.
 
-    TXSearch stores names (``common_name``, ``japanese_name`` etc.) as
-    multi-valued lists even when the list only holds one element; the
-    db-portal UI consumes a scalar per hit.
+    TXSearch stores names (``common_name`` etc.) as multi-valued lists even
+    when the list only holds one element; the db-portal UI consumes a scalar
+    per hit.
     """
     if isinstance(value, list):
         return value[0] if value else None
@@ -163,7 +163,6 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "dbXrefs": None,
             "rank": doc.get("rank"),
             "commonName": _first_or_self(doc.get("common_name")),
-            "japaneseName": _first_or_self(doc.get("japanese_name")),
             "lineage": _drop_self_from_lineage(doc.get("lineage"), scientific),
         }
         hits.append(_DbPortalHitAdapter.validate_python(payload))
@@ -219,9 +218,9 @@ def txsearch_docs_to_lightweight_hits(
 
     Same source mapping as :func:`txsearch_docs_to_hits` but produces
     :class:`DbPortalLightweightHit` so Taxonomy extras (``rank`` /
-    ``commonName`` / ``japaneseName`` / ``lineage``) never appear in the
-    response.  TXSearch has no ``status`` / ``accessibility`` / dates /
-    ``isPartOf`` source field; cross-search fills them with fixed values
+    ``commonName`` / ``lineage``) never appear in the response.  TXSearch has
+    no ``status`` / ``accessibility`` / dates / ``isPartOf`` source field;
+    cross-search fills them with fixed values
     (``public`` / ``public-access`` / ``taxonomy``) and ``None`` for dates.
     """
     hits: list[DbPortalLightweightHit] = []

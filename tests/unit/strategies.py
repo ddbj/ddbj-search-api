@@ -26,6 +26,7 @@ from ddbj_search_api.search.dsl.ast import (
     ValueKind,
 )
 from ddbj_search_api.search.dsl.lex_patterns import is_bare_safe_multiword
+from ddbj_search_api.search.phrase import ES_AUTO_PHRASE_CHARS, parse_keywords_with_autophrase
 
 # === DbType ===
 
@@ -315,11 +316,26 @@ def _value_implies_phrase(value: str) -> bool:
     return not is_bare_safe_multiword(value)
 
 
+def _free_text_is_compilable(ft: FreeText) -> bool:
+    """compiler (compile_free_text) が ValueError を出さない FreeText か。
+
+    記号・空白のみの値 (例: ``", ,"``) は is_phrase=False のときトークン化後に空となり、
+    compiler が ValueError を出す (parser は ``WORD+`` 経由でこうした値を生成しない)。
+    valid_ast_strategy は「validate を通さず compile しても安全な AST」を生成するため、
+    こうした parser 由来でない値を除外する。
+    """
+    if ft.is_phrase:
+        return bool(ft.value)
+    return bool(parse_keywords_with_autophrase(ft.value, ES_AUTO_PHRASE_CHARS))
+
+
 def _free_text_strategy() -> st.SearchStrategy[FreeText]:
     # is_phrase は value の性質から確定的に導出 (parser → AST → serialize → parser の
     # round-trip が常に成り立つ AST のみ生成する).
-    return _dsl_free_text_value().map(
-        lambda v: FreeText(value=v, is_phrase=_value_implies_phrase(v)),
+    return (
+        _dsl_free_text_value()
+        .map(lambda v: FreeText(value=v, is_phrase=_value_implies_phrase(v)))
+        .filter(_free_text_is_compilable)
     )
 
 

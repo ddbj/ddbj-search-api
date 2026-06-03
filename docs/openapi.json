@@ -21881,7 +21881,8 @@
           "timeout",
           "upstream_5xx",
           "connection_refused",
-          "unknown"
+          "unknown",
+          "field_not_applicable"
         ],
         "title": "DbPortalCountError",
         "description": "Error reason for a DB entry in the cross-search count response."
@@ -25069,20 +25070,6 @@
               "human"
             ]
           },
-          "japaneseName": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Japanesename",
-            "examples": [
-              "ヒト"
-            ]
-          },
           "lineage": {
             "anyOf": [
               {
@@ -25114,7 +25101,7 @@
           "type"
         ],
         "title": "DbPortalHitTaxonomy",
-        "description": "Taxonomy (TXSearch-backed) hit.\n\n``japaneseName`` is exposed in the response shape but cannot be\nused as a search field."
+        "description": "Taxonomy (TXSearch-backed) hit."
       },
       "DbPortalHitTrad": {
         "properties": {

@@ -26,8 +26,8 @@ _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^
 # even though Solr has the value.  ``Feature`` is needed only to recover the
 # TaxID from ``/db_xref="taxon:..."`` so ``organism.identifier`` can be set.
 _ARSA_FL = "PrimaryAccessionNumber,Definition,Organism,Division,Date,MolecularType,SequenceLength,Feature,score"
-_TXSEARCH_QF = "scientific_name^10 scientific_name_ex^20 common_name^5 synonym^3 japanese_name^5 text^0.1"
-_TXSEARCH_FL = "tax_id,scientific_name,common_name,japanese_name,rank,lineage,score"
+_TXSEARCH_QF = "scientific_name^10 scientific_name_ex^20 common_name^5 synonym^3 text^0.1"
+_TXSEARCH_FL = "tax_id,scientific_name,common_name,rank,lineage,score"
 
 # ``uf`` (user fields) restricts edismax field references in the q string to
 # the DSL allowlist.  Derived from compile_to_solr's field map so the two

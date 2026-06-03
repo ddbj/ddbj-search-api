@@ -71,10 +71,10 @@ class TestDbPortalDb:
 
 
 class TestDbPortalCountError:
-    """DbPortalCountError: 4 error kinds."""
+    """DbPortalCountError: 4 upstream error kinds + 1 per-arm signal (field_not_applicable)."""
 
-    def test_has_exactly_4_members(self) -> None:
-        assert len(DbPortalCountError) == 4
+    def test_has_exactly_5_members(self) -> None:
+        assert len(DbPortalCountError) == 5
 
     def test_contains_all_expected_values(self) -> None:
         expected = {
@@ -82,6 +82,7 @@ class TestDbPortalCountError:
             "upstream_5xx",
             "connection_refused",
             "unknown",
+            "field_not_applicable",
         }
         assert {e.value for e in DbPortalCountError} == expected
 

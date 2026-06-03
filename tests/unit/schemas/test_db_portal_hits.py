@@ -388,14 +388,12 @@ class TestTaxonomyVariant:
                 "type": "taxonomy",
                 "rank": "species",
                 "commonName": "human",
-                "japaneseName": "ヒト",
                 "lineage": ["Homo sapiens", "Homo", "Hominidae"],
             },
         )
         assert isinstance(h, DbPortalHitTaxonomy)
         assert h.rank == "species"
         assert h.common_name == "human"
-        assert h.japanese_name == "ヒト"
         assert h.lineage == ["Homo sapiens", "Homo", "Hominidae"]
 
     def test_lineage_as_string_accepted(self) -> None:

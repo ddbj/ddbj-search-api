@@ -83,6 +83,7 @@ from ddbj_search_api.search.dsl.accession_exact_match import (
 )
 from ddbj_search_api.search.dsl.ast import Node as DslNode
 from ddbj_search_api.search.dsl.inspect import ast_has_field_clause
+from ddbj_search_api.search.dsl.per_arm import reduce_ast_for_db
 from ddbj_search_api.solr import get_solr_client
 from ddbj_search_api.solr.client import arsa_search, txsearch_search
 from ddbj_search_api.solr.mappers import (
@@ -132,6 +133,17 @@ _DB_TO_INDEX: dict[DbPortalDb, str] = {
 }
 
 _SOLR_DBS: frozenset[DbPortalDb] = frozenset({DbPortalDb.trad, DbPortalDb.taxonomy})
+
+# count fan-out で「upstream 障害」とみなす error (全 arm がこれなら 502)。
+# field_not_applicable は正常な per-arm シグナルなので含めない。
+_UPSTREAM_COUNT_ERRORS: frozenset[DbPortalCountError] = frozenset(
+    {
+        DbPortalCountError.timeout,
+        DbPortalCountError.upstream_5xx,
+        DbPortalCountError.connection_refused,
+        DbPortalCountError.unknown,
+    },
+)
 
 # Solr-backed db-portal facet scope: trad / taxonomy each own their facets,
 # derived from the solr.query field maps so the scope stays in sync with the
@@ -415,6 +427,20 @@ def _empty_hits_or_none(top_hits: int) -> list[DbPortalLightweightHit] | None:
     return [] if top_hits > 0 else None
 
 
+def _empty_hits_response(query: DbPortalSearchQuery) -> DbPortalHitsResponse:
+    """0 件確定の hits envelope (per-arm 簡約で固定値不一致 / 非対応のとき)。"""
+    return DbPortalHitsResponse(  # type: ignore[call-arg]
+        total=0,
+        hits=[],
+        hard_limit_reached=False,
+        page=query.page,
+        per_page=query.per_page,
+        next_cursor=None,
+        has_next=False,
+        facets=None,
+    )
+
+
 # converter 側の sameAs alias 投入 (同一 _source を別 _id で複数件 ES に格納する
 # 設計) により ES raw hits に同 (identifier, type) の重複が混入する。multiplier
 # は経験則: alias 1 entity あたりの secondary 数は小さい (prefix 一致 + 同 type
@@ -669,17 +695,26 @@ async def _count_one_db_unified(
     solr_client: httpx.AsyncClient,
     config: AppConfig,
     db: DbPortalDb,
-    es_query_body: dict[str, Any],
-    arsa_q: str,
-    txsearch_q: str,
-    top_hits: int,
+    arm_ast: DslNode | None,
     *,
-    with_uf: bool,
+    status_mode: StatusMode,
+    free_text_operator: Literal["AND", "OR"],
+    top_hits: int,
 ) -> DbPortalCount:
+    """1 DB 分の count を発行する。``arm_ast`` は per-arm 簡約後の AST。
+
+    backend ごとに必要な query (ES body / Solr q) をこの DB 向けにここで構築する
+    (簡約で固定値節が落ちた / publication が除かれた等で AST が DB ごとに異なるため)。
+    """
     if db == DbPortalDb.trad:
+        arsa_q = _build_solr_q_for_ast(arm_ast, dialect="arsa", free_text_operator=free_text_operator)
+        with_uf = arm_ast is not None and ast_has_field_clause(arm_ast)
         return await _count_arsa_unified(solr_client, config, arsa_q, top_hits, with_uf=with_uf)
     if db == DbPortalDb.taxonomy:
+        txsearch_q = _build_solr_q_for_ast(arm_ast, dialect="txsearch", free_text_operator=free_text_operator)
+        with_uf = arm_ast is not None and ast_has_field_clause(arm_ast)
         return await _count_txsearch_unified(solr_client, config, txsearch_q, top_hits, with_uf=with_uf)
+    es_query_body = _build_es_query_for_ast(arm_ast, status_mode, free_text_operator=free_text_operator)
     return await _count_one_db_es(es_client, config, db, es_query_body, top_hits)
 
 
@@ -780,23 +815,34 @@ async def _cross_search_dispatch(
     集計する (hit population は不変)。
     """
     status_mode = _resolve_status_mode(ast)
-    es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_operator)
-    arsa_q = _build_solr_q_for_ast(ast, dialect="arsa", free_text_operator=free_text_operator)
-    txsearch_q = _build_solr_q_for_ast(ast, dialect="txsearch", free_text_operator=free_text_operator)
-    with_uf = ast is not None and ast_has_field_clause(ast)
+    # per-arm 簡約: ある DB が query の field を持たない / 固定値のとき、その arm は backend を
+    # 叩かず即決する (非対応は count=null + field_not_applicable、固定値不一致は count=0)。
+    # 残りは簡約後 AST で count task を発行する。
+    results: dict[DbPortalDb, DbPortalCount] = {}
     task_map: dict[asyncio.Task[DbPortalCount], DbPortalDb] = {}
     for db in _DB_ORDER:
+        reduction = reduce_ast_for_db(ast, db.value)
+        if not reduction.applicable:
+            results[db] = DbPortalCount(
+                db=db,
+                count=None,
+                error=DbPortalCountError.field_not_applicable,
+                hits=_empty_hits_or_none(top_hits),
+            )
+            continue
+        if reduction.always_zero:
+            results[db] = DbPortalCount(db=db, count=0, error=None, hits=_empty_hits_or_none(top_hits))
+            continue
         task = asyncio.create_task(
             _count_one_db_unified(
                 es_client,
                 solr_client,
                 config,
                 db,
-                es_query_body,
-                arsa_q,
-                txsearch_q,
-                top_hits,
-                with_uf=with_uf,
+                reduction.ast,
+                status_mode=status_mode,
+                free_text_operator=free_text_operator,
+                top_hits=top_hits,
             ),
         )
         task_map[task] = db
@@ -807,11 +853,14 @@ async def _cross_search_dispatch(
     facet_task: asyncio.Task[DbPortalFacets | None] | None = None
     wait_set: set[asyncio.Task[Any]] = set(task_map.keys())
     if requested_facets:
+        # facet 母集団は ES 6DB 全体 (entries alias)。per-arm 簡約は per-DB count 用なので
+        # facet には適用せず、元 AST 由来の ES query で集計する。
+        facet_es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_operator)
         facet_task = asyncio.create_task(
             _cross_facets_agg(
                 es_client,
                 config,
-                es_query_body,
+                facet_es_query_body,
                 requested_facets,
                 facets_size,
                 ast=ast,
@@ -828,8 +877,8 @@ async def _cross_search_dispatch(
     )
     # Resolve per-DB counts via ``task_map`` membership (rather than iterating
     # ``done``/``pending`` and identity-checking the facet task) so the facet
-    # task stays cleanly separated from the per-DB count tasks.
-    results: dict[DbPortalDb, DbPortalCount] = {}
+    # task stays cleanly separated from the per-DB count tasks.  ``results`` already
+    # holds the arms short-circuited above (field_not_applicable / always-zero).
     for task, db in task_map.items():
         if task in done:
             results[db] = task.result()
@@ -860,7 +909,9 @@ async def _cross_search_dispatch(
                 config.cross_search_total_timeout,
             )
     databases = [results[db] for db in _DB_ORDER]
-    if all(item.error is not None for item in databases):
+    # field_not_applicable は正常な per-arm シグナルなので 502 の根拠にしない。
+    # 全 arm が upstream エラー (timeout / 5xx / refused / unknown) のときだけ 502。
+    if databases and all(item.error in _UPSTREAM_COUNT_ERRORS for item in databases):
         raise HTTPException(
             status_code=502,
             detail="All databases failed to respond.",
@@ -1133,7 +1184,14 @@ async def _db_specific_search_dispatch(
     そのまま渡す (scope 検証は handler の ``resolve_db_portal_facets`` 済み)。
     """
     assert query.db is not None
-    with_uf = ast is not None and ast_has_field_clause(ast)
+    # cross と同じく per-arm 簡約を適用する。非対応 field は validator が single で 400 に
+    # するため applicable=False は通常来ない (固定値 field は通る)。固定値不一致は 0 件、
+    # 固定値一致は節が落ちた簡約後 AST で検索する。
+    reduction = reduce_ast_for_db(ast, query.db.value)
+    if not reduction.applicable or reduction.always_zero:
+        return _empty_hits_response(query)
+    arm_ast = reduction.ast
+    with_uf = arm_ast is not None and ast_has_field_clause(arm_ast)
     free_text_op: Literal["AND", "OR"] = query.keyword_operator.value
     if query.db in _SOLR_DBS:
         _validate_deep_paging(query.page, query.per_page)
@@ -1142,7 +1200,7 @@ async def _db_specific_search_dispatch(
                 solr_client,
                 config,
                 query,
-                ast,
+                arm_ast,
                 with_uf=with_uf,
                 requested_facets=requested_facets,
                 facets_size=facets_size,
@@ -1153,7 +1211,7 @@ async def _db_specific_search_dispatch(
             solr_client,
             config,
             query,
-            ast,
+            arm_ast,
             with_uf=with_uf,
             requested_facets=requested_facets,
             facets_size=facets_size,
@@ -1161,12 +1219,12 @@ async def _db_specific_search_dispatch(
             free_text_operator=free_text_op,
         )
     status_mode = _resolve_status_mode(ast)
-    es_query_body = _build_es_query_for_ast(ast, status_mode, free_text_operator=free_text_op)
+    es_query_body = _build_es_query_for_ast(arm_ast, status_mode, free_text_operator=free_text_op)
     return await _db_specific_search_es_unified(
         es_client,
         query,
         es_query_body,
-        ast=ast,
+        ast=arm_ast,
         status_mode=status_mode,
         free_text_operator=free_text_op,
         requested_facets=requested_facets,

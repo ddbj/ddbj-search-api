@@ -4,7 +4,7 @@ Lightweight httpx-based proxy layer so ``/db-portal/search?db=trad`` and
 ``/db-portal/search?db=taxonomy`` can serve hits, and ``/db-portal/cross-search``
 can include their counts in the 8-DB fan-out.  The unified hits envelope
 matches the ES-backed DBs; DB-specific fields (``division`` for trad,
-``rank`` / ``commonName`` / ``japaneseName`` for taxonomy) are mapped to
+``rank`` / ``commonName`` for taxonomy) are mapped to
 the corresponding ``DbPortalHit`` variant.
 """
 

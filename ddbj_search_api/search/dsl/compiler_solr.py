@@ -4,20 +4,21 @@ SSOT: search-backends.md §バックエンド変換.
 
 Dialect:
 - ``arsa``: ARSA (Solr 4.4.0)。Tier 1 (``PrimaryAccessionNumber`` / ``Definition`` /
-  ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Trad Tier 3 (``Division`` /
-  ``MolecularType`` / ``SequenceLength`` / ``FeatureQualifier`` / ``ReferenceJournal``)。
-  ``organism_name`` は ``Organism`` / ``Lineage`` の OR phrase にマップ、``organism_id``
-  は taxID 直接検索 field がないため degenerate。``date_modified`` / ``date_created`` /
-  ``date`` alias、submitter / publication (organization も publication.title 相当の field
-  も ARSA にない)、ES-only / Taxonomy 系 Tier 3 は degenerate。
+  ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Tier 2 ``publication``
+  (``ReferenceTitle``) + Trad Tier 3 (``Division`` / ``MolecularType`` /
+  ``SequenceLength`` / ``FeatureQualifier`` / ``ReferenceJournal``)。``organism_name``
+  は ``Organism`` / ``Lineage`` の OR phrase。``organism_id`` (taxID) / ``submitter`` /
+  date 系 / ES-only / Taxonomy 系 Tier 3 は ARSA に field が無く非対応。
 - ``txsearch``: TXSearch (Solr 4.4.0)。Tier 1 (``tax_id`` / ``scientific_name`` / ``text``) +
-  Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``common_name``; 10 field)。
-  TXSearch は Taxonomy DB そのものなので ``organism_id`` を ``tax_id`` に、``organism_name``
-  を ``scientific_name`` にマップ (entry の identifier / title と同じ field を別名で叩く形)。
-  日付 + Tier 2 + Trad/ES-only Tier 3 は degenerate。``japanese_name`` は staging TXSearch
-  の schema に不在のため allowlist 外。
+  Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``synonym`` / ``blast_name`` /
+  ``equivalent_name`` / ``domain`` / ``strain`` / ``isolate``)。TXSearch は Taxonomy DB
+  そのものなので ``organism_id`` を ``tax_id`` に、``organism_name`` を ``scientific_name``
+  にマップ。日付 + Tier 2 + Trad/ES-only Tier 3 は非対応。``japanese_name`` は staging
+  TXSearch の schema に不在のため map しない。
 
-degenerate は leaf を ``(-*:*)`` (no-match リテラル) に置換。ツリー構造は維持する。
+非対応 / 固定値 field は cross / single の per-arm 簡約 (per_arm.reduce_ast_for_db) が
+compile 前に AST から除く。コンパイラに非対応 field が来たら ``(-*:*)`` で潰さず
+``RuntimeError`` を投げる (TXSearch では no-match が edismax qf で ~全件化するため)。
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from __future__ import annotations
 import re
 from typing import Literal, TypeAlias
 
-from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS, FIELD_TYPES, OPERATOR_BY_KIND
+from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
 from ddbj_search_api.search.phrase import (
     SOLR_AUTO_PHRASE_CHARS,
@@ -54,13 +55,13 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "title": ("Definition",),
     "description": ("AllText",),
     # organism_name は学名 (Organism) + 分類体系 (Lineage) の OR phrase。
-    # organism_id (taxID exact) は ARSA に対応 field 不在のため _ARSA_UNAVAILABLE 行き。
+    # organism_id (taxID exact) は ARSA に対応 field が無く非対応 (field_availability)。
     "organism_name": ("Organism", "Lineage"),
     "date_published": ("Date",),
     # === Tier 2 ===
-    # publication は publication.title (text) に正規化したため ARSA に対応 field なし
-    # (旧 publication.id → ReferencePubmedID マップは廃止)。
-    # submitter / publication は _ARSA_UNAVAILABLE で degenerate される。
+    # publication (ES の publication.title) は ARSA の ReferenceTitle (GenBank REFERENCE
+    # TITLE) にマップ。submitter は ARSA に organization 情報が無く非対応 (field_availability)。
+    "publication": ("ReferenceTitle",),
     # === Tier 3 Trad only ===
     "division": ("Division",),
     "molecular_type": ("MolecularType",),
@@ -68,8 +69,6 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "feature_gene_name": ("FeatureQualifier",),
     "reference_journal": ("ReferenceJournal",),
 }
-
-_ARSA_UNAVAILABLE: frozenset[str] = ALL_ALLOWED_FIELDS - frozenset(_ARSA_FIELD_MAP)
 
 # === TXSearch (Taxonomy) field map ===
 
@@ -93,12 +92,16 @@ _TXSEARCH_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "genus": ("genus",),
     "species": ("species",),
     "common_name": ("common_name",),
-    # japanese_name は staging TXSearch の schema luke で field 不在のため allowlist 外
+    "synonym": ("synonym",),
+    "blast_name": ("blast_name",),
+    "equivalent_name": ("equivalent_name",),
+    "domain": ("domain",),
+    # strain / isolate は biosample と同名の Tier3 (allowlist)。TXSearch では taxonomy の
+    # 株 field を引く。_ex 系 (synonym_ex 等) は exact analyzer なので map せず qf 専用。
+    "strain": ("strain",),
+    "isolate": ("isolate",),
+    # japanese_name は staging TXSearch の schema luke で field 不在のため map しない
 }
-
-_TXSEARCH_UNAVAILABLE: frozenset[str] = ALL_ALLOWED_FIELDS - frozenset(_TXSEARCH_FIELD_MAP)
-
-_NO_MATCH_LITERAL = "(-*:*)"
 
 # 前方一致を相乗りさせる末尾語の最小 literal 長。Solr 4.4.0 の prefix query は ES の
 # ``max_expansions`` のような既定キャップを持たず、AllText (ARSA ~3 億件) / text (TXSearch)
@@ -253,16 +256,16 @@ def _compile_node(
 
 
 def _compile_leaf(clause: FieldClause, *, dialect: SolrDialect) -> str:
-    if dialect == "arsa":
-        if clause.field in _ARSA_UNAVAILABLE:
-            return _NO_MATCH_LITERAL
-        solr_fields = _ARSA_FIELD_MAP.get(clause.field)
-    else:
-        if clause.field in _TXSEARCH_UNAVAILABLE:
-            return _NO_MATCH_LITERAL
-        solr_fields = _TXSEARCH_FIELD_MAP.get(clause.field)
+    field_map = _ARSA_FIELD_MAP if dialect == "arsa" else _TXSEARCH_FIELD_MAP
+    solr_fields = field_map.get(clause.field)
     if not solr_fields:
-        return _NO_MATCH_LITERAL
+        # per-arm 簡約 (per_arm.reduce_ast_for_db) が非対応 / 固定値 field を compile 前に
+        # 除くため、ここに到達するのは簡約をバイパスしたバグ。silent な no-match
+        # (TXSearch では edismax qf 展開で ~全件化する) を避けて明示的に落とす。
+        raise RuntimeError(
+            f"field {clause.field!r} has no Solr mapping for dialect {dialect!r}; "
+            "per-arm reduction must drop unavailable / fixed-value fields before compilation.",
+        )
     if len(solr_fields) == 1:
         return _basic_leaf(solr_fields[0], clause)
     return "(" + " OR ".join(_basic_leaf(f, clause) for f in solr_fields) + ")"

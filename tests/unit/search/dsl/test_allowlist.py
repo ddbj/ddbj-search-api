@@ -1,8 +1,7 @@
 """Tests for ddbj_search_api.search.dsl.allowlist.
 
-3 段構成の Tier 1/2/3 allowlist (Tier 1 11 + Tier 2 2 + Tier 3 44 unique / per-DB 53、
-Tier 3 unique 40 / per-DB 46) と `TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。SSOT は
-db-portal/docs/search.md §フィールド構成 + search-backends.md §バックエンド変換。
+3 段構成の Tier 1/2/3 allowlist (Tier 1 / Tier 2 横断可、Tier 3 単一 DB 指定必須) と
+`TIER3_FIELD_DBS` 候補 DB 表の整合性を検証する。フィールド一覧の SSOT は実装 (allowlist.py)。
 """
 
 from __future__ import annotations
@@ -45,12 +44,9 @@ class TestTierFrozensets:
         assert frozenset({"submitter", "publication"}) == TIER2_FIELDS
 
     def test_tier3_contains_expected_per_db_fields(self) -> None:
-        # Tier 3 unique 44 / per-DB 53。
-        # BioProject 6、BioSample 7、SRA 9、JGA 3、GEA 0、MetaboBank 1、
-        # Trad 5、Taxonomy 10、SRA+JGA 共通 1 (type) で計 42 件 + shared 8 で unique 44。
-        # shared: grant_title (BP+JGA)、grant_agency (BP+JGA)、external_link_label (BP+JGA)、
-        # derived_from_id (BS+SRA)、study_type (JGA+MB)、experiment_type (GEA+MB)、
-        # geo_loc_name と collection_date (BS+SRA-sample)、type (SRA+JGA)。
+        # Tier 3 unique 48。Taxonomy は rank 系 10 + synonym / blast_name / equivalent_name /
+        # domain の 14 件。strain / isolate は BioSample と Taxonomy の同名 Tier3 (db 指定必須なので
+        # 曖昧さなし)。詳細な per-DB 内訳は allowlist.py の TIER3_FIELD_DBS を SSOT とする。
         expected = {
             # BioProject 6 件
             "object_type",
@@ -97,7 +93,7 @@ class TestTierFrozensets:
             "sequence_length",
             "feature_gene_name",
             "reference_journal",
-            # Taxonomy / TXSearch 10 件
+            # Taxonomy / TXSearch 14 件
             "rank",
             "lineage",
             "kingdom",
@@ -108,11 +104,15 @@ class TestTierFrozensets:
             "genus",
             "species",
             "common_name",
+            "synonym",
+            "blast_name",
+            "equivalent_name",
+            "domain",
         }
         assert expected == TIER3_FIELDS
 
-    def test_tier3_unique_count_is_44(self) -> None:
-        assert len(TIER3_FIELDS) == 44
+    def test_tier3_unique_count_is_48(self) -> None:
+        assert len(TIER3_FIELDS) == 48
 
     def test_tiers_are_disjoint(self) -> None:
         assert frozenset() == TIER1_FIELDS & TIER2_FIELDS
@@ -270,8 +270,8 @@ class TestTier3FieldDbs:
             ("external_link_label", ("bioproject", "jga")),
             # BioSample-only
             ("host", ("biosample",)),
-            ("strain", ("biosample",)),
-            ("isolate", ("biosample",)),
+            ("strain", ("biosample", "taxonomy")),
+            ("isolate", ("biosample", "taxonomy")),
             ("package", ("biosample",)),
             ("model", ("biosample",)),
             # BioSample + SRA shared (SRA-sample のみ field 存在)

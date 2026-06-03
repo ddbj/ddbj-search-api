@@ -264,16 +264,6 @@ class TestTxsearchDocsToHits:
         dumped = h.model_dump(by_alias=True)
         assert dumped.get("commonName") is None
 
-    def test_japanese_name_first_element(self) -> None:
-        h = txsearch_docs_to_hits([{"tax_id": "9606", "japanese_name": ["ヒト"]}])[0]
-        dumped = h.model_dump(by_alias=True)
-        assert dumped["japaneseName"] == "ヒト"
-
-    def test_japanese_name_missing_passthrough_none(self) -> None:
-        h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
-        dumped = h.model_dump(by_alias=True)
-        assert dumped.get("japaneseName") is None
-
     def test_description_always_none(self) -> None:
         """description は空: common_name / rank / lineage は独立 field として露出する."""
         h = txsearch_docs_to_hits(

@@ -323,7 +323,9 @@ def _compile_node(
         return {
             "bool": {
                 "must": _compile_and_children(
-                    node.children, free_text_operator=free_text_operator, enable_prefix=enable_prefix,
+                    node.children,
+                    free_text_operator=free_text_operator,
+                    enable_prefix=enable_prefix,
                 ),
             },
         }

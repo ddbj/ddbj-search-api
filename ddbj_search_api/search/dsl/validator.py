@@ -22,9 +22,10 @@ from ddbj_search_api.search.dsl.allowlist import (
     ALL_ALLOWED_FIELDS,
     FIELD_TYPES,
     OPERATOR_BY_KIND,
-    TIER2_FIELD_DBS,
     TIER3_FIELD_DBS,
     TIER3_FIELDS,
+    available_dbs,
+    field_availability,
 )
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Range
 from ddbj_search_api.search.dsl.errors import DslError, ErrorType
@@ -138,30 +139,21 @@ def _check_field(clause: FieldClause, *, mode: ValidationMode, db: str | None) -
             length=clause.position.length,
         )
     if mode == "single" and db is not None:
-        scope = _single_db_field_scope(clause.field)
-        if scope is not None and db not in scope:
-            hint = " or ".join(f"db={d}" for d in scope)
+        avail = field_availability(clause.field, db)
+        # 固定値 (Solr backed の accessibility 等) は per-arm 簡約で値突き合わせするため
+        # single でも通す。実 field も固定値も無い (非対応) 場合のみ 400 で弾く。
+        if not avail.available and avail.fixed_value is None:
+            scope = available_dbs(clause.field)
+            hint = (" use " + " or ".join(f"db={d}" for d in scope) + ".") if scope else ""
             raise DslError(
                 type=ErrorType.field_not_available_for_db,
                 detail=(
                     f"field {clause.field!r} is not available for db={db!r} "
-                    f"at column {clause.position.column} (length {clause.position.length}). use {hint}."
+                    f"at column {clause.position.column} (length {clause.position.length}).{hint}"
                 ),
                 column=clause.position.column,
                 length=clause.position.length,
             )
-
-
-def _single_db_field_scope(field: str) -> tuple[str, ...] | None:
-    """single-mode で ``field`` が実在する db の許可リスト。``None`` は全 db で有効。
-
-    Tier 3 は :data:`TIER3_FIELD_DBS`、scope を持つ Tier 2 (``publication``) は
-    :data:`TIER2_FIELD_DBS` を参照する。Tier 1 と ``submitter`` は全 db common なので
-    ``None`` を返し、scope 検証をスキップする。
-    """
-    if field in TIER3_FIELD_DBS:
-        return TIER3_FIELD_DBS[field]
-    return TIER2_FIELD_DBS.get(field)
 
 
 def _check_value_kind_and_operator(clause: FieldClause) -> None:

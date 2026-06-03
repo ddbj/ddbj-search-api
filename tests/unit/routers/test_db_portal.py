@@ -1398,7 +1398,6 @@ class TestDbPortalTaxonomySpecificSearch:
                     "tax_id": "9606",
                     "scientific_name": "Homo sapiens",
                     "common_name": ["human"],
-                    "japanese_name": ["ヒト"],
                     "rank": "species",
                     "lineage": ["Homo sapiens", "Homo", "Hominidae"],
                 },
@@ -1417,7 +1416,6 @@ class TestDbPortalTaxonomySpecificSearch:
         assert hit["url"] == "https://ddbj.nig.ac.jp/tx_search/9606?view=info"
         assert hit["rank"] == "species"
         assert hit["commonName"] == "human"
-        assert hit["japaneseName"] == "ヒト"
 
     def test_hard_limit_boundary(
         self,
@@ -1947,11 +1945,14 @@ class TestDbPortalAdvValidDispatch:
             params={"q": "date:[2020-01-01 TO 2024-12-31]"},
         )
         assert resp.status_code == 200
-        counts = {e["db"]: e["count"] for e in resp.json()["databases"]}
-        assert counts["bioproject"] == 5
-        assert counts["trad"] == 3
-        # TXSearch degenerates date field → numFound=0 (mock returns 0)
-        assert counts["taxonomy"] == 0
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        # ES 6DB は date alias (3 日付 OR) を持つ
+        assert by_db["bioproject"]["count"] == 5
+        # Solr 2DB は date alias 非対応 → per-arm 簡約で対象外 (Solr を叩かず count=null)
+        assert by_db["trad"]["count"] is None
+        assert by_db["trad"]["error"] == "field_not_applicable"
+        assert by_db["taxonomy"]["count"] is None
+        assert by_db["taxonomy"]["error"] == "field_not_applicable"
 
     def test_adv_with_db_bioproject_returns_hits(
         self,
@@ -3047,11 +3048,7 @@ def _is_free_text_wrapper(clause: dict[str, Any]) -> bool:
 def _is_field_contains_wrapper(clause: dict[str, Any], es_field: str) -> bool:
     """True when ``clause`` is a text field contains prefix-aware wrapper."""
     should = clause.get("bool", {}).get("should")
-    return (
-        isinstance(should, list)
-        and len(should) == 2
-        and es_field in should[0].get("match_phrase", {})
-    )
+    return isinstance(should, list) and len(should) == 2 and es_field in should[0].get("match_phrase", {})
 
 
 class TestKeywordOperatorOnDbPortal:
@@ -3283,12 +3280,9 @@ class TestQueryAndJoin:
         must = body["query"]["bool"]["must"]
         # bare word free-text と text field contains はどちらも前方一致対応の
         # bool.should wrapper として AND-flatten 後の must に並ぶ。
-        has_free_text = any(
-            _is_free_text_wrapper(c) and _free_text_token_query(c) == "human" for c in must
-        )
+        has_free_text = any(_is_free_text_wrapper(c) and _free_text_token_query(c) == "human" for c in must)
         has_field_clause = any(
-            _is_field_contains_wrapper(c, "title") and _field_contains_token(c, "title") == "cancer"
-            for c in must
+            _is_field_contains_wrapper(c, "title") and _field_contains_token(c, "title") == "cancer" for c in must
         )
         assert has_free_text
         assert has_field_clause

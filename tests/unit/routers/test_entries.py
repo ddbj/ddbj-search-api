@@ -2256,7 +2256,8 @@ class TestEntriesTextMatchReflected:
         assert resp.status_code == 200
         filters = _es_filters(mock_es_search)
         prefix = [
-            f for f in filters
+            f
+            for f in filters
             if isinstance(f.get("bool"), dict)
             and any(es_field in s.get("match_phrase", {}) for s in f["bool"].get("should", []))
         ]
@@ -2297,7 +2298,8 @@ class TestEntriesTextMatchReflected:
         # どちらも同じ host の prefix clause を持つ
         filters_and = _es_filters(mock_es_search)
         prefix_and = [
-            f for f in filters_and
+            f
+            for f in filters_and
             if isinstance(f.get("bool"), dict)
             and any("host" in s.get("match_phrase", {}) for s in f["bool"].get("should", []))
         ]

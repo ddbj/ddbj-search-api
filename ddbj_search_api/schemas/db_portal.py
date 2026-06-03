@@ -64,6 +64,11 @@ class DbPortalCountError(str, Enum):
     upstream_5xx = "upstream_5xx"
     connection_refused = "connection_refused"
     unknown = "unknown"
+    # The query references a field this DB does not have (e.g. publication@biosample,
+    # date_published@taxonomy).  The arm is skipped (count=null) rather than returning a
+    # wrong count, and the backend is not queried.  This is a normal per-arm signal inside
+    # a 200 response, not an upstream failure (so it does not count toward the all-fail 502).
+    field_not_applicable = "field_not_applicable"
 
 
 class DbPortalErrorType(str, Enum):
@@ -762,16 +767,11 @@ class DbPortalHitTrad(DbPortalHitBase):
 
 
 class DbPortalHitTaxonomy(DbPortalHitBase):
-    """Taxonomy (TXSearch-backed) hit.
-
-    ``japaneseName`` is exposed in the response shape but cannot be
-    used as a search field.
-    """
+    """Taxonomy (TXSearch-backed) hit."""
 
     type: Literal["taxonomy"] = Field(examples=["taxonomy"], description="Hit type discriminator.")
     rank: str | None = Field(default=None, examples=["species"])
     common_name: str | None = Field(default=None, alias="commonName", examples=["human"])
-    japanese_name: str | None = Field(default=None, alias="japaneseName", examples=["ヒト"])
     lineage: list[str] | str | None = Field(default=None, examples=[["Homo sapiens", "Homo", "Hominidae"]])
 
 

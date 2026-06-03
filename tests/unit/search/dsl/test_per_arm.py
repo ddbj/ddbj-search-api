@@ -1,0 +1,158 @@
+"""Tests for per-arm AST reduction (per_arm.reduce_ast_for_db).
+
+availability の SSOT (allowlist.field_availability) と簡約ロジックの不変条件を固定する。
+特に「簡約後 AST に non-applicable leaf が残らない」(= compile が RuntimeError にならない)
+を property として担保し、TXSearch の no-match ~全件化バグの再発を防ぐ。
+"""
+
+from __future__ import annotations
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from ddbj_search_api.search.dsl import parse
+from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS, field_availability
+from ddbj_search_api.search.dsl.compiler_solr import (
+    _ARSA_FIELD_MAP,
+    _TXSEARCH_FIELD_MAP,
+    compile_to_solr,
+)
+from ddbj_search_api.search.dsl.per_arm import reduce_ast_for_db
+
+
+class TestAvailableField:
+    def test_available_field_kept_taxonomy(self) -> None:
+        r = reduce_ast_for_db(parse("organism_id:9606"), "taxonomy")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is not None
+        assert compile_to_solr(r.ast, dialect="txsearch") == 'tax_id:"9606"'
+
+    def test_available_field_kept_es(self) -> None:
+        r = reduce_ast_for_db(parse("title:cancer"), "biosample")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is not None
+
+    def test_freetext_kept(self) -> None:
+        r = reduce_ast_for_db(parse("cancer"), "taxonomy")
+        assert r.applicable
+        assert r.ast is not None
+
+    def test_none_ast_is_applicable_all(self) -> None:
+        r = reduce_ast_for_db(None, "taxonomy")
+        assert r.applicable
+        assert r.ast is None
+        assert not r.always_zero
+
+
+class TestNonApplicable:
+    def test_date_published_non_applicable_taxonomy(self) -> None:
+        r = reduce_ast_for_db(parse("date_published:2024-01-01"), "taxonomy")
+        assert not r.applicable
+
+    def test_publication_non_applicable_biosample(self) -> None:
+        r = reduce_ast_for_db(parse("publication:cancer"), "biosample")
+        assert not r.applicable
+
+    def test_name_non_applicable_trad(self) -> None:
+        r = reduce_ast_for_db(parse("name:foo"), "trad")
+        assert not r.applicable
+
+    def test_and_with_non_applicable_marks_inapplicable(self) -> None:
+        # date_published 非対応を含む AND は arm 全体を対象外にする (嘘件数回避)。
+        r = reduce_ast_for_db(parse("date_published:2024-01-01 AND organism_id:9606"), "taxonomy")
+        assert not r.applicable
+
+    def test_or_with_non_applicable_marks_inapplicable(self) -> None:
+        r = reduce_ast_for_db(parse("title:human OR date_published:2024-01-01"), "taxonomy")
+        assert not r.applicable
+
+
+class TestPublicationTradAvailable:
+    def test_publication_maps_reference_title_on_trad(self) -> None:
+        r = reduce_ast_for_db(parse("publication:cancer"), "trad")
+        assert r.applicable
+        assert r.ast is not None
+        assert compile_to_solr(r.ast, dialect="arsa") == '(ReferenceTitle:"cancer" OR ReferenceTitle:cancer*)'
+
+
+class TestFixedValue:
+    def test_fixed_value_match_is_always_true(self) -> None:
+        # taxonomy の accessibility は public-access 固定。一致 → 恒真 → 全件 (ast=None)。
+        r = reduce_ast_for_db(parse("accessibility:public-access"), "taxonomy")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is None
+
+    def test_fixed_value_mismatch_is_always_zero(self) -> None:
+        r = reduce_ast_for_db(parse("accessibility:controlled-access"), "taxonomy")
+        assert r.applicable
+        assert r.always_zero
+
+    def test_and_drops_fixed_value_true_clause(self) -> None:
+        r = reduce_ast_for_db(parse("accessibility:public-access AND organism_id:9606"), "taxonomy")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is not None
+        assert compile_to_solr(r.ast, dialect="txsearch") == 'tax_id:"9606"'
+
+    def test_and_with_fixed_value_false_is_always_zero(self) -> None:
+        r = reduce_ast_for_db(parse("accessibility:controlled-access AND organism_id:9606"), "taxonomy")
+        assert r.always_zero
+
+    def test_not_fixed_value_true_becomes_always_zero(self) -> None:
+        # NOT (恒真) → 恒偽 → 0 件。
+        r = reduce_ast_for_db(parse("NOT accessibility:public-access"), "taxonomy")
+        assert r.applicable
+        assert r.always_zero
+
+    def test_not_fixed_value_false_is_all(self) -> None:
+        # NOT (恒偽) → 恒真 → 全件。
+        r = reduce_ast_for_db(parse("NOT accessibility:controlled-access"), "taxonomy")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is None
+
+    def test_fixed_value_field_is_available_on_es(self) -> None:
+        # ES 6DB では accessibility は実 field。固定値ではなく available なので keep。
+        r = reduce_ast_for_db(parse("accessibility:public-access"), "biosample")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is not None
+
+
+class TestAvailabilityMatchesSolrFieldMap:
+    """field_availability (SSOT) と compiler_solr の field map の drift 防止.
+
+    Solr arm で available とされる field は必ず field map にマップが存在し、その逆も成り立つ。
+    これが崩れると簡約後 AST が compile で RuntimeError になる / 非対応 field が漏れる。
+    """
+
+    @pytest.mark.parametrize("field", sorted(ALL_ALLOWED_FIELDS))
+    def test_trad_availability_matches_arsa_map(self, field: str) -> None:
+        assert field_availability(field, "trad").available == (field in _ARSA_FIELD_MAP)
+
+    @pytest.mark.parametrize("field", sorted(ALL_ALLOWED_FIELDS))
+    def test_taxonomy_availability_matches_txsearch_map(self, field: str) -> None:
+        assert field_availability(field, "taxonomy").available == (field in _TXSEARCH_FIELD_MAP)
+
+
+class TestReducedAstAlwaysCompiles:
+    """簡約後 (applicable かつ ast あり) の AST は Solr compile で RuntimeError にならない."""
+
+    @given(value=st.text(alphabet="abcdefghijklmnop", min_size=2, max_size=8))
+    def test_pbt_available_field_compiles(self, value: str) -> None:
+        r = reduce_ast_for_db(parse(f"organism_name:{value}"), "taxonomy")
+        assert r.applicable
+        assert r.ast is not None
+        compile_to_solr(r.ast, dialect="txsearch")
+
+    @given(value=st.text(alphabet="abcdefghijklmnop", min_size=2, max_size=8))
+    def test_pbt_mixed_fixed_and_available_compiles(self, value: str) -> None:
+        # 固定値一致 + available の AND → 固定値節が落ち、残りは compile 可能。
+        r = reduce_ast_for_db(parse(f"accessibility:public-access AND organism_name:{value}"), "taxonomy")
+        assert r.applicable
+        if r.ast is not None:
+            compile_to_solr(r.ast, dialect="txsearch")

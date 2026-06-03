@@ -23,6 +23,17 @@ def _c(dsl: str, dialect: SolrDialect = "arsa") -> str:
     return compile_to_solr(parse(dsl), dialect=dialect)
 
 
+def _raises_non_applicable(dsl: str, dialect: SolrDialect = "arsa") -> None:
+    """non-applicable field を直接 compile すると RuntimeError になる。
+
+    per-arm 簡約 (per_arm.reduce_ast_for_db) が compile 前に非対応 / 固定値 field を除くのが
+    正規経路。それをバイパスしてコンパイラに届くのはバグなので明示的に落ちる (TXSearch では
+    no-match が edismax qf 展開で ~全件化していたのを防ぐ)。
+    """
+    with pytest.raises(RuntimeError, match="no Solr mapping"):
+        compile_to_solr(parse(dsl), dialect=dialect)
+
+
 class TestArsaBasics:
     def test_identifier_word_quoted(self) -> None:
         assert _c("identifier:PRJDB1") == 'PrimaryAccessionNumber:"PRJDB1"'
@@ -54,9 +65,9 @@ class TestArsaOrganism:
     def test_organism_name_phrase_expands_to_2_fields(self) -> None:
         assert _c('organism_name:"Homo sapiens"') == '(Organism:"Homo sapiens" OR Lineage:"Homo sapiens")'
 
-    def test_organism_id_degenerate(self) -> None:
-        # ARSA に taxID 直接検索 field が無いので degenerate.
-        assert _c("organism_id:9606") == "(-*:*)"
+    def test_organism_id_non_applicable_raises(self) -> None:
+        # ARSA に taxID 直接検索 field が無い。per-arm 簡約が先に除く前提で、直接 compile は raise。
+        _raises_non_applicable("organism_id:9606")
 
 
 class TestArsaDate:
@@ -78,8 +89,8 @@ class TestArsaDate:
             "accessibility:public-access",
         ],
     )
-    def test_unavailable_date_fields_degenerate(self, dsl: str) -> None:
-        assert _c(dsl) == "(-*:*)"
+    def test_unavailable_date_fields_non_applicable_raise(self, dsl: str) -> None:
+        _raises_non_applicable(dsl)
 
 
 class TestArsaBool:
@@ -111,11 +122,10 @@ class TestArsaBool:
             '(Definition:"cc" OR Definition:cc*))'
         )
 
-    def test_bool_with_degenerate_leaf(self) -> None:
-        # title と date_modified の AND → 片方は degenerate、ツリー構造は維持
-        assert _c("title:cancer AND date_modified:2024-01-01") == (
-            '((Definition:"cancer" OR Definition:cancer*) AND (-*:*))'
-        )
+    def test_bool_with_non_applicable_leaf_raises(self) -> None:
+        # AND に non-applicable な date_modified が混じると直接 compile は raise。
+        # 実運用では per-arm 簡約 (reduce_ast_for_db) が arm 全体を対象外にする。
+        _raises_non_applicable("title:cancer AND date_modified:2024-01-01")
 
 
 class TestTxSearchBasics:
@@ -145,7 +155,7 @@ class TestTxSearchOrganism:
         assert _c('organism_name:"Homo sapiens"', "txsearch") == 'scientific_name:"Homo sapiens"'
 
 
-class TestTxSearchDegenerate:
+class TestTxSearchNonApplicable:
     @pytest.mark.parametrize(
         "dsl",
         [
@@ -154,18 +164,16 @@ class TestTxSearchDegenerate:
             "date_created:2024-01-01",
             "date:2024-01-01",
             "date_published:[2020-01-01 TO 2024-12-31]",
-            # accessibility は Taxonomy 概念外、TXSearch field 不在で degenerate
+            # accessibility は Taxonomy では固定値。per-arm 簡約が突き合わせるので compiler には
+            # 来ない。直接 compile は field map に無く raise する。
             "accessibility:public-access",
         ],
     )
-    def test_unavailable_fields_degenerate(self, dsl: str) -> None:
-        assert _c(dsl, "txsearch") == "(-*:*)"
+    def test_unavailable_fields_raise(self, dsl: str) -> None:
+        _raises_non_applicable(dsl, "txsearch")
 
-    def test_bool_preserves_structure_with_degenerate_children(self) -> None:
-        # TXSearch では accessibility が degenerate、構造は維持される.
-        assert _c("title:human AND accessibility:public-access", "txsearch") == (
-            '((scientific_name:"human" OR scientific_name:human*) AND (-*:*))'
-        )
+    def test_bool_with_non_applicable_child_raises(self) -> None:
+        _raises_non_applicable("title:human AND date_modified:2024-01-01", "txsearch")
 
 
 class TestPhraseEscaping:
@@ -181,31 +189,31 @@ class TestPhraseEscaping:
 """=== Tier 2 / Tier 3 ==="""
 
 
-class TestArsaTier2PublicationDegenerate:
-    """Tier 2 publication は publication.title (text) に正規化され、ARSA に相当 field なし → degenerate."""
+class TestArsaTier2Publication:
+    """Tier 2 publication は ARSA の ReferenceTitle にマップ (ES の publication.title と対称)."""
 
-    def test_publication_word_degenerate(self) -> None:
-        assert _c("publication:cancer") == "(-*:*)"
+    def test_publication_word_maps_reference_title(self) -> None:
+        assert _c("publication:cancer") == '(ReferenceTitle:"cancer" OR ReferenceTitle:cancer*)'
 
-    def test_publication_wildcard_degenerate(self) -> None:
-        assert _c("publication:canc*") == "(-*:*)"
-
-
-class TestArsaTier2SubmitterDegenerate:
-    """Tier 2 submitter は ARSA に相当 field なし → degenerate."""
-
-    def test_submitter_word_degenerate(self) -> None:
-        assert _c('submitter:"Tokyo University"') == "(-*:*)"
+    def test_publication_wildcard_maps_reference_title(self) -> None:
+        assert _c("publication:canc*") == "ReferenceTitle:canc*"
 
 
-class TestTxSearchTier2Degenerate:
-    """Tier 2 (submitter / publication) は TXSearch に相当 field なし → degenerate."""
+class TestArsaTier2SubmitterNonApplicable:
+    """Tier 2 submitter は ARSA に相当 field なし → non-applicable (直接 compile は raise)."""
 
-    def test_submitter_degenerate(self) -> None:
-        assert _c("submitter:foo", "txsearch") == "(-*:*)"
+    def test_submitter_raises(self) -> None:
+        _raises_non_applicable('submitter:"Tokyo University"')
 
-    def test_publication_degenerate(self) -> None:
-        assert _c("publication:cancer", "txsearch") == "(-*:*)"
+
+class TestTxSearchTier2NonApplicable:
+    """Tier 2 (submitter / publication) は TXSearch に相当 field なし → non-applicable."""
+
+    def test_submitter_raises(self) -> None:
+        _raises_non_applicable("submitter:foo", "txsearch")
+
+    def test_publication_raises(self) -> None:
+        _raises_non_applicable("publication:cancer", "txsearch")
 
 
 class TestArsaTier3Trad:
@@ -255,8 +263,8 @@ class TestArsaTier3EsOnlyDegenerate:
             "derived_from_id:SAMD00012345",
         ],
     )
-    def test_es_tier3_degenerates_on_arsa(self, dsl: str) -> None:
-        assert _c(dsl, "arsa") == "(-*:*)"
+    def test_es_tier3_non_applicable_on_arsa(self, dsl: str) -> None:
+        _raises_non_applicable(dsl, "arsa")
 
 
 class TestArsaTaxonomyTier3Degenerate:
@@ -277,8 +285,8 @@ class TestArsaTaxonomyTier3Degenerate:
             "common_name:human",
         ],
     )
-    def test_taxonomy_degenerates_on_arsa(self, dsl: str) -> None:
-        assert _c(dsl, "arsa") == "(-*:*)"
+    def test_taxonomy_non_applicable_on_arsa(self, dsl: str) -> None:
+        _raises_non_applicable(dsl, "arsa")
 
 
 class TestTxSearchTier3Taxonomy:
@@ -297,6 +305,12 @@ class TestTxSearchTier3Taxonomy:
             ("genus:Homo", '(genus:"Homo" OR genus:Homo*)'),
             ("species:sapiens", '(species:"sapiens" OR species:sapiens*)'),
             ("common_name:human", '(common_name:"human" OR common_name:human*)'),
+            ("synonym:Eukaryota", '(synonym:"Eukaryota" OR synonym:Eukaryota*)'),
+            ("blast_name:primates", '(blast_name:"primates" OR blast_name:primates*)'),
+            ("equivalent_name:foobar", '(equivalent_name:"foobar" OR equivalent_name:foobar*)'),
+            ("domain:Bacteria", '(domain:"Bacteria" OR domain:Bacteria*)'),
+            ("strain:K12", '(strain:"K12" OR strain:K12*)'),
+            ("isolate:abc", '(isolate:"abc" OR isolate:abc*)'),
         ],
     )
     def test_taxonomy_field_maps(self, dsl: str, expected: str) -> None:
@@ -320,8 +334,8 @@ class TestTxSearchTradTier3Degenerate:
             "reference_journal:Nature",
         ],
     )
-    def test_trad_degenerates_on_txsearch(self, dsl: str) -> None:
-        assert _c(dsl, "txsearch") == "(-*:*)"
+    def test_trad_non_applicable_on_txsearch(self, dsl: str) -> None:
+        _raises_non_applicable(dsl, "txsearch")
 
 
 class TestTxSearchEsOnlyTier3Degenerate:
@@ -344,8 +358,8 @@ class TestTxSearchEsOnlyTier3Degenerate:
             "derived_from_id:SAMD00012345",
         ],
     )
-    def test_es_tier3_degenerates_on_txsearch(self, dsl: str) -> None:
-        assert _c(dsl, "txsearch") == "(-*:*)"
+    def test_es_tier3_non_applicable_on_txsearch(self, dsl: str) -> None:
+        _raises_non_applicable(dsl, "txsearch")
 
 
 class TestSolrBoolWithTier3Mixed:
@@ -527,6 +541,5 @@ class TestCompileToSolrFreeTextNode:
         )
         result = compile_to_solr(composite, dialect="arsa", free_text_operator="OR")
         assert result == (
-            '((Definition:"leukemia" OR Definition:leukemia*) AND '
-            '(("apple" OR apple*) OR ("banana" OR banana*)))'
+            '((Definition:"leukemia" OR Definition:leukemia*) AND (("apple" OR apple*) OR ("banana" OR banana*)))'
         )

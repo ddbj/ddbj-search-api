@@ -1,18 +1,23 @@
-"""Tier-based field allowlist and operator matrix.
+"""Tier-based field allowlist, operator matrix, and per-DB availability.
 
 3 段構成:
-- Tier 1 (横断可、11 field): identifier / title / description / name / organism_id /
+- Tier 1 (横断可): identifier / title / description / name / organism_id /
   organism_name / date 系の基本 field + accessibility。
-- Tier 2 (横断可、converter 側正規化済の共通 field、2 field): submitter / publication。
-- Tier 3 (単一 DB 指定必須、44 unique / per-DB 集計 53 field): DB 特化 field。
+- Tier 2 (横断可、converter 側正規化済の共通 field): submitter / publication。
+- Tier 3 (単一 DB 指定必須): DB 特化 field。
 
-SSOT: db-portal/docs/search.md §フィールド構成 (3 層) / §演算子マトリクス、
-db-portal/docs/search-backends.md §バックエンド変換 (Tier 1/2/3 x ES/ARSA/TXSearch)。
-API 側が allowlist の唯一の source of truth。
+Tier 1/2 は「横断可」だが全 DB が実 field を持つわけではない。各 (field, DB) の
+実在性は :func:`field_availability` が SSOT として返す: 実 field で検索可能か、その
+DB では値が固定 (例: Solr backed の accessibility="public-access") か、非対応か。
+cross 検索の per-arm 簡約 (per_arm.py) と single 検索の db scope 検証 (validator.py)
+は both この関数を参照する。
+
+API 側 allowlist が field 構成の唯一の source of truth。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from ddbj_search_api.search.dsl.ast import ValueKind
@@ -37,8 +42,8 @@ TIER1_FIELDS: frozenset[str] = frozenset(
         "date_modified",
         "date_created",
         "date",
-        # 全 ES backed 6 DB 共通 (public-access / controlled-access)。
-        # Solr backed (Trad / Taxonomy) には field 不在のため cross-mode で degenerate される。
+        # 全 ES backed 6 DB 共通 (public-access / controlled-access)。Solr backed
+        # (trad / taxonomy) は公開前提で "public-access" 固定 (field_availability)。
         "accessibility",
     },
 )
@@ -50,15 +55,6 @@ TIER2_FIELDS: frozenset[str] = frozenset(
         "publication",
     },
 )
-
-# Tier 2 field のうち、single-DB モードで実在 DB が限定されるものの db scope。
-# ``submitter`` は全 ES DB に organization nested があるため含めない (全 db で有効)。
-# ``publication`` は biosample に publication nested が不在。Solr DB (trad / taxonomy) は
-# ES nested を持たず degenerate (0 件) のため scope に含めて従来どおり 0 件で通し、
-# single-mode で弾くのは biosample のみとする。
-TIER2_FIELD_DBS: dict[str, tuple[str, ...]] = {
-    "publication": ("bioproject", "sra", "jga", "gea", "metabobank", "trad", "taxonomy"),
-}
 
 FIELD_TYPES: dict[str, FieldType] = {
     # === Tier 1 (cross) ===
@@ -75,10 +71,13 @@ FIELD_TYPES: dict[str, FieldType] = {
     "date_modified": "date",
     "date_created": "date",
     "date": "date",
-    # 全 ES backed 6 DB 共通 controlled vocab (public-access / controlled-access)
+    # ES backed 6 DB は controlled vocab (public-access / controlled-access)。
+    # Solr backed は "public-access" 固定 (field_availability で突き合わせ)。
     "accessibility": "enum",
     # === Tier 2 (cross, converter-normalized) ===
     "submitter": "text",
+    # publication は ES nested の publication.title。trad (ARSA) は ReferenceTitle に
+    # マップして検索可 (compiler_solr)、biosample / taxonomy は非対応 (field_availability)。
     "publication": "text",
     # === Tier 3 BioProject ===
     # ES `objectType` (keyword) に term。BioProject / UmbrellaBioProject の Umbrella 区分。
@@ -161,6 +160,11 @@ FIELD_TYPES: dict[str, FieldType] = {
     "genus": "text",
     "species": "text",
     "common_name": "text",
+    # 別名・俗称・上位分類。strain / isolate は biosample と同名 (Tier 3 共有、上記参照)。
+    "synonym": "text",
+    "blast_name": "text",
+    "equivalent_name": "text",
+    "domain": "text",
 }
 
 # (field_type, value_kind) → 導出される operator。
@@ -200,8 +204,11 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "external_link_label": ("bioproject", "jga"),
     # BioSample-only
     "host": ("biosample",),
-    "strain": ("biosample",),
-    "isolate": ("biosample",),
+    # strain / isolate は biosample (sample 属性) と taxonomy (TXSearch の株 field) の
+    # 同名 Tier3。db 指定必須なので曖昧さはなく、compiler_es / compiler_solr が各々の
+    # 物理 field に解決する (複数 DB 同名は grant_title / geo_loc_name 等と同様)。
+    "strain": ("biosample", "taxonomy"),
+    "isolate": ("biosample", "taxonomy"),
     "package": ("biosample",),
     "model": ("biosample",),
     # BioSample + SRA (SRA-sample のみ field を持つ)
@@ -237,7 +244,7 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "sequence_length": ("trad",),
     "feature_gene_name": ("trad",),
     "reference_journal": ("trad",),
-    # Taxonomy-only (TXSearch) 10 field
+    # Taxonomy-only (TXSearch backend)
     "rank": ("taxonomy",),
     "lineage": ("taxonomy",),
     "kingdom": ("taxonomy",),
@@ -248,6 +255,10 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "genus": ("taxonomy",),
     "species": ("taxonomy",),
     "common_name": ("taxonomy",),
+    "synonym": ("taxonomy",),
+    "blast_name": ("taxonomy",),
+    "equivalent_name": ("taxonomy",),
+    "domain": ("taxonomy",),
 }
 
 TIER3_FIELDS: frozenset[str] = frozenset(TIER3_FIELD_DBS)
@@ -262,4 +273,89 @@ def field_tier(field: str) -> Tier | None:
         return "tier2"
     if field in TIER3_FIELDS:
         return "tier3"
+
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class FieldAvailability:
+    """ある (field, DB) の検索可否。
+
+    - ``available=True``: その DB に実 field があり検索できる。
+    - ``available=False`` かつ ``fixed_value`` あり: その DB では値が固定
+      (例: Solr backed の ``accessibility="public-access"``)。cross / single の
+      per-arm 簡約 (per_arm.py) で値と突き合わせ、一致なら恒真・不一致なら恒偽に畳む。
+    - ``available=False`` かつ ``fixed_value=None``: 非対応。cross は arm を対象外
+      (count=null)、single は 400 ``field-not-available-for-db``。
+    """
+
+    available: bool
+    fixed_value: str | None = None
+
+
+# Tier 1/2 field が「横断可」でも実 field を持たない DB (記載なし = available)。
+# Solr backed (trad / taxonomy) の実 field 不在と、biosample の publication nested 不在。
+# Solr の availability は compiler_solr の field map と一致する (drift は unit test で担保)。
+_TIER12_UNAVAILABLE_DBS: dict[str, frozenset[str]] = {
+    # organism_id (taxID exact) は ARSA に直接検索 field が無い (taxonomy は tax_id で available)。
+    "organism_id": frozenset({"trad"}),
+    "name": frozenset({"trad", "taxonomy"}),
+    "date_published": frozenset({"taxonomy"}),
+    "date_modified": frozenset({"trad", "taxonomy"}),
+    "date_created": frozenset({"trad", "taxonomy"}),
+    "date": frozenset({"trad", "taxonomy"}),
+    "submitter": frozenset({"trad", "taxonomy"}),
+    "publication": frozenset({"biosample", "taxonomy"}),
+}
+
+# Tier 1/2 field が、ある DB では実 field を持たず値が固定されているもの。
+# accessibility は Solr backed (trad / taxonomy) が公開前提で "public-access" 固定
+# (solr/mappers.py が response に詰める固定値が SSOT)。
+_TIER12_FIXED_VALUES: dict[str, dict[str, str]] = {
+    "accessibility": {"trad": "public-access", "taxonomy": "public-access"},
+}
+
+
+def field_availability(field: str, db: str) -> FieldAvailability:
+    """``field`` が ``db`` で検索可能かを返す (allowlist 内の field を前提)。
+
+    Tier 3 は :data:`TIER3_FIELD_DBS` の db scope、Tier 1/2 は
+    :data:`_TIER12_FIXED_VALUES` / :data:`_TIER12_UNAVAILABLE_DBS` の例外を引き、
+    いずれにも該当しなければ available とみなす。
+    """
+    if field in TIER3_FIELD_DBS:
+        return FieldAvailability(available=db in TIER3_FIELD_DBS[field])
+    fixed = _TIER12_FIXED_VALUES.get(field, {}).get(db)
+    if fixed is not None:
+        return FieldAvailability(available=False, fixed_value=fixed)
+    if db in _TIER12_UNAVAILABLE_DBS.get(field, frozenset()):
+        return FieldAvailability(available=False)
+
+    return FieldAvailability(available=True)
+
+
+# db-portal の 8 DB (schemas.db_portal.DbPortalDb と一致、drift は unit test で担保)。
+_ALL_DBS: tuple[str, ...] = (
+    "bioproject",
+    "biosample",
+    "sra",
+    "jga",
+    "gea",
+    "metabobank",
+    "trad",
+    "taxonomy",
+)
+
+
+def available_dbs(field: str) -> tuple[str, ...]:
+    """``field`` が single モードで使える (実 field or 固定値) db の列挙。
+
+    cross 拒否 / single 非対応エラーの hint に使う。Tier 3 は :data:`TIER3_FIELD_DBS`、
+    Tier 1/2 は :func:`field_availability` が非対応でない db を :data:`_ALL_DBS` 順に並べる。
+    """
+    if field in TIER3_FIELD_DBS:
+        return TIER3_FIELD_DBS[field]
+
+    return tuple(
+        db for db in _ALL_DBS if (avail := field_availability(field, db)).available or avail.fixed_value is not None
+    )

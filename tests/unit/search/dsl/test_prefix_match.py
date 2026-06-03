@@ -84,8 +84,7 @@ class TestKeywordBoxPrefix:
         result = compile_free_text("Homo sap")
         token_clause = result["bool"]["must"][0]
         prefix = next(
-            c["multi_match"] for c in token_clause["bool"]["should"]
-            if c["multi_match"].get("type") == "phrase_prefix"
+            c["multi_match"] for c in token_clause["bool"]["should"] if c["multi_match"].get("type") == "phrase_prefix"
         )
         assert prefix["query"] == "Homo sap"
 
@@ -93,11 +92,7 @@ class TestKeywordBoxPrefix:
         # 完全語 (operator:and) clause が常に残る (完全一致をスコア上位に保つため)。
         result = compile_free_text("cancer")
         token_clause = result["bool"]["must"][0]
-        operators = [
-            c["multi_match"].get("operator")
-            for c in token_clause["bool"]["should"]
-            if "multi_match" in c
-        ]
+        operators = [c["multi_match"].get("operator") for c in token_clause["bool"]["should"] if "multi_match" in c]
         assert "and" in operators
 
     def test_quoted_token_is_exact_no_prefix(self) -> None:
@@ -417,9 +412,7 @@ class TestSolrPrefix:
         assert compile_to_solr(parse('"Homo sapiens"'), dialect="txsearch") == '"Homo sapiens"'
 
     def test_field_contains_prefix(self) -> None:
-        assert compile_to_solr(parse("species:Homo"), dialect="txsearch") == (
-            '(species:"Homo" OR species:Homo*)'
-        )
+        assert compile_to_solr(parse("species:Homo"), dialect="txsearch") == ('(species:"Homo" OR species:Homo*)')
 
     def test_field_contains_single_char_exact(self) -> None:
         out = compile_to_solr(parse("species:a"), dialect="txsearch")

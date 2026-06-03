@@ -326,7 +326,10 @@ def build_search_query(
         # suppressed を漏らさないため (docs/api-spec.md § データ可視性)。
         enable_prefix = status_mode != "include_suppressed"
         free_text_dict = compile_free_text(
-            keywords, operator=op_upper, fields=fields, enable_prefix=enable_prefix,
+            keywords,
+            operator=op_upper,
+            fields=fields,
+            enable_prefix=enable_prefix,
         )
         bool_query.update(free_text_dict["bool"])
 
@@ -411,15 +414,17 @@ def _build_text_match_clause(
         if is_phrase or len(token) < _MIN_PREFIX_LITERAL_LEN:
             per_value_clauses.append({"match_phrase": {field: token}})
         else:
-            per_value_clauses.append({
-                "bool": {
-                    "should": [
-                        {"match_phrase": {field: token}},
-                        {"match_phrase_prefix": {field: token}},
-                    ],
-                    "minimum_should_match": 1,
-                },
-            })
+            per_value_clauses.append(
+                {
+                    "bool": {
+                        "should": [
+                            {"match_phrase": {field: token}},
+                            {"match_phrase_prefix": {field: token}},
+                        ],
+                        "minimum_should_match": 1,
+                    },
+                }
+            )
     if len(per_value_clauses) == 1:
         return per_value_clauses[0]
     return {"bool": {"should": per_value_clauses, "minimum_should_match": 1}}

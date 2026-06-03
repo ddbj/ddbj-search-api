@@ -143,7 +143,7 @@ class TestAliasDocument:
         assert canonical != secondary
         # Smoke: the canonical Primary is a JGA-study accession (JGAS + digits).
         assert canonical.startswith("JGAS")
-        assert canonical[len("JGAS"):].isdigit()
+        assert canonical[len("JGAS") :].isdigit()
 
 
 class TestNotFound:
