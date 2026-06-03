@@ -2993,10 +2993,12 @@ def _free_text_token_query(wrapper: dict[str, Any]) -> str:
     """Return the single token query carried by a bare-word FreeText wrapper.
 
     Each bare-word keyword token compiles to a prefix-aware
-    ``bool.should`` of exactly two ``multi_match`` leaves over the same
-    fields: one ``operator=and`` (whole-word) and one
-    ``type=phrase_prefix`` (前方一致).  This unwraps that shape and
-    asserts the invariant, returning the shared ``query`` string.
+    ``bool.should`` of exactly two ``multi_match`` leaves: one
+    ``operator=and`` (whole-word, all fields) and one
+    ``type=phrase_prefix`` (前方一致, text fields only — the keyword-typed
+    ``identifier`` is dropped because ES rejects phrase prefix on keyword
+    fields).  This unwraps that shape and asserts the invariant, returning
+    the shared ``query`` string.
     """
     inner = wrapper["bool"]
     assert inner["minimum_should_match"] == 1
@@ -3009,7 +3011,9 @@ def _free_text_token_query(wrapper: dict[str, Any]) -> str:
     assert prefix["type"] == "phrase_prefix"
     assert "operator" not in prefix
     assert word["query"] == prefix["query"]
-    assert word["fields"] == prefix["fields"]
+    # 前方一致側は keyword 型 identifier を除いた text field のみ。
+    assert "identifier" not in prefix["fields"]
+    assert prefix["fields"] == [f for f in word["fields"] if f != "identifier"]
     query = word["query"]
     assert isinstance(query, str)
     return query

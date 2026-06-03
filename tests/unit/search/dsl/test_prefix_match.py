@@ -26,6 +26,8 @@ from ddbj_search_api.search.dsl.compiler_es import compile_free_text, compile_to
 from ddbj_search_api.search.dsl.compiler_solr import compile_free_text_solr, compile_to_solr
 
 _DEFAULT_FIELDS = ["identifier", "title", "name", "description", "organism.name"]
+# phrase_prefix は text field 専用 (keyword 型 identifier は ES が拒否するため除外)。
+_PREFIX_FIELDS = ["title", "name", "description", "organism.name"]
 
 
 def _iter_subdicts(node: Any) -> list[dict[str, Any]]:
@@ -68,8 +70,9 @@ class TestKeywordBoxPrefix:
         assert token_clause == {
             "bool": {
                 "should": [
+                    # 完全語は全 field (identifier 含む)、前方一致は text field のみ。
                     {"multi_match": {"query": "Huma", "fields": _DEFAULT_FIELDS, "operator": "and"}},
-                    {"multi_match": {"query": "Huma", "fields": _DEFAULT_FIELDS, "type": "phrase_prefix"}},
+                    {"multi_match": {"query": "Huma", "fields": _PREFIX_FIELDS, "type": "phrase_prefix"}},
                 ],
                 "minimum_should_match": 1,
             },
@@ -123,16 +126,25 @@ class TestKeywordBoxPrefix:
             inner = token_clause["bool"]["should"]
             assert {c["multi_match"].get("type", "and") for c in inner} == {"and", "phrase_prefix"}
 
-    def test_prefix_covers_identifier_field_for_accession_input(self) -> None:
-        # default fields に identifier (keyword) を含むので、phrase_prefix が identifier
-        # にもかかる → PRJDB→PRJDB123 のアクセッション前方入力に対応。
-        result = compile_free_text("PRJDB")
-        token_clause = result["bool"]["must"][0]
-        prefix = next(
-            c["multi_match"] for c in token_clause["bool"]["should"]
-            if c["multi_match"].get("type") == "phrase_prefix"
-        )
-        assert "identifier" in prefix["fields"]
+    def test_prefix_excludes_keyword_identifier_field(self) -> None:
+        # phrase_prefix は keyword 型 identifier を含めてはならない (ES が
+        # "Can only use phrase prefix queries on text fields" で shard exception を出す)。
+        # 完全語 (operator:and) 側は identifier を含み、accession の完全一致は維持される。
+        result = compile_free_text("Huma")
+        should = result["bool"]["must"][0]["bool"]["should"]
+        prefix = next(c["multi_match"] for c in should if c["multi_match"].get("type") == "phrase_prefix")
+        and_mm = next(c["multi_match"] for c in should if c["multi_match"].get("operator") == "and")
+        assert "identifier" not in prefix["fields"]
+        assert "identifier" in and_mm["fields"]
+
+    def test_identifier_only_keyword_fields_no_prefix(self) -> None:
+        # keywordFields=identifier 単独 (text field 無し) では前方一致を付けない
+        # (phrase_prefix の対象 field が空になり、付けると ES が 400 を返すため)。
+        result = compile_free_text("Huma", fields=["identifier"])
+        assert "phrase_prefix" not in _multi_match_types(result)
+        assert result["bool"]["must"] == [
+            {"multi_match": {"query": "Huma", "fields": ["identifier"], "operator": "and"}},
+        ]
 
     @given(
         word=st.text(

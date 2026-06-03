@@ -170,34 +170,43 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
 # (``validator._MIN_WILDCARD_LITERAL_LEN`` = 2) と同基準で 2 文字以上を要求する。
 _MIN_PREFIX_LITERAL_LEN = 2
 
+# ``multi_match{type:phrase_prefix}`` は **text field 専用**。ES は keyword field 上の
+# phrase prefix を shard exception で拒否する ("Can only use phrase prefix queries on text
+# fields - not on [identifier] which is of type [keyword]")。free-text 既定 field
+# (identifier / title / name / description / organism.name) のうち keyword 型は identifier
+# だけなので、前方一致 multi_match の対象から除外する (完全語 multi_match 側は全 field を
+# 含むので identifier の完全一致は維持される)。
+_PREFIX_EXCLUDED_FIELDS: frozenset[str] = frozenset({"identifier"})
+
 
 def _keyword_token_clause(text: str, fields: list[str], *, enable_prefix: bool = True) -> dict[str, Any]:
     """記号なし bare word トークンを「完全語 (+ 末尾前方一致)」に展開する.
 
-    - ``multi_match{operator:and}``: 値内空白を AND 結合した完全トークン一致 (語順不問)。
+    - ``multi_match{operator:and}``: 値内空白を AND 結合した完全トークン一致 (語順不問、全 field)。
     - ``multi_match{type:phrase_prefix}``: 末尾トークンを前方一致 (打ちかけ・部分入力対応、
-      ``Huma`` → ``Human`` / ``Homo sap`` → ``Homo sapiens``)。
+      ``Huma`` → ``Human`` / ``Homo sap`` → ``Homo sapiens``)。**text field のみ**を対象に
+      する (keyword field 上の phrase prefix は ES が拒否するため。``_PREFIX_EXCLUDED_FIELDS``)。
 
     ``enable_prefix=False`` (accession 完全一致で suppressed を解禁したクエリ。
-    docs/api-spec.md § データ可視性) または末尾語が ``_MIN_PREFIX_LITERAL_LEN`` 未満の
-    ときは前方一致を付けず完全語 ``multi_match{operator:and}`` 単独を返す。前者は解禁した
-    accession の prefix で別 accession の suppressed を漏らさないため、後者は短 prefix の
-    全 term スキャンを避けるため。
+    docs/api-spec.md § データ可視性)、末尾語が ``_MIN_PREFIX_LITERAL_LEN`` 未満、または
+    対象 text field が無い (例 ``keywordFields=identifier`` 単独) ときは前方一致を付けず
+    完全語 ``multi_match{operator:and}`` 単独を返す。前者は解禁 accession の prefix で別
+    accession の suppressed を漏らさないため、次は短 prefix の全 term スキャンを避けるため。
 
     前方一致付与時は完全一致が両 should を満たすため relevance 順で自然に上位に来る
     (明示 boost なし)。前方一致の展開数は ES の ``max_expansions`` (default 50) に従う。
-    default fields に ``identifier`` (keyword) を含むため accession の前方入力にもヒットする。
     """
     and_clause: dict[str, Any] = {"multi_match": {"query": text, "fields": fields, "operator": "and"}}
     words = text.split()
     last_word = words[-1] if words else text
-    if not enable_prefix or len(last_word) < _MIN_PREFIX_LITERAL_LEN:
+    prefix_fields = [f for f in fields if f not in _PREFIX_EXCLUDED_FIELDS]
+    if not enable_prefix or len(last_word) < _MIN_PREFIX_LITERAL_LEN or not prefix_fields:
         return and_clause
     return {
         "bool": {
             "should": [
                 and_clause,
-                {"multi_match": {"query": text, "fields": fields, "type": "phrase_prefix"}},
+                {"multi_match": {"query": text, "fields": prefix_fields, "type": "phrase_prefix"}},
             ],
             "minimum_should_match": 1,
         },

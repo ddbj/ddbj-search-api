@@ -46,14 +46,17 @@ def _contains_should(es_field: str, value: str) -> dict[str, Any]:
 def _keyword_should(text: str, fields: list[str]) -> dict[str, Any]:
     """keyword box の記号なし bare word トークンが展開する should ラッパ.
 
-    完全語一致 (multi_match operator=and) + 末尾前方一致 (multi_match type=phrase_prefix) を
-    ``minimum_should_match=1`` で結合する。
+    完全語一致 (multi_match operator=and、全 field) + 末尾前方一致 (multi_match
+    type=phrase_prefix、text field のみ) を ``minimum_should_match=1`` で結合する。
+    phrase_prefix は keyword 型 ``identifier`` を含められない (ES が text field 専用で拒否)
+    ため、前方一致側の fields からは identifier を除く。
     """
+    prefix_fields = [f for f in fields if f != "identifier"]
     return {
         "bool": {
             "should": [
                 {"multi_match": {"query": text, "fields": fields, "operator": "and"}},
-                {"multi_match": {"query": text, "fields": fields, "type": "phrase_prefix"}},
+                {"multi_match": {"query": text, "fields": prefix_fields, "type": "phrase_prefix"}},
             ],
             "minimum_should_match": 1,
         },

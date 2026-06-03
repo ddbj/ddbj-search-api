@@ -326,14 +326,17 @@ class TestBuildSearchQueryNoParams:
 def _bare_word_should(token: str, fields: list[str]) -> dict[str, Any]:
     """The should-wrapper a bare (unquoted, symbol-free) keyword token expands to.
 
-    A bare word matches as an AND multi_match (every term must occur) OR a
-    prefix-phrase multi_match (so a trailing partial word also matches).
+    A bare word matches as an AND multi_match over all fields, OR a prefix-phrase
+    multi_match so a trailing partial word also matches.  ``phrase_prefix`` only
+    works on text fields, so the keyword-typed ``identifier`` is dropped from the
+    prefix clause (ES rejects phrase prefix on keyword fields).
     """
+    prefix_fields = [f for f in fields if f != "identifier"]
     return {
         "bool": {
             "should": [
                 {"multi_match": {"query": token, "fields": fields, "operator": "and"}},
-                {"multi_match": {"query": token, "fields": fields, "type": "phrase_prefix"}},
+                {"multi_match": {"query": token, "fields": prefix_fields, "type": "phrase_prefix"}},
             ],
             "minimum_should_match": 1,
         },
@@ -351,15 +354,12 @@ class TestBuildSearchQueryKeywords:
 
     def test_single_keyword_searches_all_default_fields(self) -> None:
         result = build_search_query(keywords="cancer")
-        # bare word の should-wrapper 内 2 multi_match の双方が default fields を持つ.
-        for sub in result["bool"]["must"][0]["bool"]["should"]:
-            assert set(sub["multi_match"]["fields"]) == {
-                "identifier",
-                "title",
-                "name",
-                "description",
-                "organism.name",
-            }
+        should = result["bool"]["must"][0]["bool"]["should"]
+        and_mm = next(s["multi_match"] for s in should if s["multi_match"].get("operator") == "and")
+        prefix_mm = next(s["multi_match"] for s in should if s["multi_match"].get("type") == "phrase_prefix")
+        # 完全語側は全 default fields、前方一致側は keyword 型 identifier を除いた text field.
+        assert set(and_mm["fields"]) == {"identifier", "title", "name", "description", "organism.name"}
+        assert set(prefix_mm["fields"]) == {"title", "name", "description", "organism.name"}
 
     def test_auto_phrase_keyword_inherits_organism_name(self) -> None:
         # auto-phrase 経路 (multi_match type=phrase) でも default fields の
@@ -405,15 +405,18 @@ class TestBuildSearchQueryKeywords:
         assert result["bool"].get("minimum_should_match") == 1
 
     def test_keyword_fields_limits_search(self) -> None:
-        """keywordFields restricts multi_match fields."""
+        """keywordFields restricts multi_match fields.
+
+        identifier 単独だと前方一致対象の text field が無いため should-wrapper にならず、
+        完全語 multi_match 単独になる (keyword 型に phrase_prefix を付けると ES が 400)。
+        """
         result = build_search_query(
             keywords="PRJDB1234",
             keyword_fields="identifier",
         )
-        must = result["bool"]["must"]
-        # bare word の should-wrapper 内 2 multi_match が fields を identifier に絞る.
-        for sub in must[0]["bool"]["should"]:
-            assert sub["multi_match"]["fields"] == ["identifier"]
+        assert result["bool"]["must"] == [
+            {"multi_match": {"query": "PRJDB1234", "fields": ["identifier"], "operator": "and"}},
+        ]
 
     def test_keyword_fields_multiple(self) -> None:
         result = build_search_query(
