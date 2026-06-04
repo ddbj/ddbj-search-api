@@ -827,6 +827,7 @@ async def _cross_search_dispatch(
                 db=db,
                 count=None,
                 error=DbPortalCountError.field_not_applicable,
+                unavailableFields=list(reduction.unavailable_fields),
                 hits=_empty_hits_or_none(top_hits),
             )
             continue

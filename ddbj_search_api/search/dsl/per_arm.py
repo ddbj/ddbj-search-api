@@ -27,15 +27,20 @@ class ArmReduction:
     """ある DB 向けに簡約した結果。
 
     - ``applicable=False``: その DB は query の field を持たず対象外。``ast`` は使わない。
+      対象外の原因となった DSL field 名を出現順 (重複除去済み) で ``unavailable_fields``
+      に持つ。
     - ``applicable=True`` かつ ``always_zero=True``: 固定値の不一致等で必ず 0 件。
       Solr/ES を叩かず count=0 を返す。``ast`` は使わない。
     - ``applicable=True`` かつ ``always_zero=False``: ``ast`` (簡約後、``None`` は全件) を
       compile して検索する。
+
+    ``unavailable_fields`` は ``applicable=False`` のときのみ非空。
     """
 
     applicable: bool
     ast: Node | None
     always_zero: bool
+    unavailable_fields: tuple[str, ...] = ()
 
 
 # 簡約途中の 1 ノードの状態。
@@ -50,6 +55,8 @@ _Kind = Literal["keep", "true", "false", "na"]
 class _Reduced:
     kind: _Kind
     node: Node | None = None
+    # kind=="na" のとき、対象外の原因 field 名を出現順 (重複除去済み) で持つ。他の kind では空。
+    na_fields: tuple[str, ...] = ()
 
 
 def reduce_ast_for_db(ast: Node | None, db: str) -> ArmReduction:
@@ -58,7 +65,12 @@ def reduce_ast_for_db(ast: Node | None, db: str) -> ArmReduction:
         return ArmReduction(applicable=True, ast=None, always_zero=False)
     reduced = _reduce(ast, db)
     if reduced.kind == "na":
-        return ArmReduction(applicable=False, ast=None, always_zero=False)
+        return ArmReduction(
+            applicable=False,
+            ast=None,
+            always_zero=False,
+            unavailable_fields=reduced.na_fields,
+        )
     if reduced.kind == "true":
         return ArmReduction(applicable=True, ast=None, always_zero=False)
     if reduced.kind == "false":
@@ -89,7 +101,7 @@ def _reduce_leaf(clause: FieldClause, db: str) -> _Reduced:
 
         return _Reduced(kind="false")
 
-    return _Reduced(kind="na")
+    return _Reduced(kind="na", na_fields=(clause.field,))
 
 
 def _reduce_boolop(node: BoolOp, db: str) -> _Reduced:
@@ -104,7 +116,7 @@ def _reduce_boolop(node: BoolOp, db: str) -> _Reduced:
 
 def _reduce_not(node: BoolOp, child: _Reduced) -> _Reduced:
     if child.kind == "na":
-        return _Reduced(kind="na")
+        return _Reduced(kind="na", na_fields=child.na_fields)
     if child.kind == "true":
         return _Reduced(kind="false")
     if child.kind == "false":
@@ -117,8 +129,9 @@ def _reduce_not(node: BoolOp, child: _Reduced) -> _Reduced:
 
 def _reduce_and(node: BoolOp, children: list[_Reduced]) -> _Reduced:
     # na は嘘件数を避けるため arm 全体を対象外に伝播する (恒偽より優先)。
-    if any(child.kind == "na" for child in children):
-        return _Reduced(kind="na")
+    na_children = [child for child in children if child.kind == "na"]
+    if na_children:
+        return _Reduced(kind="na", na_fields=_merge_na_fields(na_children))
     if any(child.kind == "false" for child in children):
         return _Reduced(kind="false")
     kept = [child.node for child in children if child.kind == "keep"]
@@ -127,13 +140,19 @@ def _reduce_and(node: BoolOp, children: list[_Reduced]) -> _Reduced:
 
 
 def _reduce_or(node: BoolOp, children: list[_Reduced]) -> _Reduced:
-    if any(child.kind == "na" for child in children):
-        return _Reduced(kind="na")
+    na_children = [child for child in children if child.kind == "na"]
+    if na_children:
+        return _Reduced(kind="na", na_fields=_merge_na_fields(na_children))
     if any(child.kind == "true" for child in children):
         return _Reduced(kind="true")
     kept = [child.node for child in children if child.kind == "keep"]
 
     return _combine(node, kept, identity="false")
+
+
+def _merge_na_fields(na_children: list[_Reduced]) -> tuple[str, ...]:
+    """na の子の na_fields を AST 出現順を保ったまま結合し、重複を除く。"""
+    return tuple(dict.fromkeys(field for child in na_children for field in child.na_fields))
 
 
 def _combine(node: BoolOp, kept: list[Node | None], *, identity: _Kind) -> _Reduced:

@@ -158,9 +158,10 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
 ```
 
 - `databases` は常に 8 件、順序は固定 (`trad → sra → bioproject → biosample → jga → gea → metabobank → taxonomy`)
-- 各要素は `DbPortalCount`: `db` (enum 8 値)、`count` (int | null)、`error` (enum | null)、`hits` (`DbPortalHit[]` | null)
+- 各要素は `DbPortalCount`: `db` (enum 8 値)、`count` (int | null)、`error` (enum | null)、`unavailableFields` (`string[]` | null)、`hits` (`DbPortalHit[]` | null)
 - `count` は `track_total_hits=true` (ES) または Solr の `numFound` (Solr-backed DB) に基づく正確値
 - `error` 値: `timeout` / `upstream_5xx` / `connection_refused` / `unknown` (いずれも upstream 障害)、`field_not_applicable` (その DB が query の field を持たず arm を対象外にした正常シグナル。backend は叩いておらず `count=null`)
+- `unavailableFields`: arm を `field_not_applicable` にした原因の DSL field 名 (snake_case, allowlist の field 名) を AST 出現順・重複除去で列挙する。`error="field_not_applicable"` のときのみ非 null、それ以外 (成功 / upstream 障害 / `always_zero`) は `null`。複数 field が非対応なら全て列挙する (例: `taxonomy` で `publication AND date_modified` は `["publication", "date_modified"]`)
 - `hits` 仕様:
   - `topHits=0` のとき `null` (count-only モード)
   - `topHits>=1` で per-DB に最大 `topHits` 件 (relevance 順、`_score` desc + `identifier` asc tiebreaker)

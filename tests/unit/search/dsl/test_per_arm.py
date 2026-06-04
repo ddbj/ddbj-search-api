@@ -70,6 +70,117 @@ class TestNonApplicable:
         assert not r.applicable
 
 
+class TestUnavailableFields:
+    """対象外 arm が原因 field 名を出現順 (重複除去) で持つことを固定する。"""
+
+    def test_single_na_leaf(self) -> None:
+        r = reduce_ast_for_db(parse("publication:cancer"), "biosample")
+        assert not r.applicable
+        assert r.unavailable_fields == ("publication",)
+
+    def test_and_lists_na_fields_in_order(self) -> None:
+        r = reduce_ast_for_db(parse("date_modified:2024-01-01 AND publication:cancer"), "taxonomy")
+        assert not r.applicable
+        assert r.unavailable_fields == ("date_modified", "publication")
+
+    def test_or_lists_na_fields_in_order(self) -> None:
+        # AND と逆順の query で出現順がそのまま保たれることを固定する。
+        r = reduce_ast_for_db(parse("publication:cancer OR date_modified:2024-01-01"), "taxonomy")
+        assert not r.applicable
+        assert r.unavailable_fields == ("publication", "date_modified")
+
+    def test_duplicate_na_field_deduped(self) -> None:
+        r = reduce_ast_for_db(parse("publication:cancer AND publication:lung"), "taxonomy")
+        assert not r.applicable
+        assert r.unavailable_fields == ("publication",)
+
+    def test_nested_boolop_propagates_na_fields_in_order(self) -> None:
+        # 内側 BoolOp の na_fields が外へ順序保持で伝播し、available な organism_id は含まれない。
+        r = reduce_ast_for_db(
+            parse("(publication:cancer OR date_modified:2024-01-01) AND organism_id:9606"),
+            "taxonomy",
+        )
+        assert not r.applicable
+        assert r.unavailable_fields == ("publication", "date_modified")
+
+    def test_not_propagates_na_field(self) -> None:
+        r = reduce_ast_for_db(parse("NOT publication:cancer"), "taxonomy")
+        assert not r.applicable
+        assert r.unavailable_fields == ("publication",)
+
+    def test_available_only_has_empty_unavailable(self) -> None:
+        r = reduce_ast_for_db(parse("organism_id:9606"), "taxonomy")
+        assert r.applicable
+        assert r.unavailable_fields == ()
+
+    def test_always_zero_has_empty_unavailable(self) -> None:
+        r = reduce_ast_for_db(parse("accessibility:controlled-access"), "taxonomy")
+        assert r.always_zero
+        assert r.unavailable_fields == ()
+
+    def test_fixed_value_true_has_empty_unavailable(self) -> None:
+        r = reduce_ast_for_db(parse("accessibility:public-access"), "taxonomy")
+        assert r.applicable
+        assert r.unavailable_fields == ()
+
+    def test_none_ast_has_empty_unavailable(self) -> None:
+        r = reduce_ast_for_db(None, "taxonomy")
+        assert r.applicable
+        assert r.unavailable_fields == ()
+
+
+# taxonomy で非対応 / 対応な field の最小 query 断片 (value 型に合わせる)。PBT で組み合わせる。
+_TAXONOMY_NA_CLAUSES = {
+    "publication": "publication:cancer",
+    "date_published": "date_published:2020-01-01",
+    "date_modified": "date_modified:2021-06-15",
+    "submitter": "submitter:smith",
+    "name": "name:foo",
+}
+_TAXONOMY_AVAILABLE_CLAUSES = {
+    "organism_id": "organism_id:9606",
+    "title": "title:genome",
+    "organism_name": "organism_name:human",
+    "description": "description:bacteria",
+}
+
+
+class TestUnavailableFieldsInvariants:
+    """``applicable=False`` ⟺ ``unavailable_fields`` 非空 の双条件を property で固定する。"""
+
+    @given(
+        na=st.lists(st.sampled_from(sorted(_TAXONOMY_NA_CLAUSES)), min_size=1, max_size=3),
+        available=st.lists(st.sampled_from(sorted(_TAXONOMY_AVAILABLE_CLAUSES)), max_size=3),
+        op=st.sampled_from([" AND ", " OR "]),
+    )
+    def test_pbt_na_present_is_inapplicable_with_exact_na_fields(
+        self,
+        na: list[str],
+        available: list[str],
+        op: str,
+    ) -> None:
+        clauses = [_TAXONOMY_NA_CLAUSES[f] for f in na] + [_TAXONOMY_AVAILABLE_CLAUSES[f] for f in available]
+        r = reduce_ast_for_db(parse(op.join(clauses)), "taxonomy")
+        assert not r.applicable
+        # 原因は query に現れた na field のみ、重複なし
+        assert set(r.unavailable_fields) == set(na)
+        assert len(r.unavailable_fields) == len(set(r.unavailable_fields))
+
+    @given(
+        available=st.lists(st.sampled_from(sorted(_TAXONOMY_AVAILABLE_CLAUSES)), min_size=1, max_size=4),
+        op=st.sampled_from([" AND ", " OR "]),
+    )
+    def test_pbt_available_only_is_applicable_with_empty_unavailable(
+        self,
+        available: list[str],
+        op: str,
+    ) -> None:
+        clauses = [_TAXONOMY_AVAILABLE_CLAUSES[f] for f in available]
+        r = reduce_ast_for_db(parse(op.join(clauses)), "taxonomy")
+        assert r.applicable
+        assert r.unavailable_fields == ()
+
+
 class TestPublicationTradAvailable:
     def test_publication_maps_reference_title_on_trad(self) -> None:
         r = reduce_ast_for_db(parse("publication:cancer"), "trad")

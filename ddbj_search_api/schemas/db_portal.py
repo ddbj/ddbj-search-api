@@ -439,6 +439,15 @@ class DbPortalCount(BaseModel):
         examples=[None],
         description="Failure reason (null on success).",
     )
+    unavailable_fields: list[str] | None = Field(
+        default=None,
+        alias="unavailableFields",
+        examples=[None],
+        description=(
+            "DSL field names that made this arm field_not_applicable (count=null). "
+            "Non-null only when error='field_not_applicable'; null otherwise."
+        ),
+    )
     hits: list[DbPortalLightweightHit] | None = Field(
         default=None,
         examples=[[{"identifier": "PRJDB1234", "type": "bioproject", "title": "Example BioProject"}]],

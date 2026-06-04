@@ -1954,6 +1954,33 @@ class TestDbPortalAdvValidDispatch:
         assert by_db["taxonomy"]["count"] is None
         assert by_db["taxonomy"]["error"] == "field_not_applicable"
 
+    def test_adv_cross_db_field_not_applicable_lists_unavailable_fields(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        # publication は biosample / taxonomy で非対応、他 DB では検索可。
+        mock_es_search_db_portal.return_value = make_es_search_response(total=5)
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=3)
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
+        resp = app_with_db_portal.get(
+            "/db-portal/cross-search",
+            params={"q": "publication:cancer"},
+        )
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        # 非対応 arm は原因 field を camelCase unavailableFields で名指しする
+        for db in ("biosample", "taxonomy"):
+            assert by_db[db]["count"] is None
+            assert by_db[db]["error"] == "field_not_applicable"
+            assert by_db[db]["unavailableFields"] == ["publication"]
+        # 対応 arm では null (キーは全 arm で常に出る)
+        assert "unavailableFields" in by_db["bioproject"]
+        assert by_db["bioproject"]["unavailableFields"] is None
+        assert by_db["trad"]["unavailableFields"] is None
+
     def test_adv_with_db_bioproject_returns_hits(
         self,
         app_with_db_portal: TestClient,

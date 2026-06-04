@@ -21841,6 +21841,24 @@
               null
             ]
           },
+          "unavailableFields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailablefields",
+            "description": "DSL field names that made this arm field_not_applicable (count=null). Non-null only when error='field_not_applicable'; null otherwise.",
+            "examples": [
+              null
+            ]
+          },
           "hits": {
             "anyOf": [
               {
