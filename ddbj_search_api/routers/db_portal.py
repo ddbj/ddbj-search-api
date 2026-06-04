@@ -83,6 +83,11 @@ from ddbj_search_api.search.dsl.accession_exact_match import (
 )
 from ddbj_search_api.search.dsl.ast import Node as DslNode
 from ddbj_search_api.search.dsl.inspect import ast_has_field_clause
+from ddbj_search_api.search.dsl.organism_rewrite import (
+    OrganismRewrite,
+    collect_organism_ids,
+    rewrite_organism_ids,
+)
 from ddbj_search_api.search.dsl.per_arm import reduce_ast_for_db
 from ddbj_search_api.solr import get_solr_client
 from ddbj_search_api.solr.client import arsa_search, txsearch_search
@@ -542,6 +547,90 @@ async def _count_one_db_es(
 # docs/db-portal-api-spec.md § 内部モデル参照。
 
 
+# === trad (ARSA) の organism_id → organism_name 解決 ===
+#
+# ARSA に TaxID で引ける field が無いため、trad arm は organism_id を TXSearch で学名に
+# 解決し organism_name に rewrite してから compile する (search.dsl.organism_rewrite)。
+# resolver (TXSearch I/O) は cross / single で共有する。taxid→name は安定なので in-process
+# cache に載せる。
+
+_TAXID_RE = re.compile(r"^\d+$")
+
+# 解決済み {TaxID: scientific_name} の in-process cache。taxid→name は安定。テストは
+# clear_taxid_name_cache() で明示クリアして state 共有を断つ。
+_TAXID_NAME_CACHE: dict[str, str] = {}
+
+
+def clear_taxid_name_cache() -> None:
+    """TaxID→学名 cache をクリアする (テスト用)。"""
+    _TAXID_NAME_CACHE.clear()
+
+
+class _TxsearchNotConfiguredError(RuntimeError):
+    """organism_id 解決先の TXSearch が未設定。upstream 障害 (count=null / 502) として扱う。"""
+
+
+async def _resolve_taxids_to_names(
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    tax_ids: tuple[str, ...],
+) -> dict[str, str]:
+    """TaxID 群を TXSearch で学名に解決する (``{tax_id: scientific_name}``)。
+
+    解決できなかった TaxID は戻り値に現れない (rewrite が false に畳む)。未ヒット分だけ
+    1 round-trip で問い合わせ、結果を cache に載せる。TXSearch 未設定なら
+    :class:`_TxsearchNotConfiguredError` を投げる (「未発見=0件」と「resolver 不能=error」を区別)。
+    """
+    resolved: dict[str, str] = {}
+    missing: list[str] = []
+    for tax_id in tax_ids:
+        cached = _TAXID_NAME_CACHE.get(tax_id)
+        if cached is not None:
+            resolved[tax_id] = cached
+        else:
+            missing.append(tax_id)
+    if not missing:
+        return resolved
+    if not config.solr_txsearch_url:
+        raise _TxsearchNotConfiguredError("solr_txsearch_url is not configured")
+    # TaxID は数値 exact のみ TXSearch に渡す (Solr メタ文字注入を防ぐ)。非数値値は解決対象から
+    # 外れ、rewrite で解決失敗 (false) になる。
+    numeric = [tax_id for tax_id in missing if _TAXID_RE.match(tax_id)]
+    if not numeric:
+        return resolved
+    q = "tax_id:(" + " OR ".join(numeric) + ")"
+    params = build_txsearch_request_params(q=q, page=1, per_page=len(numeric), sort=None, with_uf=True)
+    resp = await txsearch_search(client, url=config.solr_txsearch_url, params=params)
+    docs = (resp.get("response") or {}).get("docs") or []
+    for doc in docs:
+        tax_id_raw = doc.get("tax_id")
+        name = doc.get("scientific_name")
+        if tax_id_raw is None or not isinstance(name, str) or not name:
+            continue
+        tax_id = str(tax_id_raw)
+        _TAXID_NAME_CACHE[tax_id] = name
+        resolved[tax_id] = name
+    return resolved
+
+
+async def _prepare_trad_arm(
+    client: httpx.AsyncClient,
+    config: AppConfig,
+    arm_ast: DslNode | None,
+) -> OrganismRewrite:
+    """trad arm の organism_id を TXSearch 解決して organism_name に rewrite する。
+
+    exact TaxID が無ければ resolver (TXSearch I/O) を叩かない。wildcard organism_id
+    (collect 対象外) や organism_id を含まない AST も rewrite は通す: 前者は学名展開不能なので
+    false に畳む必要があり、素通しすると organism_id が残って ARSA compile で RuntimeError に
+    なる。後者は構造保存の no-op。raw 例外 (TXSearch 障害 / 未設定) はエラー意味論を呼び出し側に
+    委ねるため素通しする。
+    """
+    tax_ids = collect_organism_ids(arm_ast)
+    resolved = await _resolve_taxids_to_names(client, config, tax_ids) if tax_ids else {}
+    return rewrite_organism_ids(arm_ast, resolved)
+
+
 async def _count_arsa_unified(
     client: httpx.AsyncClient,
     config: AppConfig,
@@ -615,6 +704,56 @@ async def _count_arsa_unified(
         docs = (resp.get("response") or {}).get("docs") or []
         hits = arsa_docs_to_lightweight_hits(docs)
     return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
+
+
+async def _count_arsa_with_organism_resolution(
+    solr_client: httpx.AsyncClient,
+    config: AppConfig,
+    arm_ast: DslNode | None,
+    top_hits: int,
+    *,
+    free_text_operator: Literal["AND", "OR"],
+) -> DbPortalCount:
+    """trad arm の organism_id を TXSearch 解決・rewrite してから ARSA count を発行する。
+
+    resolver (TXSearch) の timeout / 障害 / 未設定は ARSA backend 障害と同様に count=null +
+    error に変換する (cross は他 DB が生きていれば 200)。rewrite が arm 全体を恒偽に畳んだら
+    ARSA を叩かず count=0。
+    """
+    try:
+        rewrite = await asyncio.wait_for(
+            _prepare_trad_arm(solr_client, config, arm_ast),
+            timeout=config.txsearch_timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "db-portal cross-search: TXSearch organism resolution timed out for db=trad (txsearch_timeout=%.2fs)",
+            config.txsearch_timeout,
+        )
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=DbPortalCountError.timeout,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    except Exception as exc:
+        error = _map_httpx_error(exc)
+        logger.warning(
+            "db-portal cross-search: TXSearch organism resolution failed for db=trad: %s (error=%s)",
+            type(exc).__name__,
+            error.value,
+        )
+        return DbPortalCount(
+            db=DbPortalDb.trad,
+            count=None,
+            error=error,
+            hits=_empty_hits_or_none(top_hits),
+        )
+    if rewrite.always_zero:
+        return DbPortalCount(db=DbPortalDb.trad, count=0, error=None, hits=_empty_hits_or_none(top_hits))
+    arsa_q = _build_solr_q_for_ast(rewrite.ast, dialect="arsa", free_text_operator=free_text_operator)
+    with_uf = rewrite.ast is not None and ast_has_field_clause(rewrite.ast)
+    return await _count_arsa_unified(solr_client, config, arsa_q, top_hits, with_uf=with_uf)
 
 
 async def _count_txsearch_unified(
@@ -707,9 +846,13 @@ async def _count_one_db_unified(
     (簡約で固定値節が落ちた / publication が除かれた等で AST が DB ごとに異なるため)。
     """
     if db == DbPortalDb.trad:
-        arsa_q = _build_solr_q_for_ast(arm_ast, dialect="arsa", free_text_operator=free_text_operator)
-        with_uf = arm_ast is not None and ast_has_field_clause(arm_ast)
-        return await _count_arsa_unified(solr_client, config, arsa_q, top_hits, with_uf=with_uf)
+        return await _count_arsa_with_organism_resolution(
+            solr_client,
+            config,
+            arm_ast,
+            top_hits,
+            free_text_operator=free_text_operator,
+        )
     if db == DbPortalDb.taxonomy:
         txsearch_q = _build_solr_q_for_ast(arm_ast, dialect="txsearch", free_text_operator=free_text_operator)
         with_uf = arm_ast is not None and ast_has_field_clause(arm_ast)
@@ -1197,12 +1340,28 @@ async def _db_specific_search_dispatch(
     if query.db in _SOLR_DBS:
         _validate_deep_paging(query.page, query.per_page)
         if query.db == DbPortalDb.trad:
+            try:
+                rewrite = await _prepare_trad_arm(solr_client, config, arm_ast)
+            except Exception as exc:
+                error = _map_httpx_error(exc)
+                logger.warning(
+                    "db-portal db-specific search: TXSearch organism resolution failed for db=trad: %s (error=%s)",
+                    type(exc).__name__,
+                    error.value,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"TXSearch organism resolution failed: {error.value}",
+                ) from exc
+            if rewrite.always_zero:
+                return _empty_hits_response(query)
+            trad_ast = rewrite.ast
             return await _search_arsa_unified(
                 solr_client,
                 config,
                 query,
-                arm_ast,
-                with_uf=with_uf,
+                trad_ast,
+                with_uf=(trad_ast is not None and ast_has_field_clause(trad_ast)),
                 requested_facets=requested_facets,
                 facets_size=facets_size,
                 facet_self_exclude=facet_self_exclude,

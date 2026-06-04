@@ -239,19 +239,61 @@ class TestAvailabilityMatchesSolrFieldMap:
 
     Solr arm で available とされる field は必ず field map にマップが存在し、その逆も成り立つ。
     これが崩れると簡約後 AST が compile で RuntimeError になる / 非対応 field が漏れる。
+
+    唯一の例外は organism_id@trad: available だが ARSA に直接 field は無く、trad arm は
+    organism_rewrite (TXSearch 解決) で organism_name に置換してから compile する。等価則の対象外。
     """
 
-    @pytest.mark.parametrize("field", sorted(ALL_ALLOWED_FIELDS))
+    @pytest.mark.parametrize("field", sorted(ALL_ALLOWED_FIELDS - {"organism_id"}))
     def test_trad_availability_matches_arsa_map(self, field: str) -> None:
         assert field_availability(field, "trad").available == (field in _ARSA_FIELD_MAP)
+
+    def test_organism_id_trad_available_but_absent_from_arsa_map(self) -> None:
+        # organism_id は trad で available だが ARSA field map には無い唯一の例外。
+        # trad arm は organism_rewrite で organism_name に置換してから compile する。
+        assert field_availability("organism_id", "trad").available is True
+        assert "organism_id" not in _ARSA_FIELD_MAP
 
     @pytest.mark.parametrize("field", sorted(ALL_ALLOWED_FIELDS))
     def test_taxonomy_availability_matches_txsearch_map(self, field: str) -> None:
         assert field_availability(field, "taxonomy").available == (field in _TXSEARCH_FIELD_MAP)
 
 
+class TestOrganismIdTradAvailable:
+    """organism_id@trad は available (rewrite 前提)。per-arm は keep し na にしない.
+
+    実際の compile は organism_rewrite (TXSearch 解決) で organism_name に置換した後に行う
+    (rewrite 前の ast を直接 ARSA compile すると compiler_solr が RuntimeError)。ここでは
+    per-arm 段が organism_id を落とさず arm を applicable に保つことだけを固定する。
+    """
+
+    def test_organism_id_kept_on_trad(self) -> None:
+        r = reduce_ast_for_db(parse("organism_id:9606"), "trad")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is not None
+        assert r.unavailable_fields == ()
+
+    def test_organism_id_with_other_field_applicable_on_trad(self) -> None:
+        r = reduce_ast_for_db(parse("organism_id:9606 AND title:cancer"), "trad")
+        assert r.applicable
+        assert not r.always_zero
+        assert r.ast is not None
+
+    def test_organism_id_or_unavailable_field_still_propagates_na_on_trad(self) -> None:
+        # organism_id は available になったが、submitter は trad 非対応のまま → arm 対象外。
+        r = reduce_ast_for_db(parse("organism_id:9606 OR submitter:smith"), "trad")
+        assert not r.applicable
+        assert r.unavailable_fields == ("submitter",)
+
+
 class TestReducedAstAlwaysCompiles:
-    """簡約後 (applicable かつ ast あり) の AST は Solr compile で RuntimeError にならない."""
+    """簡約後 (applicable かつ ast あり) の AST は Solr compile で RuntimeError にならない.
+
+    例外: trad の organism_id は per-arm では keep されるが ARSA に直接 field が無いため、
+    compile 前に organism_rewrite (TXSearch 解決) で organism_name に置換する必要がある
+    (rewrite 後の compile 可は test_organism_rewrite が担保)。
+    """
 
     @given(value=st.text(alphabet="abcdefghijklmnop", min_size=2, max_size=8))
     def test_pbt_available_field_compiles(self, value: str) -> None:

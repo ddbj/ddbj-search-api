@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.cursor import CursorPayload, decode_cursor, encode_cursor
+from ddbj_search_api.routers.db_portal import clear_taxid_name_cache
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCountError,
     DbPortalErrorType,
@@ -1378,6 +1379,179 @@ class TestDbPortalTradSpecificSearch:
         )
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         assert params["sort"] == "Date desc"
+
+
+class TestDbPortalOrganismIdTradResolution:
+    """organism_id (TaxID) を trad で検索: TXSearch で学名解決 → organism_name に rewrite.
+
+    ARSA に TaxID field が無いので、trad arm は TXSearch で TaxID→学名を解決し organism_name
+    (Organism / Lineage) に rewrite してから ARSA に投げる。解決失敗 / wildcard は 0 件、
+    TXSearch 障害 / 未設定は error。count レベルで挙動を固定する。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_taxid_cache(self) -> None:
+        # module-level cache がテスト間で漏れないよう各テスト前にクリアする。
+        clear_taxid_name_cache()
+
+    # --- single (db=trad) ---
+
+    def test_single_resolves_taxid_to_organism_name(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            docs=[{"tax_id": "9606", "scientific_name": "Homo sapiens"}],
+        )
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=42)
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 42
+        arsa_q = mock_arsa_search_db_portal.call_args.kwargs["params"]["q"]
+        assert 'Organism:"Homo sapiens"' in arsa_q
+        assert 'Lineage:"Homo sapiens"' in arsa_q
+
+    def test_single_unresolved_taxid_is_zero_without_arsa_call(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(docs=[])
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:99999999", "db": "trad"})
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+        assert mock_arsa_search_db_portal.call_count == 0
+
+    def test_single_wildcard_taxid_is_zero_without_any_upstream_call(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:96*", "db": "trad"})
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+        # wildcard TaxID は学名解決できない → resolver も ARSA も叩かず 0 件。
+        assert mock_txsearch_search_db_portal.call_count == 0
+        assert mock_arsa_search_db_portal.call_count == 0
+
+    def test_single_txsearch_failure_returns_502(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.side_effect = httpx.ConnectError("refused")
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+        assert resp.status_code == 502
+        assert mock_arsa_search_db_portal.call_count == 0
+
+    def test_single_txsearch_unconfigured_returns_502(
+        self,
+        app_with_db_portal: TestClient,
+        config: AppConfig,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        object.__setattr__(config, "solr_txsearch_url", None)
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+        assert resp.status_code == 502
+        # 未設定は resolver が round-trip 前に例外を投げる。
+        assert mock_txsearch_search_db_portal.call_count == 0
+        assert mock_arsa_search_db_portal.call_count == 0
+
+    def test_single_organism_id_and_other_field_both_kept(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            docs=[{"tax_id": "9606", "scientific_name": "Homo sapiens"}],
+        )
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=7)
+        resp = app_with_db_portal.get(
+            "/db-portal/search",
+            params={"q": "organism_id:9606 AND title:genome", "db": "trad"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 7
+        arsa_q = mock_arsa_search_db_portal.call_args.kwargs["params"]["q"]
+        assert 'Organism:"Homo sapiens"' in arsa_q
+        assert "Definition" in arsa_q
+
+    def test_single_cache_avoids_second_txsearch_call(
+        self,
+        app_with_db_portal: TestClient,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            docs=[{"tax_id": "9606", "scientific_name": "Homo sapiens"}],
+        )
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=1)
+        for _ in range(2):
+            resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+            assert resp.status_code == 200
+        # 2 回目は cache ヒットで TXSearch を再度叩かない。
+        assert mock_txsearch_search_db_portal.call_count == 1
+
+    # --- cross-search ---
+
+    def test_cross_trad_arm_returns_count_not_field_not_applicable(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(
+            docs=[{"tax_id": "9606", "scientific_name": "Homo sapiens"}],
+            num_found=3,
+        )
+        mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=88)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "organism_id:9606"})
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["count"] == 88
+        assert by_db["trad"]["error"] is None
+        arsa_q = mock_arsa_search_db_portal.call_args.kwargs["params"]["q"]
+        assert 'Organism:"Homo sapiens"' in arsa_q
+
+    def test_cross_trad_arm_unresolved_is_zero(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(docs=[])
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "organism_id:99999999"})
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["count"] == 0
+        assert by_db["trad"]["error"] is None
+        assert mock_arsa_search_db_portal.call_count == 0
+
+    def test_cross_trad_arm_txsearch_failure_is_error_but_overall_200(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+        mock_arsa_search_db_portal: AsyncMock,
+        mock_txsearch_search_db_portal: AsyncMock,
+    ) -> None:
+        mock_txsearch_search_db_portal.side_effect = httpx.ConnectError("refused")
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "organism_id:9606"})
+        # ES arm は成功するので全滅 502 にはならない。
+        assert resp.status_code == 200
+        by_db = {e["db"]: e for e in resp.json()["databases"]}
+        assert by_db["trad"]["count"] is None
+        assert by_db["trad"]["error"] is not None
+        assert by_db["trad"]["error"] != "field_not_applicable"
+        assert mock_arsa_search_db_portal.call_count == 0
 
 
 # === TXSearch (Taxonomy) DB-specific hits ===

@@ -7,8 +7,10 @@ Dialect:
   ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Tier 2 ``publication``
   (``ReferenceTitle``) + Trad Tier 3 (``Division`` / ``MolecularType`` /
   ``SequenceLength`` / ``FeatureQualifier`` / ``ReferenceJournal``)。``organism_name``
-  は ``Organism`` / ``Lineage`` の OR phrase。``organism_id`` (taxID) / ``submitter`` /
-  date 系 / ES-only / Taxonomy 系 Tier 3 は ARSA に field が無く非対応。
+  は ``Organism`` / ``Lineage`` の OR phrase。``organism_id`` (taxID) は ARSA に field が無いが、
+  cross / single の trad arm が TXSearch で TaxID→学名解決し ``organism_name`` に rewrite してから
+  compile する (``search.dsl.organism_rewrite``、この compiler には organism_id を直接渡さない)。
+  ``submitter`` / date 系 / ES-only / Taxonomy 系 Tier 3 は ARSA に field が無く非対応。
 - ``txsearch``: TXSearch (Solr 4.4.0)。Tier 1 (``tax_id`` / ``scientific_name`` / ``text``) +
   Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``synonym`` / ``blast_name`` /
   ``equivalent_name`` / ``domain`` / ``strain`` / ``isolate``)。TXSearch は Taxonomy DB
@@ -55,7 +57,9 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "title": ("Definition",),
     "description": ("AllText",),
     # organism_name は学名 (Organism) + 分類体系 (Lineage) の OR phrase。
-    # organism_id (taxID exact) は ARSA に対応 field が無く非対応 (field_availability)。
+    # organism_id (taxID exact) は ARSA に対応 field が無い。trad arm は organism_rewrite が
+    # TaxID→学名解決して organism_name に変換してから compile するため map は追加しない
+    # (直接 compile すると _compile_leaf が RuntimeError)。
     "organism_name": ("Organism", "Lineage"),
     "date_published": ("Date",),
     # === Tier 2 ===

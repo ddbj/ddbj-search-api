@@ -296,9 +296,11 @@ class FieldAvailability:
 # Tier 1/2 field が「横断可」でも実 field を持たない DB (記載なし = available)。
 # Solr backed (trad / taxonomy) の実 field 不在と、biosample の publication nested 不在。
 # Solr の availability は compiler_solr の field map と一致する (drift は unit test で担保)。
+# 例外: organism_id@trad は available だが ARSA に直接 field は無い。cross / single の trad arm が
+# TXSearch で TaxID→学名解決し organism_name に rewrite してから compile する
+# (search.dsl.organism_rewrite)。rewrite を通さず ARSA に compile すると compiler_solr が
+# RuntimeError (no Solr mapping) を投げる。
 _TIER12_UNAVAILABLE_DBS: dict[str, frozenset[str]] = {
-    # organism_id (taxID exact) は ARSA に直接検索 field が無い (taxonomy は tax_id で available)。
-    "organism_id": frozenset({"trad"}),
     "name": frozenset({"trad", "taxonomy"}),
     "date_published": frozenset({"taxonomy"}),
     "date_modified": frozenset({"trad", "taxonomy"}),
