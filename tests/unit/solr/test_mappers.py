@@ -16,6 +16,9 @@ from pydantic import ValidationError
 
 from ddbj_search_api.schemas.db_portal import DbPortalHitBase, DbPortalHitsResponse
 from ddbj_search_api.solr.mappers import (
+    _MAX_GENE_NAMES,
+    _as_list,
+    _extract_gene_names,
     _parse_arsa_date,
     arsa_docs_to_hits,
     arsa_docs_to_lightweight_hits,
@@ -60,6 +63,80 @@ class TestParseArsaDate:
 
     def test_mixed(self) -> None:
         assert _parse_arsa_date("2005-4-11") is None
+
+
+# === _as_list ===
+
+
+class TestAsList:
+    def test_none(self) -> None:
+        assert _as_list(None) is None
+
+    def test_empty_list(self) -> None:
+        assert _as_list([]) is None
+
+    def test_multi_value_list(self) -> None:
+        assert _as_list(["a", "b", "c"]) == ["a", "b", "c"]
+
+    def test_single_value_list(self) -> None:
+        assert _as_list(["only"]) == ["only"]
+
+    def test_scalar_wrapped(self) -> None:
+        assert _as_list("scalar") == ["scalar"]
+
+    def test_empty_scalar(self) -> None:
+        assert _as_list("") is None
+
+    def test_drops_none_and_empty_members(self) -> None:
+        assert _as_list(["a", None, "", "b"]) == ["a", "b"]
+
+    def test_all_empty_members_becomes_none(self) -> None:
+        assert _as_list([None, ""]) is None
+
+    def test_non_str_members_cast(self) -> None:
+        assert _as_list([1, 2]) == ["1", "2"]
+
+
+# === _extract_gene_names ===
+
+
+class TestExtractGeneNames:
+    def test_none(self) -> None:
+        assert _extract_gene_names(None) is None
+
+    def test_non_str_non_list(self) -> None:
+        assert _extract_gene_names(123) is None
+
+    def test_no_gene_qualifier(self) -> None:
+        feature = ['source\n1..100\n/organism="Homo sapiens"\n/db_xref="taxon:9606"']
+        assert _extract_gene_names(feature) is None
+
+    def test_single_gene_from_str_entry(self) -> None:
+        assert _extract_gene_names('gene\n1..5711\n/gene="BRCA1"') == ["BRCA1"]
+
+    def test_dedupes_repeated_gene(self) -> None:
+        # A real BRCA1 record repeats ``/gene="BRCA1"`` across exon/CDS features.
+        feature = [
+            'gene\n1..5711\n/gene="BRCA1"',
+            '5\'UTR\n1..119\n/gene="BRCA1"',
+            'CDS\n120..5711\n/gene="BRCA1"\n/product="..."',
+        ]
+        assert _extract_gene_names(feature) == ["BRCA1"]
+
+    def test_order_preserved_distinct(self) -> None:
+        feature = ['gene\n/gene="geneB"', 'gene\n/gene="geneA"', 'gene\n/gene="geneB"']
+        assert _extract_gene_names(feature) == ["geneB", "geneA"]
+
+    def test_caps_at_max(self) -> None:
+        feature = [f'gene\n/gene="g{i}"' for i in range(_MAX_GENE_NAMES + 5)]
+        names = _extract_gene_names(feature)
+        assert names is not None
+        assert len(names) == _MAX_GENE_NAMES
+        assert names == [f"g{i}" for i in range(_MAX_GENE_NAMES)]
+
+    def test_skips_non_str_entries(self) -> None:
+        feature = [None, 42, 'gene\n/gene="BRCA1"']
+        assert _extract_gene_names(feature) == ["BRCA1"]
 
 
 # === ARSA docs to hits ===
@@ -187,6 +264,79 @@ class TestArsaDocsToHits:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "SequenceLength": "abc"}])[0]
         dumped = h.model_dump(by_alias=True)
         assert dumped["sequenceLength"] is None
+
+    def test_reference_title_list_passthrough(self) -> None:
+        h = arsa_docs_to_hits(
+            [{"PrimaryAccessionNumber": "X", "ReferenceTitle": ["A candidate gene", "Direct Submission"]}],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["referenceTitle"] == ["A candidate gene", "Direct Submission"]
+
+    def test_reference_title_missing_none(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("referenceTitle") is None
+
+    def test_reference_journal_list_passthrough(self) -> None:
+        h = arsa_docs_to_hits(
+            [{"PrimaryAccessionNumber": "X", "ReferenceJournal": ["Science 266 (5182), 66-71 (1994)"]}],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["referenceJournal"] == ["Science 266 (5182), 66-71 (1994)"]
+
+    def test_reference_journal_missing_none(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("referenceJournal") is None
+
+    def test_gene_name_from_feature(self) -> None:
+        h = arsa_docs_to_hits(
+            [
+                {
+                    "PrimaryAccessionNumber": "X",
+                    "Feature": [
+                        'gene\n1..5711\n/gene="BRCA1"',
+                        'CDS\n120..5711\n/gene="BRCA1"\n/product="..."',
+                    ],
+                },
+            ],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["geneName"] == ["BRCA1"]
+
+    def test_gene_name_missing_when_no_gene_qualifier(self) -> None:
+        h = arsa_docs_to_hits(
+            [{"PrimaryAccessionNumber": "X", "Feature": ['source\n1..100\n/db_xref="taxon:9606"']}],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("geneName") is None
+
+    def test_lineage_list_passthrough(self) -> None:
+        h = arsa_docs_to_hits(
+            [{"PrimaryAccessionNumber": "X", "Lineage": ["Eukaryota", "Metazoa", "Chordata"]}],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["lineage"] == ["Eukaryota", "Metazoa", "Chordata"]
+
+    def test_lineage_keeps_head_even_if_equals_organism(self) -> None:
+        # ARSA Lineage is ancestor-only, so unlike TXSearch the mapper never
+        # drops the head — even a (degenerate) head matching Organism stays.
+        h = arsa_docs_to_hits(
+            [
+                {
+                    "PrimaryAccessionNumber": "X",
+                    "Organism": "Homo sapiens",
+                    "Lineage": ["Homo sapiens", "Homo"],
+                },
+            ],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["lineage"] == ["Homo sapiens", "Homo"]
+
+    def test_lineage_missing_none(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("lineage") is None
 
     def test_same_as_and_db_xrefs_none(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}])[0]
@@ -329,6 +479,61 @@ class TestTxsearchDocsToHits:
         h = txsearch_docs_to_hits([{"tax_id": "9606", "scientific_name": "Homo sapiens"}])[0]
         dumped = h.model_dump(by_alias=True)
         assert dumped.get("lineage") is None
+
+    def test_synonym_list_normalized(self) -> None:
+        # TXSearch synonym is multi-valued; expose the whole list.
+        h = txsearch_docs_to_hits([{"tax_id": "9443", "synonym": ["Primata"]}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["synonym"] == ["Primata"]
+
+    def test_synonym_missing_none(self) -> None:
+        h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("synonym") is None
+
+    def test_equivalent_name_list_normalized(self) -> None:
+        h = txsearch_docs_to_hits([{"tax_id": "9443", "equivalent_name": ["primate"]}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["equivalentName"] == ["primate"]
+
+    def test_equivalent_name_missing_none(self) -> None:
+        h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped.get("equivalentName") is None
+
+    def test_blast_name_first_of_single_element_list(self) -> None:
+        # TXSearch wraps the single-valued rank/name fields in a one-element list.
+        h = txsearch_docs_to_hits([{"tax_id": "40674", "blast_name": ["mammals"]}])[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["blastName"] == "mammals"
+
+    def test_rank_fields_first_of_single_element_list(self) -> None:
+        h = txsearch_docs_to_hits(
+            [
+                {
+                    "tax_id": "9606",
+                    "kingdom": ["Metazoa"],
+                    "phylum": ["Chordata"],
+                    "class": ["Mammalia"],
+                    "order": ["Primates"],
+                    "family": ["Hominidae"],
+                    "genus": ["Homo"],
+                },
+            ],
+        )[0]
+        dumped = h.model_dump(by_alias=True)
+        assert dumped["kingdom"] == "Metazoa"
+        assert dumped["phylum"] == "Chordata"
+        assert dumped["class"] == "Mammalia"
+        assert dumped["order"] == "Primates"
+        assert dumped["family"] == "Hominidae"
+        assert dumped["genus"] == "Homo"
+
+    def test_rank_fields_missing_none(self) -> None:
+        h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
+        dumped = h.model_dump(by_alias=True)
+        for key in ("kingdom", "phylum", "class", "order", "family", "genus", "blastName"):
+            assert dumped.get(key) is None
 
     def test_same_as_and_db_xrefs_none(self) -> None:
         h = txsearch_docs_to_hits([{"tax_id": "9606"}])[0]
@@ -601,3 +806,29 @@ class TestMappersPBT:
     def test_has_next_matches_offset(self, page: int, per_page: int, total: int) -> None:
         env = arsa_response_to_envelope(_solr_envelope([], total), page=page, per_page=per_page, sort=None)
         assert env.has_next == (page * per_page < total)
+
+    @given(
+        genes=st.lists(
+            st.text(alphabet=st.characters(whitelist_categories=("L", "N")), min_size=1, max_size=10),
+            max_size=50,
+        ),
+    )
+    def test_extract_gene_names_capped_and_distinct(self, genes: list[str]) -> None:
+        feature = [f'gene\n/gene="{g}"' for g in genes]
+        result = _extract_gene_names(feature)
+        if result is None:
+            assert not genes  # only None when there was no /gene= qualifier at all
+        else:
+            assert len(result) <= _MAX_GENE_NAMES
+            assert len(result) == len(set(result))
+
+    @given(
+        value=st.one_of(
+            st.none(),
+            st.text(max_size=20),
+            st.lists(st.one_of(st.none(), st.text(max_size=20), st.integers()), max_size=20),
+        ),
+    )
+    def test_as_list_returns_list_or_none(self, value: Any) -> None:
+        result = _as_list(value)
+        assert result is None or (isinstance(result, list) and all(isinstance(x, str) for x in result))

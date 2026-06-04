@@ -309,8 +309,10 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 | `DbPortalHitJga` | `jga-study` / `jga-dataset` / `jga-dac` / `jga-policy` | `organization` / `publication` / `grant` / `externalLink` / `studyType` / `datasetType` / `vendor` |
 | `DbPortalHitGea` | `gea` | `organization` / `publication` / `experimentType` |
 | `DbPortalHitMetabobank` | `metabobank` | `organization` / `publication` / `studyType` / `experimentType` / `submissionType` |
-| `DbPortalHitTrad` | `trad` | `division` / `molecularType` / `sequenceLength` |
-| `DbPortalHitTaxonomy` | `taxonomy` | `rank` / `commonName` / `lineage` |
+| `DbPortalHitTrad` | `trad` | `division` / `molecularType` / `sequenceLength` / `referenceTitle` / `referenceJournal` / `geneName` / `lineage` |
+| `DbPortalHitTaxonomy` | `taxonomy` | `rank` / `commonName` / `lineage` / `synonym` / `blastName` / `kingdom` / `phylum` / `class` / `order` / `family` / `genus` / `equivalentName` |
+
+`geneName` は ARSA の queryable `FeatureQualifier` が indexed-only (stored=false) のため取得できず、stored な GenBank feature table (`Feature`) の `/gene=` qualifier から抽出する (重複除去・上限 10 件)。trad の `lineage` は ARSA `Lineage` (祖先のみ) 由来で、taxonomy (TXSearch は自身を head に含むため除去する) と違い organism 自身を含まない。
 
 共通フィールド (全 variant の base `DbPortalHitBase`): `identifier` / `title` / `description` / `organism` / `datePublished` / `dateModified` / `dateCreated` / `url` / `sameAs` / `dbXrefs` / `status` (Literal: public / private / suppressed / withdrawn) / `accessibility` (Literal: public-access / controlled-access)
 

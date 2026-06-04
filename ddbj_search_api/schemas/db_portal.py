@@ -773,6 +773,31 @@ class DbPortalHitTrad(DbPortalHitBase):
     division: str | None = Field(default=None, examples=["SYN"])
     molecular_type: str | None = Field(default=None, alias="molecularType", examples=["DNA"])
     sequence_length: int | None = Field(default=None, alias="sequenceLength", examples=[5000])
+    reference_title: list[str] | None = Field(
+        default=None,
+        alias="referenceTitle",
+        examples=[
+            ["A strong candidate for the breast and ovarian cancer susceptibility gene BRCA1", "Direct Submission"]
+        ],
+        description="GenBank REFERENCE titles (multi-valued).",
+    )
+    reference_journal: list[str] | None = Field(
+        default=None,
+        alias="referenceJournal",
+        examples=[["Science 266 (5182), 66-71 (1994)"]],
+        description="GenBank REFERENCE journals (multi-valued).",
+    )
+    gene_name: list[str] | None = Field(
+        default=None,
+        alias="geneName",
+        examples=[["BRCA1"]],
+        description="Gene names from the GenBank feature table's ``/gene=`` qualifiers (deduplicated, capped).",
+    )
+    lineage: list[str] | None = Field(
+        default=None,
+        examples=[["Eukaryota", "Metazoa", "Chordata"]],
+        description="Taxonomic ancestors (ancestor-only, organism itself excluded).",
+    )
 
 
 class DbPortalHitTaxonomy(DbPortalHitBase):
@@ -782,6 +807,22 @@ class DbPortalHitTaxonomy(DbPortalHitBase):
     rank: str | None = Field(default=None, examples=["species"])
     common_name: str | None = Field(default=None, alias="commonName", examples=["human"])
     lineage: list[str] | str | None = Field(default=None, examples=[["Homo sapiens", "Homo", "Hominidae"]])
+    synonym: list[str] | None = Field(
+        default=None, examples=[["Arabis thaliana"]], description="Taxon synonyms (multi-valued)."
+    )
+    blast_name: str | None = Field(default=None, alias="blastName", examples=["primates"])
+    kingdom: str | None = Field(default=None, examples=["Metazoa"])
+    phylum: str | None = Field(default=None, examples=["Chordata"])
+    class_: str | None = Field(default=None, alias="class", examples=["Mammalia"])
+    order_: str | None = Field(default=None, alias="order", examples=["Primates"])
+    family: str | None = Field(default=None, examples=["Hominidae"])
+    genus: str | None = Field(default=None, examples=["Homo"])
+    equivalent_name: list[str] | None = Field(
+        default=None,
+        alias="equivalentName",
+        examples=[["primate"]],
+        description="Equivalent names (multi-valued).",
+    )
 
 
 DbPortalHit = Annotated[

@@ -25,6 +25,15 @@ from ddbj_search_api.schemas.db_portal import (
 # quoting around the value varies so the regex is intentionally lenient.
 _FEATURE_TAXON_RE = re.compile(r'/db_xref="taxon:(\d+)"')
 
+# GenBank Feature qualifier ``/gene="NAME"`` — gene symbol embedded in ARSA
+# Feature blocks.  ARSA's queryable ``FeatureQualifier`` field is indexed-only
+# (stored=false) so gene names are recovered from the stored ``Feature`` field.
+_FEATURE_GENE_RE = re.compile(r'/gene="([^"]+)"')
+
+# Whole-genome records carry thousands of gene features; cap the distinct gene
+# names surfaced per hit so the chip list stays small.
+_MAX_GENE_NAMES = 10
+
 _DEEP_PAGING_LIMIT = 10_000
 _ARSA_URL_PREFIX = "https://getentry.ddbj.nig.ac.jp/getentry/na/"
 _TAXONOMY_URL_PREFIX = "https://ddbj.nig.ac.jp/tx_search/"
@@ -73,6 +82,58 @@ def _extract_taxon_id(feature: Any) -> str | None:
         match = _FEATURE_TAXON_RE.search(feature)
         return match.group(1) if match is not None else None
     return None
+
+
+def _as_list(value: Any) -> list[str] | None:
+    """Normalize a Solr multi-valued field to ``list[str]`` (``None`` when empty).
+
+    Solr returns multi-valued fields as a list, but a single-value field or a
+    drifted schema may yield a scalar; wrap scalars so the API always exposes a
+    list.  ``None`` / empty members are dropped and remaining members are cast
+    to ``str`` so the JSON stays homogeneous; an all-empty input maps to
+    ``None`` rather than ``[]``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        items = [str(v) for v in value if v is not None and str(v) != ""]
+        return items or None
+    text = str(value)
+
+    return [text] if text != "" else None
+
+
+def _extract_gene_names(feature: Any) -> list[str] | None:
+    """Collect distinct ``/gene="..."`` qualifier values from ARSA's stored Feature table.
+
+    ARSA's queryable ``FeatureQualifier`` field is indexed-only (stored=false),
+    so gene names are recovered from the stored ``Feature`` field — the same
+    flat GenBank feature table list that :func:`_extract_taxon_id` scans.
+    Whole-genome records carry thousands of gene features, so collection stops
+    at :data:`_MAX_GENE_NAMES` distinct names (order-preserving) to keep the
+    chip list small.  Returns ``None`` when no ``/gene=`` qualifier is present.
+    """
+    if isinstance(feature, list):
+        entries: list[Any] = feature
+    elif isinstance(feature, str):
+        entries = [feature]
+    else:
+        return None
+    names: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, str):
+            continue
+        for match in _FEATURE_GENE_RE.finditer(entry):
+            name = match.group(1)
+            if name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+            if len(names) >= _MAX_GENE_NAMES:
+                return names
+
+    return names or None
 
 
 def _drop_self_from_lineage(value: Any, self_name: Any) -> Any:
@@ -129,6 +190,12 @@ def arsa_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "division": doc.get("Division"),
             "molecularType": doc.get("MolecularType"),
             "sequenceLength": _to_int_or_none(doc.get("SequenceLength")),
+            "referenceTitle": _as_list(doc.get("ReferenceTitle")),
+            "referenceJournal": _as_list(doc.get("ReferenceJournal")),
+            "geneName": _extract_gene_names(doc.get("Feature")),
+            # ARSA Lineage is ancestor-only (excludes the organism itself), so
+            # it needs list normalization but no self-drop like TXSearch.
+            "lineage": _as_list(doc.get("Lineage")),
         }
         hits.append(_DbPortalHitAdapter.validate_python(payload))
     return hits
@@ -164,6 +231,17 @@ def txsearch_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "rank": doc.get("rank"),
             "commonName": _first_or_self(doc.get("common_name")),
             "lineage": _drop_self_from_lineage(doc.get("lineage"), scientific),
+            # synonym / equivalent_name are multi-valued; the rank fields are
+            # single-valued but TXSearch wraps each in a one-element list.
+            "synonym": _as_list(doc.get("synonym")),
+            "blastName": _first_or_self(doc.get("blast_name")),
+            "kingdom": _first_or_self(doc.get("kingdom")),
+            "phylum": _first_or_self(doc.get("phylum")),
+            "class": _first_or_self(doc.get("class")),
+            "order": _first_or_self(doc.get("order")),
+            "family": _first_or_self(doc.get("family")),
+            "genus": _first_or_self(doc.get("genus")),
+            "equivalentName": _as_list(doc.get("equivalent_name")),
         }
         hits.append(_DbPortalHitAdapter.validate_python(payload))
     return hits

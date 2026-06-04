@@ -25111,6 +25111,144 @@
                 "Hominidae"
               ]
             ]
+          },
+          "synonym": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synonym",
+            "description": "Taxon synonyms (multi-valued).",
+            "examples": [
+              [
+                "Arabis thaliana"
+              ]
+            ]
+          },
+          "blastName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blastname",
+            "examples": [
+              "primates"
+            ]
+          },
+          "kingdom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kingdom",
+            "examples": [
+              "Metazoa"
+            ]
+          },
+          "phylum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phylum",
+            "examples": [
+              "Chordata"
+            ]
+          },
+          "class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class",
+            "examples": [
+              "Mammalia"
+            ]
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order",
+            "examples": [
+              "Primates"
+            ]
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family",
+            "examples": [
+              "Hominidae"
+            ]
+          },
+          "genus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genus",
+            "examples": [
+              "Homo"
+            ]
+          },
+          "equivalentName": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equivalentname",
+            "description": "Equivalent names (multi-valued).",
+            "examples": [
+              [
+                "primate"
+              ]
+            ]
           }
         },
         "type": "object",
@@ -25391,6 +25529,89 @@
             "title": "Sequencelength",
             "examples": [
               5000
+            ]
+          },
+          "referenceTitle": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencetitle",
+            "description": "GenBank REFERENCE titles (multi-valued).",
+            "examples": [
+              [
+                "A strong candidate for the breast and ovarian cancer susceptibility gene BRCA1",
+                "Direct Submission"
+              ]
+            ]
+          },
+          "referenceJournal": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencejournal",
+            "description": "GenBank REFERENCE journals (multi-valued).",
+            "examples": [
+              [
+                "Science 266 (5182), 66-71 (1994)"
+              ]
+            ]
+          },
+          "geneName": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genename",
+            "description": "Gene names from the GenBank feature table's ``/gene=`` qualifiers (deduplicated, capped).",
+            "examples": [
+              [
+                "BRCA1"
+              ]
+            ]
+          },
+          "lineage": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lineage",
+            "description": "Taxonomic ancestors (ancestor-only, organism itself excluded).",
+            "examples": [
+              [
+                "Eukaryota",
+                "Metazoa",
+                "Chordata"
+              ]
             ]
           }
         },
