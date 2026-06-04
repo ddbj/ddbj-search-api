@@ -10,7 +10,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.search.dsl import parse
+from ddbj_search_api.search.dsl import DslError, ErrorType, parse
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Position
 from ddbj_search_api.search.dsl.compiler_solr import (
     SolrDialect,
@@ -543,3 +543,24 @@ class TestCompileToSolrFreeTextNode:
         assert result == (
             '((Definition:"leukemia" OR Definition:leukemia*) AND (("apple" OR apple*) OR ("banana" OR banana*)))'
         )
+
+
+class TestCompileToSolrUnsupportedOperator:
+    """``compile_to_solr`` は validated AST を前提とするが、operator 逆引きの leaf
+    compile は、万一 validate を経ない AST が届いても生の ``KeyError`` (500) でなく
+    validator と同じ ``invalid-operator-for-field`` ``DslError`` を返す。ARSA map に
+    実在する field (date_published / sequence_length) で、手前の no-mapping
+    ``RuntimeError`` でなく operator 段で弾かれることを確認する。
+    """
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "date_published:2020*",  # (date, wildcard)
+            "sequence_length:12*",  # (number, wildcard)
+        ],
+    )
+    def test_unsupported_value_kind_raises_invalid_operator(self, dsl: str) -> None:
+        with pytest.raises(DslError) as exc:
+            compile_to_solr(parse(dsl), dialect="arsa")
+        assert exc.value.type is ErrorType.invalid_operator_for_field

@@ -17,7 +17,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ddbj_search_api.es.query import build_search_query
-from ddbj_search_api.search.dsl import parse
+from ddbj_search_api.search.dsl import DslError, ErrorType, parse
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Position
 from ddbj_search_api.search.dsl.compiler_es import compile_free_text, compile_to_es
 
@@ -1229,3 +1229,26 @@ class TestCompileFreeTextNodePhrase:
                 ],
             },
         }
+
+
+class TestCompileToEsUnsupportedOperator:
+    """``compile_to_es`` は validated AST を前提とするが、operator 逆引きの leaf
+    compile は、万一 validate を経ない AST が届いても生の ``KeyError`` (500) でなく
+    validator と同じ ``invalid-operator-for-field`` ``DslError`` を返す。
+
+    leaf compile に到達する ES-backed field を使う (number 型 sequence_length は
+    Solr 専用で ES field strategy を持たないため、その number+wildcard ケースは
+    compiler_solr 側でカバーする)。
+    """
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "date_published:2020*",  # (date, wildcard)
+            "accessibility:[a TO b]",  # (enum, range)
+        ],
+    )
+    def test_unsupported_value_kind_raises_invalid_operator(self, dsl: str) -> None:
+        with pytest.raises(DslError) as exc:
+            compile_to_es(parse(dsl))
+        assert exc.value.type is ErrorType.invalid_operator_for_field

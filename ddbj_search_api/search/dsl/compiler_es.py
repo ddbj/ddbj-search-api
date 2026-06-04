@@ -22,8 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
+from ddbj_search_api.search.dsl.validator import resolve_field_operator
 from ddbj_search_api.search.phrase import (
     ES_AUTO_PHRASE_CHARS,
     has_auto_phrase_trigger,
@@ -426,8 +426,7 @@ def _or_over_fields(clause: FieldClause, es_fields: tuple[str, ...]) -> dict[str
 
 
 def _basic_leaf(es_field: str, clause: FieldClause) -> dict[str, Any]:
-    field_type = FIELD_TYPES[clause.field]
-    op = OPERATOR_BY_KIND[(field_type, clause.value_kind)]
+    _, op = resolve_field_operator(clause)
     value = clause.value
     if op == "eq":
         return {"term": {es_field: value}}

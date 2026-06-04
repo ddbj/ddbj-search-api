@@ -28,8 +28,8 @@ from __future__ import annotations
 import re
 from typing import Literal, TypeAlias
 
-from ddbj_search_api.search.dsl.allowlist import FIELD_TYPES, OPERATOR_BY_KIND
 from ddbj_search_api.search.dsl.ast import FieldClause, FreeText, Node, Range
+from ddbj_search_api.search.dsl.validator import resolve_field_operator
 from ddbj_search_api.search.phrase import (
     SOLR_AUTO_PHRASE_CHARS,
     escape_solr_phrase,
@@ -276,8 +276,7 @@ def _compile_leaf(clause: FieldClause, *, dialect: SolrDialect) -> str:
 
 
 def _basic_leaf(solr_field: str, clause: FieldClause) -> str:
-    field_type = FIELD_TYPES[clause.field]
-    op = OPERATOR_BY_KIND[(field_type, clause.value_kind)]
+    field_type, op = resolve_field_operator(clause)
     value = clause.value
     if op == "between" and isinstance(value, Range):
         from_v = _format_date_for_solr(value.from_) if field_type == "date" else value.from_

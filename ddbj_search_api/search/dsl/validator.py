@@ -24,6 +24,8 @@ from ddbj_search_api.search.dsl.allowlist import (
     OPERATOR_BY_KIND,
     TIER3_FIELD_DBS,
     TIER3_FIELDS,
+    FieldType,
+    Operator,
     available_dbs,
     field_availability,
 )
@@ -116,16 +118,7 @@ def _check_nodes(node: Node, *, mode: ValidationMode, db: str | None) -> None:
 
 def _check_field(clause: FieldClause, *, mode: ValidationMode, db: str | None) -> None:
     if clause.field not in ALL_ALLOWED_FIELDS:
-        allowed = ", ".join(sorted(ALL_ALLOWED_FIELDS))
-        raise DslError(
-            type=ErrorType.unknown_field,
-            detail=(
-                f"unknown field {clause.field!r} at column {clause.position.column} "
-                f"(length {clause.position.length}). allowed: {allowed}"
-            ),
-            column=clause.position.column,
-            length=clause.position.length,
-        )
+        _raise_unknown_field(clause)
     if mode == "cross" and clause.field in TIER3_FIELDS:
         dbs = TIER3_FIELD_DBS.get(clause.field, ())
         hint = " or ".join(f"db={d}" for d in dbs) if dbs else "a 'db' parameter"
@@ -161,16 +154,7 @@ def _check_value_kind_and_operator(clause: FieldClause) -> None:
     if field_type is None:
         return
     if (field_type, clause.value_kind) not in OPERATOR_BY_KIND:
-        human_op = _value_kind_to_human(clause.value_kind)
-        raise DslError(
-            type=ErrorType.invalid_operator_for_field,
-            detail=(
-                f"operator {human_op!r} is not allowed for field {clause.field!r} "
-                f"at column {clause.position.column} (length {clause.position.length})"
-            ),
-            column=clause.position.column,
-            length=clause.position.length,
-        )
+        _raise_invalid_operator(clause)
 
 
 _VALUE_KIND_TO_HUMAN: dict[str, str] = {
@@ -184,6 +168,54 @@ _VALUE_KIND_TO_HUMAN: dict[str, str] = {
 
 def _value_kind_to_human(kind: str) -> str:
     return _VALUE_KIND_TO_HUMAN.get(kind, kind)
+
+
+def _raise_unknown_field(clause: FieldClause) -> NoReturn:
+    allowed = ", ".join(sorted(ALL_ALLOWED_FIELDS))
+    raise DslError(
+        type=ErrorType.unknown_field,
+        detail=(
+            f"unknown field {clause.field!r} at column {clause.position.column} "
+            f"(length {clause.position.length}). allowed: {allowed}"
+        ),
+        column=clause.position.column,
+        length=clause.position.length,
+    )
+
+
+def _raise_invalid_operator(clause: FieldClause) -> NoReturn:
+    human_op = _value_kind_to_human(clause.value_kind)
+    raise DslError(
+        type=ErrorType.invalid_operator_for_field,
+        detail=(
+            f"operator {human_op!r} is not allowed for field {clause.field!r} "
+            f"at column {clause.position.column} (length {clause.position.length})"
+        ),
+        column=clause.position.column,
+        length=clause.position.length,
+    )
+
+
+def resolve_field_operator(clause: FieldClause) -> tuple[FieldType, Operator]:
+    """Resolve ``(field_type, operator)`` for a clause via the allowlist.
+
+    Mirrors the ``_check_field`` / ``_check_value_kind_and_operator`` gates so
+    that the serialize (``serde``) and compile (``compiler_es`` /
+    ``compiler_solr``) paths surface the same domain ``DslError``
+    (``unknown-field`` / ``invalid-operator-for-field``, both 400) instead of a
+    bare ``KeyError`` (500) when they run on an AST that has not passed through
+    :func:`validate`.  :func:`validate` stays the primary gate; this keeps the
+    "unsupported field / operator is a 400" contract holding even on a
+    serialize-or-compile-before-validate path (e.g. db inference that
+    serializes the AST before validating it).
+    """
+    field_type = FIELD_TYPES.get(clause.field)
+    if field_type is None:
+        _raise_unknown_field(clause)
+    operator = OPERATOR_BY_KIND.get((field_type, clause.value_kind))
+    if operator is None:
+        _raise_invalid_operator(clause)
+    return field_type, operator
 
 
 def _check_value(clause: FieldClause) -> None:

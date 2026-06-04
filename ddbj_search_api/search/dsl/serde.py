@@ -22,7 +22,6 @@ from typing import Any, cast
 
 from ddbj_search_api.search.dsl.allowlist import (
     FIELD_TYPES,
-    OPERATOR_BY_KIND,
     FieldType,
     Operator,
 )
@@ -37,6 +36,7 @@ from ddbj_search_api.search.dsl.ast import (
     ValueKind,
 )
 from ddbj_search_api.search.dsl.lex_patterns import WORD_RE
+from ddbj_search_api.search.dsl.validator import resolve_field_operator
 
 # json_to_ast 経由の AST は元の DSL 文字列を持たないので、Position は dummy を割り当てる.
 # validator のエラー detail に出る ``column 1 (length 0)`` は意味を持たない (serialize
@@ -80,8 +80,7 @@ def _node_to_json(node: Node) -> dict[str, Any]:
 
 
 def _leaf_to_json(clause: FieldClause) -> dict[str, Any]:
-    field_type = FIELD_TYPES[clause.field]
-    op = OPERATOR_BY_KIND[(field_type, clause.value_kind)]
+    _, op = resolve_field_operator(clause)
     if clause.value_kind == "range" and isinstance(clause.value, Range):
         return {
             "field": clause.field,

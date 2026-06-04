@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from ddbj_search_api.search.dsl import parse
+from ddbj_search_api.search.dsl import DslError, ErrorType, parse
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText
 from ddbj_search_api.search.dsl.serde import ast_to_json, json_to_ast
 from ddbj_search_api.search.dsl.validator import validate
@@ -388,6 +388,32 @@ class TestFreeTextPhraseRoundtrip:
         assert isinstance(node, FreeText)
         assert node.is_phrase is False
         assert ast_to_json(node) == d
+
+
+class TestAstToJsonUnvalidatedAst:
+    """``ast_to_json`` は db 推論で ``validate`` より前に呼ばれる (validated AST を
+    前提にしない)。parse できるが allowlist に無い field / operator を持つ AST を
+    serialize しても、validator と同じ domain ``DslError`` を返し、生の ``KeyError``
+    (500) にならないことを確認する。
+    """
+
+    @pytest.mark.parametrize(
+        "dsl",
+        [
+            "date_published:2020*",  # (date, wildcard)
+            "accessibility:[a TO b]",  # (enum, range)
+            "sequence_length:12*",  # (number, wildcard)
+        ],
+    )
+    def test_unsupported_value_kind_raises_invalid_operator(self, dsl: str) -> None:
+        with pytest.raises(DslError) as exc:
+            ast_to_json(parse(dsl))
+        assert exc.value.type is ErrorType.invalid_operator_for_field
+
+    def test_unknown_field_raises_unknown_field(self) -> None:
+        with pytest.raises(DslError) as exc:
+            ast_to_json(parse("nosuchfield:foo"))
+        assert exc.value.type is ErrorType.unknown_field
 
     def test_parse_quoted_emits_is_phrase_in_json(self) -> None:
         ast = parse('"Homo sapiens"')
