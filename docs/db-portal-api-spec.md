@@ -18,6 +18,7 @@
 - 横断モードで Tier 1/2 field を使っても、その field を持たない DB の arm は backend を叩かず `count=null` + `error=field-not-applicable` を返す (例: `publication:cancer` の `taxonomy` / `biosample` arm、`date_published:...` の `taxonomy` arm)。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で値を突き合わせ、一致すれば検索続行・不一致なら `count=0`。これにより「その DB が持たない field」での嘘件数 (TXSearch の no-match ~全件化等) を防ぐ
 - 単一 DB モードで、その DB が実 field を持たない field を使用すると 400 `field-not-available-for-db`。Tier 3 の他 DB 専用 field に加え、Tier 1/2 でもその DB に無い field (例: `db=taxonomy` の `date_published`、`db=trad` の `submitter`) を含む。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で突き合わせるため弾かない。DB 内で subtype により分散する field (例: `db=jga` の `grant_title` は jga-study のみ実在) は弾かず 0 件化する
 - `/db-portal/cross-search` / `/db-portal/search` は `facets` パラメータで `q` 連動の facet 集計 (値 + 件数) をレスポンスに同梱できる。集計母集団は既定では検索ヒットと一致 (同じ compiled query + status filter)、`facetSelfExclude=true` 指定時は各 facet 自身の `q` フィルタだけを母集団から外す (multi-select 用の self-exclusion)。ES 6 DB + Solr 2 DB の両方に対応 ([§ facet 集計](#facet-集計))
+- `/db-portal/cross-search` / `/db-portal/search` は 2 つの入力経路を持つ: GET (`q` DSL 文字列、cold load / 共有 URL 復元用) と POST (`{ ast }` JSON body、interactive な facet / builder 編集用)。POST は db-portal が手元の AST を直接投げ、サーバ往復を畳んで「結果 + 共有用 `dsl` エコー + q 連動 facet」を 1 リクエストで得る ([§ AST 入力の POST 検索](#ast-入力の-post-検索))
 
 ## 内部モデル
 
@@ -507,8 +508,9 @@ organism_name:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (
 
 | type URI (prefix `https://ddbj.nig.ac.jp/problems/` + slug) | HTTP | 条件 | 適用 endpoint | 備考 |
 |------|------|------|----------------|------|
-| `unexpected-parameter` | 400 | `/db-portal/cross-search` に `db` / `cursor` / `page` / `perPage` / `sort` を指定 | cross-search | detail に余剰パラメータ名を埋め込み |
+| `unexpected-parameter` | 400 | `/db-portal/cross-search` に `db` / `cursor` / `page` / `perPage` / `sort` を指定 (POST 版は `q` も対象) | cross-search | detail に余剰パラメータ名を埋め込み |
 | `missing-db` | 400 | `/db-portal/search` で `db` 未指定 | search | detail に許容 DB 一覧と「横断検索は `/db-portal/cross-search`」案内を埋め込み |
+| `invalid-ast` | 400 | POST body の AST が `DbPortalParseNode` schema に合わない (`op` 不明 / 必須 key 欠落 / value 型違い 等)。Pydantic RequestValidationError を 400 + RFC 7807 にラップ | cross-search / search / serialize (POST) | body schema |
 | `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は cursor 非対応、offset-only) | search | — |
 | `unexpected-token` | 400 | 構文エラー (非対応構文 / 過長クエリ / 空入力 含む) | 両 | クエリ |
 | `unknown-field` | 400 | allowlist 外フィールド。`detail` に column 位置と候補一覧を埋め込み | 両 | クエリ |
@@ -646,3 +648,69 @@ Trailing slash なし (`/db-portal/serialize`) が canonical。
 `db` query parameter の enum 値違反のみ FastAPI 標準の 422 (`about:blank`) を返す (body 由来ではないため `invalid-ast` 化しない)。
 
 `invalid-ast` の error detail は Pydantic の `loc` を `body.ast.<path>` 形式で連結したもの。元の DSL 文字列を持たないため、parser 系エラーと違い `column` 情報は意味を持たない。
+
+## AST 入力の POST 検索
+
+`POST /db-portal/cross-search` / `POST /db-portal/search` は、GET 版 (`q` DSL 文字列) と同じ検索を **AST JSON body** で受ける経路。db-portal の advanced builder / sidebar facet 編集は手元に条件の AST を SSOT として持つため、それを `serialize → navigate(?q=) → parse → search` と往復させて文字列化・再パースし直す代わりに、AST を直接 POST して 1 往復で「結果 + 共有用 `dsl` エコー + `q` 連動 facet」を得る。GET 2 本は cold load・共有 URL (`?q=<dsl>`) 復元用の対 (counterpart) として残す。
+
+GET (`q`) との関係:
+
+```
+DSL string ─GET  /cross-search?q= / /search?q=──> parse → AST → validate → reduce → compile → ES/Solr
+AST JSON   ─POST /cross-search    / /search    ──>        AST → validate → reduce → compile → ES/Solr  (+ dsl エコー)
+```
+
+入口で `q` のパースを `json_to_ast(body.ast)` に差し替えるだけで、validate / per-arm reduce / compile / facet 集計の pipeline は GET と完全に共有する (scope バリデーション・エラー契約・facet semantics は GET と同一)。
+
+Trailing slash なし (`/db-portal/cross-search` / `/db-portal/search`) が canonical。
+
+### リクエスト (`DbPortalSearchByAstRequest`)
+
+```json
+{
+  "ast": {
+    "op": "AND",
+    "rules": [
+      { "op": "free_text", "value": "cancer" },
+      { "field": "organism_name", "op": "contains", "value": "Homo sapiens" }
+    ]
+  }
+}
+```
+
+`ast` の schema は `GET /db-portal/parse` のレスポンス `ast` (`DbPortalParseNode`) を再利用する (parse 結果・`POST /serialize` の入力をそのまま投げ返せる)。`ast` は **optional**: 省略 or `"ast": null` は `q` 省略の GET と同じ全件 (`match_all` / `*:*`) 検索になり、`dsl` には空文字列 `""` を返す (空 `q` = 全件 URL と整合。db-portal は builder が空の状態でも GET に切り替えず 1 往復を保てる)。
+
+### クエリパラメータ
+
+検索パラメータ (facets / page / sort 等) は GET と同じく **query** で受け、AST だけ body に置く。`q` は受け取らない (AST が body にあるため)。
+
+- cross (`POST /db-portal/cross-search`): `topHits` / `keywordOperator` / `facets` / `facetsSize` / `facetSelfExclude`。`db` / `cursor` / `page` / `perPage` / `sort` / `q` を付けると 400 `unexpected-parameter`
+- per-DB (`POST /db-portal/search`): `db` (required、未指定で 400 `missing-db`) / `page` / `perPage` / `sort` / `cursor` / `keywordOperator` / `facets` / `facetsSize` / `facetSelfExclude`
+
+各パラメータの型・デフォルト・範囲は GET 版と同一 ([§ GET /db-portal/cross-search](#get-db-portalcross-search) / [§ GET /db-portal/search](#get-db-portalsearch))。
+
+### レスポンス
+
+GET と同じ payload (`DbPortalCrossSearchResponse` / `DbPortalHitsResponse`) に `dsl` を加えた superset (`DbPortalCrossSearchByAstResponse` / `DbPortalHitsByAstResponse`)。
+
+```json
+{ "databases": [ "..." ], "facets": null, "dsl": "cancer AND organism_name:\"Homo sapiens\"" }
+```
+
+- `dsl`: 受け取った AST を正規化シリアライズした DSL 文字列 (`POST /serialize` と同じ出力)。db-portal が共有 URL の `?q=<dsl>` に背景同期するために使う。`ast` 省略時は `""`
+- それ以外のフィールドは GET 版と同一 (cross は `databases` + `facets`、per-DB は `total` / `hits` / `hardLimitReached` / `page` / `perPage` / `nextCursor` / `hasNext` / `facets`)
+- `facets` 同梱は GET と同じ仕組み: `facets=<facet 名>` (+ `facetSelfExclude`) を付けて呼べば q 連動 facet が同 response に乗る ([§ facet 集計](#facet-集計))。これで db-portal の「結果」と「q-aware facet」が 1 往復に畳まれる
+
+### cursor との相互作用 (per-DB)
+
+`cursor` は cursor token に焼き込んだ ES query / sort / PIT で継続するため、cursor 指定時は **body の AST を検索には使わない** (GET の cursor 経路と同一)。ただし `dsl` は body AST から生成して返す (「もっと見る」全ページで共有 URL を正しく保つ)。cursor 排他 (`page>1` / `sort` / 非 OR `keywordOperator` 併用で 400) と Solr DB + cursor の 400 `cursor-not-supported` は GET と同じ。
+
+### エラー
+
+| `type` URI suffix | status | 発生条件 |
+|---|---|---|
+| `invalid-ast` | 400 | request body が `DbPortalParseNode` schema に合わない (`op` 不明 / 必須 key 欠落 / value 型違い 等)。`POST /serialize` と同じく Pydantic RequestValidationError を 400 + RFC 7807 にラップ |
+| `unexpected-parameter` (cross) / `missing-db` (per-DB) / `cursor-not-supported` (per-DB Solr) | 400 | query パラメータ制約。GET 版と同一 |
+| `unknown-field` / `field-not-available-in-cross-db` / `field-not-available-for-db` / `invalid-operator-for-field` / `invalid-date-format` / `missing-value` / `nest-depth-exceeded` / `invalid-freetext-position` / `duplicate-freetext` | 400 | AST → validator で reject。`POST /serialize` / GET と同一 slug を共有。cross は `mode=cross` (Tier 3 field → `field-not-available-in-cross-db`)、per-DB は `mode=single` + `db` (当該 DB に無い field → `field-not-available-for-db`) |
+
+`db` query parameter の enum 違反のみ FastAPI 標準の 422 (`about:blank`、body 由来でないため `invalid-ast` 化しない)。`invalid-ast` の detail は parser 系と違い `column` 情報を持たない (AST は文字列由来でない)。

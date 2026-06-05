@@ -53,15 +53,20 @@ from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.db_portal import (
     DbPortalCount,
     DbPortalCountError,
+    DbPortalCrossSearchByAstQuery,
+    DbPortalCrossSearchByAstResponse,
     DbPortalCrossSearchQuery,
     DbPortalCrossSearchResponse,
     DbPortalDb,
     DbPortalErrorType,
     DbPortalFacets,
     DbPortalHit,
+    DbPortalHitsByAstResponse,
     DbPortalHitsResponse,
     DbPortalLightweightHit,
     DbPortalParseResponse,
+    DbPortalSearchByAstQuery,
+    DbPortalSearchByAstRequest,
     DbPortalSearchQuery,
     DbPortalSerializeRequest,
     DbPortalSerializeResponse,
@@ -291,6 +296,31 @@ def _reject_unexpected_cross_params(request: Request) -> None:
         detail=(
             f"Parameter '{name}' is not allowed on /db-portal/cross-search. "
             "Use /db-portal/search?db=<id> for db-specific paginated hits."
+        ),
+    )
+
+
+# POST /db-portal/cross-search additionally forbids ``q`` (the AST is in the body).
+_CROSS_SEARCH_BY_AST_ALLOWED_PARAMS: frozenset[str] = _CROSS_SEARCH_ALLOWED_PARAMS - {"q"}
+
+
+def _reject_unexpected_cross_ast_params(request: Request) -> None:
+    """Raise 400 ``unexpected-parameter`` for forbidden params on POST /db-portal/cross-search.
+
+    Same intent as :func:`_reject_unexpected_cross_params`, but ``q`` is also
+    rejected because the AST is carried in the request body.
+    """
+    extra = [k for k in request.query_params if k not in _CROSS_SEARCH_BY_AST_ALLOWED_PARAMS]
+    if not extra:
+        return
+    name = extra[0]
+    raise DbPortalHTTPException(
+        status_code=400,
+        type_uri=DbPortalErrorType.unexpected_parameter,
+        detail=(
+            f"Parameter '{name}' is not allowed on POST /db-portal/cross-search. "
+            "Pass the AST in the request body; query params are limited to "
+            "topHits / keywordOperator / facets / facetsSize / facetSelfExclude."
         ),
     )
 
@@ -1847,5 +1877,244 @@ router.add_api_route(
     },
     summary="Serialize an AST JSON tree (parse-response shape) into a normalized DSL string.",
     operation_id="serializeDbPortal",
+    tags=["db-portal"],
+)
+
+
+# === POST /db-portal/cross-search & /db-portal/search — AST in body ===
+#
+# AST を request body で受ける POST 版。入口で ``parse(q)`` を
+# ``json_to_ast(body.ast)`` に差し替えるだけで、validate / per-arm reduce /
+# compile / facet 集計の pipeline は GET と完全に共有する。``dsl`` (= 正規化
+# シリアライズ) をエコーして db-portal が共有 URL ``?q=<dsl>`` に背景同期できる
+# ようにする (docs/db-portal-api-spec.md § AST 入力の POST 検索)。
+
+
+def _ast_and_dsl_from_body(
+    ast_payload: dict[str, Any] | None,
+    db: DbPortalDb | None,
+    config: AppConfig,
+) -> tuple[DslNode | None, str]:
+    """Body AST → (validated AST, normalized dsl echo).
+
+    Mirrors ``_serialize_db_portal``'s ``json_to_ast`` → ``validate`` →
+    ``ast_to_dsl`` flow but also hands the AST back for the search pipeline.
+    A ``None`` payload (``ast`` omitted / null) is the ``q``-less match_all
+    search and yields an empty dsl echo.  ``mode`` is ``"cross"`` when ``db``
+    is None and ``"single"`` otherwise — the same scope rules as the GET /
+    serialize paths, so Tier 3 fields in cross mode raise
+    ``field-not-available-in-cross-db`` here too.
+    """
+    if ast_payload is None:
+        return None, ""
+    ast = json_to_ast(ast_payload)
+    try:
+        validate(
+            ast,
+            mode="cross" if db is None else "single",
+            db=db.value if db is not None else None,
+            max_depth=config.dsl_max_depth,
+            max_nodes=config.dsl_max_nodes,
+        )
+    except DslError as exc:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType[exc.type.name],
+            detail=_strip_dummy_column_info(exc.detail),
+        ) from exc
+    return ast, ast_to_dsl(ast)
+
+
+async def _cross_search_by_ast_handler(
+    request: Request,
+    body: DbPortalSearchByAstRequest,
+    query: DbPortalCrossSearchByAstQuery = Depends(),
+    es_client: httpx.AsyncClient = Depends(get_es_client),
+    solr_client: httpx.AsyncClient = Depends(get_solr_client),
+    config: AppConfig = Depends(_get_config_dep),
+) -> DbPortalCrossSearchByAstResponse:
+    """``POST /db-portal/cross-search``: cross-database search with the AST in the body.
+
+    Identical to ``GET /db-portal/cross-search`` except the AST comes from
+    ``body.ast`` (via ``json_to_ast``) instead of parsing ``q``; the
+    serialized ``dsl`` is echoed so db-portal can sync the shared ``?q=`` URL.
+    """
+    _reject_unexpected_cross_ast_params(request)
+    payload = body.model_dump(by_alias=True).get("ast")
+    ast, dsl = _ast_and_dsl_from_body(payload, db=None, config=config)
+    requested_facets = resolve_db_portal_facets(query.facets, db=None)
+    base = await _cross_search_dispatch(
+        es_client,
+        solr_client,
+        config,
+        ast,
+        query.top_hits,
+        free_text_operator=query.keyword_operator.value,
+        requested_facets=requested_facets,
+        facets_size=resolve_facets_size(query.facets_size),
+        facet_self_exclude=query.facet_self_exclude,
+    )
+    return DbPortalCrossSearchByAstResponse(databases=base.databases, facets=base.facets, dsl=dsl)
+
+
+async def _search_by_ast_handler(
+    body: DbPortalSearchByAstRequest,
+    query: DbPortalSearchByAstQuery = Depends(),
+    es_client: httpx.AsyncClient = Depends(get_es_client),
+    solr_client: httpx.AsyncClient = Depends(get_solr_client),
+    config: AppConfig = Depends(_get_config_dep),
+) -> DbPortalHitsByAstResponse:
+    """``POST /db-portal/search``: db-specific hits search with the AST in the body.
+
+    Identical to ``GET /db-portal/search`` except the AST comes from
+    ``body.ast`` instead of parsing ``q``; the serialized ``dsl`` is echoed.
+    On the cursor path the AST is not used for the search (the cursor token
+    carries the query) but ``dsl`` is still echoed from the body AST so the
+    shared URL stays correct across "load more".
+    """
+    if query.db is None:
+        raise DbPortalHTTPException(
+            status_code=400,
+            type_uri=DbPortalErrorType.missing_db,
+            detail=(
+                "Parameter 'db' is required on /db-portal/search. "
+                "Allowed: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy. "
+                "For cross-database count, use /db-portal/cross-search."
+            ),
+        )
+    payload = body.model_dump(by_alias=True).get("ast")
+    ast, dsl = _ast_and_dsl_from_body(payload, db=query.db, config=config)
+    requested_facets = resolve_db_portal_facets(query.facets, db=query.db)
+    if query.cursor is not None:
+        if query.db in _SOLR_DBS:
+            raise DbPortalHTTPException(
+                status_code=400,
+                type_uri=DbPortalErrorType.cursor_not_supported,
+                detail=(
+                    f"Cursor-based pagination is not supported for db='{query.db.value}'. "
+                    "Use 'page' + 'perPage' (offset-only) instead."
+                ),
+            )
+        _validate_cursor_exclusivity(query)
+        base = await _db_specific_search_cursor(
+            es_client,
+            query,
+            requested_facets=requested_facets,
+            facets_size=resolve_facets_size(query.facets_size),
+        )
+    else:
+        base = await _db_specific_search_dispatch(
+            es_client,
+            solr_client,
+            config,
+            query,
+            ast,
+            requested_facets=requested_facets,
+            facets_size=resolve_facets_size(query.facets_size),
+            facet_self_exclude=query.facet_self_exclude,
+        )
+    return DbPortalHitsByAstResponse(  # type: ignore[call-arg]
+        total=base.total,
+        hits=base.hits,
+        hard_limit_reached=base.hard_limit_reached,
+        page=base.page,
+        per_page=base.per_page,
+        next_cursor=base.next_cursor,
+        has_next=base.has_next,
+        facets=base.facets,
+        dsl=dsl,
+    )
+
+
+router.add_api_route(
+    "/db-portal/cross-search",
+    _cross_search_by_ast_handler,
+    methods=["POST"],
+    response_model=DbPortalCrossSearchByAstResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {**_CROSS_SEARCH_EXAMPLE, "dsl": 'cancer AND organism_name:"Homo sapiens"'},
+                },
+            },
+        },
+        400: {
+            "description": (
+                "Bad Request (invalid-ast body schema violation, unexpected-parameter, "
+                "query validate/scope error such as field-not-available-in-cross-db)."
+            ),
+            "model": ProblemDetails,
+        },
+        422: {
+            "description": "Unprocessable Entity (parameter validation error).",
+            "model": ProblemDetails,
+        },
+        502: {
+            "description": "Bad Gateway (all databases failed)",
+            "model": ProblemDetails,
+        },
+    },
+    summary="DB Portal cross-database fan-out by AST (count + top hits + dsl echo)",
+    description=(
+        "Same fan-out as GET /db-portal/cross-search but the query AST is sent in the request "
+        "body ({ast}) instead of as ?q=, and the normalized dsl is echoed for shared-URL sync. "
+        "Lets db-portal collapse the interactive serialize->navigate->parse round-trips into one "
+        "request. Tier 3 fields return 400 field-not-available-in-cross-db; ast omitted/null "
+        "searches all records and echoes dsl=''."
+    ),
+    operation_id="crossSearchByAstDbPortal",
+    tags=["db-portal"],
+)
+
+
+router.add_api_route(
+    "/db-portal/search",
+    _search_by_ast_handler,
+    methods=["POST"],
+    response_model=DbPortalHitsByAstResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "total": 1234,
+                        "hits": [_SEARCH_HIT_EXAMPLE],
+                        "hardLimitReached": False,
+                        "page": 1,
+                        "perPage": 20,
+                        "nextCursor": "eyJwaXRfaWQiOiJhYmMxMjMifQ.def456",
+                        "hasNext": True,
+                        "dsl": 'cancer AND organism_name:"Homo sapiens"',
+                    },
+                },
+            },
+        },
+        400: {
+            "description": (
+                "Bad Request (invalid-ast body schema violation, missing-db, cursor exclusivity / "
+                "cursor-not-supported, query validate/scope error, deep paging limit)."
+            ),
+            "model": ProblemDetails,
+        },
+        422: {
+            "description": "Unprocessable Entity (parameter validation error, e.g. invalid db / sort / perPage).",
+            "model": ProblemDetails,
+        },
+        502: {
+            "description": "Bad Gateway (Solr upstream error)",
+            "model": ProblemDetails,
+        },
+    },
+    summary="DB Portal db-specific hits search by AST (hits + dsl echo)",
+    description=(
+        "Same single-database hits search as GET /db-portal/search but the query AST is sent in "
+        "the request body ({ast}) instead of as ?q=, and the normalized dsl is echoed for "
+        "shared-URL sync. db is required (400 missing-db). Cursor pagination behaves like the GET "
+        "path: the token carries the query, the body AST is not used for the search but dsl is "
+        "still echoed; Solr DBs (trad / taxonomy) return 400 cursor-not-supported. ast "
+        "omitted/null searches all records and echoes dsl=''."
+    ),
+    operation_id="searchByAstDbPortal",
     tags=["db-portal"],
 )

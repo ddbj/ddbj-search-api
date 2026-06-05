@@ -149,10 +149,11 @@ def setup_error_handlers(app: FastAPI) -> None:
 
         details = "; ".join(f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors())
 
-        # /db-portal/serialize の body schema 違反は invalid-ast (400 + RFC 7807) として返す.
-        # query parameter (db enum) 由来の 422 は通常通り扱う.
+        # /db-portal/serialize と AST 入力の POST 検索 (cross-search / search) の body
+        # schema 違反は invalid-ast (400 + RFC 7807) として返す. query parameter (db enum)
+        # 由来の 422 は body loc でないため通常通り扱う (GET cross/search は body を持たない).
         # ``endswith`` で reverse proxy 配下の root_path prefix (例: /search/...) を吸収する.
-        if request_path.endswith("/db-portal/serialize") and any(
+        if request_path.endswith(("/db-portal/serialize", "/db-portal/cross-search", "/db-portal/search")) and any(
             error.get("loc", ("",))[0] == "body" for error in exc.errors()
         ):
             return _problem_json(

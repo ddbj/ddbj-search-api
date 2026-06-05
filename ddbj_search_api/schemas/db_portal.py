@@ -1128,3 +1128,245 @@ class DbPortalSerializeResponse(BaseModel):
             "``GET /db-portal/search``."
         ),
     )
+
+
+# === POST /db-portal/cross-search & /db-portal/search (AST in body) ===
+#
+# AST を request body で受ける POST 版。db-portal の interactive な facet /
+# builder 編集が、手元の AST を serialize→navigate→parse と往復させずに直接
+# 投げて 1 リクエストで「結果 + 共有用 dsl エコー + q 連動 facet」を得るための
+# 経路 (docs/db-portal-api-spec.md § AST 入力の POST 検索)。GET (q 入力) は
+# cold load / 共有 URL 復元用に残す。body / response / scope 検証以外の
+# pipeline (validate / reduce / compile / facet) は GET と完全に共有する。
+
+
+class DbPortalSearchByAstRequest(BaseModel):
+    """Request body for ``POST /db-portal/cross-search`` and ``/db-portal/search``.
+
+    ``ast`` reuses ``DbPortalParseNode`` so a parse response / serialize input
+    can be sent back verbatim.  Schema violations surface as 400 ``invalid-ast``
+    (see ``ddbj_search_api.main`` request-validation handler).  ``ast`` is
+    optional: ``null`` / omitted means the ``q``-less GET behaviour (match_all /
+    ``*:*`` full fan-out) and the handler echoes ``dsl=""``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    ast: DbPortalParseNode | None = Field(
+        default=None,
+        examples=[
+            {
+                "op": "AND",
+                "rules": [
+                    {"op": "free_text", "value": "cancer"},
+                    {"field": "organism_name", "op": "contains", "value": "Homo sapiens"},
+                ],
+            },
+        ],
+        description=(
+            "AST JSON tree (same shape as GET /db-portal/parse response).  "
+            "Optional: null / omitted searches all records (match_all) and the "
+            'response echoes ``dsl=""``.'
+        ),
+    )
+
+
+_DSL_ECHO_DESC = (
+    "Normalized DSL serialized from the request AST (same output as "
+    "``POST /db-portal/serialize``).  Reusable as ``GET ?q=<dsl>`` for "
+    "shared-URL background sync; empty string when ``ast`` is omitted."
+)
+
+
+class DbPortalCrossSearchByAstResponse(DbPortalCrossSearchResponse):
+    """``POST /db-portal/cross-search`` response: cross payload + ``dsl`` echo."""
+
+    dsl: str = Field(
+        examples=['cancer AND organism_name:"Homo sapiens"'],
+        description=_DSL_ECHO_DESC,
+    )
+
+
+class DbPortalHitsByAstResponse(DbPortalHitsResponse):
+    """``POST /db-portal/search`` response: hits payload + ``dsl`` echo."""
+
+    dsl: str = Field(
+        examples=['cancer AND organism_name:"Homo sapiens"'],
+        description=_DSL_ECHO_DESC,
+    )
+
+
+class DbPortalCrossSearchByAstQuery(DbPortalCrossSearchQuery):
+    """Query parameters for ``POST /db-portal/cross-search`` (AST in body).
+
+    Identical to :class:`DbPortalCrossSearchQuery` minus ``q`` (the AST lives in
+    the request body).  ``__init__`` is fully overridden (``super().__init__``
+    is not called); ``self.q`` is forced to ``None`` so the shared facet helpers
+    stay attribute-compatible.
+    """
+
+    def __init__(
+        self,
+        top_hits: int = Query(
+            default=10,
+            alias="topHits",
+            ge=0,
+            le=50,
+            description=(
+                "Per-DB top hits count.  ``0`` returns count-only "
+                "(``databases[i].hits`` is ``null``); ``1``-``50`` returns "
+                "up to N hits per DB.  Hits are ordered by relevance "
+                "(``_score`` desc) with ``identifier`` ascending as the "
+                "tiebreaker; when ``ast`` is omitted (``match_all``) all "
+                "scores tie, so ``identifier`` ascending becomes the "
+                "effective order.  Out of range (>50 or negative) returns 422."
+            ),
+        ),
+        keyword_operator: KeywordOperator = Query(
+            default=KeywordOperator.OR,
+            alias="keywordOperator",
+            description=(
+                "Default boolean operator for connecting comma-separated FreeText tokens. "
+                "Default **OR**.  ``AND`` requires every token to match; ``OR`` requires at "
+                "least one.  Tokens inside a single FreeText value are always AND-combined "
+                "(use double quotes for phrase match).  The explicit ``AND`` / ``OR`` / "
+                "``NOT`` operators inside the AST are unaffected."
+            ),
+        ),
+        facets: str | None = Query(
+            default=None,
+            examples=["organism,type"],
+            description=_FACETS_DESC_CROSS,
+        ),
+        facets_size: int | None = Query(
+            default=None,
+            ge=1,
+            le=1000,
+            alias="facetsSize",
+            examples=[100],
+            description=_FACETS_SIZE_DESC,
+        ),
+        facet_self_exclude: bool = Query(
+            default=False,
+            alias="facetSelfExclude",
+            description=_FACET_SELF_EXCLUDE_DESC,
+        ),
+    ) -> None:
+        self.q = None
+        self.top_hits = top_hits
+        self.keyword_operator = keyword_operator
+        self.facets = _normalize_db_portal_facets(facets)
+        self.facets_size = facets_size
+        self.facet_self_exclude = facet_self_exclude
+
+
+class DbPortalSearchByAstQuery(DbPortalSearchQuery):
+    """Query parameters for ``POST /db-portal/search`` (AST in body).
+
+    Identical to :class:`DbPortalSearchQuery` minus ``q`` (the AST lives in the
+    request body).  ``__init__`` is fully overridden (``super().__init__`` is
+    not called); ``self.q`` is forced to ``None`` so the shared dispatch /
+    cursor / cursor-exclusivity helpers stay attribute-compatible.
+    """
+
+    def __init__(
+        self,
+        db: DbPortalDb | None = Query(
+            default=None,
+            examples=["bioproject"],
+            description=(
+                "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, "
+                "``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  "
+                "``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); "
+                "the other six DBs use Elasticsearch.  Omitting returns 400 "
+                "``missing-db``; for cross-database count, use ``POST /db-portal/cross-search``."
+            ),
+        ),
+        page: int = Query(
+            default=1,
+            ge=1,
+            description=(
+                "Page number (1-based).  Combined with perPage, "
+                "page * perPage must be <= 10000 (deep paging limit; "
+                "exceeding returns 400)."
+            ),
+        ),
+        per_page: int = Query(
+            default=20,
+            alias="perPage",
+            description="Items per page.  Allowed: 20, 50, 100.",
+            json_schema_extra={"enum": [20, 50, 100]},
+        ),
+        cursor: str | None = Query(
+            default=None,
+            examples=["eyJwaXRfaWQiOiJhYmMxMjMifQ.def456"],
+            description=(
+                "Cursor token for cursor-based pagination (HMAC-signed, PIT 5 min). "
+                "When specified, sort / page must use their defaults (db and perPage "
+                "may be combined); the body AST is not used for the search (the token "
+                "carries the query) but ``dsl`` is still echoed from it. "
+                "Combining cursor with sort / page>1 returns 400 'about:blank' "
+                "(cursor exclusivity).  Solr-backed DBs (db=trad / db=taxonomy) are "
+                "cursor-incompatible and return 400 'cursor-not-supported'."
+            ),
+        ),
+        sort: Literal["datePublished:asc", "datePublished:desc"] | None = Query(
+            default=None,
+            examples=["datePublished:desc"],
+            description=(
+                "Sort order.  Allowed: null (relevance, default), ``datePublished:desc``, ``datePublished:asc``."
+            ),
+        ),
+        keyword_operator: KeywordOperator = Query(
+            default=KeywordOperator.OR,
+            alias="keywordOperator",
+            description=(
+                "Default boolean operator for connecting comma-separated FreeText tokens. "
+                "Default **OR**.  ``AND`` requires every token to match; ``OR`` requires at "
+                "least one.  Tokens inside a single FreeText value are always AND-combined "
+                "(use double quotes for phrase match).  The explicit ``AND`` / ``OR`` / "
+                "``NOT`` operators inside the AST are unaffected.  Exclusive with cursor "
+                "when not at default (OR)."
+            ),
+        ),
+        facets: str | None = Query(
+            default=None,
+            examples=["organism,libraryStrategy"],
+            description=_FACETS_DESC_SINGLE,
+        ),
+        facets_size: int | None = Query(
+            default=None,
+            ge=1,
+            le=1000,
+            alias="facetsSize",
+            examples=[100],
+            description=_FACETS_SIZE_DESC,
+        ),
+        facet_self_exclude: bool = Query(
+            default=False,
+            alias="facetSelfExclude",
+            description=_FACET_SELF_EXCLUDE_DESC,
+        ),
+    ) -> None:
+        if per_page not in ALLOWED_DB_PORTAL_PER_PAGE:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid perPage value: '{per_page}'.  Allowed: 20, 50, 100.",
+            )
+        if sort is not None and sort not in ALLOWED_DB_PORTAL_SORTS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Invalid sort value: '{sort}'.  Allowed: null (relevance), datePublished:desc, datePublished:asc."
+                ),
+            )
+        self.q = None
+        self.db = db
+        self.page = page
+        self.per_page = per_page
+        self.cursor = cursor
+        self.sort = sort
+        self.keyword_operator = keyword_operator
+        self.facets = _normalize_db_portal_facets(facets)
+        self.facets_size = facets_size
+        self.facet_self_exclude = facet_self_exclude
