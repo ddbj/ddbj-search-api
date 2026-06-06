@@ -523,7 +523,7 @@ ddbj-search-converter は livelist の `*.{bioproject,biosample}.ddbj.withdrawn.
 
 **DB Portal API (`/db-portal/cross-search`, `/db-portal/search`) の status filter**:
 
-DB Portal API の ES 経由検索 (`/db-portal/cross-search` の 6 ES DB 部分、および `/db-portal/search?db=bioproject|biosample|sra|jga|gea|metabobank`) には `/entries/*` 系と同等の status filter (`withdrawn` / `private` は常に除外、`q` の AST トップが free text 単独もしくは `identifier:` 単一 leaf の eq でアクセッション ID 完全一致のときのみ `suppressed` を許可) を適用する。詳細は [db-portal-api-spec.md § データ可視性 (status 制御)](db-portal-api-spec.md#データ可視性-status-制御) を参照。Solr proxy (`/db-portal/search?db=trad|taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提のため status filter は注入しない。
+DB Portal API の ES 経由検索 (`/db-portal/cross-search` の 6 ES DB 部分、および `/db-portal/search?db=bioproject|biosample|sra|jga|gea|metabobank`) には `/entries/*` 系と同等の status filter (`withdrawn` / `private` は常に除外、`q` の AST トップが free text 単独もしくは `identifier:` 単一 leaf の eq でアクセッション ID 完全一致のときのみ `suppressed` を許可) を適用する。詳細は [db-portal-api-spec.md § データ可視性 (status 制御)](db-portal-api-spec.md#データ可視性-status-制御) を参照。Solr proxy (`/db-portal/search?db=ddbj|taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提のため status filter は注入しない。
 
 ### 配列フィールド
 

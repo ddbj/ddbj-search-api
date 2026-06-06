@@ -219,7 +219,7 @@ def _make_lifespan(config: AppConfig) -> Any:
             # call passes a full URL (ARSA ``{base}/{core}/select``, TXSearch
             # preformed ``/solr-rgm/.../select``). Smaller pool than ES: Solr
             # traffic comes only from ``/db-portal/cross-search`` fan-out and
-            # ``/db-portal/search?db=trad|taxonomy``.
+            # ``/db-portal/search?db=ddbj|taxonomy``.
             #
             # Client-level timeout is the hard cap for Solr requests; cross-search
             # per-call bounds (``arsa_timeout`` / ``txsearch_timeout``) are further

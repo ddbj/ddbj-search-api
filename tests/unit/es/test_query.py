@@ -2118,10 +2118,10 @@ class TestDbPortalEsFacetAllowlist:
             assert db_portal_es_facet_allowlist(db) >= _COMMON_FACET_NAMES
 
     def test_solr_db_value_raises_keyerror(self) -> None:
-        # trad / taxonomy must be routed to the Solr facet scope; reaching
+        # ddbj / taxonomy must be routed to the Solr facet scope; reaching
         # the ES allowlist with them is a programming error, not a 0-facet
         # silent fallthrough.
-        for solr_db in ("trad", "taxonomy"):
+        for solr_db in ("ddbj", "taxonomy"):
             with pytest.raises(KeyError):
                 db_portal_es_facet_allowlist(solr_db)
 

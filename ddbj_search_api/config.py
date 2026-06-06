@@ -65,7 +65,7 @@ class AppConfig(BaseSettings):
     port: int = 8080
     env: Env = Env.dev
 
-    # Solr (ARSA = Trad, TXSearch = NCBI Taxonomy). Unset in dev; staging and
+    # Solr (ARSA = Ddbj, TXSearch = NCBI Taxonomy). Unset in dev; staging and
     # production both point at the production ARSA cluster (a011, 8 shards,
     # Solr 4.4.0, core ``collection1``); the core name stays env-overridable.
     solr_arsa_base_url: str | None = None

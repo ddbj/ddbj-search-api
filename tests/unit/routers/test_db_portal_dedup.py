@@ -35,7 +35,7 @@ _HIT_TYPES: list[str] = [
     "jga-policy",
     "gea",
     "metabobank",
-    "trad",
+    "ddbj",
     "taxonomy",
 ]
 

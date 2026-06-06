@@ -43,7 +43,7 @@ TIER1_FIELDS: frozenset[str] = frozenset(
         "date_created",
         "date",
         # 全 ES backed 6 DB 共通 (public-access / controlled-access)。Solr backed
-        # (trad / taxonomy) は公開前提で "public-access" 固定 (field_availability)。
+        # (ddbj / taxonomy) は公開前提で "public-access" 固定 (field_availability)。
         "accessibility",
     },
 )
@@ -76,7 +76,7 @@ FIELD_TYPES: dict[str, FieldType] = {
     "accessibility": "enum",
     # === Tier 2 (cross, converter-normalized) ===
     "submitter": "text",
-    # publication は ES nested の publication.title。trad (ARSA) は ReferenceTitle に
+    # publication は ES nested の publication.title。ddbj (ARSA) は ReferenceTitle に
     # マップして検索可 (compiler_solr)、biosample / taxonomy は非対応 (field_availability)。
     "publication": "text",
     # === Tier 3 BioProject ===
@@ -143,7 +143,7 @@ FIELD_TYPES: dict[str, FieldType] = {
     # .keyword term が効く。値域 validation は ES 側に委譲し、未知値は 0 件で返る。
     "experiment_type": "enum",
     "submission_type": "enum",
-    # === Tier 3 Trad (ARSA) ===
+    # === Tier 3 Ddbj (ARSA) ===
     "division": "enum",
     "molecular_type": "enum",
     "sequence_length": "number",
@@ -238,12 +238,12 @@ TIER3_FIELD_DBS: dict[str, tuple[str, ...]] = {
     "experiment_type": ("gea", "metabobank"),
     # MetaboBank-only
     "submission_type": ("metabobank",),
-    # Trad-only (Solr ARSA backend)
-    "division": ("trad",),
-    "molecular_type": ("trad",),
-    "sequence_length": ("trad",),
-    "feature_gene_name": ("trad",),
-    "reference_journal": ("trad",),
+    # Ddbj-only (Solr ARSA backend)
+    "division": ("ddbj",),
+    "molecular_type": ("ddbj",),
+    "sequence_length": ("ddbj",),
+    "feature_gene_name": ("ddbj",),
+    "reference_journal": ("ddbj",),
     # Taxonomy-only (TXSearch backend)
     "rank": ("taxonomy",),
     "lineage": ("taxonomy",),
@@ -294,27 +294,27 @@ class FieldAvailability:
 
 
 # Tier 1/2 field が「横断可」でも実 field を持たない DB (記載なし = available)。
-# Solr backed (trad / taxonomy) の実 field 不在と、biosample の publication nested 不在。
+# Solr backed (ddbj / taxonomy) の実 field 不在と、biosample の publication nested 不在。
 # Solr の availability は compiler_solr の field map と一致する (drift は unit test で担保)。
-# 例外: organism_id@trad は available だが ARSA に直接 field は無い。cross / single の trad arm が
+# 例外: organism_id@ddbj は available だが ARSA に直接 field は無い。cross / single の ddbj arm が
 # TXSearch で TaxID→学名解決し organism_name に rewrite してから compile する
 # (search.dsl.organism_rewrite)。rewrite を通さず ARSA に compile すると compiler_solr が
 # RuntimeError (no Solr mapping) を投げる。
 _TIER12_UNAVAILABLE_DBS: dict[str, frozenset[str]] = {
-    "name": frozenset({"trad", "taxonomy"}),
+    "name": frozenset({"ddbj", "taxonomy"}),
     "date_published": frozenset({"taxonomy"}),
-    "date_modified": frozenset({"trad", "taxonomy"}),
-    "date_created": frozenset({"trad", "taxonomy"}),
-    "date": frozenset({"trad", "taxonomy"}),
-    "submitter": frozenset({"trad", "taxonomy"}),
+    "date_modified": frozenset({"ddbj", "taxonomy"}),
+    "date_created": frozenset({"ddbj", "taxonomy"}),
+    "date": frozenset({"ddbj", "taxonomy"}),
+    "submitter": frozenset({"ddbj", "taxonomy"}),
     "publication": frozenset({"biosample", "taxonomy"}),
 }
 
 # Tier 1/2 field が、ある DB では実 field を持たず値が固定されているもの。
-# accessibility は Solr backed (trad / taxonomy) が公開前提で "public-access" 固定
+# accessibility は Solr backed (ddbj / taxonomy) が公開前提で "public-access" 固定
 # (solr/mappers.py が response に詰める固定値が SSOT)。
 _TIER12_FIXED_VALUES: dict[str, dict[str, str]] = {
-    "accessibility": {"trad": "public-access", "taxonomy": "public-access"},
+    "accessibility": {"ddbj": "public-access", "taxonomy": "public-access"},
 }
 
 
@@ -344,7 +344,7 @@ _ALL_DBS: tuple[str, ...] = (
     "jga",
     "gea",
     "metabobank",
-    "trad",
+    "ddbj",
     "taxonomy",
 )
 

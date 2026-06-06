@@ -1,6 +1,6 @@
 """Integration tests for IT-DBPORTAL-* scenarios (Solr-backed).
 
-/db-portal/cross-search 8-DB fan-out and /db-portal/search?db=trad |
+/db-portal/cross-search 8-DB fan-out and /db-portal/search?db=ddbj |
 taxonomy. All tests in this module require Solr (ARSA + TXSearch),
 hence the module-level ``staging_only`` marker.
 
@@ -21,15 +21,15 @@ class TestArsaMolecularType:
     """IT-DBPORTAL-01: ARSA exposes MolecularType."""
 
     def test_molecular_type_present_in_some_hits(self, app: TestClient) -> None:
-        """IT-DBPORTAL-01: at least one trad hit carries molecularType."""
+        """IT-DBPORTAL-01: at least one ddbj hit carries molecularType."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "perPage": 20},
+            params={"db": "ddbj", "perPage": 20},
         )
         assert resp.status_code == 200
         hits = resp.json()["hits"]
         assert len(hits) > 0
-        # ``DbPortalHitTrad.molecular_type`` is exposed via the JSON alias
+        # ``DbPortalHitDdbj.molecular_type`` is exposed via the JSON alias
         # ``molecularType``.
         assert any("molecularType" in hit for hit in hits)
 
@@ -38,15 +38,15 @@ class TestArsaSequenceLength:
     """IT-DBPORTAL-02: ARSA exposes SequenceLength."""
 
     def test_sequence_length_present_in_some_hits(self, app: TestClient) -> None:
-        """IT-DBPORTAL-02: at least one trad hit carries sequenceLength."""
+        """IT-DBPORTAL-02: at least one ddbj hit carries sequenceLength."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "perPage": 20},
+            params={"db": "ddbj", "perPage": 20},
         )
         assert resp.status_code == 200
         hits = resp.json()["hits"]
         assert len(hits) > 0
-        # ``DbPortalHitTrad.sequence_length`` is exposed via the JSON alias
+        # ``DbPortalHitDdbj.sequence_length`` is exposed via the JSON alias
         # ``sequenceLength``.
         assert any("sequenceLength" in hit for hit in hits)
 
@@ -58,7 +58,7 @@ class TestArsaOrganismIdentifier:
         """IT-DBPORTAL-03: organism.identifier holds the bare numeric ID."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "cancer", "perPage": 20},
+            params={"db": "ddbj", "q": "cancer", "perPage": 20},
         )
         assert resp.status_code == 200
         for hit in resp.json()["hits"]:
@@ -69,13 +69,13 @@ class TestArsaOrganismIdentifier:
 
 
 class TestSolrDescriptionAlwaysNull:
-    """IT-DBPORTAL-04: trad / taxonomy ``description`` always null."""
+    """IT-DBPORTAL-04: ddbj / taxonomy ``description`` always null."""
 
-    def test_trad_description_null(self, app: TestClient) -> None:
-        """IT-DBPORTAL-04: every trad hit has description == null."""
+    def test_ddbj_description_null(self, app: TestClient) -> None:
+        """IT-DBPORTAL-04: every ddbj hit has description == null."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "perPage": 20},
+            params={"db": "ddbj", "perPage": 20},
         )
         assert resp.status_code == 200
         for hit in resp.json()["hits"]:
@@ -113,14 +113,14 @@ class TestSolrUfAllowlistCompleteness:
     """IT-DBPORTAL-06: Tier 3 fields are accepted by edismax (uf allowlist)."""
 
     def test_tier3_field_query_accepted(self, app: TestClient) -> None:
-        """IT-DBPORTAL-06: ``adv=division:BCT`` (trad Tier 3 field) is accepted."""
-        # ``division`` is an enum-typed trad-only DSL field per
+        """IT-DBPORTAL-06: ``adv=division:BCT`` (ddbj Tier 3 field) is accepted."""
+        # ``division`` is an enum-typed ddbj-only DSL field per
         # ``search/dsl/allowlist.py``. ``molecularType`` / ``sequenceLength``
         # surface in the response shape but are not search-allowlisted.
         # Solr DBs only accept perPage in {20, 50, 100} (IT-DBPORTAL-11).
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "division:BCT", "perPage": 20},
+            params={"db": "ddbj", "q": "division:BCT", "perPage": 20},
         )
         assert resp.status_code == 200
 
@@ -146,7 +146,7 @@ class TestCrossSearchEightDbFanout:
             "jga",
             "gea",
             "metabobank",
-            "trad",
+            "ddbj",
             "taxonomy",
         }
         assert expected <= present_dbs, f"missing DBs: {expected - present_dbs}"
@@ -205,14 +205,14 @@ class TestCrossSearchEightDbHitsUniqueness:
                 assert count >= len(hits), f"db={entry['db']} q={query} count={count} < len(hits)={len(hits)}"
 
 
-class TestSearchTradCursorNotSupported:
-    """IT-DBPORTAL-09: db=trad cursor 不可."""
+class TestSearchDdbjCursorNotSupported:
+    """IT-DBPORTAL-09: db=ddbj cursor 不可."""
 
-    def test_trad_cursor_returns_400(self, app: TestClient) -> None:
-        """IT-DBPORTAL-09: trad search rejects cursor with the slug."""
+    def test_ddbj_cursor_returns_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-09: ddbj search rejects cursor with the slug."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "cancer", "cursor": "any-token"},
+            params={"db": "ddbj", "q": "cancer", "cursor": "any-token"},
         )
         assert resp.status_code == 400
         assert "cursor-not-supported" in resp.json().get("type", "")
@@ -232,21 +232,21 @@ class TestSearchTaxonomyCursorNotSupported:
 
 
 class TestSearchSolrPerPageAllowlist:
-    """IT-DBPORTAL-11: db=trad/taxonomy perPage は {20, 50, 100} のみ."""
+    """IT-DBPORTAL-11: db=ddbj/taxonomy perPage は {20, 50, 100} のみ."""
 
     def test_perpage_20_succeeds(self, app: TestClient) -> None:
-        """IT-DBPORTAL-11: trad perPage=20 → 200."""
+        """IT-DBPORTAL-11: ddbj perPage=20 → 200."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "cancer", "perPage": 20},
+            params={"db": "ddbj", "q": "cancer", "perPage": 20},
         )
         assert resp.status_code == 200
 
     def test_perpage_30_returns_422(self, app: TestClient) -> None:
-        """IT-DBPORTAL-11: trad perPage=30 → 422 (allowlist violation)."""
+        """IT-DBPORTAL-11: ddbj perPage=30 → 422 (allowlist violation)."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "cancer", "perPage": 30},
+            params={"db": "ddbj", "q": "cancer", "perPage": 30},
         )
         assert resp.status_code == 422
 
@@ -268,11 +268,11 @@ class TestCrossSearchPerBackendTimeout:
 
 
 class TestSolrFacets:
-    """IT-DBPORTAL-22: Solr (trad / taxonomy) の facet 集計 (staging_only)."""
+    """IT-DBPORTAL-22: Solr (ddbj / taxonomy) の facet 集計 (staging_only)."""
 
-    def test_trad_facets_returns_lists(self, app: TestClient) -> None:
-        """IT-DBPORTAL-22: db=trad で division / molecularType が list で返る."""
-        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division,molecularType", "perPage": 20})
+    def test_ddbj_facets_returns_lists(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22: db=ddbj で division / molecularType が list で返る."""
+        resp = app.get("/db-portal/search", params={"db": "ddbj", "facets": "division,molecularType", "perPage": 20})
         assert resp.status_code == 200
         facets = resp.json()["facets"]
         assert isinstance(facets, dict)
@@ -287,32 +287,32 @@ class TestSolrFacets:
         assert isinstance(facets["rank"], list)
         assert isinstance(facets["kingdom"], list)
 
-    def test_trad_facet_count_not_greater_than_total(self, app: TestClient) -> None:
+    def test_ddbj_facet_count_not_greater_than_total(self, app: TestClient) -> None:
         """IT-DBPORTAL-22: 各 division bucket の count は total を超えない."""
-        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division", "perPage": 20})
+        resp = app.get("/db-portal/search", params={"db": "ddbj", "facets": "division", "perPage": 20})
         assert resp.status_code == 200
         body = resp.json()
         for bucket in body["facets"]["division"]:
             assert bucket["count"] <= body["total"]
 
-    def test_trad_facet_reinjection_reproduces_count(self, app: TestClient) -> None:
+    def test_ddbj_facet_reinjection_reproduces_count(self, app: TestClient) -> None:
         """IT-DBPORTAL-22 母集団一致: division bucket の value を
         ``division:<value>`` で再注入すると total が bucket.count と一致する
         (8 shard 分散集計でも整合)。
         """
-        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division"})
+        resp = app.get("/db-portal/search", params={"db": "ddbj", "facets": "division"})
         assert resp.status_code == 200
         buckets = resp.json()["facets"]["division"]
         if not buckets:
-            pytest.skip("trad division facet が空: テスト前提のデータ不足")
+            pytest.skip("ddbj division facet が空: テスト前提のデータ不足")
         bucket = buckets[0]
-        reinjected = app.get("/db-portal/search", params={"db": "trad", "q": f"division:{bucket['value']}"})
+        reinjected = app.get("/db-portal/search", params={"db": "ddbj", "q": f"division:{bucket['value']}"})
         assert reinjected.status_code == 200
         assert reinjected.json()["total"] == bucket["count"]
 
-    def test_trad_out_of_scope_facet_400(self, app: TestClient) -> None:
-        """IT-DBPORTAL-22: db=trad で organism (ARSA に無い) は 400 facet-not-applicable."""
-        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "organism"})
+    def test_ddbj_out_of_scope_facet_400(self, app: TestClient) -> None:
+        """IT-DBPORTAL-22: db=ddbj で organism (ARSA に無い) は 400 facet-not-applicable."""
+        resp = app.get("/db-portal/search", params={"db": "ddbj", "facets": "organism"})
         assert resp.status_code == 400
         assert "facet-not-applicable" in resp.json().get("type", "")
 
@@ -327,7 +327,7 @@ class TestSolrSelfExclusion:
 
     @staticmethod
     def _division_values(app: TestClient, size: int = 50) -> list[str]:
-        resp = app.get("/db-portal/search", params={"db": "trad", "facets": "division", "facetsSize": size})
+        resp = app.get("/db-portal/search", params={"db": "ddbj", "facets": "division", "facetsSize": size})
         assert resp.status_code == 200
         return [b["value"] for b in resp.json()["facets"]["division"]]
 
@@ -339,7 +339,7 @@ class TestSolrSelfExclusion:
         selected = values[0]
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "q": f"division:{selected}", "facets": "division", "facetSelfExclude": "true"},
+            params={"db": "ddbj", "q": f"division:{selected}", "facets": "division", "facetSelfExclude": "true"},
         )
         assert resp.status_code == 200
         on_vals = {b["value"] for b in resp.json()["facets"]["division"]}
@@ -350,9 +350,9 @@ class TestSolrSelfExclusion:
         """self-exclusion 無効 (既定) では division facet が選択値だけに潰れる。"""
         values = self._division_values(app)
         if not values:
-            pytest.skip("trad division facet が空: テスト前提のデータ不足")
+            pytest.skip("ddbj division facet が空: テスト前提のデータ不足")
         selected = values[0]
-        resp = app.get("/db-portal/search", params={"db": "trad", "q": f"division:{selected}", "facets": "division"})
+        resp = app.get("/db-portal/search", params={"db": "ddbj", "q": f"division:{selected}", "facets": "division"})
         assert resp.status_code == 200
         assert {b["value"] for b in resp.json()["facets"]["division"]} == {selected}
 
@@ -360,9 +360,9 @@ class TestSolrSelfExclusion:
         """fq に分離した句が hits には効くので total は self-exclusion 有無で不変。"""
         values = self._division_values(app)
         if not values:
-            pytest.skip("trad division facet が空: テスト前提のデータ不足")
+            pytest.skip("ddbj division facet が空: テスト前提のデータ不足")
         selected = values[0]
-        params = {"db": "trad", "q": f"division:{selected}", "facets": "division"}
+        params = {"db": "ddbj", "q": f"division:{selected}", "facets": "division"}
         off = app.get("/db-portal/search", params=params)
         on = app.get("/db-portal/search", params={**params, "facetSelfExclude": "true"})
         assert off.status_code == 200

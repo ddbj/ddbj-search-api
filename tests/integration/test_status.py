@@ -261,14 +261,14 @@ class TestDbPortalSearchSolrNoStatusFilter:
     """IT-STATUS-15: Solr-backed search responses always carry status=public."""
 
     @pytest.mark.staging_only
-    def test_trad_hit_never_exposes_hidden_status(self, app: TestClient) -> None:
-        """IT-STATUS-15: trad hits never carry hidden statuses."""
+    def test_ddbj_hit_never_exposes_hidden_status(self, app: TestClient) -> None:
+        """IT-STATUS-15: ddbj hits never carry hidden statuses."""
         resp = app.get(
             "/db-portal/search",
-            params={"db": "trad", "perPage": 20},
+            params={"db": "ddbj", "perPage": 20},
         )
         assert resp.status_code == 200
-        # The trad index has no non-public records, so the implementation
+        # The ddbj index has no non-public records, so the implementation
         # simply leaves ``status`` ``null`` (no filter is injected, since
         # there is nothing to hide). The invariant is that hidden statuses
         # never appear.

@@ -28,9 +28,9 @@ from ddbj_search_api.search.dsl.serializer import ast_to_dsl
 from tests.unit.conftest import make_es_search_response
 from tests.unit.strategies import valid_ast_strategy
 
-_SOLR_DBS = ("trad", "taxonomy")
+_SOLR_DBS = ("ddbj", "taxonomy")
 _ES_DBS = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
-_DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
+_DB_ORDER = ("ddbj", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
 
 # ``ast`` キーを省略した body ({}) と ``"ast": null`` を区別するための sentinel.
 _OMIT = object()
@@ -247,7 +247,7 @@ class TestScopeValidation:
 
 class TestCursorInteraction:
     def test_cursor_with_solr_db_returns_400_cursor_not_supported(self, app_with_db_portal: TestClient) -> None:
-        resp = _post_search(app_with_db_portal, _AST_TITLE, db="trad", cursor=_cursor_token())
+        resp = _post_search(app_with_db_portal, _AST_TITLE, db="ddbj", cursor=_cursor_token())
         assert resp.status_code == 400
         assert resp.json()["type"] == DbPortalErrorType.cursor_not_supported.value
 

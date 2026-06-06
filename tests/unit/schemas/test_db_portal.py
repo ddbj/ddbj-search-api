@@ -47,7 +47,7 @@ class TestDbPortalDb:
 
     def test_contains_all_expected_values(self) -> None:
         expected = {
-            "trad",
+            "ddbj",
             "sra",
             "bioproject",
             "biosample",
@@ -60,7 +60,7 @@ class TestDbPortalDb:
 
     @pytest.mark.parametrize(
         "value",
-        ["trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy"],
+        ["ddbj", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy"],
     )
     def test_accepts_value(self, value: str) -> None:
         assert DbPortalDb(value).value == value
@@ -382,7 +382,7 @@ class TestDbPortalCrossSearchResponse:
             databases=[
                 DbPortalCount(db=DbPortalDb.sra, count=10, error=None),
                 DbPortalCount(
-                    db=DbPortalDb.trad,
+                    db=DbPortalDb.ddbj,
                     count=None,
                     error=DbPortalCountError.timeout,
                 ),
@@ -691,7 +691,7 @@ class TestDbPortalFacetsParam:
         assert _search_query(facets=" organism , objectType ").facets == "organism,objectType"
 
     def test_solr_name_is_wire_valid(self) -> None:
-        # division is in the wire allowlist; scope (trad-only) is enforced in
+        # division is in the wire allowlist; scope (ddbj-only) is enforced in
         # the router, not here — so even a cross query stores it at this layer.
         assert _cross_query(facets="division").facets == "division"
 

@@ -1,9 +1,9 @@
-"""Solr integration for ARSA (Trad) and TXSearch (NCBI Taxonomy) proxy.
+"""Solr integration for ARSA (Ddbj) and TXSearch (NCBI Taxonomy) proxy.
 
-Lightweight httpx-based proxy layer so ``/db-portal/search?db=trad`` and
+Lightweight httpx-based proxy layer so ``/db-portal/search?db=ddbj`` and
 ``/db-portal/search?db=taxonomy`` can serve hits, and ``/db-portal/cross-search``
 can include their counts in the 8-DB fan-out.  The unified hits envelope
-matches the ES-backed DBs; DB-specific fields (``division`` for trad,
+matches the ES-backed DBs; DB-specific fields (``division`` for ddbj,
 ``rank`` / ``commonName`` for taxonomy) are mapped to
 the corresponding ``DbPortalHit`` variant.
 """

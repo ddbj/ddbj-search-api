@@ -54,15 +54,15 @@ class TestCursorQExclusivityEs:
 
 
 class TestCursorQExclusivitySolr:
-    """IT-DSL-03: cursor + q on Solr (trad) → same slug."""
+    """IT-DSL-03: cursor + q on Solr (ddbj) → same slug."""
 
     @pytest.mark.staging_only
-    def test_cursor_and_q_on_trad_returns_400(self, app: TestClient) -> None:
+    def test_cursor_and_q_on_ddbj_returns_400(self, app: TestClient) -> None:
         """IT-DSL-03: Solr DB also returns ``cursor-not-supported`` 400."""
         resp = app.get(
             "/db-portal/search",
             params={
-                "db": "trad",
+                "db": "ddbj",
                 "q": "title:cancer",
                 "cursor": "any-token",
             },

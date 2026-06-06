@@ -8,7 +8,7 @@
 * ``GET /db-portal/search`` — db-specific hits envelope.  ``db`` is
   required; omitting it returns 400 ``missing-db``.  Accepts ``q``
   plus pagination (``page`` / ``perPage`` / ``cursor``) and ``sort``.
-  ES for 6 DBs, Solr for ``trad`` / ``taxonomy`` (offset-only;
+  ES for 6 DBs, Solr for ``ddbj`` / ``taxonomy`` (offset-only;
   ``cursor`` returns 400 ``cursor-not-supported``).
 
 Both endpoints share the same pipeline: parse ``q`` → validate → compile
@@ -120,7 +120,7 @@ _DEEP_PAGING_LIMIT = 10000
 
 # Cross-search `databases[]` order (fixed, exposed in OpenAPI spec).
 _DB_ORDER: tuple[DbPortalDb, ...] = (
-    DbPortalDb.trad,
+    DbPortalDb.ddbj,
     DbPortalDb.sra,
     DbPortalDb.bioproject,
     DbPortalDb.biosample,
@@ -132,7 +132,7 @@ _DB_ORDER: tuple[DbPortalDb, ...] = (
 
 # DbPortalDb → ES index/alias name.  converter ALIASES: "sra" (6 indices),
 # "jga" (4 indices); other DBs map 1:1 to their index name.  Solr-backed
-# DBs (trad / taxonomy) are not in this map.
+# DBs (ddbj / taxonomy) are not in this map.
 _DB_TO_INDEX: dict[DbPortalDb, str] = {
     DbPortalDb.sra: "sra",
     DbPortalDb.jga: "jga",
@@ -142,7 +142,7 @@ _DB_TO_INDEX: dict[DbPortalDb, str] = {
     DbPortalDb.metabobank: "metabobank",
 }
 
-_SOLR_DBS: frozenset[DbPortalDb] = frozenset({DbPortalDb.trad, DbPortalDb.taxonomy})
+_SOLR_DBS: frozenset[DbPortalDb] = frozenset({DbPortalDb.ddbj, DbPortalDb.taxonomy})
 
 # count fan-out で「upstream 障害」とみなす error (全 arm がこれなら 502)。
 # field_not_applicable は正常な per-arm シグナルなので含めない。
@@ -155,11 +155,11 @@ _UPSTREAM_COUNT_ERRORS: frozenset[DbPortalCountError] = frozenset(
     },
 )
 
-# Solr-backed db-portal facet scope: trad / taxonomy each own their facets,
+# Solr-backed db-portal facet scope: ddbj / taxonomy each own their facets,
 # derived from the solr.query field maps so the scope stays in sync with the
 # request/parse code (docs/db-portal-api-spec.md § facet 集計).
 _DB_PORTAL_SOLR_FACET_SCOPE: dict[DbPortalDb, frozenset[str]] = {
-    DbPortalDb.trad: frozenset(arsa_facet_field_map()),
+    DbPortalDb.ddbj: frozenset(arsa_facet_field_map()),
     DbPortalDb.taxonomy: frozenset(txsearch_facet_field_map()),
 }
 
@@ -329,7 +329,7 @@ def _db_portal_facet_allowlist(db: DbPortalDb | None) -> frozenset[str]:
     """Facet names accepted for a db-portal scope (cross or one of the 8 DBs).
 
     ES scopes (cross + the 6 ES DBs) derive from
-    :func:`db_portal_es_facet_allowlist`; Solr DBs (trad / taxonomy) use
+    :func:`db_portal_es_facet_allowlist`; Solr DBs (ddbj / taxonomy) use
     their own facet field maps.
     """
     if db in _DB_PORTAL_SOLR_FACET_SCOPE:
@@ -577,9 +577,9 @@ async def _count_one_db_es(
 # docs/db-portal-api-spec.md § 内部モデル参照。
 
 
-# === trad (ARSA) の organism_id → organism_name 解決 ===
+# === ddbj (ARSA) の organism_id → organism_name 解決 ===
 #
-# ARSA に TaxID で引ける field が無いため、trad arm は organism_id を TXSearch で学名に
+# ARSA に TaxID で引ける field が無いため、ddbj arm は organism_id を TXSearch で学名に
 # 解決し organism_name に rewrite してから compile する (search.dsl.organism_rewrite)。
 # resolver (TXSearch I/O) は cross / single で共有する。taxid→name は安定なので in-process
 # cache に載せる。
@@ -643,12 +643,12 @@ async def _resolve_taxids_to_names(
     return resolved
 
 
-async def _prepare_trad_arm(
+async def _prepare_ddbj_arm(
     client: httpx.AsyncClient,
     config: AppConfig,
     arm_ast: DslNode | None,
 ) -> OrganismRewrite:
-    """trad arm の organism_id を TXSearch 解決して organism_name に rewrite する。
+    """ddbj arm の organism_id を TXSearch 解決して organism_name に rewrite する。
 
     exact TaxID が無ければ resolver (TXSearch I/O) を叩かない。wildcard organism_id
     (collect 対象外) や organism_id を含まない AST も rewrite は通す: 前者は学名展開不能なので
@@ -672,7 +672,7 @@ async def _count_arsa_unified(
     """ARSA cross-search 用 ``count + top hits`` クエリ発行."""
     if not config.solr_arsa_base_url:
         return DbPortalCount(
-            db=DbPortalDb.trad,
+            db=DbPortalDb.ddbj,
             count=None,
             error=DbPortalCountError.unknown,
             hits=_empty_hits_or_none(top_hits),
@@ -697,11 +697,11 @@ async def _count_arsa_unified(
         )
     except asyncio.TimeoutError:
         logger.warning(
-            "db-portal cross-search timed out for db=trad (ARSA, arsa_timeout=%.2fs)",
+            "db-portal cross-search timed out for db=ddbj (ARSA, arsa_timeout=%.2fs)",
             config.arsa_timeout,
         )
         return DbPortalCount(
-            db=DbPortalDb.trad,
+            db=DbPortalDb.ddbj,
             count=None,
             error=DbPortalCountError.timeout,
             hits=_empty_hits_or_none(top_hits),
@@ -709,12 +709,12 @@ async def _count_arsa_unified(
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
-            "db-portal cross-search failed for db=trad (ARSA): %s (error=%s)",
+            "db-portal cross-search failed for db=ddbj (ARSA): %s (error=%s)",
             type(exc).__name__,
             error.value,
         )
         return DbPortalCount(
-            db=DbPortalDb.trad,
+            db=DbPortalDb.ddbj,
             count=None,
             error=error,
             hits=_empty_hits_or_none(top_hits),
@@ -724,7 +724,7 @@ async def _count_arsa_unified(
     except (KeyError, TypeError, ValueError):
         logger.warning("db-portal cross-search: unexpected ARSA response shape")
         return DbPortalCount(
-            db=DbPortalDb.trad,
+            db=DbPortalDb.ddbj,
             count=None,
             error=DbPortalCountError.unknown,
             hits=_empty_hits_or_none(top_hits),
@@ -733,7 +733,7 @@ async def _count_arsa_unified(
     if top_hits > 0:
         docs = (resp.get("response") or {}).get("docs") or []
         hits = arsa_docs_to_lightweight_hits(docs)
-    return DbPortalCount(db=DbPortalDb.trad, count=count, error=None, hits=hits)
+    return DbPortalCount(db=DbPortalDb.ddbj, count=count, error=None, hits=hits)
 
 
 async def _count_arsa_with_organism_resolution(
@@ -744,7 +744,7 @@ async def _count_arsa_with_organism_resolution(
     *,
     free_text_operator: Literal["AND", "OR"],
 ) -> DbPortalCount:
-    """trad arm の organism_id を TXSearch 解決・rewrite してから ARSA count を発行する。
+    """ddbj arm の organism_id を TXSearch 解決・rewrite してから ARSA count を発行する。
 
     resolver (TXSearch) の timeout / 障害 / 未設定は ARSA backend 障害と同様に count=null +
     error に変換する (cross は他 DB が生きていれば 200)。rewrite が arm 全体を恒偽に畳んだら
@@ -752,16 +752,16 @@ async def _count_arsa_with_organism_resolution(
     """
     try:
         rewrite = await asyncio.wait_for(
-            _prepare_trad_arm(solr_client, config, arm_ast),
+            _prepare_ddbj_arm(solr_client, config, arm_ast),
             timeout=config.txsearch_timeout,
         )
     except asyncio.TimeoutError:
         logger.warning(
-            "db-portal cross-search: TXSearch organism resolution timed out for db=trad (txsearch_timeout=%.2fs)",
+            "db-portal cross-search: TXSearch organism resolution timed out for db=ddbj (txsearch_timeout=%.2fs)",
             config.txsearch_timeout,
         )
         return DbPortalCount(
-            db=DbPortalDb.trad,
+            db=DbPortalDb.ddbj,
             count=None,
             error=DbPortalCountError.timeout,
             hits=_empty_hits_or_none(top_hits),
@@ -769,18 +769,18 @@ async def _count_arsa_with_organism_resolution(
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
-            "db-portal cross-search: TXSearch organism resolution failed for db=trad: %s (error=%s)",
+            "db-portal cross-search: TXSearch organism resolution failed for db=ddbj: %s (error=%s)",
             type(exc).__name__,
             error.value,
         )
         return DbPortalCount(
-            db=DbPortalDb.trad,
+            db=DbPortalDb.ddbj,
             count=None,
             error=error,
             hits=_empty_hits_or_none(top_hits),
         )
     if rewrite.always_zero:
-        return DbPortalCount(db=DbPortalDb.trad, count=0, error=None, hits=_empty_hits_or_none(top_hits))
+        return DbPortalCount(db=DbPortalDb.ddbj, count=0, error=None, hits=_empty_hits_or_none(top_hits))
     arsa_q = _build_solr_q_for_ast(rewrite.ast, dialect="arsa", free_text_operator=free_text_operator)
     with_uf = rewrite.ast is not None and ast_has_field_clause(rewrite.ast)
     return await _count_arsa_unified(solr_client, config, arsa_q, top_hits, with_uf=with_uf)
@@ -875,7 +875,7 @@ async def _count_one_db_unified(
     backend ごとに必要な query (ES body / Solr q) をこの DB 向けにここで構築する
     (簡約で固定値節が落ちた / publication が除かれた等で AST が DB ごとに異なるため)。
     """
-    if db == DbPortalDb.trad:
+    if db == DbPortalDb.ddbj:
         return await _count_arsa_with_organism_resolution(
             solr_client,
             config,
@@ -1155,7 +1155,7 @@ async def _search_arsa_unified(
     except Exception as exc:
         error = _map_httpx_error(exc)
         logger.warning(
-            "db-portal db-specific search failed for db=trad (ARSA): %s (error=%s)",
+            "db-portal db-specific search failed for db=ddbj (ARSA): %s (error=%s)",
             type(exc).__name__,
             error.value,
         )
@@ -1369,13 +1369,13 @@ async def _db_specific_search_dispatch(
     free_text_op: Literal["AND", "OR"] = query.keyword_operator.value
     if query.db in _SOLR_DBS:
         _validate_deep_paging(query.page, query.per_page)
-        if query.db == DbPortalDb.trad:
+        if query.db == DbPortalDb.ddbj:
             try:
-                rewrite = await _prepare_trad_arm(solr_client, config, arm_ast)
+                rewrite = await _prepare_ddbj_arm(solr_client, config, arm_ast)
             except Exception as exc:
                 error = _map_httpx_error(exc)
                 logger.warning(
-                    "db-portal db-specific search: TXSearch organism resolution failed for db=trad: %s (error=%s)",
+                    "db-portal db-specific search: TXSearch organism resolution failed for db=ddbj: %s (error=%s)",
                     type(exc).__name__,
                     error.value,
                 )
@@ -1385,13 +1385,13 @@ async def _db_specific_search_dispatch(
                 ) from exc
             if rewrite.always_zero:
                 return _empty_hits_response(query)
-            trad_ast = rewrite.ast
+            ddbj_ast = rewrite.ast
             return await _search_arsa_unified(
                 solr_client,
                 config,
                 query,
-                trad_ast,
-                with_uf=(trad_ast is not None and ast_has_field_clause(trad_ast)),
+                ddbj_ast,
+                with_uf=(ddbj_ast is not None and ast_has_field_clause(ddbj_ast)),
                 requested_facets=requested_facets,
                 facets_size=facets_size,
                 facet_self_exclude=facet_self_exclude,
@@ -1549,7 +1549,7 @@ async def _db_search_handler(
             type_uri=DbPortalErrorType.missing_db,
             detail=(
                 "Parameter 'db' is required on /db-portal/search. "
-                "Allowed: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy. "
+                "Allowed: ddbj, sra, bioproject, biosample, jga, gea, metabobank, taxonomy. "
                 "For cross-database count, use /db-portal/cross-search."
             ),
         )
@@ -1588,7 +1588,7 @@ async def _db_search_handler(
 _CROSS_SEARCH_EXAMPLE: dict[str, Any] = {
     "databases": [
         {
-            "db": "trad",
+            "db": "ddbj",
             "count": None,
             "error": "timeout",
             "hits": [],
@@ -1742,7 +1742,7 @@ router.add_api_route(
     summary="DB Portal db-specific hits search",
     description=(
         "Single-database hits search with pagination. `db` is required (400 `missing-db` if omitted). "
-        "Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=trad / db=taxonomy) "
+        "Elasticsearch-backed DBs support cursor-based pagination; Solr-backed DBs (db=ddbj / db=taxonomy) "
         "are offset-only (400 `cursor-not-supported` if cursor is supplied). "
         "On ES DBs, `cursor` cannot be combined with `q` / `sort` / `page>1` (400 `about:blank`, cursor exclusivity). "
         "Cross-database counts go through /db-portal/cross-search instead."
@@ -1978,7 +1978,7 @@ async def _search_by_ast_handler(
             type_uri=DbPortalErrorType.missing_db,
             detail=(
                 "Parameter 'db' is required on /db-portal/search. "
-                "Allowed: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy. "
+                "Allowed: ddbj, sra, bioproject, biosample, jga, gea, metabobank, taxonomy. "
                 "For cross-database count, use /db-portal/cross-search."
             ),
         )
@@ -2112,7 +2112,7 @@ router.add_api_route(
         "the request body ({ast}) instead of as ?q=, and the normalized dsl is echoed for "
         "shared-URL sync. db is required (400 missing-db). Cursor pagination behaves like the GET "
         "path: the token carries the query, the body AST is not used for the search but dsl is "
-        "still echoed; Solr DBs (trad / taxonomy) return 400 cursor-not-supported. ast "
+        "still echoed; Solr DBs (ddbj / taxonomy) return 400 cursor-not-supported. ast "
         "omitted/null searches all records and echoes dsl=''."
     ),
     operation_id="searchByAstDbPortal",

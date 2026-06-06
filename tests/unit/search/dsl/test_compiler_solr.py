@@ -84,7 +84,7 @@ class TestArsaDate:
             "date_created:2024-01-01",
             "date:2024-01-01",
             "date:[2020-01-01 TO 2024-12-31]",
-            # accessibility は ES backed 6 DB 共通だが Trad (ARSA) は INSDC 登録系で全 public、
+            # accessibility は ES backed 6 DB 共通だが Ddbj (ARSA) は INSDC 登録系で全 public、
             # accessibility field 不在のため degenerate
             "accessibility:public-access",
         ],
@@ -216,8 +216,8 @@ class TestTxSearchTier2NonApplicable:
         _raises_non_applicable("publication:cancer", "txsearch")
 
 
-class TestArsaTier3Trad:
-    """Trad Tier 3 (5 field) は ARSA フィールド名にマップ."""
+class TestArsaTier3Ddbj:
+    """Ddbj Tier 3 (5 field) は ARSA フィールド名にマップ."""
 
     @pytest.mark.parametrize(
         ("dsl", "expected"),
@@ -228,7 +228,7 @@ class TestArsaTier3Trad:
             ('reference_journal:"Nature Methods"', 'ReferenceJournal:"Nature Methods"'),
         ],
     )
-    def test_trad_field_maps(self, dsl: str, expected: str) -> None:
+    def test_ddbj_field_maps(self, dsl: str, expected: str) -> None:
         assert _c(dsl, "arsa") == expected
 
     def test_sequence_length_eq(self) -> None:
@@ -321,8 +321,8 @@ class TestTxSearchTier3Taxonomy:
         assert _c("kingdom:Anim*", "txsearch") == "kingdom:Anim*"
 
 
-class TestTxSearchTradTier3Degenerate:
-    """Trad Tier 3 は TXSearch で degenerate."""
+class TestTxSearchDdbjTier3Degenerate:
+    """Ddbj Tier 3 は TXSearch で degenerate."""
 
     @pytest.mark.parametrize(
         "dsl",
@@ -334,7 +334,7 @@ class TestTxSearchTradTier3Degenerate:
             "reference_journal:Nature",
         ],
     )
-    def test_trad_non_applicable_on_txsearch(self, dsl: str) -> None:
+    def test_ddbj_non_applicable_on_txsearch(self, dsl: str) -> None:
         _raises_non_applicable(dsl, "txsearch")
 
 
@@ -365,7 +365,7 @@ class TestTxSearchEsOnlyTier3Degenerate:
 class TestSolrBoolWithTier3Mixed:
     """Tier 3 と Tier 1 を bool で混ぜた時、ARSA 側が適切に degenerate を含む."""
 
-    def test_trad_mixed(self) -> None:
+    def test_ddbj_mixed(self) -> None:
         # division:BCT AND title:cancer → ARSA 両方あり
         assert _c("division:BCT AND title:cancer", "arsa") == (
             '(Division:"BCT" AND (Definition:"cancer" OR Definition:cancer*))'

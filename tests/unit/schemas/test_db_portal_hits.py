@@ -1,6 +1,6 @@
 """Tests for DbPortalHit discriminated union variants.
 
-8 variant (BioProject / BioSample / SRA / JGA / GEA / MetaboBank / Trad / Taxonomy)
+8 variant (BioProject / BioSample / SRA / JGA / GEA / MetaboBank / Ddbj / Taxonomy)
 の各 `type` discriminator 値に対する validate 経路、subtype 固有 field、
 `extra="ignore"` 挙動、alias 往復を検証する。SSOT は search-backends.md §L64-69
 および converter 側 `schema.py`。
@@ -18,12 +18,12 @@ from ddbj_search_api.schemas.db_portal import (
     DbPortalHitBase,
     DbPortalHitBioProject,
     DbPortalHitBioSample,
+    DbPortalHitDdbj,
     DbPortalHitGea,
     DbPortalHitJga,
     DbPortalHitMetabobank,
     DbPortalHitSra,
     DbPortalHitTaxonomy,
-    DbPortalHitTrad,
     _DbPortalHitAdapter,
 )
 
@@ -52,7 +52,7 @@ class TestDiscriminatorDispatch:
             ("jga-policy", DbPortalHitJga),
             ("gea", DbPortalHitGea),
             ("metabobank", DbPortalHitMetabobank),
-            ("trad", DbPortalHitTrad),
+            ("ddbj", DbPortalHitDdbj),
             ("taxonomy", DbPortalHitTaxonomy),
         ],
     )
@@ -363,18 +363,18 @@ class TestMetabobankVariant:
         assert h.submission_type == ["Metabolite"]
 
 
-class TestTradVariant:
+class TestDdbjVariant:
     def test_with_division_and_sequence_length(self) -> None:
         h = _validate(
             {
                 "identifier": "AY967397",
-                "type": "trad",
+                "type": "ddbj",
                 "division": "SYN",
                 "molecularType": "DNA",
                 "sequenceLength": 5000,
             },
         )
-        assert isinstance(h, DbPortalHitTrad)
+        assert isinstance(h, DbPortalHitDdbj)
         assert h.division == "SYN"
         assert h.molecular_type == "DNA"
         assert h.sequence_length == 5000

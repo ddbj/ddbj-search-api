@@ -7,16 +7,16 @@
 ## 主要機能
 
 - **2 endpoint 構成**: `/db-portal/cross-search` (横断 fan-out、count + 上位ヒット) と `/db-portal/search` (DB 指定 hits) の 2 系統に分離。両者は operation セマンティクスが別物 (横断は 8 DB fan-out + 部分失敗許容 + 全体タイムアウト、DB 指定は単一 backend + 5xx でフェイル + ページネーション可) のため endpoint も分けた。NCBI EUtils の `eGquery` / `esearch?db=...` と同型
-- ES 6 DB + Solr 2 DB (`trad` = ARSA 8-shard fan-out、`taxonomy` = TXSearch) に対応
+- ES 6 DB + Solr 2 DB (`ddbj` = ARSA 8-shard fan-out、`taxonomy` = TXSearch) に対応
 - 横断 fan-out は asyncio で並列実行、per-backend timeout と全体 timeout で早期打切り (部分完了許容)
 - クエリは Lark LALR(1) パーサ → allowlist validator → ES/Solr compiler の pipeline で処理 (Solr 用と ES 用で別 compiler)
 - フィールド allowlist は 3 段構造: Tier 1 / Tier 2 (横断・単一 DB の両方で使用可、converter 側正規化済の共通 field 中心) / Tier 3 (単一 DB 指定必須、DB 別の特殊 field)
 - `DbPortalHit` は `type` discriminator を持つ discriminated union (variant は DB 別の追加フィールドを持つ。`extra="ignore"` で converter 側の新 field は silently drop)
 - `GET /db-portal/parse`: クエリを JSON tree に逆変換 (共有 URL からの GUI state 復元用)
-- Solr proxy (`db=trad` / `db=taxonomy`) は offset-only (Solr 4.4.0 に PIT 相当なし)、`cursor` 併用は 400 `cursor-not-supported`
+- Solr proxy (`db=ddbj` / `db=taxonomy`) は offset-only (Solr 4.4.0 に PIT 相当なし)、`cursor` 併用は 400 `cursor-not-supported`
 - 横断モードで Tier 3 field を使用すると 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)
 - 横断モードで Tier 1/2 field を使っても、その field を持たない DB の arm は backend を叩かず `count=null` + `error=field-not-applicable` を返す (例: `publication:cancer` の `taxonomy` / `biosample` arm、`date_published:...` の `taxonomy` arm)。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で値を突き合わせ、一致すれば検索続行・不一致なら `count=0`。これにより「その DB が持たない field」での嘘件数 (TXSearch の no-match ~全件化等) を防ぐ
-- 単一 DB モードで、その DB が実 field を持たない field を使用すると 400 `field-not-available-for-db`。Tier 3 の他 DB 専用 field に加え、Tier 1/2 でもその DB に無い field (例: `db=taxonomy` の `date_published`、`db=trad` の `submitter`) を含む。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で突き合わせるため弾かない。DB 内で subtype により分散する field (例: `db=jga` の `grant_title` は jga-study のみ実在) は弾かず 0 件化する
+- 単一 DB モードで、その DB が実 field を持たない field を使用すると 400 `field-not-available-for-db`。Tier 3 の他 DB 専用 field に加え、Tier 1/2 でもその DB に無い field (例: `db=taxonomy` の `date_published`、`db=ddbj` の `submitter`) を含む。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で突き合わせるため弾かない。DB 内で subtype により分散する field (例: `db=jga` の `grant_title` は jga-study のみ実在) は弾かず 0 件化する
 - `/db-portal/cross-search` / `/db-portal/search` は `facets` パラメータで `q` 連動の facet 集計 (値 + 件数) をレスポンスに同梱できる。集計母集団は既定では検索ヒットと一致 (同じ compiled query + status filter)、`facetSelfExclude=true` 指定時は各 facet 自身の `q` フィルタだけを母集団から外す (multi-select 用の self-exclusion)。ES 6 DB + Solr 2 DB の両方に対応 ([§ facet 集計](#facet-集計))
 - `/db-portal/cross-search` / `/db-portal/search` は 2 つの入力経路を持つ: GET (`q` DSL 文字列、cold load / 共有 URL 復元用) と POST (`{ ast }` JSON body、interactive な facet / builder 編集用)。POST は db-portal が手元の AST を直接投げ、サーバ往復を畳んで「結果 + 共有用 `dsl` エコー + q 連動 facet」を 1 リクエストで得る ([§ AST 入力の POST 検索](#ast-入力の-post-検索))
 
@@ -98,7 +98,7 @@ DSL 側の default fields は `identifier` / `title` / `name` / `description` / 
 
 | クエリ | 処理 |
 |-------|-----|
-| `q` 指定 | クエリをパース → validator → ES/Solr にコンパイルして 8 DB 並列発行 (per-backend timeout + 全体 timeout で早期打切り。`trad` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES)。Tier 1/2 フィールドのみ許容 (Tier 3 は 400 `field-not-available-in-cross-db`) |
+| `q` 指定 | クエリをパース → validator → ES/Solr にコンパイルして 8 DB 並列発行 (per-backend timeout + 全体 timeout で早期打切り。`ddbj` は ARSA 8-shard fan-out、`taxonomy` は TXSearch、残り 6 DB は ES)。Tier 1/2 フィールドのみ許容 (Tier 3 は 400 `field-not-available-in-cross-db`) |
 | `q` 省略 | 全件 `match_all` 横断カウント |
 
 パラメータルール:
@@ -127,13 +127,13 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
 {
   "databases": [
     {
-      "db": "trad",
+      "db": "ddbj",
       "count": 295259692,
       "error": null,
       "hits": [
         {
           "identifier": "GL589895",
-          "type": "trad",
+          "type": "ddbj",
           "url": "https://getentry.ddbj.nig.ac.jp/getentry/na/GL589895/",
           "title": "Mus musculus strain C57BL/6J unplaced genomic scaffold scaffold_765, whole genome shotgun sequence.",
           "description": null,
@@ -143,7 +143,7 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
           "dateCreated": null,
           "dateModified": null,
           "datePublished": "2015-03-13",
-          "isPartOf": "trad"
+          "isPartOf": "ddbj"
         }
       ]
     },
@@ -158,7 +158,7 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
 }
 ```
 
-- `databases` は常に 8 件、順序は固定 (`trad → sra → bioproject → biosample → jga → gea → metabobank → taxonomy`)
+- `databases` は常に 8 件、順序は固定 (`ddbj → sra → bioproject → biosample → jga → gea → metabobank → taxonomy`)
 - 各要素は `DbPortalCount`: `db` (enum 8 値)、`count` (int | null)、`error` (enum | null)、`unavailableFields` (`string[]` | null)、`hits` (`DbPortalHit[]` | null)
 - `count` は `track_total_hits=true` (ES) または Solr の `numFound` (Solr-backed DB) に基づく正確値
 - `error` 値: `timeout` / `upstream_5xx` / `connection_refused` / `unknown` (いずれも upstream 障害)、`field_not_applicable` (その DB が query の field を持たず arm を対象外にした正常シグナル。backend は叩いておらず `count=null`)
@@ -172,7 +172,7 @@ Trailing slash なし (`/db-portal/cross-search`) が canonical。
   - per-DB error 時は `[]` (空配列、`error` と整合)
 - 1 つ以上の DB で成功: HTTP 200 (部分失敗許容)
 - 全 DB が upstream 障害 (`timeout` / `upstream_5xx` / `connection_refused` / `unknown`): HTTP 502 (`about:blank`)。`field_not_applicable` は正常シグナルなので 502 の根拠にしない (全 arm が対象外でも 200 で全 `count=null` を返す)
-- `facets`: `facets` パラメータ指定時のみ非 null ([§ facet 集計](#facet-集計))。トップレベル 1 セット (per-DB ではない)。ES 6 DB (entries alias) の union 集計のみで organism / accessibility / type に限る (trad / taxonomy は含まれない)。`facetSelfExclude=true` で各 facet が自身のフィルタを除いた母集団で集計される ([§ 集計母集団と self-exclusion](#集計母集団と-self-exclusion))。集計リクエストが失敗 / timeout した場合は `facets=null` を返し、count fan-out の結果で 200 を維持する
+- `facets`: `facets` パラメータ指定時のみ非 null ([§ facet 集計](#facet-集計))。トップレベル 1 セット (per-DB ではない)。ES 6 DB (entries alias) の union 集計のみで organism / accessibility / type に限る (ddbj / taxonomy は含まれない)。`facetSelfExclude=true` で各 facet が自身のフィルタを除いた母集団で集計される ([§ 集計母集団と self-exclusion](#集計母集団と-self-exclusion))。集計リクエストが失敗 / timeout した場合は `facets=null` を返し、count fan-out の結果で 200 を維持する
 
 ### `hits` lightweight schema
 
@@ -181,7 +181,7 @@ cross-search の `hits` は `DbPortalLightweightHit` (12 field 固定) で返す
 | 12 field | 内容 |
 |---|---|
 | `identifier` | エントリ識別子 |
-| `type` | hit 種別 16 値 (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank` / `trad` / `taxonomy`) |
+| `type` | hit 種別 16 値 (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank` / `ddbj` / `taxonomy`) |
 | `url` | エントリ canonical URL |
 | `title` | タイトル |
 | `description` | 説明 |
@@ -193,12 +193,12 @@ cross-search の `hits` は `DbPortalLightweightHit` (12 field 固定) で返す
 
 ES 6 DB (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank`) は ES index に格納された 12 field をそのまま返す (`/entries/*` と同じ source)。
 
-Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、status / accessibility / 一部日付 / `isPartOf` 相当の field を持たない。下表のとおり実 source を持たない field は固定値 (Solr 側は public 前提) または `null` で埋める。
+Solr 2 DB (`ddbj`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、status / accessibility / 一部日付 / `isPartOf` 相当の field を持たない。下表のとおり実 source を持たない field は固定値 (Solr 側は public 前提) または `null` で埋める。
 
-| field | `trad` (ARSA) | `taxonomy` (TXSearch) |
+| field | `ddbj` (ARSA) | `taxonomy` (TXSearch) |
 |---|---|---|
 | `identifier` | `PrimaryAccessionNumber` | `tax_id` |
-| `type` | 固定 `"trad"` | 固定 `"taxonomy"` |
+| `type` | 固定 `"ddbj"` | 固定 `"taxonomy"` |
 | `url` | `https://getentry.ddbj.nig.ac.jp/getentry/na/{accession}/` | `https://ddbj.nig.ac.jp/tx_search/{tax_id}?view=info` |
 | `title` | `Definition` | `scientific_name` |
 | `description` | `null` | `null` |
@@ -208,7 +208,7 @@ Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており
 | `dateCreated` | `null` | `null` |
 | `dateModified` | `null` | `null` |
 | `datePublished` | `Date` (`YYYYMMDD` → ISO) | `null` |
-| `isPartOf` | 固定 `"trad"` | 固定 `"taxonomy"` |
+| `isPartOf` | 固定 `"ddbj"` | 固定 `"taxonomy"` |
 
 ### データ可視性 (status 制御)
 
@@ -222,7 +222,7 @@ ES 6 DB (`bioproject` / `biosample` / `sra-*` / `jga-*` / `gea` / `metabobank`) 
 - アクセッション ID の判定は ddbj-search-converter の `ID_PATTERN_MAP` 完全一致を用いる。`/entries/*` 系と同じ判定を共有
 - `BoolOp(OR, ...)` / `BoolOp(NOT, ...)` 配下、およびネスト AND の更に下に accession ID が現れても解禁対象外 (誤検出回避)
 
-Solr 2 DB (`trad`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提。status filter は注入せず、レスポンスの `status` / `accessibility` は固定値 `"public"` / `"public-access"` で埋める ([§ `hits` lightweight schema](#hits-lightweight-schema))。
+Solr 2 DB (`ddbj`, `taxonomy`) は外部 NIG Solr cluster を proxy しており、index に non-public エントリーを含まない前提。status filter は注入せず、レスポンスの `status` / `accessibility` は固定値 `"public"` / `"public-access"` で埋める ([§ `hits` lightweight schema](#hits-lightweight-schema))。
 
 cursor pagination (ES 6 DB) は cursor token に最初の offset リクエスト時点の status filter 込み query を焼き込む方式のため、後続 cursor 継続でも同じ status_mode が引き継がれる。
 
@@ -241,9 +241,9 @@ cursor pagination (ES 6 DB) は cursor token に最初の offset リクエスト
 | クエリ | 処理 |
 |-------|-----|
 | `q` + `db` (ES 対応 6 DB) | DB 指定検索 (`hits` envelope + cursor/offset pagination)。クエリは Lark でパース → validator → ES bool query にコンパイル |
-| `q` + `db=trad` / `db=taxonomy` | DB 指定検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却)。クエリは edismax `q` 文字列にコンパイル |
+| `q` + `db=ddbj` / `db=taxonomy` | DB 指定検索 (Solr proxy、offset-only、9 共通フィールド + DB 別 extra で返却)。クエリは edismax `q` 文字列にコンパイル |
 | `q` 省略 + `db` | 当該 `db` の全件 `match_all` ヒット |
-| `cursor` + `db=trad` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は cursor 非対応、offset-only) |
+| `cursor` + `db=ddbj` / `db=taxonomy` | 400 (`cursor-not-supported` — Solr proxy は cursor 非対応、offset-only) |
 | `cursor` + `q` / `sort` / `page>1` (ES 6 DB) | 400 `about:blank` (cursor 排他違反、[§ ページネーション](#ページネーション)参照) |
 
 パラメータルール:
@@ -258,10 +258,10 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 
 パラメータ名・型・デフォルトは Swagger UI (`/search/api/docs`) もしくは [openapi.json](openapi.json) を参照。
 
-- `db` (required): 値は `trad`, `sra`, `bioproject`, `biosample`, `jga`, `gea`, `metabobank`, `taxonomy` のいずれか。未指定で 400 `missing-db`
+- `db` (required): 値は `ddbj`, `sra`, `bioproject`, `biosample`, `jga`, `gea`, `metabobank`, `taxonomy` のいずれか。未指定で 400 `missing-db`
 - `q`: Tier 1/2/3 全フィールド許容。文法は本ページ「クエリ文法」節
 - `perPage`: 許容値は `20`, `50`, `100` のみ (他は 422)
-- `cursor`: HMAC 署名付き opaque トークン、PIT 5 分。ES 6 DB のみ対応。Solr proxy 2 DB (`db=trad` / `db=taxonomy`) は cursor 非対応: 400 `cursor-not-supported`。ES DB で `q` / `sort` / `page>1` と同時指定した場合は cursor 排他違反: 400 `about:blank` ([§ ページネーション](#ページネーション))
+- `cursor`: HMAC 署名付き opaque トークン、PIT 5 分。ES 6 DB のみ対応。Solr proxy 2 DB (`db=ddbj` / `db=taxonomy`) は cursor 非対応: 400 `cursor-not-supported`。ES DB で `q` / `sort` / `page>1` と同時指定した場合は cursor 排他違反: 400 `about:blank` ([§ ページネーション](#ページネーション))
 - `sort`: 許容値は `datePublished:desc`, `datePublished:asc`, または省略 (relevance = score desc + identifier tiebreaker)。他値は 422
 - `facets`: 集計する facet 名のカンマ区切り (任意、省略時は集計なし)。許容値は `db` の scope に依存する ([§ facet 集計](#facet-集計))。scope 外の facet は 400 `facet-not-applicable`、allowlist 外の名前は 422。cursor 排他の対象外 (cursor と併用可)
 - `facetsSize`: facet ごとの最大 bucket 数 (任意、1–1000、既定 100)。cursor 排他の対象外
@@ -310,10 +310,10 @@ Trailing slash なし (`/db-portal/search`) が canonical。
 | `DbPortalHitJga` | `jga-study` / `jga-dataset` / `jga-dac` / `jga-policy` | `organization` / `publication` / `grant` / `externalLink` / `studyType` / `datasetType` / `vendor` |
 | `DbPortalHitGea` | `gea` | `organization` / `publication` / `experimentType` |
 | `DbPortalHitMetabobank` | `metabobank` | `organization` / `publication` / `studyType` / `experimentType` / `submissionType` |
-| `DbPortalHitTrad` | `trad` | `division` / `molecularType` / `sequenceLength` / `referenceTitle` / `referenceJournal` / `geneName` / `lineage` |
+| `DbPortalHitDdbj` | `ddbj` | `division` / `molecularType` / `sequenceLength` / `referenceTitle` / `referenceJournal` / `geneName` / `lineage` |
 | `DbPortalHitTaxonomy` | `taxonomy` | `rank` / `commonName` / `lineage` / `synonym` / `blastName` / `kingdom` / `phylum` / `class` / `order` / `family` / `genus` / `equivalentName` |
 
-`geneName` は ARSA の queryable `FeatureQualifier` が indexed-only (stored=false) のため取得できず、stored な GenBank feature table (`Feature`) の `/gene=` qualifier から抽出する (重複除去・上限 10 件)。trad の `lineage` は ARSA `Lineage` (祖先のみ) 由来で、taxonomy (TXSearch は自身を head に含むため除去する) と違い organism 自身を含まない。
+`geneName` は ARSA の queryable `FeatureQualifier` が indexed-only (stored=false) のため取得できず、stored な GenBank feature table (`Feature`) の `/gene=` qualifier から抽出する (重複除去・上限 10 件)。ddbj の `lineage` は ARSA `Lineage` (祖先のみ) 由来で、taxonomy (TXSearch は自身を head に含むため除去する) と違い organism 自身を含まない。
 
 共通フィールド (全 variant の base `DbPortalHitBase`): `identifier` / `title` / `description` / `organism` / `datePublished` / `dateModified` / `dateCreated` / `url` / `sameAs` / `dbXrefs` / `status` (Literal: public / private / suppressed / withdrawn) / `accessibility` (Literal: public-access / controlled-access)
 
@@ -351,7 +351,7 @@ facet 集計の母集団は `facetSelfExclude` パラメータ (boolean, 既定 
 除外の粒度は backend ごとに異なる:
 
 - **ES (6 DB + cross)**: `q` の AST 中に現れる `F` 対応 field の clause を、出現位置 (AND / OR / NOT / ネスト) に関わらずすべて母集団から外す。除外後に条件が空になれば全件 (`status` のみ適用) を母集団とする。ES の `filter` aggregation は top-level `query` で選ばれた文書集合をさらに**絞る**ことしかできず母集団を広げられないため、top-level `query` を「**全 requested facet の clause を除いた base**」に置き、各 facet を `filter` aggregation で包んで「`F` 以外の facet 句」を足し戻す。これで facet `F` の母集団 = 「`q` から `F` の句だけを外した集合」になる。hits 側の母集団 (= `q` 全フィルタ) は `post_filter` (aggregation には効かない) で復元するため、hits / total / cursor は `q` 全フィルタ適用のまま不変。1 リクエストで完結する (横断は size=0 集計リクエストなので `post_filter` 不要)。
-- **Solr (trad / taxonomy)**: `q` の**トップレベル AND 直下**にある `F` 対応 field clause のみを self-exclusion 対象とする (`{!tag}` / `{!ex}` local params で分離)。OR / NOT 配下やネスト深部の clause は分離できないため self-exclusion されず、その facet は全フィルタ適用の母集団で集計される (degrade)。db-portal の sidebar は選択を AND で畳み込むため実用上のケースはカバーされる。
+- **Solr (ddbj / taxonomy)**: `q` の**トップレベル AND 直下**にある `F` 対応 field clause のみを self-exclusion 対象とする (`{!tag}` / `{!ex}` local params で分離)。OR / NOT 配下やネスト深部の clause は分離できないため self-exclusion されず、その facet は全フィルタ適用の母集団で集計される (degrade)。db-portal の sidebar は選択を AND で畳み込むため実用上のケースはカバーされる。
 - **cursor 経路 (ES single-DB)**: cursor token は AST を持たず compiled query のみを焼き込むため、`facetSelfExclude=true` を併用しても self-exclusion は適用されず、従来どおり cursor の母集団で集計する ([§ ページネーション](#ページネーション))。
 
 ### リクエストパラメータ
@@ -377,14 +377,14 @@ API が受け付ける facet は scope (cross / 各 DB) ごとに決まる。all
 | jga | ES | organism, accessibility, studyType, datasetType, vendor, type |
 | gea | ES | organism, accessibility, experimentType |
 | metabobank | ES | organism, accessibility, experimentType, studyType, submissionType |
-| trad | Solr (ARSA) | division, molecularType |
+| ddbj | Solr (ARSA) | division, molecularType |
 | taxonomy | Solr (TXSearch) | rank, kingdom |
 
-ES facet の scope 判定は `_FACET_AGG_SPECS` / `_TYPE_SPECIFIC_FACET_SCOPE` を SSOT とする (db-portal の `db` 値 → ES subtype 集合に展開して照合)。Solr facet (division / molecularType / rank / kingdom) は db-portal 専用の scope 表で trad / taxonomy のみ許容する。
+ES facet の scope 判定は `_FACET_AGG_SPECS` / `_TYPE_SPECIFIC_FACET_SCOPE` を SSOT とする (db-portal の `db` 値 → ES subtype 集合に展開して照合)。Solr facet (division / molecularType / rank / kingdom) は db-portal 専用の scope 表で ddbj / taxonomy のみ許容する。
 
 注:
 
-- **cross は organism / accessibility / type のみ** (type-specific facet を要求すると 400 `facet-not-applicable`)。クエリ field の Tier 1/2 制約と同じ思想。cross facet は **ES 6 DB (entries alias) の union 集計のみ**で、trad / taxonomy (Solr) は含まれない。`type` facet は ES subtype 14 値。
+- **cross は organism / accessibility / type のみ** (type-specific facet を要求すると 400 `facet-not-applicable`)。クエリ field の Tier 1/2 制約と同じ思想。cross facet は **ES 6 DB (entries alias) の union 集計のみ**で、ddbj / taxonomy (Solr) は含まれない。`type` facet は ES subtype 14 値。
 - **`type` facet は per-db `sra` / `jga` でも集計可** (`db=sra` → sra-* subtype 別、`db=jga` → jga-* subtype 別)。複数 subtype を跨ぐ DB だけが対象で、単一 subtype の `bioproject` / `biosample` / `gea` / `metabobank` は `facets=type` を要求すると 400 (subtype 分解の意味が無い)。`type` の scope は `_TYPE_SPECIFIC_FACET_SCOPE` 上で sra+jga の subtypes として定義し、cross では `_CROSS_TYPE_ONLY_FACET_NAMES` 経由で従来どおり union を集計する。
 - **submitter は facet にしない**。organization.name は高 cardinality のため集計せず、portal 側で text 入力として扱う。
 - **taxonomy の organism は facet にしない** (tax_id が doc 同一性で degenerate)。taxonomy facet は rank / kingdom のみ。
@@ -439,14 +439,14 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
   - **Tier 1 (横断可)**:
     - 識別子: `identifier` (`eq` / `wildcard`)
     - テキスト: `title` / `description` / `name` (`contains` / `wildcard` — `name` は ES common の text+keyword、free-text 既定 5 field の 1 つでもあるが field-scoped でも検索可)
-    - 生物種 (taxID): `organism_id` (`eq` / `wildcard` — ES `organism.identifier` (keyword) に `term`、数値 taxID exact。Solr TXSearch は `tax_id` に直接マップ。Solr ARSA は対応 field 不在だが、trad arm は TXSearch で TaxID→学名を解決し `organism_name` (Organism / Lineage) に rewrite して検索する。解決できない TaxID と `wildcard` は 0 件、TXSearch 障害・未設定は error)
+    - 生物種 (taxID): `organism_id` (`eq` / `wildcard` — ES `organism.identifier` (keyword) に `term`、数値 taxID exact。Solr TXSearch は `tax_id` に直接マップ。Solr ARSA は対応 field 不在だが、ddbj arm は TXSearch で TaxID→学名を解決し `organism_name` (Organism / Lineage) に rewrite して検索する。解決できない TaxID と `wildcard` は 0 件、TXSearch 障害・未設定は error)
     - 生物種 (学名): `organism_name` (`contains` / `wildcard` — ES `organism.name` (text) に `match_phrase`、standard analyzer 経由で大文字小文字の揺れに寛容。Solr ARSA は `(Organism, Lineage)` の OR phrase、TXSearch は `scientific_name` にマップ)
     - 日付: `date_published` / `date_modified` / `date_created` (`eq` / `between`。ARSA は `date_published` のみ `Date` にマップ、`date_modified` / `date_created` は非対応。TXSearch は日付概念が無く全て非対応)
-    - 日付エイリアス: `date` (ES 側で 3 日付フィールドの OR 展開。Solr backed (ARSA / TXSearch) は対応 field 不在のため非対応。trad で日付検索するなら `date_published` を使う)
-    - アクセシビリティ: `accessibility` (`eq` — enum: `public-access` / `controlled-access`。全 ES backed 6 DB 共通。Solr backed (Trad / Taxonomy) は公開前提で `public-access` 固定のため per-arm 簡約で値を突き合わせる (一致で検索続行、不一致で 0 件))
+    - 日付エイリアス: `date` (ES 側で 3 日付フィールドの OR 展開。Solr backed (ARSA / TXSearch) は対応 field 不在のため非対応。ddbj で日付検索するなら `date_published` を使う)
+    - アクセシビリティ: `accessibility` (`eq` — enum: `public-access` / `controlled-access`。全 ES backed 6 DB 共通。Solr backed (Ddbj / Taxonomy) は公開前提で `public-access` 固定のため per-arm 簡約で値を突き合わせる (一致で検索続行、不一致で 0 件))
   - **Tier 2 (横断可、converter 正規化済の共通 field)**:
     - `submitter` (text; ES nested on `organization.name`。Solr backed は organization 不在で非対応)
-    - `publication` (text; ES nested on `publication.title` を `match_phrase`。`/entries/*` 系の `publication=` パラメータと意味が揃う。trad (ARSA) は `ReferenceTitle` (GenBank REFERENCE TITLE) にマップして検索可。`db=biosample` / `db=taxonomy` には対応 field が無いため single-DB で指定すると 400 `field-not-available-for-db`)
+    - `publication` (text; ES nested on `publication.title` を `match_phrase`。`/entries/*` 系の `publication=` パラメータと意味が揃う。ddbj (ARSA) は `ReferenceTitle` (GenBank REFERENCE TITLE) にマップして検索可。`db=biosample` / `db=taxonomy` には対応 field が無いため single-DB で指定すると 400 `field-not-available-for-db`)
   - **Tier 3 (単一 DB 指定必須)**:
     - BioProject: `object_type` (enum={BioProject, UmbrellaBioProject}、ES top-level keyword `objectType` に `term`。REST API の `?objectTypes=` と同じ field)、`project_type` (text、ES `projectType` text+keyword に `match_phrase`。INSDC controlled vocab: genome / metagenome 等。REST API の `?projectType=` と同じ field。`object_type` とは別 field なので混同注意)、`grant_title` (text、nested `grant → grant.title`; JGA と共通)、`grant_agency` (text、2 段 nested `grant → grant.agency.name`; JGA と共通)、`relevance` (enum, top-level keyword)、`external_link_label` (text, nested `externalLink → externalLink.label`; JGA と共通)
     - BioSample: `host` / `strain` / `isolate` (text)、`geo_loc_name` / `collection_date` (text; SRA-sample と共通)、`package` / `model` (enum、controlled vocab、`package` は ES `package.name.keyword` を見る)、`derived_from_id` (identifier, nested `derivedFrom → derivedFrom.identifier`; SRA-sample と共通)
@@ -455,7 +455,7 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
     - SRA + JGA 共通: `type` (enum、subtype 識別子。SRA scope では `sra-submission` / `sra-study` / `sra-experiment` / `sra-run` / `sra-sample` / `sra-analysis`、JGA scope では `jga-study` / `jga-dataset` / `jga-dac` / `jga-policy`。db-portal の sidebar UI で SRA / JGA の subtype 絞込みに使う。値域 validation は ES 側で実施 (allowlist は値域を持たない)、未知の値は 0 件で返る)
     - GEA: `experiment_type` (enum)
     - MetaboBank: `study_type` / `experiment_type` / `submission_type` (enum)
-    - Trad / ARSA: `division` / `molecular_type` (enum)、`sequence_length` (number; range + eq)、`feature_gene_name` / `reference_journal` (text)
+    - Ddbj / ARSA: `division` / `molecular_type` (enum)、`sequence_length` (number; range + eq)、`feature_gene_name` / `reference_journal` (text)
     - Taxonomy / TXSearch: `rank` (enum)、`lineage` / `kingdom` / `phylum` / `class` / `order` / `family` / `genus` / `species` / `common_name` / `synonym` / `blast_name` / `equivalent_name` / `domain` (text)、`strain` / `isolate` (text; BioSample と同名の Tier 3。db 指定必須なので曖昧さなし、compiler が DB ごとに各々の物理 field へ解決)。`japanese_name` は staging TXSearch の schema に field 不在のため対応外
   - 許容外フィールドは 400 `unknown-field`、型と演算子の非互換は 400 `invalid-operator-for-field`
 - **演算子マトリクス** (型 → 許容演算子):
@@ -468,10 +468,10 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
   - GUI の `starts_with` は wildcard `value*` で表現
 - **バックエンド変換**:
   - ES: フィールド型に応じて flat keyword / OR で複数 keyword field / nested / 2 段 nested の 4 pattern に分岐。`submitter` / `publication` / `grant_title` / `external_link_label` / `derived_from_id` は nested、`grant_agency` は 2 段 nested (`grant.agency.name` を叩く)、その他 Tier 3 は flat。text 型 `contains` は simple word のとき `bool.should[match_phrase, match_phrase_prefix]` (完全一致 + 前方一致)、クオート値・記号含み語は `match_phrase` 単独 (前方一致は flat / nested いずれの text フィールドにも同じ規則で適用)
-  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、number range はそのまま、`uf` で allowlist 制御)。非対応 / 固定値 field は cross / single の per-arm 簡約 (`reduce_ast_for_db`) が compile 前に AST から除くため、コンパイラには available field しか渡らない (届いた場合は実装の不変条件違反として RuntimeError)。例外として `organism_id` は trad で available だが ARSA に field が無く、trad arm は per-arm 簡約後に TXSearch で TaxID→学名を解決し `organism_name` に rewrite してから compile する (解決できない TaxID / `wildcard` は 0 件、TXSearch 障害・未設定は error)。text 型 `contains` の simple word は `(field:"w" OR field:w*)` で前方一致 (edismax メタ文字を含む語・クオート値は `field:"w"` 完全一致のみ)
+  - ARSA: AST → edismax `q` 文字列 (フィールド名マッピング、日付は `YYYYMMDD`、number range はそのまま、`uf` で allowlist 制御)。非対応 / 固定値 field は cross / single の per-arm 簡約 (`reduce_ast_for_db`) が compile 前に AST から除くため、コンパイラには available field しか渡らない (届いた場合は実装の不変条件違反として RuntimeError)。例外として `organism_id` は ddbj で available だが ARSA に field が無く、ddbj arm は per-arm 簡約後に TXSearch で TaxID→学名を解決し `organism_name` に rewrite してから compile する (解決できない TaxID / `wildcard` は 0 件、TXSearch 障害・未設定は error)。text 型 `contains` の simple word は `(field:"w" OR field:w*)` で前方一致 (edismax メタ文字を含む語・クオート値は `field:"w"` 完全一致のみ)
   - TXSearch: AST → edismax `q` 文字列 (Tier 1 + Taxonomy Tier 3 のみ対応、`uf` で allowlist 制御)。非対応 field の扱いは ARSA と同じ (per-arm 簡約で除去)。`(-*:*)` を edismax に投げると `qf` 展開で ~全件化するため no-match リテラルは使わない。`contains` 前方一致は ARSA と同じ規則
 - **横断モードでの Tier 3 拒否**: 400 `field-not-available-in-cross-db`、detail に候補 DB を列挙 (例: `field 'library_strategy' is only available in single-DB mode at column 1. use db=sra.`)。複数 DB に乗る field は ` or ` で連結 (例: `field 'geo_loc_name' is only available in single-DB mode at column 1. use db=biosample or db=sra.`)
-- **単一 DB モードでの field-DB 不整合拒否**: 400 `field-not-available-for-db`。指定 `db` が実 field を持たない field で発動する。Tier 3 の他 DB 専用 field (例: `db=biosample` に `grant_title`) に加え、Tier 1/2 でもその DB に無い field (例: `db=taxonomy` の `date_published`、`db=trad` の `submitter`) を含む。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で突き合わせるため弾かない。detail に有効な DB を列挙する。DB 内で subtype により field が分散する場合 (例: `db=jga` の `grant_title` / `grant_agency` は jga-study のみ、`db=sra` の `derived_from_id` は sra-sample のみ) は弾かず、対応 path を持たない subtype の index で 0 件化する
+- **単一 DB モードでの field-DB 不整合拒否**: 400 `field-not-available-for-db`。指定 `db` が実 field を持たない field で発動する。Tier 3 の他 DB 専用 field (例: `db=biosample` に `grant_title`) に加え、Tier 1/2 でもその DB に無い field (例: `db=taxonomy` の `date_published`、`db=ddbj` の `submitter`) を含む。Solr backed で値が固定の field (`accessibility`) は per-arm 簡約で突き合わせるため弾かない。detail に有効な DB を列挙する。DB 内で subtype により field が分散する場合 (例: `db=jga` の `grant_title` / `grant_agency` は jga-study のみ、`db=sra` の `derived_from_id` は sra-sample のみ) は弾かず、対応 path を持たない subtype の index で 0 件化する
 - **エラー位置情報**: `ProblemDetails` スキーマは無変更、`detail` 文字列に自然言語で `at column N (length M)` を埋め込む (機械判別は type URI slug のみ)
 
 例 (bare word / フィールド条件混在):
@@ -511,7 +511,7 @@ organism_name:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (
 | `unexpected-parameter` | 400 | `/db-portal/cross-search` に `db` / `cursor` / `page` / `perPage` / `sort` を指定 (POST 版は `q` も対象) | cross-search | detail に余剰パラメータ名を埋め込み |
 | `missing-db` | 400 | `/db-portal/search` で `db` 未指定 | search | detail に許容 DB 一覧と「横断検索は `/db-portal/cross-search`」案内を埋め込み |
 | `invalid-ast` | 400 | POST body の AST が `DbPortalParseNode` schema に合わない (`op` 不明 / 必須 key 欠落 / value 型違い 等)。Pydantic RequestValidationError を 400 + RFC 7807 にラップ | cross-search / search / serialize (POST) | body schema |
-| `cursor-not-supported` | 400 | `db=trad` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は cursor 非対応、offset-only) | search | — |
+| `cursor-not-supported` | 400 | `db=ddbj` / `db=taxonomy` と `cursor` 同時指定 (Solr proxy は cursor 非対応、offset-only) | search | — |
 | `unexpected-token` | 400 | 構文エラー (非対応構文 / 過長クエリ / 空入力 含む) | 両 | クエリ |
 | `unknown-field` | 400 | allowlist 外フィールド。`detail` に column 位置と候補一覧を埋め込み | 両 | クエリ |
 | `field-not-available-in-cross-db` | 400 | 横断モードで Tier 3 フィールド使用。`detail` に候補 DB を列挙 (例: `use db=sra or db=gea`) | cross-search | クエリ |

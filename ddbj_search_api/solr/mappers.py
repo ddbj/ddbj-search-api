@@ -1,8 +1,8 @@
-"""Solr response mappers for ARSA (Trad) and TXSearch (NCBI Taxonomy).
+"""Solr response mappers for ARSA (Ddbj) and TXSearch (NCBI Taxonomy).
 
 Convert raw Solr ``/select`` JSON to the unified ``DbPortalHit`` discriminated
 union and ``DbPortalHitsResponse`` envelope consumed by
-``/db-portal/search?db=trad|taxonomy``.  Mappers are pure; missing fields
+``/db-portal/search?db=ddbj|taxonomy``.  Mappers are pure; missing fields
 map to ``None`` rather than raising so that ARSA / TXSearch schema drift
 does not propagate to 500 responses.
 """
@@ -179,7 +179,7 @@ def arsa_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
         # joined blurb only duplicates information in the UI.
         payload: dict[str, Any] = {
             "identifier": str(acc) if acc is not None else None,
-            "type": "trad",
+            "type": "ddbj",
             "title": doc.get("Definition"),
             "organism": organism,
             "description": None,
@@ -254,11 +254,11 @@ def arsa_docs_to_lightweight_hits(
 
     Same source mapping as :func:`arsa_docs_to_hits` but produces
     :class:`DbPortalLightweightHit` (12-field schema with ``extra="ignore"``)
-    so Trad-specific extras (``division`` / ``molecularType`` /
+    so Ddbj-specific extras (``division`` / ``molecularType`` /
     ``sequenceLength``) never appear in the response.  ARSA has no
     ``status`` / ``accessibility`` / ``isPartOf`` source field, so
     cross-search fills them with fixed values (``public`` /
-    ``public-access`` / ``trad``) consistent with the "Solr 側は public 前提"
+    ``public-access`` / ``ddbj``) consistent with the "Solr 側は public 前提"
     contract.
     """
     hits: list[DbPortalLightweightHit] = []
@@ -273,7 +273,7 @@ def arsa_docs_to_lightweight_hits(
                 organism["identifier"] = tax_id
         payload: dict[str, Any] = {
             "identifier": str(acc) if acc is not None else None,
-            "type": "trad",
+            "type": "ddbj",
             "title": doc.get("Definition"),
             "description": None,
             "organism": organism,
@@ -283,7 +283,7 @@ def arsa_docs_to_lightweight_hits(
             "accessibility": "public-access",
             "dateCreated": None,
             "dateModified": None,
-            "isPartOf": "trad",
+            "isPartOf": "ddbj",
         }
         hits.append(_DbPortalLightweightHitAdapter.validate_python(payload))
     return hits

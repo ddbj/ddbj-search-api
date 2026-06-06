@@ -47,7 +47,7 @@ DB_PORTAL_VALID_FACET_FIELDS: frozenset[str] = VALID_FACET_FIELDS | DB_PORTAL_SO
 class DbPortalDb(str, Enum):
     """Database identifier for db-portal search (8 values)."""
 
-    trad = "trad"
+    ddbj = "ddbj"
     sra = "sra"
     bioproject = "bioproject"
     biosample = "biosample"
@@ -110,7 +110,7 @@ class DbPortalFacets(Facets):
 
     Extends the shared :class:`~ddbj_search_api.schemas.common.Facets`
     (ES-backed facets) with the four Solr-backed facets that only
-    db-portal exposes: ``division`` / ``molecularType`` (trad / ARSA) and
+    db-portal exposes: ``division`` / ``molecularType`` (ddbj / ARSA) and
     ``rank`` / ``kingdom`` (taxonomy / TXSearch).  The same convention
     applies to every field: ``null`` = not aggregated, ``[]`` = aggregated
     with zero buckets.  See docs/db-portal-api-spec.md § facet 集計.
@@ -119,14 +119,14 @@ class DbPortalFacets(Facets):
     division: list[FacetBucket] | None = Field(
         default=None,
         examples=[[{"value": "BCT", "count": 1200}]],
-        description="Trad division count (db=trad only). INSDC division code (ARSA ``Division`` field).",
+        description="Ddbj division count (db=ddbj only). INSDC division code (ARSA ``Division`` field).",
     )
     molecular_type: list[FacetBucket] | None = Field(
         default=None,
         alias="molecularType",
         examples=[[{"value": "genomic DNA", "count": 800}]],
         description=(
-            "Trad molecular type count (db=trad only, ARSA ``MolecularType`` field). "
+            "Ddbj molecular type count (db=ddbj only, ARSA ``MolecularType`` field). "
             "Re-inject a bucket value as ``molecular_type:<value>`` in the DSL ``q``."
         ),
     )
@@ -152,7 +152,7 @@ _Q_DESC = (
     "Tier 2 (cross): ``submitter``, ``publication``.  "
     "Tier 3 (single-DB only): BioProject ``object_type`` / ``project_type`` / ``grant_title`` / ``grant_agency`` / "
     "SRA ``library_strategy`` etc. / JGA ``study_type`` / GEA+MetaboBank "
-    "``experiment_type`` / MetaboBank ``submission_type`` / Trad ``division`` "
+    "``experiment_type`` / MetaboBank ``submission_type`` / Ddbj ``division`` "
     "etc. / Taxonomy ``rank`` etc.  "
     "Free text may only appear as the sole top-level term or directly under "
     "a top-level AND (max one); placing it under OR / NOT or nested AND "
@@ -175,7 +175,7 @@ _FACETS_DESC_SINGLE = (
     "Comma-separated facet names to aggregate, scoped to the current ``q`` (optional; "
     "omitting it returns no facets).  Accepted names depend on ``db``: ES DBs allow the "
     "common facets (``organism`` / ``accessibility``) plus that DB's type-specific facets "
-    "(e.g. ``db=sra`` → ``libraryStrategy`` etc.); ``db=trad`` allows ``division`` / "
+    "(e.g. ``db=sra`` → ``libraryStrategy`` etc.); ``db=ddbj`` allows ``division`` / "
     "``molecularType``; ``db=taxonomy`` allows ``rank`` / ``kingdom``.  An out-of-scope name "
     "returns 400 ``facet-not-applicable``; an allowlist typo returns 422.  Compatible with "
     "``cursor``.  See ``docs/db-portal-api-spec.md`` § facet 集計."
@@ -320,9 +320,9 @@ class DbPortalSearchQuery:
             default=None,
             examples=["bioproject"],
             description=(
-                "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, "
+                "Target database (required).  Allowed: ``ddbj``, ``sra``, ``bioproject``, "
                 "``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  "
-                "``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); "
+                "``ddbj`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); "
                 "the other six DBs use Elasticsearch.  Omitting returns 400 "
                 "``missing-db``; for cross-database count, use ``/db-portal/cross-search``."
             ),
@@ -351,7 +351,7 @@ class DbPortalSearchQuery:
                 "(db and perPage may be combined). "
                 "Combining cursor with q / sort / page>1 on ES DBs returns 400 "
                 "'about:blank' (cursor exclusivity). "
-                "Solr-backed DBs (db=trad / db=taxonomy) are cursor-incompatible "
+                "Solr-backed DBs (db=ddbj / db=taxonomy) are cursor-incompatible "
                 "and return 400 'cursor-not-supported' if cursor is supplied."
             ),
         ),
@@ -462,7 +462,7 @@ class DbPortalCount(BaseModel):
 class DbPortalCrossSearchResponse(BaseModel):
     """Cross-database response (8 entries, fixed order, count + top hits).
 
-    Order: trad, sra, bioproject, biosample, jga, gea, metabobank, taxonomy.
+    Order: ddbj, sra, bioproject, biosample, jga, gea, metabobank, taxonomy.
     Each entry carries count and (when ``topHits>=1``) up to ``topHits``
     lightweight hits per DB.
     """
@@ -470,7 +470,7 @@ class DbPortalCrossSearchResponse(BaseModel):
     databases: list[DbPortalCount] = Field(
         examples=[
             [
-                {"db": "trad", "count": 100, "error": None, "hits": None},
+                {"db": "ddbj", "count": 100, "error": None, "hits": None},
                 {"db": "bioproject", "count": 50, "error": None, "hits": None},
             ],
         ],
@@ -482,7 +482,7 @@ class DbPortalCrossSearchResponse(BaseModel):
         description=(
             "Facet aggregation over the ES entries alias (organism / accessibility / type only) "
             "when the ``facets`` parameter is supplied; ``null`` otherwise.  Solr-backed DBs "
-            "(trad / taxonomy) are not included.  ``null`` if the aggregation request failed or "
+            "(ddbj / taxonomy) are not included.  ``null`` if the aggregation request failed or "
             "timed out (the count fan-out still returns 200).  See db-portal-api-spec.md § facet 集計."
         ),
     )
@@ -570,7 +570,7 @@ class DbPortalHitBase(BaseModel):
         description=(
             "Parent collection identifier.  ES-backed hits carry the "
             'index-level value (e.g. ``"bioproject"`` / ``"sra"``); '
-            'Solr-backed hits use a fixed literal (``"trad"`` / '
+            'Solr-backed hits use a fixed literal (``"ddbj"`` / '
             '``"taxonomy"``).'
         ),
     )
@@ -766,10 +766,10 @@ class DbPortalHitMetabobank(DbPortalHitBase):
     submission_type: list[str] | None = Field(default=None, alias="submissionType", examples=[["open"]])
 
 
-class DbPortalHitTrad(DbPortalHitBase):
-    """Trad (ARSA-backed) hit."""
+class DbPortalHitDdbj(DbPortalHitBase):
+    """Ddbj (ARSA-backed) hit."""
 
-    type: Literal["trad"] = Field(examples=["trad"], description="Hit type discriminator.")
+    type: Literal["ddbj"] = Field(examples=["ddbj"], description="Hit type discriminator.")
     division: str | None = Field(default=None, examples=["SYN"])
     molecular_type: str | None = Field(default=None, alias="molecularType", examples=["DNA"])
     sequence_length: int | None = Field(default=None, alias="sequenceLength", examples=[5000])
@@ -832,7 +832,7 @@ DbPortalHit = Annotated[
     | DbPortalHitJga
     | DbPortalHitGea
     | DbPortalHitMetabobank
-    | DbPortalHitTrad
+    | DbPortalHitDdbj
     | DbPortalHitTaxonomy,
     Field(discriminator="type"),
 ]
@@ -851,7 +851,7 @@ class DbPortalLightweightHit(BaseModel):
 
     ``type`` covers all 16 possible hit values: the 8 db-portal DBs with
     sub-types where applicable (``sra-*``, ``jga-*``) plus the
-    Solr-backed fixed literals ``trad`` and ``taxonomy``.
+    Solr-backed fixed literals ``ddbj`` and ``taxonomy``.
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
@@ -872,7 +872,7 @@ class DbPortalLightweightHit(BaseModel):
         "jga-policy",
         "gea",
         "metabobank",
-        "trad",
+        "ddbj",
         "taxonomy",
     ] = Field(examples=["bioproject"], description="Entry type.  16 possible values.")
     title: str | None = Field(default=None, examples=["Sample BioProject title"], description="Entry title.")
@@ -923,7 +923,7 @@ class DbPortalLightweightHit(BaseModel):
         description=(
             "Parent collection identifier.  ES-backed hits carry the "
             'index-level value (e.g. ``"bioproject"`` / ``"sra"``); '
-            'Solr-backed hits use a fixed literal (``"trad"`` / '
+            'Solr-backed hits use a fixed literal (``"ddbj"`` / '
             '``"taxonomy"``).'
         ),
     )
@@ -1275,9 +1275,9 @@ class DbPortalSearchByAstQuery(DbPortalSearchQuery):
             default=None,
             examples=["bioproject"],
             description=(
-                "Target database (required).  Allowed: ``trad``, ``sra``, ``bioproject``, "
+                "Target database (required).  Allowed: ``ddbj``, ``sra``, ``bioproject``, "
                 "``biosample``, ``jga``, ``gea``, ``metabobank``, ``taxonomy``.  "
-                "``trad`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); "
+                "``ddbj`` routes to ARSA (Solr) and ``taxonomy`` to TXSearch (Solr); "
                 "the other six DBs use Elasticsearch.  Omitting returns 400 "
                 "``missing-db``; for cross-database count, use ``POST /db-portal/cross-search``."
             ),
@@ -1306,7 +1306,7 @@ class DbPortalSearchByAstQuery(DbPortalSearchQuery):
                 "may be combined); the body AST is not used for the search (the token "
                 "carries the query) but ``dsl`` is still echoed from it. "
                 "Combining cursor with sort / page>1 returns 400 'about:blank' "
-                "(cursor exclusivity).  Solr-backed DBs (db=trad / db=taxonomy) are "
+                "(cursor exclusivity).  Solr-backed DBs (db=ddbj / db=taxonomy) are "
                 "cursor-incompatible and return 400 'cursor-not-supported'."
             ),
         ),

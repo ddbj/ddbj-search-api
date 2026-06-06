@@ -761,7 +761,7 @@ def db_portal_es_facet_allowlist(db: str | None) -> frozenset[str]:
 
     Raises:
         KeyError: when ``db`` is not a db-portal ES database name (Solr
-        DBs ``trad`` / ``taxonomy`` have their own allowlist and must not
+        DBs ``ddbj`` / ``taxonomy`` have their own allowlist and must not
         reach this function).
     """
     if db is None:

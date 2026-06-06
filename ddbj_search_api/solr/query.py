@@ -22,7 +22,7 @@ from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Node
 
 _ARSA_QF = "AllText^0.1 PrimaryAccessionNumber^20 AccessionNumber^10 Definition^5 Organism^3 ReferenceTitle^2"
 # ``fl`` must include every source field that ``arsa_docs_to_hits`` reads;
-# omitting one silently demotes it to ``None`` in the DbPortalHitTrad envelope
+# omitting one silently demotes it to ``None`` in the DbPortalHitDdbj envelope
 # even though Solr has the value.  ``Feature`` recovers the TaxID from
 # ``/db_xref="taxon:..."`` (organism.identifier) and the ``/gene=`` qualifiers
 # (geneName); ARSA's queryable ``FeatureQualifier`` is indexed-only
@@ -92,7 +92,7 @@ _DEFAULT_FACET_LIMIT = 100
 
 
 def arsa_facet_field_map() -> dict[str, str]:
-    """Return a copy of the ARSA (trad) facet name → Solr field map."""
+    """Return a copy of the ARSA (ddbj) facet name → Solr field map."""
     return dict(_ARSA_FACET_FIELD_MAP)
 
 

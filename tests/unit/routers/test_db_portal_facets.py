@@ -129,16 +129,16 @@ class TestResolveDbPortalFacets:
             assert exc.value.status_code == 400
             assert exc.value.type_uri == _FACET_NOT_APPLICABLE
 
-    def test_solr_trad_valid(self) -> None:
-        assert resolve_db_portal_facets("division,molecularType", db=DbPortalDb.trad) == [
+    def test_solr_ddbj_valid(self) -> None:
+        assert resolve_db_portal_facets("division,molecularType", db=DbPortalDb.ddbj) == [
             "division",
             "molecularType",
         ]
 
-    def test_solr_trad_rejects_organism(self) -> None:
+    def test_solr_ddbj_rejects_organism(self) -> None:
         # organism is degenerate on ARSA; not offered.
         with pytest.raises(DbPortalHTTPException) as exc:
-            resolve_db_portal_facets("organism", db=DbPortalDb.trad)
+            resolve_db_portal_facets("organism", db=DbPortalDb.ddbj)
         assert exc.value.type_uri == _FACET_NOT_APPLICABLE
 
     def test_taxonomy_valid(self) -> None:
@@ -327,7 +327,7 @@ class TestDbPortalSearchEsFacets:
 
 
 class TestDbPortalSearchSolrFacets:
-    def test_trad_facets_in_response(
+    def test_ddbj_facets_in_response(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -337,13 +337,13 @@ class TestDbPortalSearchSolrFacets:
         mock_arsa_search_db_portal.return_value = resp_doc
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "facets": "division"},
+            params={"db": "ddbj", "facets": "division"},
         )
         assert resp.status_code == 200
         facets = resp.json()["facets"]
         assert facets["division"] == [{"value": "BCT", "count": 7}, {"value": "VRL", "count": 3}]
 
-    def test_trad_facet_params_in_request(
+    def test_ddbj_facet_params_in_request(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -353,7 +353,7 @@ class TestDbPortalSearchSolrFacets:
         mock_arsa_search_db_portal.return_value = resp_doc
         app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "facets": "division,molecularType", "facetsSize": "20"},
+            params={"db": "ddbj", "facets": "division,molecularType", "facetsSize": "20"},
         )
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         assert params["facet"] == "true"
@@ -361,13 +361,13 @@ class TestDbPortalSearchSolrFacets:
         assert params["facet.mincount"] == "1"
         assert params["facet.limit"] == "20"
 
-    def test_trad_without_facets_omits_facet_params(
+    def test_ddbj_without_facets_omits_facet_params(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=1)
-        resp = app_with_db_portal.get("/db-portal/search", params={"db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"db": "ddbj"})
         assert resp.status_code == 200
         assert resp.json()["facets"] is None
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -391,13 +391,13 @@ class TestDbPortalSearchSolrFacets:
         assert facets["rank"] == [{"value": "species", "count": 3}, {"value": "genus", "count": 1}]
         assert facets["kingdom"] == [{"value": "Bacteria", "count": 4}]
 
-    def test_trad_out_of_scope_facet_400(
+    def test_ddbj_out_of_scope_facet_400(
         self,
         app_with_db_portal: TestClient,
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "facets": "organism"},
+            params={"db": "ddbj", "facets": "organism"},
         )
         assert resp.status_code == 400
         assert resp.json()["type"] == _FACET_NOT_APPLICABLE
@@ -931,7 +931,7 @@ class TestDbPortalSolrSelfExclusion:
     ``fq`` and excludes it on that facet via ``{!ex}`` (docs § 集計母集団と
     self-exclusion)."""
 
-    def test_trad_self_exclude_adds_ex_and_fq(
+    def test_ddbj_self_exclude_adds_ex_and_fq(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -942,7 +942,7 @@ class TestDbPortalSolrSelfExclusion:
         resp = app_with_db_portal.get(
             "/db-portal/search",
             params={
-                "db": "trad",
+                "db": "ddbj",
                 "q": 'division:BCT AND molecular_type:"genomic DNA"',
                 "facets": "division,molecularType",
                 "facetSelfExclude": "true",
@@ -964,7 +964,7 @@ class TestDbPortalSolrSelfExclusion:
         # Response still parses under the bare field keys (key=<field> preserved).
         assert resp.json()["facets"]["division"] == [{"value": "BCT", "count": 1}]
 
-    def test_trad_default_has_no_ex_or_fq(
+    def test_ddbj_default_has_no_ex_or_fq(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -974,13 +974,13 @@ class TestDbPortalSolrSelfExclusion:
         mock_arsa_search_db_portal.return_value = resp_doc
         app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "division:BCT", "facets": "division"},
+            params={"db": "ddbj", "q": "division:BCT", "facets": "division"},
         )
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         assert params["facet.field"] == ["Division"]
         assert "fq" not in params
 
-    def test_trad_multiselect_or_degrades(
+    def test_ddbj_multiselect_or_degrades(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -992,7 +992,7 @@ class TestDbPortalSolrSelfExclusion:
         app_with_db_portal.get(
             "/db-portal/search",
             params={
-                "db": "trad",
+                "db": "ddbj",
                 "q": '(division:BCT OR division:GSS) AND molecular_type:"genomic DNA"',
                 "facets": "division,molecularType",
                 "facetSelfExclude": "true",

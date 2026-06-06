@@ -1,6 +1,6 @@
 """Tests for ddbj_search_api.solr.mappers.
 
-Covers ARSA (Trad) and TXSearch (NCBI Taxonomy) Solr response mappers:
+Covers ARSA (Ddbj) and TXSearch (NCBI Taxonomy) Solr response mappers:
 doc → DbPortalHit, envelope (total, hardLimitReached, hasNext),
 date parsing, list-field flattening, and DB-specific extras passthrough.
 """
@@ -152,12 +152,12 @@ class TestArsaDocsToHits:
         assert len(hits) == 1
         h = hits[0]
         assert h.identifier == "AY967397"
-        assert h.type == "trad"
+        assert h.type == "ddbj"
         assert h.title is None
 
-    def test_type_always_trad(self) -> None:
+    def test_type_always_ddbj(self) -> None:
         hits = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X"}, {"PrimaryAccessionNumber": "Y"}])
-        assert all(h.type == "trad" for h in hits)
+        assert all(h.type == "ddbj" for h in hits)
 
     def test_title_from_definition(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "X", "Definition": "cool seq"}])[0]
@@ -578,7 +578,7 @@ class TestArsaDocsToLightweightHits:
                     "Organism": "Mus musculus",
                     "Date": "20150313",
                     "Feature": ['source 1..1000\n/db_xref="taxon:10090"'],
-                    # Trad-only extras to verify they get dropped.
+                    # Ddbj-only extras to verify they get dropped.
                     "Division": "CON",
                     "MolecularType": "DNA",
                     "SequenceLength": 635881,
@@ -590,7 +590,7 @@ class TestArsaDocsToLightweightHits:
         dumped = h.model_dump(by_alias=True)
         assert set(dumped.keys()) == self._LIGHTWEIGHT_FIELDS
         assert dumped["identifier"] == "GL589895"
-        assert dumped["type"] == "trad"
+        assert dumped["type"] == "ddbj"
         assert dumped["url"] == "https://getentry.ddbj.nig.ac.jp/getentry/na/GL589895/"
         assert dumped["title"] == "Mus musculus scaffold"
         assert dumped["description"] is None
@@ -598,7 +598,7 @@ class TestArsaDocsToLightweightHits:
         assert dumped["datePublished"] == "2015-03-13"
         assert dumped["status"] == "public"
         assert dumped["accessibility"] == "public-access"
-        assert dumped["isPartOf"] == "trad"
+        assert dumped["isPartOf"] == "ddbj"
         assert dumped["dateCreated"] is None
         assert dumped["dateModified"] is None
 
@@ -782,7 +782,7 @@ class TestMappersPBT:
     def test_arsa_any_accession_produces_hit(self, acc: str) -> None:
         hits = arsa_docs_to_hits([{"PrimaryAccessionNumber": acc}])
         assert hits[0].identifier == acc
-        assert hits[0].type == "trad"
+        assert hits[0].type == "ddbj"
         assert isinstance(hits[0], DbPortalHitBase)
 
     @given(tax_id=st.integers(min_value=1, max_value=10_000_000))

@@ -49,8 +49,8 @@ assert r_lower["total"] > 0                  # 「何かヒットしている」
 
 ```python
 # 相対比較で regression を検出する例
-total_all = fetch("q=title:*&db=trad")["total"]
-total_bct = fetch("q=division:BCT&db=trad")["total"]
+total_all = fetch("q=title:*&db=ddbj")["total"]
+total_bct = fetch("q=division:BCT&db=ddbj")["total"]
 assert total_bct < total_all / 2  # 全件 fallback (regression) を弾く
 ```
 
@@ -73,7 +73,7 @@ assert resp_hidden.json()["detail"] == resp_missing.json()["detail"]
 
 ## Solr 必須シナリオ
 
-`/db-portal/cross-search` の 8 DB fan-out と `/db-portal/search?db=trad|taxonomy` は ARSA / TXSearch (Solr) を経由する。Solr はローカルに代替がなく、staging 環境にしかない。これらのシナリオは `@pytest.mark.staging_only` で分離する。
+`/db-portal/cross-search` の 8 DB fan-out と `/db-portal/search?db=ddbj|taxonomy` は ARSA / TXSearch (Solr) を経由する。Solr はローカルに代替がなく、staging 環境にしかない。これらのシナリオは `@pytest.mark.staging_only` で分離する。
 
 `pyproject.toml` の `[tool.pytest.ini_options]` に marker を登録する。
 

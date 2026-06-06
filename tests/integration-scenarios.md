@@ -979,7 +979,7 @@
 
 ### IT-DSL-03: cursor + Solr DB で `cursor-not-supported` 400 — staging_only
 
-**endpoint**: `GET /db-portal/search?db=trad&q=title:cancer&cursor=<token>` (`@pytest.mark.staging_only`)
+**endpoint**: `GET /db-portal/search?db=ddbj&q=title:cancer&cursor=<token>` (`@pytest.mark.staging_only`)
 
 **不変条件**:
 - `type` URI が `cursor-not-supported` slug (`q` の有無 / field clause の有無に関係なく Solr DB + cursor で発火)
@@ -1226,40 +1226,40 @@
 
 ### IT-DBPORTAL-01: ARSA `molecularType` field がレスポンスに含まれる
 
-**endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20`
+**endpoint**: `GET /db-portal/search?db=ddbj&q=*&perPage=20`
 
 **不変条件**:
 - `hits[*].molecularType` (Pydantic alias `molecularType`、Python attr `molecular_type`) が response に出る
 - 一定割合の hit で値が non-null
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)`
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (ddbj)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-02: ARSA `sequenceLength` field がレスポンスに含まれる
 
-**endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20`
+**endpoint**: `GET /db-portal/search?db=ddbj&q=*&perPage=20`
 
 **不変条件**:
 - `hits[*].sequenceLength` (Pydantic alias、Python attr `sequence_length`) が response に出る
 - 一定割合の hit で値が non-null
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)`
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (ddbj)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
 ### IT-DBPORTAL-03: ARSA `organism.identifier` が Feature `db_xref="taxon:..."` から抽出
 
-**endpoint**: `GET /db-portal/search?db=trad&q=cancer&perPage=20`
+**endpoint**: `GET /db-portal/search?db=ddbj&q=cancer&perPage=20`
 
 **不変条件**:
 - `hits[*].organism.identifier` が `taxon:` 接頭辞無しの数値 ID で埋まる (一定割合の hit で)
 - 元 ARSA Feature の `db_xref="taxon:9606"` が `9606` として正しく抽出されている
 
-**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (trad)`
+**回帰元**: `docs/db-portal-api-spec.md § DbPortalHit (ddbj)`
 **関連 unit テスト**: `tests/unit/solr/test_mappers.py`
 
-### IT-DBPORTAL-04: trad / taxonomy `description` が常に null
+### IT-DBPORTAL-04: ddbj / taxonomy `description` が常に null
 
-**endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20` / `?db=taxonomy&q=*&perPage=20`
+**endpoint**: `GET /db-portal/search?db=ddbj&q=*&perPage=20` / `?db=taxonomy&q=*&perPage=20`
 
 **不変条件**:
 - 全 hit で `description == null` (機械連結廃止)
@@ -1280,7 +1280,7 @@
 
 ### IT-DBPORTAL-06: Tier 3 field の uf allowlist 完全性 (Solr backend)
 
-**endpoint**: `GET /db-portal/search?db=trad&q=division:BCT` (Solr compiler 経由)
+**endpoint**: `GET /db-portal/search?db=ddbj&q=division:BCT` (Solr compiler 経由)
 
 **不変条件**:
 - `status_code == 200` かつ `total > 0` (allowlist を通って division で実フィルタが効いている)
@@ -1294,7 +1294,7 @@
 **endpoint**: `GET /db-portal/cross-search?q=cancer&topHits=10`
 
 **不変条件**:
-- response に 8 DB (`bioproject`, `biosample`, `sra`, `jga`, `gea`, `metabobank`, `trad`, `taxonomy`) すべての count が含まれる
+- response に 8 DB (`bioproject`, `biosample`, `sra`, `jga`, `gea`, `metabobank`, `ddbj`, `taxonomy`) すべての count が含まれる
 - 各 DB に対し `topHits` 個までの hit (12-field shared `DbPortalLightweightHit` schema) が含まれる
 - 全 DB が並列に呼ばれている (個別 timeout 内で完走)
 
@@ -1313,9 +1313,9 @@
 **回帰元**: `docs/db-portal-api-spec.md § DbPortalCrossSearchQuery`
 **関連 unit テスト**: `tests/unit/schemas/test_db_portal.py`
 
-### IT-DBPORTAL-09: search?db=trad の cursor 不可
+### IT-DBPORTAL-09: search?db=ddbj の cursor 不可
 
-**endpoint**: `GET /db-portal/search?db=trad&q=cancer&cursor=<token>`
+**endpoint**: `GET /db-portal/search?db=ddbj&q=cancer&cursor=<token>`
 
 **不変条件**:
 - `status_code == 400`
@@ -1335,9 +1335,9 @@
 **回帰元**: `docs/db-portal-api-spec.md § ページネーション`
 **関連 unit テスト**: `tests/unit/routers/test_db_portal.py`
 
-### IT-DBPORTAL-11: search?db=trad/taxonomy の `perPage` allowlist (20/50/100 のみ)
+### IT-DBPORTAL-11: search?db=ddbj/taxonomy の `perPage` allowlist (20/50/100 のみ)
 
-**endpoint**: `GET /db-portal/search?db=trad&q=cancer&perPage={20|50|100|30}`
+**endpoint**: `GET /db-portal/search?db=ddbj&q=cancer&perPage={20|50|100|30}`
 
 **不変条件**:
 - `perPage in {20, 50, 100}` で 200
@@ -1451,13 +1451,13 @@
 
 ---
 
-### IT-DBPORTAL-22: Solr (trad / taxonomy) の facet 集計
+### IT-DBPORTAL-22: Solr (ddbj / taxonomy) の facet 集計
 
-**endpoint**: `GET /db-portal/search?db=trad&facets=division,molecularType` / `GET /db-portal/search?db=taxonomy&facets=rank,kingdom` (Solr backend、`staging_only`)
+**endpoint**: `GET /db-portal/search?db=ddbj&facets=division,molecularType` / `GET /db-portal/search?db=taxonomy&facets=rank,kingdom` (Solr backend、`staging_only`)
 
 **不変条件**:
 - `body.facets` が dict、要求した facet が list (非 null)。各 bucket の `count <= total`
-- trad は `division` / `molecularType` のみ、taxonomy は `rank` / `kingdom` のみ受け付け、それ以外 (`db=trad&facets=organism`) は 400 `facet-not-applicable`
+- ddbj は `division` / `molecularType` のみ、taxonomy は `rank` / `kingdom` のみ受け付け、それ以外 (`db=ddbj&facets=organism`) は 400 `facet-not-applicable`
 - **母集団一致**: `division` bucket の `value` を `q=division:<value>` (facets 無し) で再注入すると `total == bucket.count` (8 shard 分散集計でも一致)
 
 **回帰元**: `docs/db-portal-api-spec.md § facet 集計`
@@ -1483,7 +1483,7 @@
 
 ### IT-DBPORTAL-24: Solr facet の self-exclusion (`facetSelfExclude`、`staging_only`)
 
-**endpoint**: `GET /db-portal/search?db=trad&q=division:<v>&facets=division&facetSelfExclude=true` (Solr backend)
+**endpoint**: `GET /db-portal/search?db=ddbj&q=division:<v>&facets=division&facetSelfExclude=true` (Solr backend)
 
 **不変条件**:
 - `facetSelfExclude=true`: トップレベル AND 直下の facet 句 (`division:<v>`) を `{!tag}` 付き `fq` に分離し `{!ex}` で当該 facet の集計から外すため、division facet に選択値以外が残る
@@ -1643,9 +1643,9 @@ ES `status` フィールド (`public` / `suppressed` / `withdrawn` / `private`) 
 **回帰元**: `docs/db-portal-api-spec.md § データ可視性`
 **関連 unit テスト**: `tests/unit/search/dsl/test_accession_exact_match.py`
 
-### IT-STATUS-15: `/db-portal/search?db=trad|taxonomy` (Solr proxy) は public のみが見える — staging_only
+### IT-STATUS-15: `/db-portal/search?db=ddbj|taxonomy` (Solr proxy) は public のみが見える — staging_only
 
-**endpoint**: `GET /db-portal/search?db=trad&q=*&perPage=20` / `?db=taxonomy&q=*&perPage=20` (`@pytest.mark.staging_only`)
+**endpoint**: `GET /db-portal/search?db=ddbj&q=*&perPage=20` / `?db=taxonomy&q=*&perPage=20` (`@pytest.mark.staging_only`)
 
 **不変条件**:
 - レスポンス `hits[*].status` は `null` または `"public"` のいずれか

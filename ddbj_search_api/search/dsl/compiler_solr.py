@@ -5,17 +5,17 @@ SSOT: search-backends.md §バックエンド変換.
 Dialect:
 - ``arsa``: ARSA (Solr 4.4.0)。Tier 1 (``PrimaryAccessionNumber`` / ``Definition`` /
   ``AllText`` / ``Organism`` / ``Lineage`` / ``Date``) + Tier 2 ``publication``
-  (``ReferenceTitle``) + Trad Tier 3 (``Division`` / ``MolecularType`` /
+  (``ReferenceTitle``) + Ddbj Tier 3 (``Division`` / ``MolecularType`` /
   ``SequenceLength`` / ``FeatureQualifier`` / ``ReferenceJournal``)。``organism_name``
   は ``Organism`` / ``Lineage`` の OR phrase。``organism_id`` (taxID) は ARSA に field が無いが、
-  cross / single の trad arm が TXSearch で TaxID→学名解決し ``organism_name`` に rewrite してから
+  cross / single の ddbj arm が TXSearch で TaxID→学名解決し ``organism_name`` に rewrite してから
   compile する (``search.dsl.organism_rewrite``、この compiler には organism_id を直接渡さない)。
   ``submitter`` / date 系 / ES-only / Taxonomy 系 Tier 3 は ARSA に field が無く非対応。
 - ``txsearch``: TXSearch (Solr 4.4.0)。Tier 1 (``tax_id`` / ``scientific_name`` / ``text``) +
   Taxonomy Tier 3 (``rank`` / ``lineage`` / ``kingdom`` / ... / ``synonym`` / ``blast_name`` /
   ``equivalent_name`` / ``domain`` / ``strain`` / ``isolate``)。TXSearch は Taxonomy DB
   そのものなので ``organism_id`` を ``tax_id`` に、``organism_name`` を ``scientific_name``
-  にマップ。日付 + Tier 2 + Trad/ES-only Tier 3 は非対応。``japanese_name`` は staging
+  にマップ。日付 + Tier 2 + Ddbj/ES-only Tier 3 は非対応。``japanese_name`` は staging
   TXSearch の schema に不在のため map しない。
 
 非対応 / 固定値 field は cross / single の per-arm 簡約 (per_arm.reduce_ast_for_db) が
@@ -49,7 +49,7 @@ SolrDialect: TypeAlias = Literal["arsa", "txsearch"]
 # ARSA / TXSearch どちらも同値、handler 側で q=None 正規化される想定だが安全側にここでも対応.
 _FREE_TEXT_EMPTY_FALLBACK = "*:*"
 
-# === ARSA (Trad) field map ===
+# === ARSA (Ddbj) field map ===
 
 _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     # === Tier 1 ===
@@ -57,7 +57,7 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     "title": ("Definition",),
     "description": ("AllText",),
     # organism_name は学名 (Organism) + 分類体系 (Lineage) の OR phrase。
-    # organism_id (taxID exact) は ARSA に対応 field が無い。trad arm は organism_rewrite が
+    # organism_id (taxID exact) は ARSA に対応 field が無い。ddbj arm は organism_rewrite が
     # TaxID→学名解決して organism_name に変換してから compile するため map は追加しない
     # (直接 compile すると _compile_leaf が RuntimeError)。
     "organism_name": ("Organism", "Lineage"),
@@ -66,7 +66,7 @@ _ARSA_FIELD_MAP: dict[str, tuple[str, ...]] = {
     # publication (ES の publication.title) は ARSA の ReferenceTitle (GenBank REFERENCE
     # TITLE) にマップ。submitter は ARSA に organization 情報が無く非対応 (field_availability)。
     "publication": ("ReferenceTitle",),
-    # === Tier 3 Trad only ===
+    # === Tier 3 Ddbj only ===
     "division": ("Division",),
     "molecular_type": ("MolecularType",),
     "sequence_length": ("SequenceLength",),

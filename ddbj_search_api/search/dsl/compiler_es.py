@@ -12,7 +12,7 @@ SSOT: search-backends.md §バックエンド変換.
   SRA+JGA shared 1 (type)) + 3 nested (grant_title: grant.title, external_link_label:
   externalLink.label, derived_from_id: derivedFrom.identifier) + 1 double-nested
   (grant_agency: grant → grant.agency)。
-- Trad / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
+- Ddbj / Taxonomy 系 Tier 3 は compiler_solr 側で扱うため、本 module の allowlist には含めない。
 
 前提: validator で ``(field_type, value_kind)`` 互換性および cross-mode Tier 3 拒否は担保済。
 """
@@ -77,7 +77,7 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
     "date_modified": _ESStrategy(kind="flat", path="dateModified"),
     "date_created": _ESStrategy(kind="flat", path="dateCreated"),
     "date": _ESStrategy(kind="or_flat", paths=("datePublished", "dateModified", "dateCreated")),
-    # 全 ES backed 6 DB 共通 controlled vocab。Solr backed (Trad / Taxonomy) には field 不在で
+    # 全 ES backed 6 DB 共通 controlled vocab。Solr backed (Ddbj / Taxonomy) には field 不在で
     # cross-mode で degenerate (0 件) 自然に。
     "accessibility": _ESStrategy(kind="flat", path="accessibility"),
     # === Tier 2 ===
@@ -160,7 +160,7 @@ _ES_FIELD_STRATEGY: dict[str, _ESStrategy] = {
         path="derivedFrom",
         sub="derivedFrom.identifier",
     ),
-    # Trad / Taxonomy 系 Tier 3 は ES 対象外 (compiler_solr で処理)。本 map には入れない。
+    # Ddbj / Taxonomy 系 Tier 3 は ES 対象外 (compiler_solr で処理)。本 map には入れない。
 }
 
 

@@ -36,7 +36,7 @@ class TestTierFrozensets:
         assert "name" in TIER1_FIELDS
 
     def test_tier1_includes_accessibility(self) -> None:
-        # accessibility は ES backed 6 DB 共通 (cross 可)、Solr backed (Trad / Taxonomy)
+        # accessibility は ES backed 6 DB 共通 (cross 可)、Solr backed (Ddbj / Taxonomy)
         # では degenerate される (compiler_solr の _*_UNAVAILABLE)
         assert "accessibility" in TIER1_FIELDS
 
@@ -87,7 +87,7 @@ class TestTierFrozensets:
             "experiment_type",  # GEA と MetaboBank 共通
             # MetaboBank exclusive
             "submission_type",
-            # Trad / ARSA 5 件
+            # Ddbj / ARSA 5 件
             "division",
             "molecular_type",
             "sequence_length",
@@ -300,12 +300,12 @@ class TestTier3FieldDbs:
             ("experiment_type", ("gea", "metabobank")),
             # MetaboBank-only
             ("submission_type", ("metabobank",)),
-            # Trad-only
-            ("division", ("trad",)),
-            ("molecular_type", ("trad",)),
-            ("sequence_length", ("trad",)),
-            ("feature_gene_name", ("trad",)),
-            ("reference_journal", ("trad",)),
+            # Ddbj-only
+            ("division", ("ddbj",)),
+            ("molecular_type", ("ddbj",)),
+            ("sequence_length", ("ddbj",)),
+            ("feature_gene_name", ("ddbj",)),
+            ("reference_journal", ("ddbj",)),
             # Taxonomy-only (10 field)
             ("rank", ("taxonomy",)),
             ("lineage", ("taxonomy",)),

@@ -38,9 +38,9 @@ from tests.unit.conftest import (
     make_solr_txsearch_response,
 )
 
-_SOLR_DBS = ("trad", "taxonomy")
+_SOLR_DBS = ("ddbj", "taxonomy")
 _ES_DBS = ("sra", "bioproject", "biosample", "jga", "gea", "metabobank")
-_DB_ORDER = ("trad", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
+_DB_ORDER = ("ddbj", "sra", "bioproject", "biosample", "jga", "gea", "metabobank", "taxonomy")
 
 
 # === Routing ===
@@ -302,8 +302,8 @@ class TestDbPortalCrossSearch:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "cancer"})
         body = resp.json()
         by_db = {e["db"]: e for e in body["databases"]}
-        assert by_db["trad"]["count"] == 77
-        assert by_db["trad"]["error"] is None
+        assert by_db["ddbj"]["count"] == 77
+        assert by_db["ddbj"]["error"] is None
         assert by_db["taxonomy"]["count"] == 9
         assert by_db["taxonomy"]["error"] is None
 
@@ -569,7 +569,7 @@ class TestDbPortalCrossSearchTopHits:
                     "Organism": "Mus musculus",
                     "Date": "20150313",
                     "Feature": ['source 1..1000\n/db_xref="taxon:10090"'],
-                    # Trad-only extras to verify they get dropped.
+                    # Ddbj-only extras to verify they get dropped.
                     "Division": "CON",
                     "MolecularType": "DNA",
                     "SequenceLength": 635881,
@@ -578,12 +578,12 @@ class TestDbPortalCrossSearchTopHits:
         )
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 3})
         assert resp.status_code == 200
-        trad = next(e for e in resp.json()["databases"] if e["db"] == "trad")
-        assert trad["count"] == 2
-        assert len(trad["hits"]) == 1
-        h = trad["hits"][0]
+        ddbj = next(e for e in resp.json()["databases"] if e["db"] == "ddbj")
+        assert ddbj["count"] == 2
+        assert len(ddbj["hits"]) == 1
+        h = ddbj["hits"][0]
         assert h["identifier"] == "GL589895"
-        assert h["type"] == "trad"
+        assert h["type"] == "ddbj"
         assert h["url"].endswith("/GL589895/")
         assert h["title"] == "Mus musculus scaffold"
         assert h["organism"] == {"identifier": "10090", "name": "Mus musculus"}
@@ -591,12 +591,12 @@ class TestDbPortalCrossSearchTopHits:
         # Fixed values per the Solr-side public-only contract.
         assert h["status"] == "public"
         assert h["accessibility"] == "public-access"
-        assert h["isPartOf"] == "trad"
+        assert h["isPartOf"] == "ddbj"
         # Date fields not in ARSA → null.
         assert h["dateCreated"] is None
         assert h["dateModified"] is None
         assert h["description"] is None
-        # Trad-only extras must NOT leak into the lightweight schema.
+        # Ddbj-only extras must NOT leak into the lightweight schema.
         assert "division" not in h
         assert "molecularType" not in h
         assert "sequenceLength" not in h
@@ -735,11 +735,11 @@ class TestDbPortalAdvCrossSearchTopHits:
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         assert params["rows"] == "4"
-        trad = next(e for e in resp.json()["databases"] if e["db"] == "trad")
-        assert len(trad["hits"]) == 1
-        h = trad["hits"][0]
+        ddbj = next(e for e in resp.json()["databases"] if e["db"] == "ddbj")
+        assert len(ddbj["hits"]) == 1
+        h = ddbj["hits"][0]
         assert h["status"] == "public"
-        assert h["isPartOf"] == "trad"
+        assert h["isPartOf"] == "ddbj"
 
     def test_adv_txsearch_rows_match_top_hits_and_emit_lightweight_hits(
         self,
@@ -1140,14 +1140,14 @@ class TestDbPortalErrorFormat:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "cursor": "abc.def"},
+            params={"db": "ddbj", "cursor": "abc.def"},
         )
         assert resp.status_code == 400
         body = resp.json()
         assert body["type"] == DbPortalErrorType.cursor_not_supported.value
         assert body["title"] == "Bad Request"
         assert body["status"] == 400
-        assert "trad" in body["detail"]
+        assert "ddbj" in body["detail"]
 
     def test_400_unexpected_parameter_shape(
         self,
@@ -1215,8 +1215,8 @@ class TestDbPortalSolrCrossSearchErrors:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["count"] is None
-        assert by_db["trad"]["error"] == DbPortalCountError.timeout.value
+        assert by_db["ddbj"]["count"] is None
+        assert by_db["ddbj"]["error"] == DbPortalCountError.timeout.value
 
     def test_arsa_connection_refused_mapped(
         self,
@@ -1226,7 +1226,7 @@ class TestDbPortalSolrCrossSearchErrors:
         mock_arsa_search_db_portal.side_effect = httpx.ConnectError("refused")
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["error"] == DbPortalCountError.connection_refused.value
+        assert by_db["ddbj"]["error"] == DbPortalCountError.connection_refused.value
 
     def test_arsa_5xx_mapped_to_upstream_5xx(
         self,
@@ -1244,7 +1244,7 @@ class TestDbPortalSolrCrossSearchErrors:
         )
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["error"] == DbPortalCountError.upstream_5xx.value
+        assert by_db["ddbj"]["error"] == DbPortalCountError.upstream_5xx.value
 
     def test_txsearch_timeout_mapped(
         self,
@@ -1264,16 +1264,16 @@ class TestDbPortalSolrCrossSearchErrors:
         mock_arsa_search_db_portal.return_value = {"no_response_key": True}
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["error"] == DbPortalCountError.unknown.value
+        assert by_db["ddbj"]["error"] == DbPortalCountError.unknown.value
 
 
-# === ARSA (Trad) DB-specific hits ===
+# === ARSA (Ddbj) DB-specific hits ===
 
 
-class TestDbPortalTradSpecificSearch:
-    """GET /db-portal/search?q=...&db=trad — ARSA proxy."""
+class TestDbPortalDdbjSpecificSearch:
+    """GET /db-portal/search?q=...&db=ddbj — ARSA proxy."""
 
-    def test_returns_trad_hits(
+    def test_returns_ddbj_hits(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -1297,13 +1297,13 @@ class TestDbPortalTradSpecificSearch:
                 },
             ],
         )
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "ddbj"})
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 2
         assert body["hardLimitReached"] is False
         assert body["hits"][0]["identifier"] == "AY967397"
-        assert body["hits"][0]["type"] == "trad"
+        assert body["hits"][0]["type"] == "ddbj"
         assert body["hits"][0]["title"] == "Synthetic construct FTT0951"
         assert body["hits"][0]["organism"]["name"] == "synthetic construct"
         assert body["hits"][0]["datePublished"] == "2005-04-11"
@@ -1316,7 +1316,7 @@ class TestDbPortalTradSpecificSearch:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=10_000)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "ddbj"})
         assert resp.json()["hardLimitReached"] is True
 
     def test_page_and_per_page_echoed(
@@ -1327,7 +1327,7 @@ class TestDbPortalTradSpecificSearch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "x", "db": "trad", "page": 3, "perPage": 50},
+            params={"q": "x", "db": "ddbj", "page": 3, "perPage": 50},
         )
         body = resp.json()
         assert body["page"] == 3
@@ -1339,7 +1339,7 @@ class TestDbPortalTradSpecificSearch:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=1000)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "ddbj"})
         assert resp.json()["nextCursor"] is None
 
     def test_arsa_called_with_core_and_shards(
@@ -1348,7 +1348,7 @@ class TestDbPortalTradSpecificSearch:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
-        app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "ddbj"})
         call = mock_arsa_search_db_portal.call_args
         assert call.kwargs["core"] == "collection1"
         assert call.kwargs["base_url"] == "http://mock-arsa:51981/solr"
@@ -1363,7 +1363,7 @@ class TestDbPortalTradSpecificSearch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "x", "db": "trad", "page": 500, "perPage": 100},
+            params={"q": "x", "db": "ddbj", "page": 500, "perPage": 100},
         )
         assert resp.status_code == 400
 
@@ -1375,16 +1375,16 @@ class TestDbPortalTradSpecificSearch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "x", "db": "trad", "sort": "datePublished:desc"},
+            params={"q": "x", "db": "ddbj", "sort": "datePublished:desc"},
         )
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         assert params["sort"] == "Date desc"
 
 
-class TestDbPortalOrganismIdTradResolution:
-    """organism_id (TaxID) を trad で検索: TXSearch で学名解決 → organism_name に rewrite.
+class TestDbPortalOrganismIdDdbjResolution:
+    """organism_id (TaxID) を ddbj で検索: TXSearch で学名解決 → organism_name に rewrite.
 
-    ARSA に TaxID field が無いので、trad arm は TXSearch で TaxID→学名を解決し organism_name
+    ARSA に TaxID field が無いので、ddbj arm は TXSearch で TaxID→学名を解決し organism_name
     (Organism / Lineage) に rewrite してから ARSA に投げる。解決失敗 / wildcard は 0 件、
     TXSearch 障害 / 未設定は error。count レベルで挙動を固定する。
     """
@@ -1394,7 +1394,7 @@ class TestDbPortalOrganismIdTradResolution:
         # module-level cache がテスト間で漏れないよう各テスト前にクリアする。
         clear_taxid_name_cache()
 
-    # --- single (db=trad) ---
+    # --- single (db=ddbj) ---
 
     def test_single_resolves_taxid_to_organism_name(
         self,
@@ -1406,7 +1406,7 @@ class TestDbPortalOrganismIdTradResolution:
             docs=[{"tax_id": "9606", "scientific_name": "Homo sapiens"}],
         )
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=42)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "ddbj"})
         assert resp.status_code == 200
         assert resp.json()["total"] == 42
         arsa_q = mock_arsa_search_db_portal.call_args.kwargs["params"]["q"]
@@ -1420,7 +1420,7 @@ class TestDbPortalOrganismIdTradResolution:
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(docs=[])
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:99999999", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:99999999", "db": "ddbj"})
         assert resp.status_code == 200
         assert resp.json()["total"] == 0
         assert mock_arsa_search_db_portal.call_count == 0
@@ -1431,7 +1431,7 @@ class TestDbPortalOrganismIdTradResolution:
         mock_arsa_search_db_portal: AsyncMock,
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:96*", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:96*", "db": "ddbj"})
         assert resp.status_code == 200
         assert resp.json()["total"] == 0
         # wildcard TaxID は学名解決できない → resolver も ARSA も叩かず 0 件。
@@ -1445,7 +1445,7 @@ class TestDbPortalOrganismIdTradResolution:
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
         mock_txsearch_search_db_portal.side_effect = httpx.ConnectError("refused")
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "ddbj"})
         assert resp.status_code == 502
         assert mock_arsa_search_db_portal.call_count == 0
 
@@ -1457,7 +1457,7 @@ class TestDbPortalOrganismIdTradResolution:
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
         object.__setattr__(config, "solr_txsearch_url", None)
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "ddbj"})
         assert resp.status_code == 502
         # 未設定は resolver が round-trip 前に例外を投げる。
         assert mock_txsearch_search_db_portal.call_count == 0
@@ -1475,7 +1475,7 @@ class TestDbPortalOrganismIdTradResolution:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=7)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "organism_id:9606 AND title:genome", "db": "trad"},
+            params={"q": "organism_id:9606 AND title:genome", "db": "ddbj"},
         )
         assert resp.status_code == 200
         assert resp.json()["total"] == 7
@@ -1494,14 +1494,14 @@ class TestDbPortalOrganismIdTradResolution:
         )
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=1)
         for _ in range(2):
-            resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "trad"})
+            resp = app_with_db_portal.get("/db-portal/search", params={"q": "organism_id:9606", "db": "ddbj"})
             assert resp.status_code == 200
         # 2 回目は cache ヒットで TXSearch を再度叩かない。
         assert mock_txsearch_search_db_portal.call_count == 1
 
     # --- cross-search ---
 
-    def test_cross_trad_arm_returns_count_not_field_not_applicable(
+    def test_cross_ddbj_arm_returns_count_not_field_not_applicable(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -1516,12 +1516,12 @@ class TestDbPortalOrganismIdTradResolution:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "organism_id:9606"})
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["count"] == 88
-        assert by_db["trad"]["error"] is None
+        assert by_db["ddbj"]["count"] == 88
+        assert by_db["ddbj"]["error"] is None
         arsa_q = mock_arsa_search_db_portal.call_args.kwargs["params"]["q"]
         assert 'Organism:"Homo sapiens"' in arsa_q
 
-    def test_cross_trad_arm_unresolved_is_zero(
+    def test_cross_ddbj_arm_unresolved_is_zero(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -1532,11 +1532,11 @@ class TestDbPortalOrganismIdTradResolution:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "organism_id:99999999"})
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["count"] == 0
-        assert by_db["trad"]["error"] is None
+        assert by_db["ddbj"]["count"] == 0
+        assert by_db["ddbj"]["error"] is None
         assert mock_arsa_search_db_portal.call_count == 0
 
-    def test_cross_trad_arm_txsearch_failure_is_error_but_overall_200(
+    def test_cross_ddbj_arm_txsearch_failure_is_error_but_overall_200(
         self,
         app_with_db_portal: TestClient,
         mock_es_search_db_portal: AsyncMock,
@@ -1548,9 +1548,9 @@ class TestDbPortalOrganismIdTradResolution:
         # ES arm は成功するので全滅 502 にはならない。
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["count"] is None
-        assert by_db["trad"]["error"] is not None
-        assert by_db["trad"]["error"] != "field_not_applicable"
+        assert by_db["ddbj"]["count"] is None
+        assert by_db["ddbj"]["error"] is not None
+        assert by_db["ddbj"]["error"] != "field_not_applicable"
         assert mock_arsa_search_db_portal.call_count == 0
 
 
@@ -1616,7 +1616,7 @@ class TestDbPortalTaxonomySpecificSearch:
 
 
 class TestDbPortalCursorNotSupportedForSolr:
-    """db=trad / db=taxonomy + cursor → 400 cursor-not-supported."""
+    """db=ddbj / db=taxonomy + cursor → 400 cursor-not-supported."""
 
     @pytest.mark.parametrize("db", _SOLR_DBS)
     def test_cursor_with_solr_db_returns_400(
@@ -1659,7 +1659,7 @@ class TestDbPortalSolrErrorPropagation:
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
         mock_arsa_search_db_portal.side_effect = httpx.TimeoutException("timeout")
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "ddbj"})
         assert resp.status_code == 502
 
     def test_arsa_5xx_returns_502(
@@ -1676,7 +1676,7 @@ class TestDbPortalSolrErrorPropagation:
             request=mock_response.request,
             response=mock_response,
         )
-        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "trad"})
+        resp = app_with_db_portal.get("/db-portal/search", params={"q": "x", "db": "ddbj"})
         assert resp.status_code == 502
 
     def test_txsearch_timeout_returns_502(
@@ -1752,8 +1752,8 @@ class TestDbPortalCrossSearchParallelization:
         for es_db in _ES_DBS:
             assert by_db[es_db]["count"] is None
             assert by_db[es_db]["error"] == DbPortalCountError.timeout.value
-        assert by_db["trad"]["count"] == 42
-        assert by_db["trad"]["error"] is None
+        assert by_db["ddbj"]["count"] == 42
+        assert by_db["ddbj"]["error"] is None
         assert by_db["taxonomy"]["count"] == 7
         assert by_db["taxonomy"]["error"] is None
 
@@ -1778,7 +1778,7 @@ class TestDbPortalCrossSearchParallelization:
 
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["error"] == DbPortalCountError.timeout.value
+        assert by_db["ddbj"]["error"] == DbPortalCountError.timeout.value
         assert by_db["taxonomy"]["count"] == 11
         assert by_db["taxonomy"]["error"] is None
 
@@ -1806,8 +1806,8 @@ class TestDbPortalCrossSearchParallelization:
 
         assert resp.status_code == 200
         by_db = {e["db"]: e for e in resp.json()["databases"]}
-        assert by_db["trad"]["count"] == 77
-        assert by_db["trad"]["error"] is None
+        assert by_db["ddbj"]["count"] == 77
+        assert by_db["ddbj"]["error"] is None
         assert by_db["taxonomy"]["error"] == DbPortalCountError.timeout.value
 
     def test_total_timeout_all_backends_slow_returns_502(
@@ -1862,8 +1862,8 @@ class TestDbPortalCrossSearchParallelization:
         for es_db in _ES_DBS:
             assert by_db[es_db]["count"] == 4
             assert by_db[es_db]["error"] is None
-        assert by_db["trad"]["count"] is None
-        assert by_db["trad"]["error"] == DbPortalCountError.timeout.value
+        assert by_db["ddbj"]["count"] is None
+        assert by_db["ddbj"]["error"] == DbPortalCountError.timeout.value
         assert by_db["taxonomy"]["count"] is None
         assert by_db["taxonomy"]["error"] == DbPortalCountError.timeout.value
 
@@ -1890,7 +1890,7 @@ class TestDbPortalCrossSearchParallelization:
         by_db = {e["db"]: e for e in resp.json()["databases"]}
         for es_db in _ES_DBS:
             assert by_db[es_db]["count"] == 9
-        assert by_db["trad"]["count"] == 13
+        assert by_db["ddbj"]["count"] == 13
         assert by_db["taxonomy"]["count"] == 2
         for entry in resp.json()["databases"]:
             assert entry["error"] is None
@@ -2000,7 +2000,7 @@ class TestDbPortalCrossSearchPBT:
             raise _mk_error(outcome)
 
         async def _arsa_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-            outcome = outcomes_by_db["trad"]
+            outcome = outcomes_by_db["ddbj"]
             if outcome == "success":
                 return make_solr_arsa_response(num_found=0)
             raise _mk_error(outcome)
@@ -2056,7 +2056,7 @@ class TestDbPortalCrossSearchPBT:
             return make_es_search_response(total=0)
 
         async def _arsa_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-            await asyncio.sleep(delays_by_db["trad"])
+            await asyncio.sleep(delays_by_db["ddbj"])
             return make_solr_arsa_response(num_found=0)
 
         async def _txsearch_side_effect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -2123,8 +2123,8 @@ class TestDbPortalAdvValidDispatch:
         # ES 6DB は date alias (3 日付 OR) を持つ
         assert by_db["bioproject"]["count"] == 5
         # Solr 2DB は date alias 非対応 → per-arm 簡約で対象外 (Solr を叩かず count=null)
-        assert by_db["trad"]["count"] is None
-        assert by_db["trad"]["error"] == "field_not_applicable"
+        assert by_db["ddbj"]["count"] is None
+        assert by_db["ddbj"]["error"] == "field_not_applicable"
         assert by_db["taxonomy"]["count"] is None
         assert by_db["taxonomy"]["error"] == "field_not_applicable"
 
@@ -2153,7 +2153,7 @@ class TestDbPortalAdvValidDispatch:
         # 対応 arm では null (キーは全 arm で常に出る)
         assert "unavailableFields" in by_db["bioproject"]
         assert by_db["bioproject"]["unavailableFields"] is None
-        assert by_db["trad"]["unavailableFields"] is None
+        assert by_db["ddbj"]["unavailableFields"] is None
 
     def test_adv_with_db_bioproject_returns_hits(
         self,
@@ -2173,7 +2173,7 @@ class TestDbPortalAdvValidDispatch:
         assert body["total"] == 1
         assert body["hits"][0]["identifier"] == "PRJDB1"
 
-    def test_adv_with_db_trad_uses_arsa(
+    def test_adv_with_db_ddbj_uses_arsa(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -2184,7 +2184,7 @@ class TestDbPortalAdvValidDispatch:
         )
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": 'title:"human"', "db": "trad"},
+            params={"q": 'title:"human"', "db": "ddbj"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -2238,7 +2238,7 @@ class TestDbPortalAdvValidDispatch:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "title:cancer", "db": "trad"},
+            params={"q": "title:cancer", "db": "ddbj"},
         )
         call_args = mock_arsa_search_db_portal.await_args
         assert call_args is not None
@@ -2255,7 +2255,7 @@ class TestDbPortalAdvValidDispatch:
     ) -> None:
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "title:cancer", "db": "trad", "cursor": "abc.def"},
+            params={"q": "title:cancer", "db": "ddbj", "cursor": "abc.def"},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -2497,22 +2497,22 @@ class TestDbPortalAdvTier2Tier3:
         params = mock_txsearch_search_db_portal.call_args.kwargs["params"]
         assert 'rank:"species"' in params["q"]
 
-    def test_tier3_trad_division_to_arsa(
+    def test_tier3_ddbj_division_to_arsa(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
     ) -> None:
-        """`division:BCT` + db=trad → ARSA に q=Division:"BCT" が届く."""
+        """`division:BCT` + db=ddbj → ARSA に q=Division:"BCT" が届く."""
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "division:BCT", "db": "trad"},
+            params={"q": "division:BCT", "db": "ddbj"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
         assert 'Division:"BCT"' in params["q"]
 
-    def test_tier3_trad_sequence_length_range_to_arsa(
+    def test_tier3_ddbj_sequence_length_range_to_arsa(
         self,
         app_with_db_portal: TestClient,
         mock_arsa_search_db_portal: AsyncMock,
@@ -2521,7 +2521,7 @@ class TestDbPortalAdvTier2Tier3:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "sequence_length:[100 TO 5000]", "db": "trad"},
+            params={"q": "sequence_length:[100 TO 5000]", "db": "ddbj"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -2569,7 +2569,7 @@ class TestDbPortalAdvTier2Tier3:
         """number 型の非 digit 値は invalid_operator_for_field (new slug 不設けの方針)."""
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"q": "sequence_length:abc", "db": "trad"},
+            params={"q": "sequence_length:abc", "db": "ddbj"},
         )
         assert resp.status_code == 400
         body = resp.json()
@@ -3048,7 +3048,7 @@ class TestDbPortalSolrNoStatusFilter:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "cancer"},
+            params={"db": "ddbj", "q": "cancer"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -3063,7 +3063,7 @@ class TestDbPortalSolrNoStatusFilter:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "PRJDB1234"},
+            params={"db": "ddbj", "q": "PRJDB1234"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -3077,7 +3077,7 @@ class TestDbPortalSolrNoStatusFilter:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "title:cancer"},
+            params={"db": "ddbj", "q": "title:cancer"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]
@@ -3118,7 +3118,7 @@ class TestDbPortalSolrNoStatusFilter:
         mock_arsa_search_db_portal: AsyncMock,
         mock_txsearch_search_db_portal: AsyncMock,
     ) -> None:
-        """`/db-portal/cross-search` の ARSA 経路 (trad) も同じく no-op。"""
+        """`/db-portal/cross-search` の ARSA 経路 (ddbj) も同じく no-op。"""
         mock_es_search_db_portal.return_value = make_es_search_response(total=0)
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         mock_txsearch_search_db_portal.return_value = make_solr_txsearch_response(num_found=0)
@@ -3406,7 +3406,7 @@ class TestKeywordOperatorOnDbPortal:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "cancer,tumor", "keywordOperator": "OR"},
+            params={"db": "ddbj", "q": "cancer,tumor", "keywordOperator": "OR"},
         )
         assert resp.status_code == 200
         # ARSA 呼び出し時の q parameter を取り出す
@@ -3542,7 +3542,7 @@ class TestQueryAndJoin:
         mock_arsa_search_db_portal.return_value = make_solr_arsa_response(num_found=0)
         resp = app_with_db_portal.get(
             "/db-portal/search",
-            params={"db": "trad", "q": "human AND title:cancer"},
+            params={"db": "ddbj", "q": "human AND title:cancer"},
         )
         assert resp.status_code == 200
         params = mock_arsa_search_db_portal.call_args.kwargs["params"]

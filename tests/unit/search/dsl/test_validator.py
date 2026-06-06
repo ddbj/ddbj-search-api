@@ -397,7 +397,7 @@ class TestTier3CrossModeReject:
             # GEA / MetaboBank
             ("experiment_type", "RNA-Seq"),
             ("submission_type", "metabolite"),
-            # Trad
+            # Ddbj
             ("division", "BCT"),
             ("molecular_type", "DNA"),
             ("feature_gene_name", "BRCA1"),
@@ -550,21 +550,21 @@ class TestSingleModeDbScope:
             ("dataset_type:fastq", "sra"),
             ("vendor:Illumina", "bioproject"),
             ("division:BCT", "taxonomy"),
-            ("rank:species", "trad"),
+            ("rank:species", "ddbj"),
             ("derived_from_id:SAMD00012345", "jga"),
             ("external_link_label:GEO", "sra"),
             # Tier 2: publication は biosample に nested 不在 / taxonomy にも不在
-            # (trad は ReferenceTitle にマップされ available なので reject されない)。
+            # (ddbj は ReferenceTitle にマップされ available なので reject されない)。
             ("publication:cancer", "biosample"),
             ("publication:cancer", "taxonomy"),
-            # Tier 2: submitter は Solr backed (trad / taxonomy) に organization 不在。
-            ('submitter:"Tokyo University"', "trad"),
+            # Tier 2: submitter は Solr backed (ddbj / taxonomy) に organization 不在。
+            ('submitter:"Tokyo University"', "ddbj"),
             ('submitter:"Tokyo University"', "taxonomy"),
             # Tier 1: name / date 系は Solr backed に実 field 不在。
-            ("name:foo", "trad"),
+            ("name:foo", "ddbj"),
             ("name:foo", "taxonomy"),
             ("date_published:2024-01-01", "taxonomy"),
-            ("date_modified:2024-01-01", "trad"),
+            ("date_modified:2024-01-01", "ddbj"),
         ],
     )
     def test_field_rejected_for_wrong_db(self, dsl: str, db: str) -> None:
@@ -589,22 +589,22 @@ class TestSingleModeDbScope:
             ("derived_from_id:SAMD00012345", "sra"),
             ("external_link_label:GEO", "bioproject"),
             ("external_link_label:GEO", "jga"),
-            ("division:BCT", "trad"),
+            ("division:BCT", "ddbj"),
             ("rank:species", "taxonomy"),
-            # Tier 2 publication: ES 5 db (biosample 以外) + trad (ReferenceTitle にマップ)
+            # Tier 2 publication: ES 5 db (biosample 以外) + ddbj (ReferenceTitle にマップ)
             ("publication:cancer", "bioproject"),
             ("publication:cancer", "sra"),
             ("publication:cancer", "jga"),
             ("publication:cancer", "gea"),
             ("publication:cancer", "metabobank"),
-            ("publication:cancer", "trad"),
+            ("publication:cancer", "ddbj"),
             # Tier 2 submitter は ES db common (Solr backed は非対応 = reject 側)
             ('submitter:"Tokyo University"', "biosample"),
             # Tier 1 identifier / title は全 db common
             ("title:cancer", "biosample"),
             ("identifier:PRJDB1", "taxonomy"),
             # accessibility は Solr backed では固定値 (per-arm 簡約で突き合わせ) → single でも通す
-            ("accessibility:public-access", "trad"),
+            ("accessibility:public-access", "ddbj"),
             ("accessibility:public-access", "taxonomy"),
             # Tier 3 同名 field: strain / synonym / domain は taxonomy でも有効
             ("strain:K12", "taxonomy"),

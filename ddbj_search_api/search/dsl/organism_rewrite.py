@@ -1,8 +1,8 @@
-"""trad (ARSA) 向けの organism_id → organism_name rewrite (Stage 3a)。
+"""ddbj (ARSA) 向けの organism_id → organism_name rewrite (Stage 3a)。
 
 ARSA (Solr 4.4.0) には NCBI TaxID で引ける queryable field が無い (compiler_solr の
 ``_ARSA_FIELD_MAP`` に ``organism_id`` は無く、``organism_name`` だけが ``("Organism",
-"Lineage")`` の OR phrase にマップされている)。そこで cross / single の trad arm は、
+"Lineage")`` の OR phrase にマップされている)。そこで cross / single の ddbj arm は、
 per-arm 簡約後の AST 中の ``organism_id`` を TXSearch で学名 (scientific_name) に解決し、
 ここで ``organism_name`` の ``FieldClause`` に置換してから ARSA に compile する。
 
@@ -11,7 +11,7 @@ TXSearch への I/O (resolver) は呼び出し側 (``routers.db_portal``) が持
 dataclass なので :func:`dataclasses.replace` で新規ノードを生成する (``transform`` と同流儀)。
 
 bool 畳み込みは :func:`ddbj_search_api.search.dsl.per_arm.reduce_ast_for_db` と同型。ただし
-``organism_id`` は trad で available になっている (allowlist) ため per-arm 段で ``na``
+``organism_id`` は ddbj で available になっている (allowlist) ため per-arm 段で ``na``
 (非対応) には畳まれず、ここに届く AST には ``na`` 概念が無い。よって leaf は keep / true /
 false の 3 値だけを扱う:
 
@@ -34,7 +34,7 @@ from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node
 
 @dataclass(frozen=True, slots=True)
 class OrganismRewrite:
-    """trad arm の organism_id を解決・rewrite した結果。
+    """ddbj arm の organism_id を解決・rewrite した結果。
 
     - ``always_zero=True``: 全 organism_id が解決失敗 / wildcard 等で arm 全体が恒偽。
       ARSA を叩かず count=0 / 空 hits を返す。``ast`` は使わない。
