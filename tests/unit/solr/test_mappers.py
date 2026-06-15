@@ -182,7 +182,23 @@ class TestArsaDocsToHits:
         assert h.date_published is None
 
     def test_url_uses_accession(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "AY967397", "MolecularType": "DNA"}])[0]
+        assert h.url == "https://getentry.ddbj.nig.ac.jp/getentry/na/AY967397/"
+
+    def test_url_prt_uses_aa_database(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "PE665887", "MolecularType": "PRT"}])[0]
+        assert h.url == "https://getentry.ddbj.nig.ac.jp/getentry/aa/PE665887/"
+
+    def test_url_mrna_uses_na_database(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "AK001234", "MolecularType": "mRNA"}])[0]
+        assert h.url == "https://getentry.ddbj.nig.ac.jp/getentry/na/AK001234/"
+
+    def test_url_missing_molecular_type_defaults_to_na(self) -> None:
         h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "AY967397"}])[0]
+        assert h.url == "https://getentry.ddbj.nig.ac.jp/getentry/na/AY967397/"
+
+    def test_url_empty_molecular_type_defaults_to_na(self) -> None:
+        h = arsa_docs_to_hits([{"PrimaryAccessionNumber": "AY967397", "MolecularType": ""}])[0]
         assert h.url == "https://getentry.ddbj.nig.ac.jp/getentry/na/AY967397/"
 
     def test_description_always_none(self) -> None:
@@ -619,6 +635,18 @@ class TestArsaDocsToLightweightHits:
             [{"PrimaryAccessionNumber": "X1", "Date": "not a date"}],
         )
         assert hits[0].date_published is None
+
+    def test_url_prt_uses_aa_database(self) -> None:
+        hits = arsa_docs_to_lightweight_hits(
+            [{"PrimaryAccessionNumber": "PE665887", "MolecularType": "PRT"}],
+        )
+        assert hits[0].url == "https://getentry.ddbj.nig.ac.jp/getentry/aa/PE665887/"
+
+    def test_url_missing_molecular_type_defaults_to_na(self) -> None:
+        hits = arsa_docs_to_lightweight_hits(
+            [{"PrimaryAccessionNumber": "X1"}],
+        )
+        assert hits[0].url == "https://getentry.ddbj.nig.ac.jp/getentry/na/X1/"
 
 
 class TestTxsearchDocsToLightweightHits:

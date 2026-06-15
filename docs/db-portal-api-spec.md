@@ -199,7 +199,7 @@ Solr 2 DB (`ddbj`, `taxonomy`) は外部 NIG Solr cluster を proxy しており
 |---|---|---|
 | `identifier` | `PrimaryAccessionNumber` | `tax_id` |
 | `type` | 固定 `"ddbj"` | 固定 `"taxonomy"` |
-| `url` | `https://getentry.ddbj.nig.ac.jp/getentry/na/{accession}/` | `https://ddbj.nig.ac.jp/tx_search/{tax_id}?view=info` |
+| `url` | `https://getentry.ddbj.nig.ac.jp/getentry/{db}/{accession}/` (`MolecularType` が `PRT` なら `db=aa`、それ以外は `db=na`) | `https://ddbj.nig.ac.jp/tx_search/{tax_id}?view=info` |
 | `title` | `Definition` | `scientific_name` |
 | `description` | `null` | `null` |
 | `organism` | `Organism` (name) + `Feature` の `db_xref="taxon:..."` (identifier) | `scientific_name` (name) + `tax_id` (identifier) |

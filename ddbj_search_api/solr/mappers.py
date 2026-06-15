@@ -35,11 +35,16 @@ _FEATURE_GENE_RE = re.compile(r'/gene="([^"]+)"')
 _MAX_GENE_NAMES = 10
 
 _DEEP_PAGING_LIMIT = 10_000
-_ARSA_URL_PREFIX = "https://getentry.ddbj.nig.ac.jp/getentry/na/"
+_GETENTRY_BASE = "https://getentry.ddbj.nig.ac.jp/getentry"
 _TAXONOMY_URL_PREFIX = "https://ddbj.nig.ac.jp/tx_search/"
 # ``?view=info`` で TXSearch の Info タブ (rank / lineage / 名前等の概要) を直接開く。
 # 省略するとデフォルトの検索結果ビューに落ちて識別子からは情報が読み取れない。
 _TAXONOMY_URL_QUERY = "?view=info"
+
+
+def _arsa_entry_url(acc: str, molecular_type: Any) -> str:
+    db = "aa" if molecular_type == "PRT" else "na"
+    return f"{_GETENTRY_BASE}/{db}/{acc}/"
 
 
 def _parse_arsa_date(raw: Any) -> str | None:
@@ -184,7 +189,7 @@ def arsa_docs_to_hits(docs: list[dict[str, Any]]) -> list[DbPortalHit]:
             "organism": organism,
             "description": None,
             "datePublished": _parse_arsa_date(doc.get("Date")),
-            "url": f"{_ARSA_URL_PREFIX}{acc}/" if acc else None,
+            "url": _arsa_entry_url(acc, doc.get("MolecularType")) if acc else None,
             "sameAs": None,
             "dbXrefs": None,
             "division": doc.get("Division"),
@@ -278,7 +283,7 @@ def arsa_docs_to_lightweight_hits(
             "description": None,
             "organism": organism,
             "datePublished": _parse_arsa_date(doc.get("Date")),
-            "url": f"{_ARSA_URL_PREFIX}{acc}/" if acc else None,
+            "url": _arsa_entry_url(acc, doc.get("MolecularType")) if acc else None,
             "status": "public",
             "accessibility": "public-access",
             "dateCreated": None,
