@@ -69,6 +69,17 @@ class TestXRequestIdMiddleware:
         )
         assert resp.headers["X-Request-ID"] == "my-custom-id"
 
+    def test_generates_uuid_when_empty_string_provided(self, app: TestClient) -> None:
+        """nginx forwards an empty ``X-Request-ID`` when the caller did not send one;
+        the middleware must treat that the same as a missing header (UUID v4)."""
+        resp = app.get(
+            "/service-info",
+            headers={"X-Request-ID": ""},
+        )
+        request_id = resp.headers.get("X-Request-ID")
+        assert request_id
+        uuid.UUID(request_id)  # raises ValueError if the middleware echoed ""
+
     def test_present_on_error_responses(self, app: TestClient) -> None:
         resp = app.get("/nonexistent-path")
         assert "X-Request-ID" in resp.headers
@@ -216,6 +227,16 @@ class TestOpenAPICustomisation:
         schema = app.openapi()
         schemas = schema.get("components", {}).get("schemas", {})
         assert "ValidationError" not in schemas
+
+    def test_servers_publish_public_absolute_urls(self) -> None:
+        """SDK clients need absolute production / staging URLs, not just the relative path."""
+        app = create_app(AppConfig())
+        schema = app.openapi()
+        urls = [s.get("url") for s in schema.get("servers", [])]
+        assert "https://ddbj.nig.ac.jp/search/api" in urls
+        assert "https://ddbj-staging.nig.ac.jp/search/api" in urls
+        # The relative URL stays so reverse-proxy callers keep their existing path.
+        assert "/search/api" in urls
 
 
 # === OpenAPI required array fields ===

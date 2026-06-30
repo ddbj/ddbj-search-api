@@ -274,26 +274,51 @@ class TestBuildSourceFilter:
         assert result == {"excludes": ["properties"]}
 
     def test_specific_fields(self) -> None:
+        """Requested fields are surfaced; required ones are injected if absent."""
         result = build_source_filter("identifier,title", True)
         assert isinstance(result, list)
-        assert set(result) == {"identifier", "title"}
+        assert set(result) == {"identifier", "title", "type"}
 
     def test_fields_override_include_properties_false(self) -> None:
         """Explicit fields list takes precedence over includeProperties."""
         result = build_source_filter("identifier,title", False)
         assert isinstance(result, list)
-        assert set(result) == {"identifier", "title"}
+        assert set(result) == {"identifier", "title", "type"}
 
     def test_fields_with_properties_included(self) -> None:
         """When 'properties' is in the fields list, include it."""
         result = build_source_filter("identifier,properties", True)
         assert isinstance(result, list)
-        assert set(result) == {"identifier", "properties"}
+        assert set(result) == {"identifier", "properties", "type"}
 
     def test_whitespace_in_fields_trimmed(self) -> None:
         result = build_source_filter(" identifier , title ", True)
         assert isinstance(result, list)
-        assert set(result) == {"identifier", "title"}
+        assert set(result) == {"identifier", "title", "type"}
+
+    def test_user_omits_both_required_fields_are_injected(self) -> None:
+        """fields="title" must auto-inject identifier and type (B11 regression)."""
+        result = build_source_filter("title", True)
+        assert isinstance(result, list)
+        assert set(result) == {"identifier", "type", "title"}
+
+    def test_user_omits_type_only(self) -> None:
+        result = build_source_filter("identifier,title", True)
+        assert isinstance(result, list)
+        assert "type" in result
+
+    def test_user_omits_identifier_only(self) -> None:
+        result = build_source_filter("type,title", True)
+        assert isinstance(result, list)
+        assert "identifier" in result
+
+    def test_required_fields_not_duplicated_when_already_present(self) -> None:
+        result = build_source_filter("identifier,type,title", True)
+        assert isinstance(result, list)
+        assert result.count("identifier") == 1
+        assert result.count("type") == 1
+        # User-provided ordering must be preserved.
+        assert result == ["identifier", "type", "title"]
 
 
 # ===================================================================

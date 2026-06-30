@@ -128,10 +128,19 @@ def build_source_filter(
     fields: str | None,
     include_properties: bool,
 ) -> list[str] | dict[str, Any] | None:
-    """Build ES _source parameter from fields/includeProperties."""
+    """Build ES _source parameter from fields/includeProperties.
+
+    ``identifier`` and ``type`` are always added to ``fields`` because
+    ``EntryListItem`` declares them required; omitting them yields a
+    Pydantic ``ValidationError`` (surfaces as 500) when hits are parsed.
+    """
     if fields is not None:
         parsed = [f.strip() for f in fields.split(",")]
-        return [f for f in parsed if f]
+        parsed = [f for f in parsed if f]
+        for required in ("identifier", "type"):
+            if required not in parsed:
+                parsed.append(required)
+        return parsed
 
     if not include_properties:
         return {"excludes": ["properties"]}

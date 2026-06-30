@@ -35,10 +35,12 @@ logger = logging.getLogger(__name__)
 async def request_id_middleware(request: Request, call_next: Any) -> Response:
     """Attach X-Request-ID to every request/response.
 
-    If the client supplies ``X-Request-ID``, echo it back; otherwise
-    generate a new UUID.
+    If the client supplies a non-empty ``X-Request-ID``, echo it back;
+    otherwise generate a new UUID. The empty-string branch matters because
+    nginx forwards ``X-Request-ID: `` (empty value) when the upstream client
+    did not set the header.
     """
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
     response: Response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
@@ -481,7 +483,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         schemas.pop("ValidationError", None)
 
         # ``root_path`` does not propagate to ``openapi()`` output.
-        schema["servers"] = [{"url": config.url_prefix, "description": "Current deployment"}]
+        # SDK consumers need absolute URLs for the public staging and production
+        # deployments alongside the relative URL used by the local reverse proxy.
+        schema["servers"] = [
+            {"url": "https://ddbj.nig.ac.jp/search/api", "description": "Production"},
+            {"url": "https://ddbj-staging.nig.ac.jp/search/api", "description": "Staging"},
+            {"url": config.url_prefix, "description": "Relative (current deployment)"},
+        ]
 
         for schema_name, examples in _NULL_AWARE_SCHEMA_EXAMPLES.items():
             target = schemas.get(schema_name)
