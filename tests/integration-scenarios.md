@@ -1459,7 +1459,7 @@
 **不変条件**:
 - `body.facets` が dict、要求した facet が list (非 null)。各 bucket の `count <= total`
 - ddbj は `division` / `molecularType` のみ、taxonomy は `rank` / `kingdom` のみ受け付け、それ以外 (`db=ddbj&facets=organism`) は 400 `facet-not-applicable`
-- **母集団一致**: `division` bucket の `value` を `q=division:<value>` (facets 無し) で再注入すると `total == bucket.count` (8 shard 分散集計でも一致)
+- **母集団一致**: `division` bucket の `value` を `q=division:<value>` (facets 無し) で再注入すると `total == bucket.count` (3 shard 分散集計でも一致)
 
 **回帰元**: `docs/db-portal-api-spec.md § facet 集計`
 **関連 unit テスト**: `tests/unit/solr/test_query.py`, `tests/unit/test_utils.py`

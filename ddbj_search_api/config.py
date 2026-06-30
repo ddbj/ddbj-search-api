@@ -66,7 +66,7 @@ class AppConfig(BaseSettings):
     env: Env = Env.dev
 
     # Solr (ARSA = Ddbj, TXSearch = NCBI Taxonomy). Unset in dev; staging and
-    # production both point at the production ARSA cluster (a011, 8 shards,
+    # production both point at the shared ARSA cluster on a012 (3 shards,
     # Solr 4.4.0, core ``collection1``); the core name stays env-overridable.
     solr_arsa_base_url: str | None = None
     solr_arsa_shards: str | None = None

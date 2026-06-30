@@ -298,7 +298,7 @@ class TestSolrFacets:
     def test_ddbj_facet_reinjection_reproduces_count(self, app: TestClient) -> None:
         """IT-DBPORTAL-22 母集団一致: division bucket の value を
         ``division:<value>`` で再注入すると total が bucket.count と一致する
-        (8 shard 分散集計でも整合)。
+        (3 shard 分散集計でも整合)。
         """
         resp = app.get("/db-portal/search", params={"db": "ddbj", "facets": "division"})
         assert resp.status_code == 200

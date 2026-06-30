@@ -417,7 +417,7 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
 ### 集計の発行と失敗時挙動
 
 - **単一 DB (ES)**: hits 検索と同一の ES リクエストに aggs を相乗りさせる。`facetSelfExclude=false` では母集団 = hits と同一 query。`true` では top-level `query` を base (全 requested facet を除外) に差し替え、各 facet を `filter` aggregation で包んで他 facet 句を足し戻し、hits だけ `post_filter` で `q` 全フィルタに絞り直す (`post_filter` は aggregation に影響しないため hits / total は不変)。
-- **単一 DB (Solr)**: hits 検索と同一の Solr リクエストに `facet=true` + `facet.field` + `facet.mincount=1` + `facet.limit=<facetsSize>` を付与し `facet_counts` をパースする。ARSA は 8 shard 分散集計。`facetSelfExclude=true` では self-exclusion 対象 facet の clause を `q` から `{!tag=…}` 付きの `fq` に分離し、`facet.field` に `{!ex=…}` を付けてその facet の集計時だけ当該フィルタを外す (hits 母集団 = `q` ∧ `fq` で不変)。
+- **単一 DB (Solr)**: hits 検索と同一の Solr リクエストに `facet=true` + `facet.field` + `facet.mincount=1` + `facet.limit=<facetsSize>` を付与し `facet_counts` をパースする。ARSA は 3 shard 分散集計。`facetSelfExclude=true` では self-exclusion 対象 facet の clause を `q` から `{!tag=…}` 付きの `fq` に分離し、`facet.field` に `{!ex=…}` を付けてその facet の集計時だけ当該フィルタを外す (hits 母集団 = `q` ∧ `fq` で不変)。
 - **横断 (cross)**: 8 DB count fan-out とは別に、entries alias へ size=0 の集計リクエストを 1 本追加発行する。`facetSelfExclude=false` では fan-out と同じ compiled ES query + status filter を母集団にする。`true` では top-level `query` を base (全 requested facet を除外) に差し替え facet ごとの `filter` aggregation で他 facet 句を足し戻す (size=0 で hits を返さないため `post_filter` は不要)。この集計が失敗 / timeout した場合は `facets=null` を返し、cross-search 自体は 200 (count fan-out の結果) を維持する。
 
 ## クエリ文法

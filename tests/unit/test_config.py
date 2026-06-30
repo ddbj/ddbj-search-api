@@ -106,17 +106,17 @@ class TestAppConfigEnvOverrides:
         assert config.url_prefix == "/custom/prefix"
 
     def test_solr_arsa_base_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_BASE_URL", "http://a011:51981/solr")
+        monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_BASE_URL", "http://a012:51981/solr")
         config = AppConfig()
-        assert config.solr_arsa_base_url == "http://a011:51981/solr"
+        assert config.solr_arsa_base_url == "http://a012:51981/solr"
 
     def test_solr_arsa_shards_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(
             "DDBJ_SEARCH_API_SOLR_ARSA_SHARDS",
-            "a011:51981/solr,a011:51982/solr,a011:51983/solr",
+            "a012:51981/solr,a012:51982/solr,a012:51983/solr",
         )
         config = AppConfig()
-        assert config.solr_arsa_shards == "a011:51981/solr,a011:51982/solr,a011:51983/solr"
+        assert config.solr_arsa_shards == "a012:51981/solr,a012:51982/solr,a012:51983/solr"
 
     def test_solr_arsa_core_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DDBJ_SEARCH_API_SOLR_ARSA_CORE", "trad")

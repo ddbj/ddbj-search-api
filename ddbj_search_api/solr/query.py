@@ -274,7 +274,7 @@ def build_arsa_request_params(
 
     ``facet_fields`` が非空のとき terms faceting (``facet.field`` 群 +
     ``facet.mincount=1`` + ``facet.limit=facet_limit``) を相乗りさせる。Solr 側で
-    8 shard 分散集計される (docs/db-portal-api-spec.md § facet 集計)。
+    3 shard 分散集計される (docs/db-portal-api-spec.md § facet 集計)。
 
     ``fq`` は self-exclusion で ``q`` から分離した tagged フィルタ
     (``{!tag=...}...``) を渡す。hits には全 ``fq`` が効くので母集団は ``q`` ∧ ``fq``

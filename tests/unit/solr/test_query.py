@@ -304,7 +304,7 @@ class TestArsaFacetParams:
         assert p["facet.limit"] == "100"
 
     def test_facets_coexist_with_shards(self) -> None:
-        """8 shard fan-out (shards) と facet params が両立する (分散集計)."""
+        """shards 分散 (fan-out) と facet params が両立する (分散集計)."""
         p = build_arsa_request_params(
             q="*:*",
             page=1,
