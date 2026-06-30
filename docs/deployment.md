@@ -45,17 +45,50 @@ podman-compose up -d
 
 ## podman 固有の注意
 
-- `compose.override.podman.yml` は podman 用の差分設定 (`userns_mode: keep-id`、bind mount の `:U` フラグ等)。docker compose では使わないので、podman 環境でだけ override に置く
+- `compose.override.podman.yml` は podman 用の差分設定 (`userns_mode: keep-id`)。docker compose では使わないので、podman 環境でだけ override に置く
 - network は `external: true` で `ddbj-search-network-{env}` を参照する。converter 側の compose で network が作られているはずだが、無ければ `podman network create` する
+
+## venv は image layer 内
+
+venv は image layer 内 (`/opt/venv/`) に焼き込んでいる。`pyproject.toml` / `uv.lock` を更新したら `podman-compose up -d --build` で image を再構築すれば反映される。bind mount (`.:/app:rw`) は Python ソース変更を即時反映するが、venv 自体は image の外には出していない (= UID mismatch + named volume で venv が壊れるケースを構造的に避けるため)。
+
+旧構成の `app-venv` named volume は使わない。以前の deploy で作られた `<project>_app-venv` が残っている場合は `podman volume rm <project>_app-venv` で掃除しておく (= 残しても害はないがディスクを占有するだけ)。
 
 ## ロールバック
 
+2 手順。基本は (A) git rebuild、緊急時は (B) image tag backup を使う。converter と同じパターンで、詳細な選択基準と動作確認手順は [converter docs/deployment.md § ロールバック](https://github.com/ddbj/ddbj-search-converter/blob/main/docs/deployment.md) を参照する。
+
+### A. git rebuild (default)
+
 ```bash
+cd /data1/ddbj-search/ddbj-search-api/
 git checkout <previous-commit>
-podman-compose restart app
+podman-compose down
+podman-compose up -d --build
 ```
 
-bind mount のため git の HEAD を戻すだけで前バージョンに戻る。Dockerfile を変えていない限り rebuild 不要。converter のスキーマ変更が絡む場合は converter 側のロールバックも合わせて行う。
+Python ソースだけのロールバックで Dockerfile / `pyproject.toml` / `uv.lock` が変わっていない場合は、`--build` を省略すれば bind mount だけで戻せる (`git checkout <commit> && podman-compose restart app`)。依存パッケージが変わっているときは `--build` 必須。
+
+### B. image tag backup (緊急 option)
+
+build を待たずに戻したいときの 30〜60 秒 rollback。deploy **前** に prev image を別 tag で保存しておくのが前提。
+
+```bash
+# deploy 直前 (latest を prev として退避)
+podman tag ddbj-search-api-${DDBJ_SEARCH_ENV}:latest ddbj-search-api-${DDBJ_SEARCH_ENV}:prev
+```
+
+rollback 時:
+
+```bash
+podman-compose down
+podman tag ddbj-search-api-${DDBJ_SEARCH_ENV}:prev ddbj-search-api-${DDBJ_SEARCH_ENV}:latest
+podman-compose up -d   # --build なし
+```
+
+### スキーマ変更が絡む場合
+
+converter の Pydantic スキーマ / ES mapping 変更が絡むロールバックは、converter 側のロールバックも合わせて行う (本リポジトリは `git+...@main` で converter を依存しているため、api 単独の git checkout では `uv.lock` で固定された converter SHA に戻るだけで、converter リポジトリ側の状態は変わらない)。
 
 ## 環境変数
 

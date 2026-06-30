@@ -27,10 +27,12 @@ RUN apt-get update && \
 
 WORKDIR /app
 
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
 COPY pyproject.toml uv.lock README.md ./
 
-RUN uv sync --extra tests --no-install-project -P ddbj-search-converter && \
-    chmod -R a+rwX .venv
+RUN uv sync --extra tests --no-install-project -P ddbj-search-converter
 
 COPY . .
 
@@ -38,8 +40,6 @@ RUN SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv sync --extra tests -P ddbj-sear
 
 ENV HOME=/home/app
 RUN mkdir -p /home/app && chmod 777 /home/app
-
-ENV PATH="/app/.venv/bin:$PATH"
 
 ENTRYPOINT []
 CMD ["sleep", "infinity"]

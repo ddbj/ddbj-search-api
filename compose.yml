@@ -3,10 +3,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: ddbj-search-api-${DDBJ_SEARCH_ENV}
     container_name: ddbj-search-api-${DDBJ_SEARCH_ENV}
     volumes:
       - .:/app:rw
-      - app-venv:/app/.venv
       - ${DDBJ_SEARCH_CONVERTER_CONST_PATH:-/home/w3ddbjld/const}:/home/w3ddbjld/const:ro
     environment:
       TZ: ${TZ:-Asia/Tokyo}
@@ -28,7 +28,3 @@ networks:
   ddbj-search-network:
     name: ddbj-search-network-${DDBJ_SEARCH_ENV}
     external: true
-
-volumes:
-  app-venv:
-    driver: local
