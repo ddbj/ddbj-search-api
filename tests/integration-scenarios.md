@@ -261,17 +261,18 @@
 
 **関連 unit テスト**: `tests/unit/schemas/test_queries.py`
 
-### IT-SEARCH-09: fields フィルタで指定フィールドのみ返る
+### IT-SEARCH-09: fields フィルタで指定フィールドが入り、未指定は null で key 保持
 
 **endpoint**: `GET /entries/?fields=identifier,title`
 
 **不変条件**:
-- `items` の各要素のキー集合が指定 fields のサブセット (システム必須キーは除く)
-- 未指定フィールドは含まれない
+- 指定した fields は `items` の各要素に値入りで含まれる
+- レスポンス schema 上のキーは fields= に関わらず保持され、未指定フィールドは値が `null` で返る (Pydantic レスポンスモデルが必須キーを維持するため)
+- システム必須キー (`identifier`, `type`) は fields= に含めなくても常に値入りで返る
 
 **回帰元**: `docs/api-spec.md § 検索パラメータ` (`fields`)
 
-**関連 unit テスト**: `tests/unit/routers/test_entries.py`
+**関連 unit テスト**: `tests/unit/routers/test_entries.py`、`tests/unit/es/test_query.py::TestBuildSourceFilter`
 
 ### IT-SEARCH-10: types カンマ区切りで複数 type を絞り込み
 
