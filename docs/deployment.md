@@ -12,9 +12,9 @@ staging / production への deploy 手順、podman 固有の注意、URL prefix 
 
 `DDBJ_SEARCH_ENV` (`env.{dev,staging,production}` で設定) から、コンテナ名・network 名・debug モードが自動決定される。設定値は `env.*` ファイルを直接見るのが SSOT。
 
-## URL prefix と nginx pass-through
+## URL prefix と nginx routing
 
-API サーバーは URL prefix `/search/api` の下にデプロイされる。上流の nginx は **prefix を trim せず** そのまま pass-through する前提で、FastAPI 側は `DDBJ_SEARCH_API_URL_PREFIX=/search/api` を内部で解釈する。
+API サーバーは URL prefix `/search/api` の下に公開される。FastAPI 側の router は root (`/`) に mount しており (= 個別 endpoint は `/entries/...` や `/db-portal/search` として登録)、`DDBJ_SEARCH_API_URL_PREFIX=/search/api` は OpenAPI schema の `servers` block にだけ反映される。上流の nginx は `/search/api/` prefix を strip してから backend に転送する前提。
 
 物理ネットワーク構成 (gateway / 内部 nginx / コンテナ間通信) は [ddbj-search/docs/network-architecture.md](https://github.com/ddbj/ddbj-search/blob/main/docs/network-architecture.md) を参照。
 
