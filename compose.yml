@@ -22,6 +22,7 @@ services:
     command: ${DDBJ_SEARCH_API_COMMAND}
     networks:
       - ddbj-search-network
+    restart: unless-stopped
     init: true
 
 networks:
