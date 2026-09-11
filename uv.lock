@@ -136,8 +136,8 @@ provides-extras = ["tests"]
 
 [[package]]
 name = "ddbj-search-converter"
-version = "0.3.2.dev11+ge60c0e1a4"
-source = { git = "https://github.com/ddbj/ddbj-search-converter?rev=main#e60c0e1a4bb4e6bfc5f516142819db3a1960b656" }
+version = "0.4.1.dev8+g349805395"
+source = { git = "https://github.com/ddbj/ddbj-search-converter?rev=main#349805395c16a824e3d24c57e00fdf7f44e4ffc9" }
 dependencies = [
     { name = "duckdb" },
     { name = "elasticsearch" },
@@ -221,7 +221,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
