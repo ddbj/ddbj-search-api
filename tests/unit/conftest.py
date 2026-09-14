@@ -21,7 +21,7 @@ from ddbj_search_api.solr import get_solr_client
 
 @pytest.fixture(autouse=True)
 def _isolate_ddbj_env(monkeypatch: pytest.MonkeyPatch) -> collections.abc.Iterator[None]:
-    """Strip ``DDBJ_SEARCH_API_*`` env and reset the AppConfig singleton.
+    """Strip the DDBJ Search env vars and reset the AppConfig singleton.
 
     Unit tests must not depend on the host / container env (testing.md
     § テスト間の独立性). Without this, running ``uv run pytest`` inside the
@@ -34,7 +34,7 @@ def _isolate_ddbj_env(monkeypatch: pytest.MonkeyPatch) -> collections.abc.Iterat
     by a fixture that called ``get_config()``).
     """
     for key in list(os.environ):
-        if key.startswith("DDBJ_SEARCH_API_"):
+        if key.startswith("DDBJ_SEARCH_"):
             monkeypatch.delenv(key, raising=False)
     _config_module._config = None
     yield

@@ -23,6 +23,15 @@ services:
     networks:
       - ddbj-search-network
     restart: unless-stopped
+    # Per-container log rotation. The journald driver keeps a single shared
+    # budget across every container, so one chatty service evicts the logs of
+    # all the others. "json-file" is the one driver name both Docker and
+    # Podman accept.
+    logging:
+      driver: json-file
+      options:
+        max-size: "200m"
+        max-file: "5"
     init: true
 
 networks:

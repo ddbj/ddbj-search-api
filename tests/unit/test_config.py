@@ -17,14 +17,15 @@ class TestAppConfigDefaults:
 
     @pytest.fixture
     def config(self, monkeypatch: pytest.MonkeyPatch) -> AppConfig:
-        """Fresh AppConfig with all DDBJ_SEARCH_API_* env vars cleared.
+        """Fresh AppConfig with all DDBJ_SEARCH_* env vars cleared.
 
         Overrides the shared ``config`` fixture so that default-value
         assertions are not polluted by runtime env vars (e.g. Docker
-        compose sets ``DDBJ_SEARCH_API_ES_URL`` on the app container).
+        compose sets ``DDBJ_SEARCH_API_ES_URL`` and ``DDBJ_SEARCH_ENV``
+        on the app container).
         """
         for var in list(os.environ):
-            if var.startswith("DDBJ_SEARCH_API_"):
+            if var.startswith("DDBJ_SEARCH_"):
                 monkeypatch.delenv(var, raising=False)
         return AppConfig()
 
@@ -94,11 +95,52 @@ class TestAppConfigEnvOverrides:
         config = AppConfig()
         assert config.es_url == "http://es:9200"
 
-    def test_env_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(
+        ("value", "expected_env", "expected_debug"),
+        [
+            ("dev", Env.dev, True),
+            ("staging", Env.staging, False),
+            ("production", Env.production, False),
+        ],
+    )
+    def test_env_from_unprefixed_env_var(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+        expected_env: Env,
+        expected_debug: bool,
+    ) -> None:
+        """``DDBJ_SEARCH_ENV`` is the name every deployment actually sets.
+
+        Guards the regression where ``env`` was only readable as
+        ``DDBJ_SEARCH_API_ENV``: nothing publishes that name, so every
+        deployed service silently fell back to the dev default and ran with
+        debug logging and uvicorn reload enabled.
+        """
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", value)
+        config = AppConfig()
+        assert config.env == expected_env
+        assert config.debug is expected_debug
+
+    def test_env_from_prefixed_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The prefixed name stays usable as a per-service override."""
+        monkeypatch.delenv("DDBJ_SEARCH_ENV", raising=False)
         monkeypatch.setenv("DDBJ_SEARCH_API_ENV", "production")
         config = AppConfig()
         assert config.env == Env.production
         assert config.debug is False
+
+    def test_env_unprefixed_wins_over_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The stack-wide name is authoritative when both are set."""
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "production")
+        monkeypatch.setenv("DDBJ_SEARCH_API_ENV", "staging")
+        config = AppConfig()
+        assert config.env == Env.production
+
+    def test_env_invalid_value_raises_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "prod")
+        with pytest.raises(ValidationError):
+            AppConfig()
 
     def test_url_prefix_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DDBJ_SEARCH_API_URL_PREFIX", "/custom/prefix")

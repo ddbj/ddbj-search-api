@@ -7,7 +7,7 @@ import re
 from enum import Enum
 from pathlib import Path
 
-from pydantic import computed_field, field_validator
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 # Solr URL components (core / shards / base URLs) are interpolated into
@@ -51,11 +51,12 @@ class Env(str, Enum):
 class AppConfig(BaseSettings):
     """Application settings loaded from environment variables.
 
-    All settings can be overridden by environment variables prefixed with
-    ``DDBJ_SEARCH_API_``.
+    Settings are overridden by environment variables prefixed with
+    ``DDBJ_SEARCH_API_``, except :data:`env`, which is read from the
+    stack-wide ``DDBJ_SEARCH_ENV``.
     """
 
-    model_config = {"env_prefix": "DDBJ_SEARCH_API_"}
+    model_config = {"env_prefix": "DDBJ_SEARCH_API_", "populate_by_name": True}
 
     url_prefix: str = "/search/api"
     es_url: str = "http://localhost:9200"
@@ -63,7 +64,12 @@ class AppConfig(BaseSettings):
     base_url: str = "http://localhost:8080/search/api"
     host: str = "0.0.0.0"
     port: int = 8080
-    env: Env = Env.dev
+    # Every service in the stack shares one deployment env, published as the
+    # un-prefixed ``DDBJ_SEARCH_ENV``, so that name takes precedence here; the
+    # prefixed name still works as a per-service override. Reading this field
+    # under the prefix alone would silently fall back to the default and put a
+    # deployed service into dev mode, since nothing publishes the prefixed name.
+    env: Env = Field(default=Env.dev, validation_alias="DDBJ_SEARCH_ENV")
 
     # Solr (ARSA = Ddbj, TXSearch = NCBI Taxonomy). Unset in dev; staging and
     # production both point at the shared ARSA cluster on a012 (3 shards,
