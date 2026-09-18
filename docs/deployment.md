@@ -94,8 +94,18 @@ converter の Pydantic スキーマ / ES mapping 変更が絡むロールバッ�
 
 設定値は `env.dev` / `env.staging` / `env.production` を直接参照する。各変数は `compose.yml` で受け取られて API コンテナに渡る。環境差分 (例: dev のみ Solr backend を未設定、staging / production はどちらも a012 上の 3 shard ARSA cluster へ向ける) もファイル diff で確認する。
 
+### `DDBJ_SEARCH_API_WORKERS`
+
+API サーバーの worker プロセス数 (デフォルト 1)。1 プロセスは event loop が 1 core に縛られるので、アクセスが集中すると ES に余力があっても API 側で詰まる。staging / production では 2 以上にする。
+
+- worker はそれぞれ ES への接続と DuckDB (dblink) の read-only 接続を持つので、メモリは worker 数に比例する
+- 2 以上にするときは `DDBJ_SEARCH_API_CURSOR_SECRET` が必須。未設定のまま起動するとエラーで停止する (下記)
+- dev (`DDBJ_SEARCH_ENV=dev`) は auto-reload を使うため常に 1 プロセスで動き、この値は無視される
+
 ### `DDBJ_SEARCH_API_CURSOR_SECRET`
 
-cursor token の HMAC 署名鍵。未設定の場合はプロセス起動時にランダム生成されるため、(a) プロセスを再起動するとそれまでに発行した cursor が全部無効になる、(b) `uvicorn --workers N` のような multi-worker 構成では worker ごとに別の鍵を持ち、ある worker が発行した cursor を別の worker が受け取ると 400 になる。
+cursor token の HMAC 署名鍵。未設定の場合はプロセス起動時にランダム生成されるため、(a) プロセスを再起動するとそれまでに発行した cursor が全部無効になる、(b) worker ごとに別の鍵を持つことになり、ある worker が発行した cursor を別の worker が受け取ると 400 になる。
 
-シングルワーカー運用なら未設定で問題ない (cursor は PIT の 5 分 expiry と同等に再起動で失効する設計)。multi-worker / 複数インスタンスのロードバランス構成では、全 worker / 全インスタンスに **同じ値** を必ず設定する。値は十分長い (32 バイト以上の) ランダム文字列が望ましい (`openssl rand -hex 32` で生成可)。
+(b) は cursor ページングが確率的に失敗する形で現れ、原因に気づきにくい。そのため `DDBJ_SEARCH_API_WORKERS` が 2 以上でこの値が未設定のときは、API サーバーは起動せずエラーで停止する。複数インスタンスをロードバランスする構成でも、全インスタンスに **同じ値** を設定する。値は十分長い (32 バイト以上の) ランダム文字列が望ましい (`openssl rand -hex 32` で生成可)。
+
+worker が 1 つなら未設定で問題ない (cursor は PIT の 5 分 expiry と同等に再起動で失効する設計)。

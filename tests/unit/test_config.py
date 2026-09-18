@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from ddbj_search_api.config import AppConfig, Env, logging_config
@@ -358,3 +360,45 @@ class TestLoggingConfig:
         assert cfg["version"] == 1
         assert "handlers" in cfg
         assert "formatters" in cfg
+
+    def test_per_request_http_client_logs_are_silenced_outside_debug(self) -> None:
+        """httpx は ES への 1 リクエストごとに INFO を 1 行出す。API の 1 リクエストで複数行になる。"""
+        loggers = logging_config(debug=False)["loggers"]
+        assert loggers["httpx"]["level"] == "WARNING"  # type: ignore[index]
+        assert loggers["httpcore"]["level"] == "WARNING"  # type: ignore[index]
+        # access log は 1 リクエスト 1 行なので残す
+        assert loggers["uvicorn.access"]["level"] == "INFO"  # type: ignore[index]
+
+    def test_http_client_logs_stay_visible_in_debug(self) -> None:
+        loggers = logging_config(debug=True)["loggers"]
+        assert loggers["httpx"]["level"] == "DEBUG"  # type: ignore[index]
+
+
+# === workers ===
+
+
+class TestWorkers:
+    """AppConfig.workers: number of uvicorn worker processes."""
+
+    def test_default_is_single_worker(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DDBJ_SEARCH_API_WORKERS", raising=False)
+        assert AppConfig().workers == 1
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_WORKERS", "8")
+        assert AppConfig().workers == 8
+
+    @pytest.mark.parametrize("value", ["0", "-1", "1.5", "many", ""])
+    def test_invalid_values_are_rejected(self, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_API_WORKERS", value)
+        with pytest.raises(ValidationError):
+            AppConfig()
+
+    @given(workers=st.integers(min_value=1, max_value=512))
+    def test_any_positive_integer_is_accepted(self, workers: int) -> None:
+        assert AppConfig(workers=workers).workers == workers
+
+    @given(workers=st.integers(max_value=0))
+    def test_no_non_positive_integer_is_accepted(self, workers: int) -> None:
+        with pytest.raises(ValidationError):
+            AppConfig(workers=workers)

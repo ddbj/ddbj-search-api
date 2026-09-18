@@ -64,6 +64,9 @@ class AppConfig(BaseSettings):
     base_url: str = "http://localhost:8080/search/api"
     host: str = "0.0.0.0"
     port: int = 8080
+    # Worker processes. One process pins its event loop to a single core, so
+    # under load the API saturates long before Elasticsearch does.
+    workers: int = Field(default=1, ge=1)
     # Every service in the stack shares one deployment env, published as the
     # un-prefixed ``DDBJ_SEARCH_ENV``, so that name takes precedence here; the
     # prefixed name still works as a per-service override. Reading this field
@@ -180,6 +183,7 @@ def get_config(
 def logging_config(debug: bool) -> dict[str, object]:
     """Build uvicorn-compatible logging configuration."""
     level = "DEBUG" if debug else "INFO"
+    http_client_level = "DEBUG" if debug else "WARNING"
 
     return {
         "version": 1,
@@ -204,5 +208,9 @@ def logging_config(debug: bool) -> dict[str, object]:
             "uvicorn": {"level": level},
             "uvicorn.error": {"level": level},
             "uvicorn.access": {"level": level},
+            # httpx logs every outgoing request at INFO: several lines per API
+            # request, written synchronously from the event loop.
+            "httpx": {"level": http_client_level},
+            "httpcore": {"level": http_client_level},
         },
     }

@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from ddbj_search_api.config import AppConfig, get_config, logging_config, parse_args
+from ddbj_search_api.cursor import CURSOR_SECRET_ENV, cursor_secret_is_configured
 from ddbj_search_api.routers import router
 from ddbj_search_api.routers.db_portal import DbPortalHTTPException
 from ddbj_search_api.schemas.db_portal import DbPortalErrorType
@@ -522,12 +523,21 @@ def main() -> None:
     )
     log_config = logging_config(config.debug)
 
+    # Auto-reload and multiple workers are mutually exclusive in uvicorn.
+    workers = 1 if config.debug else config.workers
+    if workers > 1 and not cursor_secret_is_configured():
+        # Without a shared key each worker signs cursors with its own random
+        # key, so cursor pagination fails whenever the next request lands on a
+        # different worker. Refusing to start is louder than intermittent 400s.
+        raise SystemExit(f"{CURSOR_SECRET_ENV} must be set when DDBJ_SEARCH_API_WORKERS > 1")
+
     uvicorn.run(
         "ddbj_search_api.main:create_app",
         factory=True,
         host=config.host,
         port=config.port,
         reload=config.debug,
+        workers=workers,
         log_config=log_config,
     )
 

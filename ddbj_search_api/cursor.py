@@ -27,6 +27,14 @@ _SECRET: bytes | None = None
 _SECRET_LOCK = threading.Lock()
 
 
+CURSOR_SECRET_ENV = "DDBJ_SEARCH_API_CURSOR_SECRET"
+
+
+def cursor_secret_is_configured() -> bool:
+    """Whether every process will sign with the same key (an empty value counts as unset)."""
+    return bool(os.environ.get(CURSOR_SECRET_ENV))
+
+
 def _get_secret() -> bytes:
     """Lazily resolve the signing secret (env override, else per-process random)."""
     global _SECRET  # noqa: PLW0603
@@ -35,7 +43,7 @@ def _get_secret() -> bytes:
     with _SECRET_LOCK:
         if _SECRET is not None:
             return _SECRET
-        env_value = os.environ.get("DDBJ_SEARCH_API_CURSOR_SECRET")
+        env_value = os.environ.get(CURSOR_SECRET_ENV)
         if env_value:
             _SECRET = env_value.encode("utf-8")
         else:

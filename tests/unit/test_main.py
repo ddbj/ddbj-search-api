@@ -6,15 +6,18 @@ error handlers, and OpenAPI customisation.
 
 from __future__ import annotations
 
+import sys
 import uuid
 from typing import Any
 
 import httpx
 import pytest
+import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openapi_spec_validator import validate as validate_openapi_spec
 
+from ddbj_search_api import main as main_module
 from ddbj_search_api.config import AppConfig
 from ddbj_search_api.main import create_app
 from tests._required_list_fields import (
@@ -633,3 +636,69 @@ class TestLifespanResourceCleanup:
             solr_client = application.state.solr_client
         assert es_client.is_closed is True
         assert solr_client.is_closed is True
+
+
+# === main(): server start-up ===
+
+
+class TestMainStartup:
+    """main(): how the server process is launched. ``uvicorn.run`` is the external boundary."""
+
+    @pytest.fixture
+    def run_calls(self, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(uvicorn, "run", lambda *_args, **kwargs: calls.append(kwargs))
+        monkeypatch.setattr(sys, "argv", ["ddbj_search_api"])
+        monkeypatch.delenv("DDBJ_SEARCH_API_WORKERS", raising=False)
+        monkeypatch.delenv("DDBJ_SEARCH_API_CURSOR_SECRET", raising=False)
+        return calls
+
+    def test_single_worker_needs_no_secret(
+        self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "production")
+
+        main_module.main()
+
+        assert len(run_calls) == 1
+        assert run_calls[0]["workers"] == 1
+        assert run_calls[0]["reload"] is False
+
+    def test_multiple_workers_are_passed_through_when_secret_is_set(
+        self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "production")
+        monkeypatch.setenv("DDBJ_SEARCH_API_WORKERS", "8")
+        monkeypatch.setenv("DDBJ_SEARCH_API_CURSOR_SECRET", "x" * 64)
+
+        main_module.main()
+
+        assert run_calls[0]["workers"] == 8
+        assert run_calls[0]["reload"] is False
+
+    @pytest.mark.parametrize("secret", [None, ""])
+    def test_multiple_workers_without_secret_refuse_to_start(
+        self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch, secret: str | None
+    ) -> None:
+        # compose は未設定の変数を空文字列で渡すので、空文字列も未設定として扱う必要がある
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "production")
+        monkeypatch.setenv("DDBJ_SEARCH_API_WORKERS", "2")
+        if secret is not None:
+            monkeypatch.setenv("DDBJ_SEARCH_API_CURSOR_SECRET", secret)
+
+        with pytest.raises(SystemExit) as exc_info:
+            main_module.main()
+
+        assert "DDBJ_SEARCH_API_CURSOR_SECRET" in str(exc_info.value)
+        assert run_calls == []
+
+    def test_dev_always_runs_single_process_with_reload(
+        self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "dev")
+        monkeypatch.setenv("DDBJ_SEARCH_API_WORKERS", "8")
+
+        main_module.main()
+
+        assert run_calls[0]["reload"] is True
+        assert run_calls[0]["workers"] == 1
