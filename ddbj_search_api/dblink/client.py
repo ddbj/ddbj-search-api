@@ -9,7 +9,9 @@ The in-memory connection is shared across requests via a TTL-based
 module-level cache, and each caller gets its own cursor via
 ``conn.cursor()`` to avoid contention on a single default cursor.
 ``PRAGMA threads`` is lowered per-connection to keep one query from
-saturating every CPU core when requests arrive concurrently.
+saturating every CPU core when requests arrive concurrently.  ``memory_limit`` is
+capped per-connection as well, because DuckDB's default budget is derived
+from the memory it can see rather than from what the lookups need.
 
 When the converter atomically replaces the DuckDB file, the new inode
 becomes visible either (a) after :data:`_CACHE_TTL_SECONDS` elapses,
@@ -28,6 +30,12 @@ import duckdb
 _CATALOG = "dblink"
 _CACHE_TTL_SECONDS = 900
 _PRAGMA_THREADS = 2
+# DuckDB caches every block it has read until it reaches memory_limit, and the
+# default limit is 80% of the memory it can see: the whole host when the
+# container is unlimited. With a database of tens of GB that lets each worker
+# process grow to the size of the database. Lookups here are index point reads,
+# so a small budget costs no latency; the file itself stays in the page cache.
+_MEMORY_LIMIT = "2GB"
 _CONN_CACHE: dict[Path, tuple[duckdb.DuckDBPyConnection, float]] = {}
 _LOCK = threading.Lock()
 
@@ -62,6 +70,7 @@ def _get_conn(db_path: Path) -> duckdb.DuckDBPyConnection:
         conn = duckdb.connect(":memory:")
         conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
         conn.execute(f"PRAGMA threads={_PRAGMA_THREADS}")
+        conn.execute(f"SET memory_limit='{_MEMORY_LIMIT}'")
         _CONN_CACHE[db_path] = (conn, now)
         return conn
 

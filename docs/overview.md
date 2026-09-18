@@ -46,6 +46,8 @@ ES は全文検索・フィルタ・ファセット集計・エントリー本�
 
 エンドポイント別の dbXrefs 扱い・切り詰めポリシー・tail injection の振る舞いは [api-spec.md § dbXrefs](api-spec.md) を参照。
 
+DuckDB への接続には、メモリ上限とスレッド数の上限を必ず明示する。DuckDB の既定値は「使えるメモリの 80%」と「全 core」で、コンテナにメモリ上限が無い環境ではホスト全体が基準になる。dbXrefs の DB は数十 GB あり、参照されたブロックは上限に達するまでプロセス内にキャッシュされ続けるので、既定のままだとプロセスのメモリが DB のサイズまで育ち、worker プロセスの数だけ重複する。dbXrefs の参照は index を使った点の読み出しなので、上限を小さくしても応答時間は変わらない (DB ファイル自体は OS の page cache に載る)。
+
 ## ファセット default の設計
 
 ファセットの default 集計は **共通 facet (`organism` / `accessibility`、cross-type 時は `type`) のみ** にしている。タイプ固有 facet (例: SRA experiment の `libraryStrategy` 等) や `objectType` (BioProject) は明示 opt-in (`facets=...`) でのみ集計する。

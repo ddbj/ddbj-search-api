@@ -28,6 +28,14 @@ from ddbj_search_api.schemas.dblink import AccessionType
 # --- Helpers ---
 
 
+def _memory_limit_bytes(conn: duckdb.DuckDBPyConnection) -> float:
+    """Parse DuckDB's human-readable ``memory_limit`` setting (e.g. ``1.8 GiB``)."""
+    row = conn.execute("SELECT current_setting('memory_limit')").fetchone()
+    assert row is not None
+    number, unit = str(row[0]).split()
+    return float(number) * {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}[unit]
+
+
 def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> None:
     """Create a DuckDB file with a ``dbxref`` table populated with half-edges.
 
@@ -1138,6 +1146,40 @@ class TestConnCacheTtl:
         value = conn.execute("SELECT current_setting('threads')").fetchone()
         assert value is not None
         assert int(value[0]) == dblink_client._PRAGMA_THREADS
+
+    def test_memory_limit_is_capped(self, tmp_path: Path) -> None:
+        """The default is 80% of whatever memory DuckDB sees, i.e. the whole host when the container is unlimited."""
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [])
+
+        conn = _get_conn(db)
+
+        assert _memory_limit_bytes(conn) <= 2 * 1024**3
+
+    def test_memory_limit_is_capped_on_every_new_connection(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [])
+        first = _get_conn(db)
+        _reset_cache()
+        after_reset = _get_conn(db)
+        monkeypatch.setattr(dblink_client, "_CACHE_TTL_SECONDS", 0)
+        after_ttl = _get_conn(db)
+
+        assert len({id(first), id(after_reset), id(after_ttl)}) == 3
+        for conn in (after_reset, after_ttl):
+            assert _memory_limit_bytes(conn) <= 2 * 1024**3
+
+    def test_queries_still_work_under_the_cap(self, tmp_path: Path) -> None:
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [("bioproject", "PRJDB1", "biosample", f"SAMD{i:08d}") for i in range(5000)])
+
+        rows = get_linked_ids_limited(db, "bioproject", "PRJDB1", 100)
+        counts = count_linked_ids(db, "bioproject", "PRJDB1")
+
+        assert len(rows) == 100
+        assert counts == {"biosample": 5000}
 
 
 # --- Cursor independence ---
