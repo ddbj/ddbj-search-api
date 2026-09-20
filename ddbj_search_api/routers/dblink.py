@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import contextlib
 import json
 import logging
-import queue
-import threading
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
 from ddbj_search_api.dblink.client import count_linked_ids_bulk, iter_linked_ids
+from ddbj_search_api.dblink.stream import iter_row_batches
 from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.dblink import (
     AccessionType,
@@ -86,38 +86,15 @@ async def get_links(
         header = '{"identifier":' + json.dumps(id) + ',"type":' + json.dumps(type.value) + ',"dbXrefs":['
         yield header.encode("utf-8")
 
-        q: queue.Queue[list[tuple[str, str]] | None] = queue.Queue(maxsize=2)
-
-        def _worker() -> None:
-            try:
-                batch: list[tuple[str, str]] = []
-                for row in iter_linked_ids(DBLINK_DB_PATH, type.value, id, target=target_values):
-                    batch.append(row)
-                    if len(batch) >= 10000:
-                        q.put(batch)
-                        batch = []
-                if batch:
-                    q.put(batch)
-            except FileNotFoundError:
-                logger.exception("DuckDB file not found: %s", DBLINK_DB_PATH)
-            finally:
-                q.put(None)
-
-        thread = threading.Thread(target=_worker, daemon=True)
-        thread.start()
-
         first = True
-        while True:
-            item = await asyncio.to_thread(q.get)
-            if item is None:
-                break
-            for t, acc in item:
-                if not first:
-                    yield b","
-                first = False
-                yield format_xref(t, acc).encode("utf-8")
-
-        thread.join()
+        rows = iter_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, type.value, id, target=target_values))
+        async with contextlib.aclosing(rows) as batches:
+            async for batch in batches:
+                for t, acc in batch:
+                    if not first:
+                        yield b","
+                    first = False
+                    yield format_xref(t, acc).encode("utf-8")
 
         yield b"]}"
 

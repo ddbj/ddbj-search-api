@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import collections.abc
+import contextlib
 import json
-import queue
-import threading
 from typing import Any, cast
 
 import httpx
@@ -27,6 +26,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
+from ddbj_search_api.dblink.stream import iter_row_batches
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_get_source, es_get_source_stream, es_resolve_same_as
 from ddbj_search_api.schemas.common import DbType, ProblemDetails
@@ -223,8 +223,8 @@ async def _inject_dbxrefs_tail_streaming(
     Streams DuckDB rows in chunks to avoid loading all rows into memory.
     Uses a one-chunk-behind buffer for the ES stream.
 
-    Thread safety: DuckDB generator creation and consumption happen
-    entirely within a dedicated worker thread via ``threading.Queue``.
+    Thread safety: the DuckDB generator is created, consumed and closed
+    entirely within the worker thread of ``iter_row_batches``.
     """
     prev: bytes | None = None
 
@@ -246,37 +246,15 @@ async def _inject_dbxrefs_tail_streaming(
     # Emit everything before the closing brace + start of dbXrefs array
     yield (text[:brace_pos] + ',"dbXrefs":[').encode("utf-8")
 
-    # Stream DuckDB rows via a dedicated worker thread
-    q: queue.Queue[list[tuple[str, str]] | None] = queue.Queue(maxsize=2)
-
-    def _worker() -> None:
-        try:
-            batch: list[tuple[str, str]] = []
-            for row in iter_linked_ids(DBLINK_DB_PATH, db_type, entry_id):
-                batch.append(row)
-                if len(batch) >= 10000:
-                    q.put(batch)
-                    batch = []
-            if batch:
-                q.put(batch)
-        finally:
-            q.put(None)
-
-    thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
-
     first = True
-    while True:
-        item = await asyncio.to_thread(q.get)
-        if item is None:
-            break
-        for type_, acc in item:
-            if not first:
-                yield b","
-            first = False
-            yield format_xref(type_, acc).encode("utf-8")
-
-    thread.join()
+    rows = iter_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, db_type, entry_id))
+    async with contextlib.aclosing(rows) as batches:
+        async for batch in batches:
+            for type_, acc in batch:
+                if not first:
+                    yield b","
+                first = False
+                yield format_xref(type_, acc).encode("utf-8")
 
     # Close the array and the object
     yield ("]" + text[brace_pos:]).encode("utf-8")
@@ -393,36 +371,15 @@ async def get_dbxrefs_full(
     async def _stream_dbxrefs() -> collections.abc.AsyncIterator[bytes]:
         yield b'{"dbXrefs":['
 
-        q: queue.Queue[list[tuple[str, str]] | None] = queue.Queue(maxsize=2)
-
-        def _worker() -> None:
-            try:
-                batch: list[tuple[str, str]] = []
-                for row in iter_linked_ids(DBLINK_DB_PATH, type.value, entry_id):
-                    batch.append(row)
-                    if len(batch) >= 10000:
-                        q.put(batch)
-                        batch = []
-                if batch:
-                    q.put(batch)
-            finally:
-                q.put(None)
-
-        thread = threading.Thread(target=_worker, daemon=True)
-        thread.start()
-
         first = True
-        while True:
-            item = await asyncio.to_thread(q.get)
-            if item is None:
-                break
-            for type_, acc in item:
-                if not first:
-                    yield b","
-                first = False
-                yield format_xref(type_, acc).encode("utf-8")
-
-        thread.join()
+        rows = iter_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, type.value, entry_id))
+        async with contextlib.aclosing(rows) as batches:
+            async for batch in batches:
+                for type_, acc in batch:
+                    if not first:
+                        yield b","
+                    first = False
+                    yield format_xref(type_, acc).encode("utf-8")
 
         yield b"]}"
 

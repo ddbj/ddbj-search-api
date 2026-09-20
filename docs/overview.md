@@ -48,6 +48,8 @@ ES は全文検索・フィルタ・ファセット集計・エントリー本�
 
 DuckDB への接続には、メモリ上限とスレッド数の上限を必ず明示する。DuckDB の既定値は「使えるメモリの 80%」と「全 core」で、コンテナにメモリ上限が無い環境ではホスト全体が基準になる。dbXrefs の DB は数十 GB あり、参照されたブロックは上限に達するまでプロセス内にキャッシュされ続けるので、既定のままだとプロセスのメモリが DB のサイズまで育ち、worker プロセスの数だけ重複する。dbXrefs の参照は index を使った点の読み出しなので、上限を小さくしても応答時間は変わらない (DB ファイル自体は OS の page cache に載る)。
 
+dbXrefs の全件 streaming は、クライアントが応答の途中で接続を切っても、DuckDB の cursor を必ず閉じる。行の読み出しは worker thread で行い、受け取る側が居なくなった時点で worker も止まる (`ddbj_search_api/dblink/stream.py`)。メモリ上限は DuckDB の instance ごとに効き、接続は converter による DB ファイルの差し替えに追従するため一定時間ごとに作り直される。止まらない worker は古い接続の cursor を握り続けるので、古い instance がキャッシュごと残り、上限が instance の数だけ積み上がる。
+
 ## ファセット default の設計
 
 ファセットの default 集計は **共通 facet (`organism` / `accessibility`、cross-type 時は `type`) のみ** にしている。タイプ固有 facet (例: SRA experiment の `libraryStrategy` 等) や `objectType` (BioProject) は明示 opt-in (`facets=...`) でのみ集計する。
