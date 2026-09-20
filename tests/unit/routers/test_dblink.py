@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -12,7 +13,10 @@ from fastapi.testclient import TestClient
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from ddbj_search_api.config import AppConfig
+from ddbj_search_api.main import create_app
 from ddbj_search_api.schemas.dblink import AccessionType
+from tests.unit.conftest import make_failing_linked_ids
 
 
 @pytest.fixture
@@ -175,6 +179,30 @@ class TestGetLinksDbMissing:
             resp = app.get("/dblink/humandbs/hum0014")
 
         assert resp.status_code == 500
+
+
+class TestGetLinksReadFailure:
+    """A dbXrefs list that could not be read in full must not look like a successful answer."""
+
+    @pytest.fixture
+    def client(self, config: AppConfig, mock_dblink_db_path: object) -> TestClient:
+        return TestClient(create_app(config), raise_server_exceptions=False)
+
+    def test_query_that_cannot_start_is_a_500_problem(self, client: TestClient) -> None:
+        with patch("ddbj_search_api.routers.dblink.iter_linked_ids", side_effect=make_failing_linked_ids(0)):
+            resp = client.get("/dblink/bioproject/PRJDB1")
+        assert resp.status_code == 500
+        assert "application/problem+json" in resp.headers["content-type"]
+        assert resp.json()["status"] == 500
+
+    def test_failure_after_the_first_batch_does_not_produce_complete_json(self, client: TestClient) -> None:
+        with patch("ddbj_search_api.routers.dblink.iter_linked_ids", side_effect=make_failing_linked_ids(10001)):
+            resp = client.get("/dblink/bioproject/PRJDB1")
+        assert resp.content.startswith(b'{"identifier":"PRJDB1"')
+        assert b"SAMD00000000" in resp.content
+        assert not resp.content.rstrip().endswith(b"]}")
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(resp.content)
 
 
 class TestGetLinksTargetFilter:

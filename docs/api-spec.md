@@ -557,6 +557,8 @@ dbXrefs は DBLinks API と同じ DuckDB ファイル (`dblink.duckdb`) から�
 
 データアクセス向けエンドポイント (`.json`, `.jsonld`, `dbxrefs.json`) では ES ストリームから dbXrefs を除外して取得し、DuckDB の dbXrefs を JSON の末尾に注入 (tail injection) する。メモリに全件を載せずチャンクストリーミングで返す。Bulk API (`/bulk`) では 1 エントリーずつ dbXrefs をメモリロードして注入する (JSON array 組み立てのため)。
 
+ストリーミングで返す `dbXrefs` は、欠けた状態で成功に見える応答にしない。DuckDB の読み出しは応答を始める前に開始し、開始に失敗したら 500 を返す。応答の途中で読み出しに失敗した場合は、JSON を閉じずに接続を打ち切る。クライアントは「JSON として完結している応答には `dbXrefs` が全件入っている」と扱ってよい。
+
 **`includeDbXrefs` パラメータ**:
 
 `GET /entries/`, `GET /entries/{type}/`, `GET /entries/{type}/{id}`, `POST /entries/{type}/bulk` は `includeDbXrefs` boolean パラメータ (デフォルト: `true`) をサポートする。`false` の場合、DuckDB を一切参照せず、レスポンスから `dbXrefs` と `dbXrefsCount` を省略する。`dbXrefsLimit=0` との違いは以下の通り:
@@ -594,6 +596,7 @@ ES は使用せず、ddbj-search-converter が管理する DuckDB ファイル�
 - テーブル: `dbxref (accession_type, accession, linked_type, linked_accession)`
 - DBLink は無向グラフ。converter が各無向 edge `{A, B}` を `(A → B)` と `(B → A)` の 2 行に半辺化して保存する。これにより、いずれの端点からの lookup も `WHERE accession_type = ? AND accession = ?` の point lookup で完結する (UNION ALL 不要)
 - 物理 sort: `accession_type, accession, linked_type, linked_accession` + `idx_dbxref_accession (accession_type, accession)` により方向別の性能非対称性が無い
+- 全件を返す経路 (`GET /dblink/{type}/{id}`, `.json`, `.jsonld`, `dbxrefs.json`) は、この格納順のまま読み出して返す。リクエストごとの sort はしない (DuckDB は単一テーブルを絞り込んで読むとき格納順を保つ)。数百万行の sort は結果を全部メモリに確保し、応答を送り終わるまで保持し続けるため。したがって `dbXrefs` の順序の保証は、converter がテーブルをこの順で作ることに依存する
 
 #### アクセッションタイプ (AccessionType, 21 種)
 
@@ -632,14 +635,14 @@ Trailing slash 両対応 (`/dblink` と `/dblink/` は同じ結果)。
 - 該当なしの場合: 200 + 空の `dbXrefs: []`
 - `target` は AccessionType allowlist 外の値で 422
 
-**ストリーミング**: 関連 ID が非常に大規模になり得るため、DuckDB から chunk 単位で読み出してストリーミングレスポンスで返す。
+**ストリーミング**: 関連 ID が非常に大規模になり得るため、DuckDB から chunk 単位で読み出してストリーミングレスポンスで返す。読み出しに失敗したときの扱いは [dbXrefs](#dbxrefs) を参照。
 
 **エラー**:
 
 | ステータス | 発生条件 |
 |-----------|---------|
 | 422 | 無効な `{type}` (AccessionType 以外)、無効な `target` 値 (AccessionType 以外) |
-| 500 | DuckDB ファイルが見つからない |
+| 500 | DuckDB ファイルが見つからない、読み出しを開始できない |
 
 #### `POST /dblink/counts`
 

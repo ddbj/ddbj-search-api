@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import collections.abc
+import contextlib
 import logging
 from typing import Any, cast
 
@@ -20,6 +22,24 @@ def format_xref(type_: str, accession: str) -> str:
     xref = to_xref(accession, type_hint=cast(XrefType, type_))
 
     return xref.model_dump_json(by_alias=True)
+
+
+async def iter_xref_json(
+    batches: collections.abc.AsyncGenerator[list[tuple[str, str]], None],
+) -> collections.abc.AsyncGenerator[bytes, None]:
+    """Yield the elements of a JSON array of xrefs, separators included.
+
+    *batches* is closed when this generator exits, whether it ran to the end or
+    was abandoned, so the reader behind it never outlives the response.
+    """
+    first = True
+    async with contextlib.aclosing(batches):
+        async for batch in batches:
+            for type_, accession in batch:
+                if not first:
+                    yield b","
+                first = False
+                yield format_xref(type_, accession).encode("utf-8")
 
 
 def format_xref_dict(type_: str, accession: str) -> dict[str, Any]:

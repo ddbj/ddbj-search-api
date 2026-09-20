@@ -55,7 +55,7 @@ def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> Non
 
     with duckdb.connect(str(db_path)) as conn:
         conn.execute("""
-            CREATE TABLE dbxref (
+            CREATE TABLE half_edges (
                 accession_type TEXT,
                 accession TEXT,
                 linked_type TEXT,
@@ -64,9 +64,19 @@ def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> Non
         """)
         if half_edges:
             conn.executemany(
-                "INSERT INTO dbxref VALUES (?, ?, ?, ?)",
+                "INSERT INTO half_edges VALUES (?, ?, ?, ?)",
                 half_edges,
             )
+        # Same statement shape as the converter's build_dbxref_table: the stored
+        # order is part of the contract that iter_linked_ids relies on.
+        conn.execute("""
+            CREATE TABLE dbxref AS
+            SELECT DISTINCT accession_type, accession, linked_type, linked_accession
+            FROM half_edges
+            ORDER BY accession_type, accession, linked_type, linked_accession
+        """)
+        conn.execute("DROP TABLE half_edges")
+        conn.execute("CREATE INDEX idx_dbxref_accession ON dbxref (accession_type, accession)")
 
 
 def _create_test_db_raw(
@@ -312,6 +322,55 @@ class TestIterLinkedIdsDbMissing:
 
         with pytest.raises(FileNotFoundError, match="DuckDB file not found"):
             list(iter_linked_ids(missing, "humandbs", "hum0014"))
+
+
+class TestIterLinkedIdsStoredOrder:
+    """iter_linked_ids returns stored order, so the order guarantee rests on how the table is built."""
+
+    _LINKED = 300_000  # more than two DuckDB row groups (122,880 rows each)
+
+    def _build(self, db_path: Path) -> None:
+        with duckdb.connect(str(db_path)) as conn:
+            # Rows arrive in a scrambled order, as they do from the converter's parsers.
+            conn.execute(f"""
+                CREATE TABLE half_edges AS
+                SELECT 'bioproject' AS accession_type, 'PRJBIG' AS accession,
+                       CASE i % 3 WHEN 0 THEN 'sra-run' WHEN 1 THEN 'biosample' ELSE 'insdc' END AS linked_type,
+                       'ACC' || lpad(((i * 7919) % {self._LINKED})::VARCHAR, 7, '0') AS linked_accession
+                FROM range({self._LINKED}) t(i)
+                UNION ALL
+                SELECT 'bioproject', 'PRJ' || lpad(i::VARCHAR, 6, '0'), 'biosample', 'SAMD' || lpad(i::VARCHAR, 6, '0')
+                FROM range(50000) t(i)
+            """)
+            conn.execute("""
+                CREATE TABLE dbxref AS
+                SELECT DISTINCT accession_type, accession, linked_type, linked_accession
+                FROM half_edges
+                ORDER BY accession_type, accession, linked_type, linked_accession
+            """)
+            conn.execute("DROP TABLE half_edges")
+            conn.execute("CREATE INDEX idx_dbxref_accession ON dbxref (accession_type, accession)")
+
+    def test_accession_spanning_row_groups_is_returned_sorted_and_complete(self, tmp_path: Path) -> None:
+        db = tmp_path / "big.duckdb"
+        self._build(db)
+        result = list(iter_linked_ids(db, "bioproject", "PRJBIG"))
+        assert len(result) == len(set(result)) == self._LINKED
+        assert result == sorted(result)
+
+    def test_target_filter_keeps_the_stored_order(self, tmp_path: Path) -> None:
+        db = tmp_path / "big_target.duckdb"
+        self._build(db)
+        result = list(iter_linked_ids(db, "bioproject", "PRJBIG", target=["sra-run", "biosample"]))
+        assert {t for t, _ in result} == {"sra-run", "biosample"}
+        assert len(result) == self._LINKED // 3 * 2
+        assert result == sorted(result)
+
+    def test_neighbouring_accessions_do_not_leak_into_the_result(self, tmp_path: Path) -> None:
+        db = tmp_path / "big_neighbours.duckdb"
+        self._build(db)
+        assert list(iter_linked_ids(db, "bioproject", "PRJ000042")) == [("biosample", "SAMD000042")]
+        assert list(iter_linked_ids(db, "bioproject", "PRJBIH")) == []
 
 
 class TestIterLinkedIdsPBT:

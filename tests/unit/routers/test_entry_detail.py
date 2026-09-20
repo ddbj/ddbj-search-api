@@ -17,7 +17,11 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.config import JSONLD_CONTEXT_URLS, AppConfig
 from ddbj_search_api.routers import entry_detail as entry_detail_module
-from tests.unit.conftest import make_mock_stream_response, make_multi_chunk_stream_response
+from tests.unit.conftest import (
+    make_failing_linked_ids,
+    make_mock_stream_response,
+    make_multi_chunk_stream_response,
+)
 from tests.unit.strategies import db_type_values
 
 # === Routing: GET /entries/{type}/{id} ===
@@ -379,6 +383,72 @@ class TestDbxrefsFullResponse:
 
 
 # === dbXrefsLimit parameter validation ===
+
+
+class TestDbxrefsReadFailure:
+    """Streamed dbXrefs that could not be read in full must not look like a successful answer."""
+
+    _PATHS = (
+        "/entries/bioproject/PRJDB1.json",
+        "/entries/bioproject/PRJDB1.jsonld",
+        "/entries/bioproject/PRJDB1/dbxrefs.json",
+    )
+
+    @pytest.mark.parametrize("path", _PATHS)
+    def test_query_that_cannot_start_is_a_500_problem(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        path: str,
+    ) -> None:
+        es_response = make_mock_stream_response(json.dumps({"identifier": "PRJDB1"}).encode())
+        mock_es_get_source_stream.return_value = es_response
+        with patch("ddbj_search_api.routers.entry_detail.iter_linked_ids", side_effect=make_failing_linked_ids(0)):
+            resp = app_with_entry_detail.get(path)
+        assert resp.status_code == 500
+        assert "application/problem+json" in resp.headers["content-type"]
+        assert resp.json()["status"] == 500
+
+    @pytest.mark.parametrize("path", _PATHS[:2])
+    def test_query_that_cannot_start_releases_the_es_stream(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        path: str,
+    ) -> None:
+        es_response = make_mock_stream_response(json.dumps({"identifier": "PRJDB1"}).encode())
+        mock_es_get_source_stream.return_value = es_response
+        with patch("ddbj_search_api.routers.entry_detail.iter_linked_ids", side_effect=make_failing_linked_ids(0)):
+            app_with_entry_detail.get(path)
+        es_response.aclose.assert_awaited()  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize("path", _PATHS)
+    def test_failure_after_the_first_batch_does_not_produce_complete_json(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        path: str,
+    ) -> None:
+        es_response = make_mock_stream_response(json.dumps({"identifier": "PRJDB1"}).encode())
+        mock_es_get_source_stream.return_value = es_response
+        with patch("ddbj_search_api.routers.entry_detail.iter_linked_ids", side_effect=make_failing_linked_ids(10001)):
+            resp = app_with_entry_detail.get(path)
+        assert b"SAMD00000000" in resp.content
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(resp.content)
+
+    @pytest.mark.parametrize("path", _PATHS[:2])
+    def test_failure_after_the_first_batch_still_releases_the_es_stream(
+        self,
+        app_with_entry_detail: TestClient,
+        mock_es_get_source_stream: AsyncMock,
+        path: str,
+    ) -> None:
+        es_response = make_mock_stream_response(json.dumps({"identifier": "PRJDB1"}).encode())
+        mock_es_get_source_stream.return_value = es_response
+        with patch("ddbj_search_api.routers.entry_detail.iter_linked_ids", side_effect=make_failing_linked_ids(10001)):
+            app_with_entry_detail.get(path)
+        es_response.aclose.assert_awaited()  # type: ignore[attr-defined]
 
 
 class TestDbXrefsLimitValidation:

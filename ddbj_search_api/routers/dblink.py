@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH
 from ddbj_search_api.dblink.client import count_linked_ids_bulk, iter_linked_ids
-from ddbj_search_api.dblink.stream import iter_row_batches
+from ddbj_search_api.dblink.stream import open_row_batches
 from ddbj_search_api.schemas.common import ProblemDetails
 from ddbj_search_api.schemas.dblink import (
     AccessionType,
@@ -24,7 +24,7 @@ from ddbj_search_api.schemas.dblink import (
     DbLinksResponse,
     DbLinksTypesResponse,
 )
-from ddbj_search_api.utils import format_xref
+from ddbj_search_api.utils import iter_xref_json
 
 logger = logging.getLogger(__name__)
 
@@ -82,21 +82,17 @@ async def get_links(
     if query.target is not None:
         target_values = [t.value for t in query.target]
 
+    # Opened before the response starts, so a query that cannot run is a 500
+    # rather than a 200 cut short.
+    batches = await open_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, type.value, id, target=target_values))
+
     async def _stream() -> collections.abc.AsyncIterator[bytes]:
-        header = '{"identifier":' + json.dumps(id) + ',"type":' + json.dumps(type.value) + ',"dbXrefs":['
-        yield header.encode("utf-8")
-
-        first = True
-        rows = iter_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, type.value, id, target=target_values))
-        async with contextlib.aclosing(rows) as batches:
-            async for batch in batches:
-                for t, acc in batch:
-                    if not first:
-                        yield b","
-                    first = False
-                    yield format_xref(t, acc).encode("utf-8")
-
-        yield b"]}"
+        async with contextlib.aclosing(iter_xref_json(batches)) as xrefs:
+            header = '{"identifier":' + json.dumps(id) + ',"type":' + json.dumps(type.value) + ',"dbXrefs":['
+            yield header.encode("utf-8")
+            async for chunk in xrefs:
+                yield chunk
+            yield b"]}"
 
     return StreamingResponse(
         _stream(),

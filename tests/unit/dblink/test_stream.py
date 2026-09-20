@@ -14,7 +14,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ddbj_search_api.dblink.stream import WORKER_THREAD_NAME, Row, iter_row_batches
+from ddbj_search_api.dblink.stream import WORKER_THREAD_NAME, Row, RowSource, iter_row_batches, open_row_batches
 
 # --- Helpers ---
 
@@ -71,12 +71,18 @@ class _TrackedSource:
             self.closed = True
 
 
-RowSource = collections.abc.Callable[[], collections.abc.Iterator[Row]]
-
-
 async def _collect(source: RowSource, batch_size: int) -> list[list[Row]]:
     async with contextlib.aclosing(iter_row_batches(source, batch_size=batch_size)) as batches:
         return [batch async for batch in batches]
+
+
+async def _drain_into(
+    batches: collections.abc.AsyncGenerator[list[Row], None],
+    delivered: list[Row],
+) -> None:
+    async with contextlib.aclosing(batches):
+        async for batch in batches:
+            delivered.extend(batch)
 
 
 # --- Tests ---
@@ -128,20 +134,41 @@ class TestIterRowBatchesEdgeCases:
         assert not _live_workers()
 
     @pytest.mark.asyncio
-    async def test_source_failing_midway_delivers_completed_batches_and_ends(self) -> None:
+    async def test_source_failing_midway_delivers_completed_batches_then_raises(self) -> None:
         source = _TrackedSource(_rows(30), fail_at=25)
-        batches = await asyncio.wait_for(_collect(source, batch_size=10), timeout=5)
-        assert [row for b in batches for row in b] == _rows(20)
+        delivered: list[Row] = []
+        with pytest.raises(RuntimeError, match="row source failed"):
+            await _drain_into(iter_row_batches(source, batch_size=10), delivered)
+        assert delivered == _rows(20), "a partial batch must not be passed off as data"
         assert source.closed
         assert await _wait_until(lambda: not _live_workers())
 
     @pytest.mark.asyncio
-    async def test_source_factory_raising_ends_the_stream_without_hanging(self) -> None:
+    async def test_source_factory_raising_is_raised_to_the_consumer(self) -> None:
         def _missing() -> collections.abc.Iterator[Row]:
             msg = "DuckDB file not found"
             raise FileNotFoundError(msg)
 
-        assert await asyncio.wait_for(_collect(_missing, batch_size=10), timeout=5) == []
+        with pytest.raises(FileNotFoundError):
+            await asyncio.wait_for(_collect(_missing, batch_size=10), timeout=5)
+        assert await _wait_until(lambda: not _live_workers())
+
+    @pytest.mark.asyncio
+    async def test_source_whose_close_fails_after_an_error_does_not_end_quietly(self) -> None:
+        class _Broken:
+            def __iter__(self) -> _Broken:
+                return self
+
+            def __next__(self) -> Row:
+                msg = "read failed"
+                raise OSError(msg)
+
+            def close(self) -> None:
+                msg = "close failed"
+                raise OSError(msg)
+
+        with pytest.raises(OSError):
+            await asyncio.wait_for(_collect(_Broken, batch_size=10), timeout=5)
         assert await _wait_until(lambda: not _live_workers())
 
     @pytest.mark.asyncio
@@ -159,6 +186,71 @@ class TestIterRowBatchesEdgeCases:
             await asyncio.sleep(0.6)
             # one delivered + two queued + one the worker is blocked on
             assert source.pulled <= 40
+
+
+class TestOpenRowBatches:
+    @pytest.mark.asyncio
+    async def test_stream_replays_the_first_batch_and_the_rest_in_order(self) -> None:
+        rows = _rows(25)
+        batches = await open_row_batches(lambda: iter(rows), batch_size=10)
+        async with contextlib.aclosing(batches):
+            got = [batch async for batch in batches]
+        assert [len(b) for b in got] == [10, 10, 5]
+        assert [row for b in got for row in b] == rows
+
+    @pytest.mark.asyncio
+    async def test_empty_source_opens_and_yields_nothing(self) -> None:
+        batches = await open_row_batches(lambda: iter([]), batch_size=10)
+        assert [b async for b in batches] == []
+
+    @pytest.mark.asyncio
+    async def test_failure_to_start_is_raised_before_a_stream_is_returned(self) -> None:
+        def _oom() -> collections.abc.Iterator[Row]:
+            msg = "Out of Memory Error: failed to pin block"
+            raise MemoryError(msg)
+
+        with pytest.raises(MemoryError):
+            await asyncio.wait_for(open_row_batches(_oom, batch_size=10), timeout=5)
+        assert await _wait_until(lambda: not _live_workers())
+
+    @pytest.mark.asyncio
+    async def test_failure_after_the_first_batch_is_raised_while_iterating(self) -> None:
+        source = _TrackedSource(_rows(30), fail_at=15)
+        batches = await open_row_batches(source, batch_size=10)
+        delivered: list[Row] = []
+        with pytest.raises(RuntimeError, match="row source failed"):
+            await _drain_into(batches, delivered)
+        assert delivered == _rows(10)
+        assert await _wait_until(lambda: not _live_workers())
+
+    @pytest.mark.asyncio
+    async def test_opened_stream_that_is_never_iterated_stops_the_worker(self) -> None:
+        source = _TrackedSource(_rows(1000))
+
+        async def _open_and_drop() -> None:
+            await open_row_batches(source, batch_size=10)
+            # the response is never started, e.g. the client went away first
+
+        await _open_and_drop()
+        assert await _wait_until(lambda: not _live_workers()), "worker thread leaked"
+        assert source.closed
+
+
+class TestOpenRowBatchesPBT:
+    @settings(max_examples=40, deadline=None)
+    @given(n=st.integers(min_value=0, max_value=120), batch_size=st.integers(min_value=1, max_value=40))
+    def test_opened_stream_partitions_the_rows_like_the_plain_one(self, n: int, batch_size: int) -> None:
+        rows = _rows(n)
+
+        async def _run() -> list[list[Row]]:
+            batches = await open_row_batches(lambda: iter(rows), batch_size=batch_size)
+            async with contextlib.aclosing(batches):
+                return [b async for b in batches]
+
+        got = asyncio.run(_run())
+        assert [row for b in got for row in b] == rows
+        assert all(got)
+        assert all(len(b) == batch_size for b in got[:-1])
 
 
 class TestBugAbandonedStreamKeepsWorkerAndCursorAlive:

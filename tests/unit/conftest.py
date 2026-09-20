@@ -228,6 +228,28 @@ def make_multi_chunk_stream_response(chunks: list[bytes]) -> httpx.Response:
     return response
 
 
+def make_failing_linked_ids(
+    rows_before_failure: int,
+) -> collections.abc.Callable[..., collections.abc.Iterator[tuple[str, str]]]:
+    """Build an ``iter_linked_ids`` replacement that raises after yielding some rows.
+
+    ``0`` models a query that cannot start (missing file, lock, out of memory at
+    execute time); a value above the batch size models a read error that arrives
+    after the response has started.
+    """
+
+    def _make(*_args: object, **_kwargs: object) -> collections.abc.Iterator[tuple[str, str]]:
+        def _rows() -> collections.abc.Iterator[tuple[str, str]]:
+            for i in range(rows_before_failure):
+                yield ("biosample", f"SAMD{i:08d}")
+            msg = "Out of Memory Error: failed to pin block"
+            raise RuntimeError(msg)
+
+        return _rows()
+
+    return _make
+
+
 # --- Entry Detail fixtures ---
 
 

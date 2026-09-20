@@ -71,6 +71,8 @@ def _get_conn(db_path: Path) -> duckdb.DuckDBPyConnection:
         conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
         conn.execute(f"PRAGMA threads={_PRAGMA_THREADS}")
         conn.execute(f"SET memory_limit='{_MEMORY_LIMIT}'")
+        # iter_linked_ids returns rows in stored order instead of sorting them.
+        conn.execute("SET preserve_insertion_order=true")
         _CONN_CACHE[db_path] = (conn, now)
         return conn
 
@@ -101,6 +103,17 @@ def iter_linked_ids(
     concurrent generators on the same cached connection do not share
     state.
 
+    The rows come back in stored order, which is already
+    ``(linked_type, linked_accession)`` within one accession because the
+    converter writes ``dbxref`` sorted by all four columns.  Sorting here
+    would make DuckDB materialize the whole result, millions of rows for
+    some accessions, and keep it pinned against ``memory_limit`` until the
+    client has downloaded the last byte.
+
+    The *target* filter is a plain row predicate for the same reason:
+    ``IN (SELECT ...)`` is planned as a join, which does not keep the stored
+    order.
+
     Args:
         db_path: Path to the DuckDB database file.
         type_: Source accession type.
@@ -122,8 +135,7 @@ def iter_linked_ids(
                 f"""
                 SELECT linked_type, linked_accession FROM {_CATALOG}.dbxref
                 WHERE accession_type = ? AND accession = ?
-                  AND linked_type IN (SELECT UNNEST(?))
-                ORDER BY 1, 2
+                  AND list_contains(?::VARCHAR[], linked_type)
                 """,
                 (type_, id_, list(target)),
             )
@@ -132,7 +144,6 @@ def iter_linked_ids(
                 f"""
                 SELECT linked_type, linked_accession FROM {_CATALOG}.dbxref
                 WHERE accession_type = ? AND accession = ?
-                ORDER BY 1, 2
                 """,
                 (type_, id_),
             )

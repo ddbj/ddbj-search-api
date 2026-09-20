@@ -26,14 +26,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from ddbj_search_api.config import DBLINK_DB_PATH, JSONLD_CONTEXT_URLS, get_config
 from ddbj_search_api.dblink.client import count_linked_ids, get_linked_ids_limited, iter_linked_ids
-from ddbj_search_api.dblink.stream import iter_row_batches
+from ddbj_search_api.dblink.stream import open_row_batches
 from ddbj_search_api.es import get_es_client
 from ddbj_search_api.es.client import es_get_source, es_get_source_stream, es_resolve_same_as
 from ddbj_search_api.schemas.common import DbType, ProblemDetails
 from ddbj_search_api.schemas.dbxrefs import DbXrefsFullResponse
 from ddbj_search_api.schemas.entries import DetailResponse, EntryJsonLdResponse, EntryResponse
 from ddbj_search_api.schemas.queries import EntryDetailQuery
-from ddbj_search_api.utils import format_xref
+from ddbj_search_api.utils import iter_xref_json
 
 router = APIRouter(tags=["Entry Detail"])
 
@@ -167,17 +167,20 @@ class JsonLdResponse(JSONResponse):
 
 
 async def _stream_with_cleanup(
-    body: collections.abc.AsyncIterator[bytes],
+    body: collections.abc.AsyncGenerator[bytes, None],
     response: httpx.Response,
 ) -> collections.abc.AsyncIterator[bytes]:
-    """Wrap async iterator to guarantee ``response.aclose()`` on completion.
+    """Wrap *body* to guarantee that it and ``response`` are closed on completion.
 
     Unlike ``BackgroundTask``, ``try/finally`` in an async generator
     runs even when the consumer is cancelled (e.g. client disconnect).
+    Closing *body* explicitly stops the dbXrefs reader behind it right away
+    instead of when the generator is garbage-collected.
     """
     try:
-        async for chunk in body:
-            yield chunk
+        async with contextlib.aclosing(body):
+            async for chunk in body:
+                yield chunk
     finally:
         await response.aclose()
 
@@ -186,10 +189,10 @@ async def _stream_with_cleanup(
 
 
 async def _inject_jsonld_prefix(
-    stream: collections.abc.AsyncIterator[bytes],
+    stream: collections.abc.AsyncGenerator[bytes, None],
     context_url: str,
     at_id: str,
-) -> collections.abc.AsyncIterator[bytes]:
+) -> collections.abc.AsyncGenerator[bytes, None]:
     """Inject ``@context`` and ``@id`` into the first ``{`` of a JSON stream.
 
     Replaces the leading ``{`` with
@@ -198,66 +201,76 @@ async def _inject_jsonld_prefix(
     prefix = '{"@context":' + json.dumps(context_url) + ',"@id":' + json.dumps(at_id) + ","
     injected = False
 
-    async for chunk in stream:
-        if not injected:
-            text = chunk.decode("utf-8")
-            brace_pos = text.find("{")
-            if brace_pos != -1:
-                text = text[:brace_pos] + prefix + text[brace_pos + 1 :]
-                injected = True
-            yield text.encode("utf-8")
-        else:
-            yield chunk
+    async with contextlib.aclosing(stream):
+        async for chunk in stream:
+            if not injected:
+                text = chunk.decode("utf-8")
+                brace_pos = text.find("{")
+                if brace_pos != -1:
+                    text = text[:brace_pos] + prefix + text[brace_pos + 1 :]
+                    injected = True
+                yield text.encode("utf-8")
+            else:
+                yield chunk
 
 
 # --- Helper: dbXrefs tail injection ---
 
 
+RowBatches = collections.abc.AsyncGenerator[list[tuple[str, str]], None]
+
+
+async def _open_dbxrefs(db_type: str, entry_id: str, response: httpx.Response | None = None) -> RowBatches:
+    """Start reading the entry's dbXrefs before any response byte is sent.
+
+    A query that cannot run then surfaces as a 500 instead of a 200 cut short.
+    *response* is the ES stream the caller already holds; it is closed here on
+    failure because no streaming body will take ownership of it.
+    """
+    try:
+        return await open_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, db_type, entry_id))
+    except BaseException:
+        if response is not None:
+            await response.aclose()
+        raise
+
+
 async def _inject_dbxrefs_tail_streaming(
     stream: collections.abc.AsyncIterator[bytes],
-    db_type: str,
-    entry_id: str,
-) -> collections.abc.AsyncIterator[bytes]:
+    batches: RowBatches,
+) -> collections.abc.AsyncGenerator[bytes, None]:
     """Inject ``,"dbXrefs":[...]`` before the closing ``}`` of a JSON stream.
 
     Streams DuckDB rows in chunks to avoid loading all rows into memory.
-    Uses a one-chunk-behind buffer for the ES stream.
-
-    Thread safety: the DuckDB generator is created, consumed and closed
-    entirely within the worker thread of ``iter_row_batches``.
+    Uses a one-chunk-behind buffer for the ES stream.  *batches* is closed on
+    every way out, including the early returns for an unusable ES body.
     """
-    prev: bytes | None = None
+    async with contextlib.aclosing(iter_xref_json(batches)) as xrefs:
+        prev: bytes | None = None
 
-    async for chunk in stream:
-        if prev is not None:
+        async for chunk in stream:
+            if prev is not None:
+                yield prev
+            prev = chunk
+
+        if prev is None:
+            return
+
+        text = prev.decode("utf-8")
+        brace_pos = text.rfind("}")
+        if brace_pos == -1:
             yield prev
-        prev = chunk
 
-    if prev is None:
-        return
+            return
 
-    text = prev.decode("utf-8")
-    brace_pos = text.rfind("}")
-    if brace_pos == -1:
-        yield prev
+        # Emit everything before the closing brace + start of dbXrefs array
+        yield (text[:brace_pos] + ',"dbXrefs":[').encode("utf-8")
 
-        return
+        async for xref in xrefs:
+            yield xref
 
-    # Emit everything before the closing brace + start of dbXrefs array
-    yield (text[:brace_pos] + ',"dbXrefs":[').encode("utf-8")
-
-    first = True
-    rows = iter_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, db_type, entry_id))
-    async with contextlib.aclosing(rows) as batches:
-        async for batch in batches:
-            for type_, acc in batch:
-                if not first:
-                    yield b","
-                first = False
-                yield format_xref(type_, acc).encode("utf-8")
-
-    # Close the array and the object
-    yield ("]" + text[brace_pos:]).encode("utf-8")
+        # Close the array and the object
+        yield ("]" + text[brace_pos:]).encode("utf-8")
 
 
 # --- GET /entries/{type}/{id}.json ---
@@ -290,11 +303,8 @@ async def get_entry_json(
         source_excludes="dbXrefs",
     )
 
-    body = _inject_dbxrefs_tail_streaming(
-        response.aiter_bytes(),
-        type.value,
-        entry_id,
-    )
+    batches = await _open_dbxrefs(type.value, entry_id, response)
+    body = _inject_dbxrefs_tail_streaming(response.aiter_bytes(), batches)
 
     return StreamingResponse(
         _stream_with_cleanup(body, response),
@@ -335,12 +345,10 @@ async def get_entry_jsonld(
     context_url = JSONLD_CONTEXT_URLS[type.value]
     at_id = f"{config.base_url}/entries/{type.value}/{entry_id}"
 
+    batches = await _open_dbxrefs(type.value, entry_id, response)
+
     # Chain: ES stream → dbXrefs tail injection → JSON-LD prefix injection
-    with_dbxrefs = _inject_dbxrefs_tail_streaming(
-        response.aiter_bytes(),
-        type.value,
-        entry_id,
-    )
+    with_dbxrefs = _inject_dbxrefs_tail_streaming(response.aiter_bytes(), batches)
     body = _inject_jsonld_prefix(with_dbxrefs, context_url, at_id)
 
     return StreamingResponse(
@@ -368,20 +376,14 @@ async def get_dbxrefs_full(
     """Get all dbXrefs (DuckDB streaming, ES HEAD for existence check)."""
     entry_id = await _check_exists_with_fallback(client, type.value, id)
 
+    batches = await _open_dbxrefs(type.value, entry_id)
+
     async def _stream_dbxrefs() -> collections.abc.AsyncIterator[bytes]:
-        yield b'{"dbXrefs":['
-
-        first = True
-        rows = iter_row_batches(lambda: iter_linked_ids(DBLINK_DB_PATH, type.value, entry_id))
-        async with contextlib.aclosing(rows) as batches:
-            async for batch in batches:
-                for type_, acc in batch:
-                    if not first:
-                        yield b","
-                    first = False
-                    yield format_xref(type_, acc).encode("utf-8")
-
-        yield b"]}"
+        async with contextlib.aclosing(iter_xref_json(batches)) as xrefs:
+            yield b'{"dbXrefs":['
+            async for xref in xrefs:
+                yield xref
+            yield b"]}"
 
     return StreamingResponse(
         _stream_dbxrefs(),
