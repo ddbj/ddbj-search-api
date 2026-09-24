@@ -92,7 +92,7 @@ converter の Pydantic スキーマ / ES mapping 変更が絡むロールバッ�
 
 ## 環境変数
 
-設定値は `env.dev` / `env.staging` / `env.production` を直接参照する。各変数は `compose.yml` で受け取られて API コンテナに渡る。環境差分 (例: dev のみ Solr backend を未設定、staging / production はどちらも a012 上の 3 shard ARSA cluster へ向ける) もファイル diff で確認する。
+設定値は `env.dev` / `env.staging` / `env.production` を直接参照する。各変数は `compose.yml` で受け取られて API コンテナに渡る。環境差分 (例: dev のみ Solr backend を未設定、staging / production はどちらも同じ 3 shard ARSA cluster へ向ける) もファイル diff で確認する。
 
 ### `DDBJ_SEARCH_API_WORKERS`
 
