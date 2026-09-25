@@ -36,7 +36,11 @@ def _memory_limit_bytes(conn: duckdb.DuckDBPyConnection) -> float:
     return float(number) * {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}[unit]
 
 
-def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> None:
+def _create_test_db(
+    db_path: Path,
+    rows: list[tuple[str, str, str, str]],
+    heavy_threshold: int | None = None,
+) -> None:
     """Create a DuckDB file with a ``dbxref`` table populated with half-edges.
 
     Each input row ``(src_type, src_accession, dst_type, dst_accession)``
@@ -46,6 +50,10 @@ def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> Non
 
     Self-loops (where both endpoints are identical) are stored as a
     single row to mirror converter's ``raw_edges`` deduplication.
+
+    With *heavy_threshold*, ``dbxref_heavy`` is built the way the converter
+    builds it, listing accessions with more rows than the threshold.  Without
+    it the table is absent, as in databases built before the converter wrote it.
     """
     half_edges: list[tuple[str, str, str, str]] = []
     for st_, sa, dt, da in rows:
@@ -76,7 +84,21 @@ def _create_test_db(db_path: Path, rows: list[tuple[str, str, str, str]]) -> Non
             ORDER BY accession_type, accession, linked_type, linked_accession
         """)
         conn.execute("DROP TABLE half_edges")
-        conn.execute("CREATE INDEX idx_dbxref_accession ON dbxref (accession_type, accession)")
+        if heavy_threshold is not None:
+            conn.execute(f"""
+                CREATE TABLE dbxref_heavy AS
+                WITH heavy AS (
+                    SELECT accession_type, accession
+                    FROM dbxref
+                    GROUP BY accession_type, accession
+                    HAVING count(*) > {heavy_threshold}
+                )
+                SELECT d.accession_type, d.accession, d.linked_type, count(*) AS n
+                FROM dbxref d
+                SEMI JOIN heavy USING (accession_type, accession)
+                GROUP BY d.accession_type, d.accession, d.linked_type
+                ORDER BY d.accession_type, d.accession, d.linked_type
+            """)
 
 
 def _create_test_db_raw(
@@ -349,7 +371,6 @@ class TestIterLinkedIdsStoredOrder:
                 ORDER BY accession_type, accession, linked_type, linked_accession
             """)
             conn.execute("DROP TABLE half_edges")
-            conn.execute("CREATE INDEX idx_dbxref_accession ON dbxref (accession_type, accession)")
 
     def test_accession_spanning_row_groups_is_returned_sorted_and_complete(self, tmp_path: Path) -> None:
         db = tmp_path / "big.duckdb"
@@ -691,6 +712,146 @@ class TestGetLinkedIdsLimitedBulkConsistency:
         for entry_type, entry_id in entries:
             individual = get_linked_ids_limited(db, entry_type, entry_id, limit=10)
             assert bulk_result[(entry_type, entry_id)] == individual
+
+
+def _reference_limited(
+    rows: list[tuple[str, str, str, str]],
+    entry: tuple[str, str],
+    limit: int,
+) -> list[tuple[str, str]]:
+    """First *limit* linked accessions per linked type, computed without the DB."""
+    linked: set[tuple[str, str]] = set()
+    for st_, sa, dt, da in rows:
+        if (st_, sa) == entry:
+            linked.add((dt, da))
+        if (dt, da) == entry:
+            linked.add((st_, sa))
+    result: list[tuple[str, str]] = []
+    for linked_type in sorted({t for t, _ in linked}):
+        result.extend((linked_type, a) for a in sorted(a for t, a in linked if t == linked_type)[:limit])
+    return result
+
+
+def _reference_counts(rows: list[tuple[str, str, str, str]], entry: tuple[str, str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for linked_type, _ in _reference_limited(rows, entry, limit=len(rows) + 1):
+        counts[linked_type] = counts.get(linked_type, 0) + 1
+    return counts
+
+
+# None: no dbxref_heavy (DB built before the converter wrote it); 0 makes every accession heavy.
+_PBT_HEAVY_THRESHOLD = st.sampled_from([None, 0, 2, 5, 1000])
+_PBT_ENTRIES = [("bioproject", "PRJDB1"), ("bioproject", "PRJDB2"), ("biosample", "SAMD1")]
+_PBT_EDGE = st.tuples(
+    st.sampled_from(_PBT_ENTRIES),
+    st.sampled_from(["biosample", "sra-study", "sra-run", "jga-study"]),
+    st.integers(min_value=0, max_value=30),
+).map(lambda x: (x[0][0], x[0][1], x[1], f"{x[1].upper()}{x[2]:03d}"))
+
+
+class TestGetLinkedIdsLimitedMatchesReference:
+    """Groups below, at, and above the limit all give the first *limit* accessions per type."""
+
+    @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @given(
+        rows=st.lists(_PBT_EDGE, max_size=80),
+        limit=st.integers(min_value=0, max_value=12),
+        heavy_threshold=_PBT_HEAVY_THRESHOLD,
+    )
+    def test_single_matches_reference(
+        self, rows: list[tuple[str, str, str, str]], limit: int, heavy_threshold: int | None
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Path(tmpdir) / "pbt.duckdb"
+            _create_test_db(db, rows, heavy_threshold)
+            _reset_cache()
+
+            for entry in _PBT_ENTRIES:
+                assert get_linked_ids_limited(db, *entry, limit=limit) == _reference_limited(rows, entry, limit)
+                assert count_linked_ids(db, *entry) == _reference_counts(rows, entry)
+
+    @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @given(
+        rows=st.lists(_PBT_EDGE, max_size=80),
+        limit=st.integers(min_value=0, max_value=12),
+        entries=st.lists(st.sampled_from([*_PBT_ENTRIES, ("bioproject", "PRJDB999")]), max_size=6),
+        heavy_threshold=_PBT_HEAVY_THRESHOLD,
+    )
+    def test_bulk_matches_reference(
+        self,
+        rows: list[tuple[str, str, str, str]],
+        limit: int,
+        entries: list[tuple[str, str]],
+        heavy_threshold: int | None,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Path(tmpdir) / "pbt.duckdb"
+            _create_test_db(db, rows, heavy_threshold)
+            _reset_cache()
+
+            result = get_linked_ids_limited_bulk(db, entries, limit=limit)
+            counts = count_linked_ids_bulk(db, entries)
+
+            assert set(result) == set(entries)
+            assert set(counts) == set(entries)
+            for entry in entries:
+                assert result[entry] == _reference_limited(rows, entry, limit)
+                assert counts[entry] == _reference_counts(rows, entry)
+
+    def test_heavy_table_is_reloaded_with_the_connection(self, tmp_path: Path) -> None:
+        """A replaced DB file is picked up with its own dbxref_heavy once the cache is reset."""
+        db = tmp_path / "dblink.duckdb"
+        rows = [("bioproject", "PRJDB1", "biosample", f"SAMD{i}") for i in range(4)]
+        _create_test_db(db, rows, heavy_threshold=None)
+        assert count_linked_ids(db, "bioproject", "PRJDB1") == {"biosample": 4}
+
+        replacement = tmp_path / "replacement.duckdb"
+        _create_test_db(replacement, [*rows, ("bioproject", "PRJDB1", "sra-study", "DRP1")], heavy_threshold=2)
+        replacement.replace(db)
+        _reset_cache()
+
+        assert count_linked_ids(db, "bioproject", "PRJDB1") == {"biosample": 4, "sra-study": 1}
+        assert get_linked_ids_limited(db, "bioproject", "PRJDB1", limit=1) == [
+            ("biosample", "SAMD0"),
+            ("sra-study", "DRP1"),
+        ]
+
+    def test_group_spanning_many_row_groups_returns_the_smallest_accessions(self, tmp_path: Path) -> None:
+        """A group larger than one DuckDB row group (122,880 rows) is cut by LIMIT in stored order."""
+        db = tmp_path / "large.duckdb"
+        n = 300_000
+        with duckdb.connect(str(db)) as conn:
+            # Same statement shape as the converter's build_dbxref_table, with the
+            # rows generated in reverse so that only the ORDER BY puts them in place.
+            conn.execute(f"""
+                CREATE TABLE dbxref AS
+                SELECT DISTINCT accession_type, accession, linked_type, linked_accession
+                FROM (
+                    SELECT 'bioproject' AS accession_type, 'PRJDB1' AS accession,
+                           'biosample' AS linked_type, printf('SAMD%09d', {n} - 1 - i) AS linked_accession
+                    FROM range({n}) t(i)
+                    UNION ALL
+                    SELECT 'bioproject', 'PRJDB1', 'sra-study', printf('DRP%06d', 2 - i) FROM range(3) t(i)
+                )
+                ORDER BY accession_type, accession, linked_type, linked_accession
+            """)
+            conn.execute("""
+                CREATE TABLE dbxref_heavy AS
+                SELECT accession_type, accession, linked_type, count(*) AS n
+                FROM dbxref WHERE accession = 'PRJDB1'
+                GROUP BY ALL ORDER BY ALL
+            """)
+
+        single = get_linked_ids_limited(db, "bioproject", "PRJDB1", limit=5)
+        bulk = get_linked_ids_limited_bulk(db, [("bioproject", "PRJDB1"), ("biosample", "SAMD000000007")], limit=5)
+        counts = count_linked_ids(db, "bioproject", "PRJDB1")
+
+        expected = [("biosample", f"SAMD{i:09d}") for i in range(5)] + [("sra-study", f"DRP{i:06d}") for i in range(3)]
+        assert single == expected
+        assert bulk[("bioproject", "PRJDB1")] == expected
+        # Only the PRJDB1 side is stored here, so the light entry has no rows.
+        assert bulk[("biosample", "SAMD000000007")] == []
+        assert counts == {"biosample": n, "sra-study": 3}
 
 
 class TestGetLinkedIdsLimitedBulkDbMissing:
@@ -1229,6 +1390,50 @@ class TestConnCacheTtl:
         assert len({id(first), id(after_reset), id(after_ttl)}) == 3
         for conn in (after_reset, after_ttl):
             assert _memory_limit_bytes(conn) <= 2 * 1024**3
+
+    def test_temp_directory_is_outside_the_working_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        work = tmp_path / "work"
+        work.mkdir()
+        monkeypatch.chdir(work)
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [])
+
+        conn = _get_conn(db)
+        row = conn.execute("SELECT current_setting('temp_directory')").fetchone()
+
+        assert row is not None
+        temp_dir = Path(row[0]).resolve()
+        assert temp_dir.is_relative_to(Path(tempfile.gettempdir()).resolve())
+        assert not temp_dir.is_relative_to(work.resolve())
+
+    def test_spill_does_not_create_tmp_in_the_working_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        work = tmp_path / "work"
+        work.mkdir()
+        monkeypatch.chdir(work)
+        spill_root = tmp_path / "spill"
+        spill_root.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(spill_root))
+        db = tmp_path / "dblink.duckdb"
+        _create_test_db(db, [])
+        conn = _get_conn(db)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SET memory_limit='128MB'")
+            cursor.execute("SET threads=1")
+            cursor.execute("SET preserve_insertion_order=false")
+            rows = cursor.execute(
+                "SELECT count(*) FROM (SELECT md5(i::VARCHAR) AS h FROM range(3000000) t(i) ORDER BY h)"
+            ).fetchone()
+        finally:
+            cursor.close()
+
+        assert rows == (3000000,)
+        assert not (work / ".tmp").exists()
+        assert (spill_root / "duckdb").exists()
 
     def test_queries_still_work_under_the_cap(self, tmp_path: Path) -> None:
         db = tmp_path / "dblink.duckdb"

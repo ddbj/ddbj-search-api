@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings
 
 # Solr URL components (core / shards / base URLs) are interpolated into
 # request URLs and ``shards`` query params. Restrict to the character set
-# expected from production env (`a012-1:51981/solr/collection1,...`) so that
+# expected in a shard list (`host-1:51981/solr/collection1,...`) so that
 # misconfiguration with e.g. ``?`` (query separator), whitespace, or pipe
 # (`|`) surfaces at startup rather than producing malformed Solr requests.
 _SOLR_URL_SAFE_RE = re.compile(r"^[A-Za-z0-9._:/,-]+$")
@@ -75,7 +75,7 @@ class AppConfig(BaseSettings):
     env: Env = Field(default=Env.dev, validation_alias="DDBJ_SEARCH_ENV")
 
     # Solr (ARSA = Ddbj, TXSearch = NCBI Taxonomy). Unset in dev; staging and
-    # production both point at the shared ARSA cluster on a012 (3 shards,
+    # production both point at the same shared ARSA cluster (3 shards,
     # Solr 4.4.0, core ``collection1``); the core name stays env-overridable.
     solr_arsa_base_url: str | None = None
     solr_arsa_shards: str | None = None

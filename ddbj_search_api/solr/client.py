@@ -28,7 +28,7 @@ async def arsa_search(
     """Execute ``GET {base_url}/{core}/select`` against ARSA.
 
     ``base_url`` is expected to omit a trailing slash
-    (e.g. ``http://a012:51981/solr``). ``core`` is URL-encoded as a defence
+    (e.g. ``http://solr-host:51981/solr``). ``core`` is URL-encoded as a defence
     in depth: AppConfig already validates the env value, but encoding here
     means a stray ``?`` / ``/`` in a runtime override cannot escape the
     intended path segment. Raises ``httpx.HTTPStatusError`` on non-2xx so

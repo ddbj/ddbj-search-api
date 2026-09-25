@@ -595,8 +595,10 @@ ES は使用せず、ddbj-search-converter が管理する DuckDB ファイル�
 - DuckDB ファイル: ddbj-search-converter が deploy 環境に配置する dblink DuckDB を読む (具体的な path は config 経由、運用詳細は [deployment.md](deployment.md))
 - テーブル: `dbxref (accession_type, accession, linked_type, linked_accession)`
 - DBLink は無向グラフ。converter が各無向 edge `{A, B}` を `(A → B)` と `(B → A)` の 2 行に半辺化して保存する。これにより、いずれの端点からの lookup も `WHERE accession_type = ? AND accession = ?` の point lookup で完結する (UNION ALL 不要)
-- 物理 sort: `accession_type, accession, linked_type, linked_accession` + `idx_dbxref_accession (accession_type, accession)` により方向別の性能非対称性が無い
+- 物理 sort: `accession_type, accession, linked_type, linked_accession`。index は無く、絞り込みは物理 sort による zone map で効く。半辺化しているので方向別の性能非対称性は無い
 - 全件を返す経路 (`GET /dblink/{type}/{id}`, `.json`, `.jsonld`, `dbxrefs.json`) は、この格納順のまま読み出して返す。リクエストごとの sort はしない (DuckDB は単一テーブルを絞り込んで読むとき格納順を保つ)。数百万行の sort は結果を全部メモリに確保し、応答を送り終わるまで保持し続けるため。したがって `dbXrefs` の順序の保証は、converter がテーブルをこの順で作ることに依存する
+- type ごとに `dbXrefsLimit` 件に切り詰める経路 (リスト API・`/{id}`) と `dbXrefsCount` は、行数の多い accession (数千万行に達するものがある) だけ別の経路で取る。converter が同じ DB に置く `dbxref_heavy` (行数が 10,000 を超える accession の linked_type ごとの件数) を接続ごとに読み込んでおき、そこに載っている accession は linked_type ごとに格納順の先頭から `LIMIT` で読み出しを打ち切り、件数は `dbxref_heavy` の値を返す。それ以外の accession は全行を読んで type ごとに並べ、先頭を取る。全行を読む経路を行数の多い accession に使うと、1 リクエストで数千万行を sort することになる
+- `dbxref_heavy` が無い DB では、すべての accession を全行を読む経路で扱う (結果は同じで、行数の多い accession が遅いだけ)
 
 #### アクセッションタイプ (AccessionType, 21 種)
 

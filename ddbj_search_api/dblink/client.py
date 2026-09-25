@@ -16,11 +16,18 @@ from the memory it can see rather than from what the lookups need.
 When the converter atomically replaces the DuckDB file, the new inode
 becomes visible either (a) after :data:`_CACHE_TTL_SECONDS` elapses,
 or (b) after :func:`_reset_cache` is called explicitly.
+
+The converter also writes ``dbxref_heavy``: per-linked-type row counts for the
+few accessions with more than ten thousand rows (some have tens of millions).
+It is read into memory together with the connection so that the per-type
+limited lookups and the counts can treat those accessions differently without
+touching their rows (see :func:`_fetch_limited`).
 """
 
 from __future__ import annotations
 
 import collections.abc
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -36,7 +43,9 @@ _PRAGMA_THREADS = 2
 # process grow to the size of the database. Lookups here are index point reads,
 # so a small budget costs no latency; the file itself stays in the page cache.
 _MEMORY_LIMIT = "2GB"
-_CONN_CACHE: dict[Path, tuple[duckdb.DuckDBPyConnection, float]] = {}
+# (accession_type, accession) -> [(linked_type, row count), ...] sorted by linked_type
+HeavyMap = dict[tuple[str, str], list[tuple[str, int]]]
+_CONN_CACHE: dict[Path, tuple[duckdb.DuckDBPyConnection, float, HeavyMap]] = {}
 _LOCK = threading.Lock()
 
 
@@ -61,20 +70,54 @@ def _get_conn(db_path: Path) -> duckdb.DuckDBPyConnection:
     Subsequent calls within :data:`_CACHE_TTL_SECONDS` return the same
     connection object.
     """
+    return _get_conn_and_heavy(db_path)[0]
+
+
+def _get_conn_and_heavy(db_path: Path) -> tuple[duckdb.DuckDBPyConnection, HeavyMap]:
+    """Return the cached connection for *db_path* and its ``dbxref_heavy`` contents."""
     _check_db(db_path)
     now = time.monotonic()
     with _LOCK:
         cached = _CONN_CACHE.get(db_path)
         if cached is not None and now - cached[1] < _CACHE_TTL_SECONDS:
-            return cached[0]
+            return cached[0], cached[2]
         conn = duckdb.connect(":memory:")
         conn.execute(f"ATTACH '{_escape_path(db_path)}' AS {_CATALOG} (READ_ONLY)")
         conn.execute(f"PRAGMA threads={_PRAGMA_THREADS}")
         conn.execute(f"SET memory_limit='{_MEMORY_LIMIT}'")
+        # A query that outgrows memory_limit spills to temp_directory, which
+        # defaults to ``.tmp`` under the working directory: the bind-mounted
+        # source tree. Spill files there outlive the container and end up next
+        # to the code, so point them at the container's own temp dir instead.
+        conn.execute(f"SET temp_directory='{_escape_path(Path(tempfile.gettempdir()) / 'duckdb')}'")
         # iter_linked_ids returns rows in stored order instead of sorting them.
         conn.execute("SET preserve_insertion_order=true")
-        _CONN_CACHE[db_path] = (conn, now)
-        return conn
+        heavy = _load_heavy(conn)
+        _CONN_CACHE[db_path] = (conn, now, heavy)
+        return conn, heavy
+
+
+def _load_heavy(conn: duckdb.DuckDBPyConnection) -> HeavyMap:
+    """Read ``dbxref_heavy`` into memory; empty when the table is absent.
+
+    Databases built before the converter wrote this table lack it.  Treating
+    every accession as light then gives the same results, only slower for the
+    large ones.
+    """
+    exists = conn.execute(
+        "SELECT count(*) FROM duckdb_tables() WHERE database_name = ? AND table_name = 'dbxref_heavy'",
+        (_CATALOG,),
+    ).fetchone()
+    if exists is None or exists[0] == 0:
+        return {}
+    heavy: HeavyMap = {}
+    rows = conn.execute(
+        f"SELECT accession_type, accession, linked_type, n FROM {_CATALOG}.dbxref_heavy "
+        "ORDER BY accession_type, accession, linked_type"
+    ).fetchall()
+    for accession_type, accession, linked_type, n in rows:
+        heavy.setdefault((accession_type, accession), []).append((linked_type, int(n)))
+    return heavy
 
 
 def _reset_cache() -> None:
@@ -164,8 +207,8 @@ def get_linked_ids_limited(
 ) -> list[tuple[str, str]]:
     """Return up to *limit* per linked type related (type, accession) pairs.
 
-    Uses ``ROW_NUMBER() OVER (PARTITION BY linked_type)`` so that each
-    linked type independently gets at most *limit* rows.
+    Each linked type independently gets at most *limit* rows, the first ones
+    in ``(linked_type, linked_accession)`` order (see :func:`_fetch_limited`).
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -179,16 +222,58 @@ def get_linked_ids_limited(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    conn = _get_conn(db_path)
+    conn, heavy = _get_conn_and_heavy(db_path)
     cursor = conn.cursor()
     try:
-        rows: list[tuple[str, str]] = cursor.execute(
-            _QUERY_LIMITED,
-            (type_, id_, limit),
-        ).fetchall()
+        rows = _fetch_limited(cursor, heavy, [(type_, id_)], limit)
     finally:
         cursor.close()
 
+    return [(linked_type, linked_accession) for _, _, linked_type, linked_accession in rows]
+
+
+def _fetch_limited(
+    cursor: duckdb.DuckDBPyConnection,
+    heavy: HeavyMap,
+    entries: list[tuple[str, str]],
+    limit: int,
+) -> list[tuple[str, str, str, str]]:
+    """Return the first *limit* linked accessions per (entry, linked type).
+
+    Light entries go through one window query that reads all their rows and
+    ranks them per linked type; they have at most ten thousand rows each, so
+    that is cheap.  The same query over an accession with tens of millions of
+    rows makes DuckDB read and sort every one of them, so entries listed in
+    ``dbxref_heavy`` are read per linked type with ``LIMIT`` instead.
+    ``LIMIT`` without ``ORDER BY`` returns the first rows in stored order,
+    which is already ``(linked_type, linked_accession)`` within one accession
+    because the converter writes ``dbxref`` sorted by all four columns, so
+    the scan stops after *limit* rows.
+
+    Returns:
+        ``(input_type, input_accession, linked_type, linked_accession)``
+        tuples, sorted.
+    """
+    if limit <= 0 or not entries:
+        return []
+
+    light = [e for e in entries if e not in heavy]
+    groups = [(t, a, linked_type) for t, a in entries if (t, a) in heavy for linked_type, _ in heavy[(t, a)]]
+
+    rows: list[tuple[str, str, str, str]] = []
+    if light:
+        rows.extend(
+            cursor.execute(
+                _QUERY_LIMITED_BULK,
+                ([t for t, _ in light], [a for _, a in light], limit),
+            ).fetchall(),
+        )
+    for t, a, linked_type in groups:
+        rows.extend(
+            (t, a, lt, la) for lt, la in cursor.execute(_QUERY_GROUP_HEAD, (t, a, linked_type, limit)).fetchall()
+        )
+
+    rows.sort()
     return rows
 
 
@@ -198,6 +283,9 @@ def count_linked_ids(
     id_: str,
 ) -> dict[str, int]:
     """Return per-type counts of related accessions.
+
+    Accessions listed in ``dbxref_heavy`` are answered from it without
+    counting their rows.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -210,7 +298,9 @@ def count_linked_ids(
     Raises:
         FileNotFoundError: If *db_path* does not exist.
     """
-    conn = _get_conn(db_path)
+    conn, heavy = _get_conn_and_heavy(db_path)
+    if (type_, id_) in heavy:
+        return dict(heavy[(type_, id_)])
     cursor = conn.cursor()
     try:
         rows: list[tuple[str, int]] = cursor.execute(
@@ -223,15 +313,11 @@ def count_linked_ids(
     return dict(rows)
 
 
-_QUERY_LIMITED = f"""
-    SELECT linked_type, linked_accession FROM (
-        SELECT linked_type, linked_accession,
-               ROW_NUMBER() OVER (PARTITION BY linked_type ORDER BY linked_accession) AS rn
-        FROM {_CATALOG}.dbxref
-        WHERE accession_type = ? AND accession = ?
-    )
-    WHERE rn <= ?
-    ORDER BY linked_type, linked_accession
+_QUERY_GROUP_HEAD = f"""
+    SELECT linked_type, linked_accession
+    FROM {_CATALOG}.dbxref
+    WHERE accession_type = ? AND accession = ? AND linked_type = ?
+    LIMIT ?
 """
 
 _QUERY_COUNT = f"""
@@ -303,10 +389,9 @@ def get_linked_ids_limited_bulk(
 ) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Return up to *limit* per linked type related (type, accession) pairs per entry.
 
-    Implements the lookup as a single SQL query that ``UNNEST``s the
-    input tuples and joins them against ``dbxref``, eliminating the
-    per-entry cursor loop.  Duplicate entries are deduplicated before
-    the SQL call (the result dict has one entry per unique
+    All light entries are looked up in one query rather than one cursor per
+    entry; see :func:`_fetch_limited`.  Duplicate entries are deduplicated
+    before the SQL call (the result dict has one entry per unique
     ``(type, id)`` pair).
 
     Args:
@@ -325,16 +410,11 @@ def get_linked_ids_limited_bulk(
         return {}
 
     unique_entries = list(dict.fromkeys(entries))
-    types = [t for t, _ in unique_entries]
-    accessions = [a for _, a in unique_entries]
 
-    conn = _get_conn(db_path)
+    conn, heavy = _get_conn_and_heavy(db_path)
     cursor = conn.cursor()
     try:
-        rows = cursor.execute(
-            _QUERY_LIMITED_BULK,
-            (types, accessions, limit),
-        ).fetchall()
+        rows = _fetch_limited(cursor, heavy, unique_entries, limit)
     finally:
         cursor.close()
 
@@ -402,8 +482,9 @@ def count_linked_ids_bulk(
 
     Implements the count as a single SQL query that ``UNNEST``s the
     input tuples and joins them against ``dbxref``, eliminating the
-    per-entry cursor loop.  Duplicate entries are deduplicated before
-    the SQL call.
+    per-entry cursor loop.  Entries listed in ``dbxref_heavy`` are answered
+    from it without counting their rows.  Duplicate entries are
+    deduplicated before the SQL call.
 
     Args:
         db_path: Path to the DuckDB database file.
@@ -420,20 +501,21 @@ def count_linked_ids_bulk(
         return {}
 
     unique_entries = list(dict.fromkeys(entries))
-    types = [t for t, _ in unique_entries]
-    accessions = [a for _, a in unique_entries]
+    conn, heavy = _get_conn_and_heavy(db_path)
+    result: dict[tuple[str, str], dict[str, int]] = {e: dict(heavy.get(e, [])) for e in unique_entries}
+    light = [e for e in unique_entries if e not in heavy]
+    if not light:
+        return result
 
-    conn = _get_conn(db_path)
     cursor = conn.cursor()
     try:
         rows = cursor.execute(
             _QUERY_COUNT_BULK,
-            (types, accessions),
+            ([t for t, _ in light], [a for _, a in light]),
         ).fetchall()
     finally:
         cursor.close()
 
-    result: dict[tuple[str, str], dict[str, int]] = {e: {} for e in unique_entries}
     for input_type, input_accession, linked_type, cnt in rows:
         result[(input_type, input_accession)][linked_type] = cnt
     return result
