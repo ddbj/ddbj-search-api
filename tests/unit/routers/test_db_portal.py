@@ -3194,15 +3194,22 @@ def _flatten_must(clause: dict[str, Any]) -> list[dict[str, Any]]:
 def _free_text_token_query(wrapper: dict[str, Any]) -> str:
     """Return the single token query carried by a bare-word FreeText wrapper.
 
-    Each bare-word keyword token compiles to a prefix-aware
-    ``bool.should`` of exactly two ``multi_match`` leaves: one
-    ``operator=and`` (whole-word, all fields) and one
-    ``type=phrase_prefix`` (前方一致, text fields only — the keyword-typed
-    ``identifier`` is dropped because ES rejects phrase prefix on keyword
-    fields).  This unwraps that shape and asserts the invariant, returning
-    the shared ``query`` string.
+    Each bare-word keyword token compiles to a sameAs-fallback ``bool.should``
+    of exactly two leaves: the prefix-aware clause (itself a ``bool.should``
+    of two ``multi_match`` leaves — one ``operator=and`` whole-word match over
+    all fields, one ``type=phrase_prefix`` 前方一致 over text fields only,
+    since ES rejects phrase prefix on the keyword-typed ``identifier``) and a
+    ``sameAs.identifier`` nested term lookup for the same raw token text.
+    This unwraps both layers, asserts the invariants, and returns the shared
+    ``query`` string.
     """
-    inner = wrapper["bool"]
+    outer = wrapper["bool"]
+    assert outer["minimum_should_match"] == 1
+    outer_should = outer["should"]
+    assert len(outer_should) == 2
+    prefix_wrapper, same_as = outer_should
+
+    inner = prefix_wrapper["bool"]
     assert inner["minimum_should_match"] == 1
     should = inner["should"]
     assert len(should) == 2
@@ -3218,6 +3225,11 @@ def _free_text_token_query(wrapper: dict[str, Any]) -> str:
     assert prefix["fields"] == [f for f in word["fields"] if f != "identifier"]
     query = word["query"]
     assert isinstance(query, str)
+
+    # sameAs フォールバック: 同じ token text を sameAs.identifier に term lookup する。
+    assert same_as["nested"]["path"] == "sameAs"
+    assert same_as["nested"]["ignore_unmapped"] is True
+    assert same_as["nested"]["query"] == {"term": {"sameAs.identifier": query}}
     return query
 
 
@@ -3241,9 +3253,18 @@ def _field_contains_token(wrapper: dict[str, Any], es_field: str) -> str:
 
 
 def _is_free_text_wrapper(clause: dict[str, Any]) -> bool:
-    """True when ``clause`` is a bare-word FreeText prefix-aware wrapper."""
+    """True when ``clause`` is a bare-word FreeText sameAs-fallback wrapper."""
     should = clause.get("bool", {}).get("should")
-    return isinstance(should, list) and len(should) == 2 and "multi_match" in should[0]
+    if not (isinstance(should, list) and len(should) == 2):
+        return False
+    prefix_wrapper, same_as = should
+    inner_should = prefix_wrapper.get("bool", {}).get("should")
+    return (
+        isinstance(inner_should, list)
+        and len(inner_should) == 2
+        and "multi_match" in inner_should[0]
+        and same_as.get("nested", {}).get("path") == "sameAs"
+    )
 
 
 def _is_field_contains_wrapper(clause: dict[str, Any], es_field: str) -> bool:

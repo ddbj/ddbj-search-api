@@ -1151,13 +1151,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "Homo sapiens",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "Homo sapiens",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "Homo sapiens",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -1168,13 +1172,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "Homo sapiens",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "Homo sapiens",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "Homo sapiens",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -1187,13 +1195,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "cancer, tumor",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "cancer, tumor",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "cancer, tumor",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -1205,13 +1217,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "Homo sapiens",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "Homo sapiens",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "Homo sapiens",
+                        self._DEFAULT_FIELDS,
+                    ),
                     # FIELD_TYPES["title"]="text" + value_kind="word" → "contains" →
                     # 完全一致 + 末尾前方一致の should ラッパ.
                     _contains_should("title", "cancer"),
@@ -1225,7 +1241,9 @@ class TestCompileFreeTextNodePhrase:
         result = compile_to_es(parse("cancer"))
         assert result == {
             "bool": {
-                "must": [_keyword_should("cancer", self._DEFAULT_FIELDS)],
+                "must": [
+                    _with_same_as(_keyword_should("cancer", self._DEFAULT_FIELDS), "cancer", self._DEFAULT_FIELDS),
+                ],
             },
         }
 
@@ -1236,13 +1254,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "HIF-1",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "HIF-1",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "HIF-1",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -1254,13 +1276,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "Homo sapiens",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "Homo sapiens",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "Homo sapiens",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -1273,7 +1299,13 @@ class TestCompileFreeTextNodePhrase:
         assert result_implicit == result_explicit_false
         assert result_implicit == {
             "bool": {
-                "must": [_keyword_should("cancer tumor", self._DEFAULT_FIELDS)],
+                "must": [
+                    _with_same_as(
+                        _keyword_should("cancer tumor", self._DEFAULT_FIELDS),
+                        "cancer tumor",
+                        self._DEFAULT_FIELDS,
+                    ),
+                ],
             },
         }
 
@@ -1284,13 +1316,17 @@ class TestCompileFreeTextNodePhrase:
         assert result == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "whole genome",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "whole genome",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "whole genome",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }

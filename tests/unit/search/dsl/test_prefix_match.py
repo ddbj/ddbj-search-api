@@ -58,41 +58,71 @@ def _multi_match_types(node: Any) -> list[str]:
     return types
 
 
+def _with_same_as(clause: dict[str, Any], token: str, fields: list[str]) -> dict[str, Any]:
+    """sameAs フォールバックで包んだ per-token clause (``compiler_es._with_same_as`` と同形)。
+
+    ``identifier`` を検索対象に含む場合だけ、元の clause を ``sameAs.identifier``
+    term lookup との should で包む (sameAs は identifier しか保持しないため)。
+    """
+    if "identifier" not in fields:
+        return clause
+    return {
+        "bool": {
+            "should": [
+                clause,
+                {
+                    "nested": {
+                        "path": "sameAs",
+                        "query": {"term": {"sameAs.identifier": token}},
+                        "ignore_unmapped": True,
+                    },
+                },
+            ],
+            "minimum_should_match": 1,
+        },
+    }
+
+
 # === ES: keyword box ===
 
 
 class TestKeywordBoxPrefix:
     def test_bare_word_expands_to_exact_and_prefix(self) -> None:
         # bare word は should に「完全語 (operator:and)」と「前方一致 (phrase_prefix)」を
-        # 必ず両方含む (打ちかけ Huma→Human はこの phrase_prefix が担う)。
+        # 必ず両方含む (打ちかけ Huma→Human はこの phrase_prefix が担う)。identifier を
+        # 検索対象に含むため、さらに sameAs フォールバックの wrapper で包まれる。
         result = compile_free_text("Huma")
         token_clause = result["bool"]["must"][0]
-        assert token_clause == {
-            "bool": {
-                "should": [
-                    # 完全語は全 field (identifier 含む)、前方一致は text field のみ。
-                    {"multi_match": {"query": "Huma", "fields": _DEFAULT_FIELDS, "operator": "and"}},
-                    {"multi_match": {"query": "Huma", "fields": _PREFIX_FIELDS, "type": "phrase_prefix"}},
-                ],
-                "minimum_should_match": 1,
+        assert token_clause == _with_same_as(
+            {
+                "bool": {
+                    "should": [
+                        # 完全語は全 field (identifier 含む)、前方一致は text field のみ。
+                        {"multi_match": {"query": "Huma", "fields": _DEFAULT_FIELDS, "operator": "and"}},
+                        {"multi_match": {"query": "Huma", "fields": _PREFIX_FIELDS, "type": "phrase_prefix"}},
+                    ],
+                    "minimum_should_match": 1,
+                },
             },
-        }
+            "Huma",
+            _DEFAULT_FIELDS,
+        )
 
     def test_prefix_clause_query_is_the_full_input(self) -> None:
         # phrase_prefix の query は入力そのまま (前方一致対象)。これが空や切り詰めだと
-        # Homo sap→Homo sapiens が壊れる。
+        # Homo sap→Homo sapiens が壊れる。must[0] は sameAs wrapper なので、先頭要素の
+        # should-wrapper 本体まで潜って phrase_prefix clause を探す。
         result = compile_free_text("Homo sap")
-        token_clause = result["bool"]["must"][0]
-        prefix = next(
-            c["multi_match"] for c in token_clause["bool"]["should"] if c["multi_match"].get("type") == "phrase_prefix"
-        )
+        inner_should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
+        prefix = next(c["multi_match"] for c in inner_should if c["multi_match"].get("type") == "phrase_prefix")
         assert prefix["query"] == "Homo sap"
 
     def test_exact_clause_always_present_for_scoring(self) -> None:
         # 完全語 (operator:and) clause が常に残る (完全一致をスコア上位に保つため)。
+        # sameAs wrapper 越しに should-wrapper 本体を見る。
         result = compile_free_text("cancer")
-        token_clause = result["bool"]["must"][0]
-        operators = [c["multi_match"].get("operator") for c in token_clause["bool"]["should"] if "multi_match" in c]
+        inner_should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
+        operators = [c["multi_match"].get("operator") for c in inner_should if "multi_match" in c]
         assert "and" in operators
 
     def test_quoted_token_is_exact_no_prefix(self) -> None:
@@ -116,9 +146,10 @@ class TestKeywordBoxPrefix:
     def test_or_operator_nests_each_token_should(self) -> None:
         result = compile_free_text("cancer, human", operator="OR")
         assert result["bool"]["minimum_should_match"] == 1
-        # 各カンマトークンが should[operator:and, phrase_prefix] のラッパになる。
+        # 各カンマトークンが sameAs wrapper 越しに should[operator:and, phrase_prefix] の
+        # ラッパになる。
         for token_clause in result["bool"]["should"]:
-            inner = token_clause["bool"]["should"]
+            inner = token_clause["bool"]["should"][0]["bool"]["should"]
             assert {c["multi_match"].get("type", "and") for c in inner} == {"and", "phrase_prefix"}
 
     def test_prefix_excludes_keyword_identifier_field(self) -> None:
@@ -126,7 +157,7 @@ class TestKeywordBoxPrefix:
         # "Can only use phrase prefix queries on text fields" で shard exception を出す)。
         # 完全語 (operator:and) 側は identifier を含み、accession の完全一致は維持される。
         result = compile_free_text("Huma")
-        should = result["bool"]["must"][0]["bool"]["should"]
+        should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
         prefix = next(c["multi_match"] for c in should if c["multi_match"].get("type") == "phrase_prefix")
         and_mm = next(c["multi_match"] for c in should if c["multi_match"].get("operator") == "and")
         assert "identifier" not in prefix["fields"]
@@ -135,10 +166,15 @@ class TestKeywordBoxPrefix:
     def test_identifier_only_keyword_fields_no_prefix(self) -> None:
         # keywordFields=identifier 単独 (text field 無し) では前方一致を付けない
         # (phrase_prefix の対象 field が空になり、付けると ES が 400 を返すため)。
+        # identifier を検索対象に含むため sameAs フォールバックの wrapper は付く。
         result = compile_free_text("Huma", fields=["identifier"])
         assert "phrase_prefix" not in _multi_match_types(result)
         assert result["bool"]["must"] == [
-            {"multi_match": {"query": "Huma", "fields": ["identifier"], "operator": "and"}},
+            _with_same_as(
+                {"multi_match": {"query": "Huma", "fields": ["identifier"], "operator": "and"}},
+                "Huma",
+                ["identifier"],
+            ),
         ]
 
     @given(
@@ -151,8 +187,8 @@ class TestKeywordBoxPrefix:
     @settings(max_examples=40, deadline=None)
     def test_pbt_bare_word_2plus_always_has_both_clauses(self, word: str) -> None:
         result = compile_free_text(word)
-        token_clause = result["bool"]["must"][0]
-        types = {c["multi_match"].get("type", "and") for c in token_clause["bool"]["should"]}
+        inner_should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
+        types = {c["multi_match"].get("type", "and") for c in inner_should}
         assert types == {"and", "phrase_prefix"}
 
     @given(
@@ -175,7 +211,15 @@ class TestKeywordBoxMinPrefixLength:
     def test_single_char_token_no_prefix(self) -> None:
         result = compile_free_text("a")
         assert result == {
-            "bool": {"must": [{"multi_match": {"query": "a", "fields": _DEFAULT_FIELDS, "operator": "and"}}]},
+            "bool": {
+                "must": [
+                    _with_same_as(
+                        {"multi_match": {"query": "a", "fields": _DEFAULT_FIELDS, "operator": "and"}},
+                        "a",
+                        _DEFAULT_FIELDS,
+                    ),
+                ],
+            },
         }
 
     def test_two_char_token_has_prefix(self) -> None:
@@ -187,7 +231,15 @@ class TestKeywordBoxMinPrefixLength:
         result = compile_free_text("Homo s")
         assert "phrase_prefix" not in _multi_match_types(result)
         assert result == {
-            "bool": {"must": [{"multi_match": {"query": "Homo s", "fields": _DEFAULT_FIELDS, "operator": "and"}}]},
+            "bool": {
+                "must": [
+                    _with_same_as(
+                        {"multi_match": {"query": "Homo s", "fields": _DEFAULT_FIELDS, "operator": "and"}},
+                        "Homo s",
+                        _DEFAULT_FIELDS,
+                    ),
+                ],
+            },
         }
 
 
