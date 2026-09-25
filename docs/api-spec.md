@@ -20,7 +20,7 @@ sameAs フォールバックでヒットした場合、レスポンスは identi
 
 **sameAs クエリのエラーハンドリング**: sameAs nested query が ES エラー (400 等) を返した場合、「見つからない」として扱い、ステップ 3 の 404 へフォールスルーする。これにより、`sameAs` フィールドのマッピングが存在しないインデックスに対するリクエストでも 500 ではなく 404 を返す。
 
-**対象データ**: JGA エントリー (jga-study, jga-dataset, jga-dac) は XML の `IDENTIFIERS.SECONDARY_ID` を `sameAs` に格納しており、Secondary ID から Primary エントリーを取得できる。ロジック自体は全タイプ共通で、`sameAs` が空のタイプではフォールバックが発火しないだけである。BioProject の `sameAs` には GEO 等の外部 DB cross-ref のみが格納されており (`sameAs.type` が `bioproject` 以外)、Secondary ID による Primary 解決経路は事実上 JGA 系のみで効く。
+**対象データ**: JGA エントリー (jga-study, jga-dataset, jga-dac) は XML の `IDENTIFIERS.SECONDARY_ID` を `sameAs` に格納しており、Secondary ID から Primary エントリーを取得できる。Primary と数値が同じでゼロ埋め桁数だけが違う表記 (例: `JGAS000038` に対する `JGAS00000000038`) も `sameAs` に入っているが、converter はこの表記の alias ドキュメントを作らない (一覧で重複するため) ので、ステップ 2 の sameAs nested query で解決する。ロジック自体は全タイプ共通で、`sameAs` が空のタイプではフォールバックが発火しないだけである。BioProject の `sameAs` には GEO 等の外部 DB cross-ref のみが格納されており (`sameAs.type` が `bioproject` 以外)、Secondary ID による Primary 解決経路は事実上 JGA 系のみで効く。
 
 **Elasticsearch 要件**: `sameAs` フィールドは nested タイプとしてインデックスされている必要がある (ddbj-search-converter 側のマッピング定義)。
 
@@ -242,7 +242,9 @@ text match 9 param と nested 4 text param (`organization` / `publication` / `gr
 
 前方一致の境界条件: クオートで囲んだトークンと記号含みトークン (自動フレーズ化) は前方一致せず完全一致 (`match_phrase`) のまま (クオート = 厳密一致の意図を尊重)。**トークンが 1 文字のときは前方一致しない** (全 term スキャン回避のため最小 2 文字、field-scoped wildcard `value*` の最小長と同基準)。インデックスは standard analyzer のみ (ngram / edge_ngram 不使用) のため、中間一致 (`uman` → `Human`) はサポートしない。**`keywords` が単一 accession ID と完全一致して `suppressed` を解禁した場合は前方一致を抑止する** (§ データ可視性。解禁した accession の prefix で別 accession の `suppressed` を漏らさないため。nested / text match param は filter context であり suppressed 解禁とは無関係なため抑止しない)。
 
-**`keywordFields` allowlist**: `identifier`, `title`, `name`, `description`, `organism.name` の 5 値のみ受け付ける (allowlist 外は 422)。`organism.name` は学名のテキストマッチで、term filter `organism` (TaxID 完全一致) とは独立して動作する。
+**`keywordFields` allowlist**: `identifier`, `title`, `name`, `description`, `organism.name` の 5 値のみ受け付ける (allowlist 外は 422)。
+
+**Secondary ID での検索**: `keywordFields` に `identifier` が含まれる場合 (既定)、`keywords` の各トークンは `sameAs.identifier` との完全一致 (nested `term`) でもヒットする。JGA の Secondary ID (ゼロ埋め桁数違いの表記を含む) や BioProject の `sameAs` に入っている外部 DB の ID (GEO 等) で、それを持つエントリーを検索できる。完全一致のみで前方一致はしない。`sameAs` を持たない index では `ignore_unmapped` で 0 件扱いになる。`organism.name` は学名のテキストマッチで、term filter `organism` (TaxID 完全一致) とは独立して動作する。
 
 **`organism`**: `^\d+$` の NCBI Taxonomy ID (例: `9606`) のみ受け付ける。`/facets` の `organism` bucket の `value` をそのまま再注入できる (§ ファセット)。学名 (例: `Homo sapiens`) は 422 になる。
 
@@ -288,7 +290,7 @@ term filter / text match パラメータの値域は型グループ内で実際�
 
 ### nested フィールド検索
 
-ddbj-search-converter のスキーマで nested 型として定義されているフィールド (`organization`, `publication`, `grant`, `externalLink`, `derivedFrom`) は、`keywords` の `multi_match` 対象に含まれない (`multi_match` は nested ドキュメントに降りないため)。専用パラメータで nested query 経由の検索を提供する。
+ddbj-search-converter のスキーマで nested 型として定義されているフィールド (`organization`, `publication`, `grant`, `externalLink`, `derivedFrom`) は、`keywords` の `multi_match` 対象に含まれない (`multi_match` は nested ドキュメントに降りないため)。`sameAs.identifier` だけは例外で、`keywords` のトークンとの完全一致を nested `term` で別途検索する (§ Secondary ID での検索)。専用パラメータで nested query 経由の検索を提供する。
 
 **API パラメータ**:
 

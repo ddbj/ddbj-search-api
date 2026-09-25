@@ -63,6 +63,31 @@ def _keyword_should(text: str, fields: list[str]) -> dict[str, Any]:
     }
 
 
+def _with_same_as(clause: dict[str, Any], text: str, fields: list[str]) -> dict[str, Any]:
+    """sameAs フォールバックで包んだ per-token clause (``compiler_es._with_same_as`` と同形)。
+
+    ``sameAs`` は identifier しか保持しないため、``identifier`` field を検索対象に
+    含む場合だけ元の clause を ``sameAs.identifier`` term lookup との should で包む。
+    """
+    if "identifier" not in fields:
+        return clause
+    return {
+        "bool": {
+            "should": [
+                clause,
+                {
+                    "nested": {
+                        "path": "sameAs",
+                        "query": {"term": {"sameAs.identifier": text}},
+                        "ignore_unmapped": True,
+                    },
+                },
+            ],
+            "minimum_should_match": 1,
+        },
+    }
+
+
 class TestIdentifierField:
     def test_word(self) -> None:
         assert _compile("identifier:PRJDB1") == {"term": {"identifier": "PRJDB1"}}
@@ -727,7 +752,9 @@ class TestCompileFreeText:
 
         assert compile_free_text("cancer") == {
             "bool": {
-                "must": [_keyword_should("cancer", self._DEFAULT_FIELDS)],
+                "must": [
+                    _with_same_as(_keyword_should("cancer", self._DEFAULT_FIELDS), "cancer", self._DEFAULT_FIELDS),
+                ],
             },
         }
 
@@ -737,7 +764,13 @@ class TestCompileFreeText:
 
         assert compile_free_text("whole genome") == {
             "bool": {
-                "must": [_keyword_should("whole genome", self._DEFAULT_FIELDS)],
+                "must": [
+                    _with_same_as(
+                        _keyword_should("whole genome", self._DEFAULT_FIELDS),
+                        "whole genome",
+                        self._DEFAULT_FIELDS,
+                    ),
+                ],
             },
         }
 
@@ -747,13 +780,17 @@ class TestCompileFreeText:
         assert compile_free_text("HIF-1") == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "HIF-1",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "HIF-1",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "HIF-1",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -764,13 +801,17 @@ class TestCompileFreeText:
         assert compile_free_text('"RNA Seq"') == {
             "bool": {
                 "must": [
-                    {
-                        "multi_match": {
-                            "query": "RNA Seq",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "RNA Seq",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "RNA Seq",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -782,8 +823,8 @@ class TestCompileFreeText:
         assert result == {
             "bool": {
                 "must": [
-                    _keyword_should("cancer", self._DEFAULT_FIELDS),
-                    _keyword_should("human", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("cancer", self._DEFAULT_FIELDS), "cancer", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("human", self._DEFAULT_FIELDS), "human", self._DEFAULT_FIELDS),
                 ],
             },
         }
@@ -794,8 +835,8 @@ class TestCompileFreeText:
         assert compile_free_text("cancer, human", operator="OR") == {
             "bool": {
                 "should": [
-                    _keyword_should("cancer", self._DEFAULT_FIELDS),
-                    _keyword_should("human", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("cancer", self._DEFAULT_FIELDS), "cancer", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("human", self._DEFAULT_FIELDS), "human", self._DEFAULT_FIELDS),
                 ],
                 "minimum_should_match": 1,
             },
@@ -838,7 +879,13 @@ class TestCompileToEsFreeTextNode:
         node = FreeText("cancer tumor")
         assert compile_to_es(node) == {
             "bool": {
-                "must": [_keyword_should("cancer tumor", self._DEFAULT_FIELDS)],
+                "must": [
+                    _with_same_as(
+                        _keyword_should("cancer tumor", self._DEFAULT_FIELDS),
+                        "cancer tumor",
+                        self._DEFAULT_FIELDS,
+                    ),
+                ],
             },
         }
 
@@ -864,7 +911,7 @@ class TestCompileToEsFreeTextNode:
                     # contains の phrase 経路 → match_phrase 単独。クオート値は前方一致しない)
                     {"match_phrase": {"organism.name": "Homo sapiens"}},
                     # FreeText の bare word should ラッパが flatten されて並ぶ.
-                    _keyword_should("cancer", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("cancer", self._DEFAULT_FIELDS), "cancer", self._DEFAULT_FIELDS),
                 ],
             },
         }
@@ -888,13 +935,17 @@ class TestCompileToEsFreeTextNode:
             "bool": {
                 "must": [
                     _contains_should("title", "cancer"),
-                    {
-                        "multi_match": {
-                            "query": "HIF-1",
-                            "fields": self._DEFAULT_FIELDS,
-                            "type": "phrase",
+                    _with_same_as(
+                        {
+                            "multi_match": {
+                                "query": "HIF-1",
+                                "fields": self._DEFAULT_FIELDS,
+                                "type": "phrase",
+                            },
                         },
-                    },
+                        "HIF-1",
+                        self._DEFAULT_FIELDS,
+                    ),
                 ],
             },
         }
@@ -921,7 +972,13 @@ class TestCompileToEsFreeTextNode:
                     # FreeText の bool wrapper はそのまま (flatten しない)
                     {
                         "bool": {
-                            "must": [_keyword_should("tumor", self._DEFAULT_FIELDS)],
+                            "must": [
+                                _with_same_as(
+                                    _keyword_should("tumor", self._DEFAULT_FIELDS),
+                                    "tumor",
+                                    self._DEFAULT_FIELDS,
+                                ),
+                            ],
                         },
                     },
                 ],
@@ -942,8 +999,8 @@ class TestCompileToEsFreeTextOperator:
         assert result == {
             "bool": {
                 "should": [
-                    _keyword_should("cancer", self._DEFAULT_FIELDS),
-                    _keyword_should("tumor", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("cancer", self._DEFAULT_FIELDS), "cancer", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("tumor", self._DEFAULT_FIELDS), "tumor", self._DEFAULT_FIELDS),
                 ],
                 "minimum_should_match": 1,
             },
@@ -974,8 +1031,16 @@ class TestCompileToEsFreeTextOperator:
                     {
                         "bool": {
                             "should": [
-                                _keyword_should("apple", self._DEFAULT_FIELDS),
-                                _keyword_should("banana", self._DEFAULT_FIELDS),
+                                _with_same_as(
+                                    _keyword_should("apple", self._DEFAULT_FIELDS),
+                                    "apple",
+                                    self._DEFAULT_FIELDS,
+                                ),
+                                _with_same_as(
+                                    _keyword_should("banana", self._DEFAULT_FIELDS),
+                                    "banana",
+                                    self._DEFAULT_FIELDS,
+                                ),
                             ],
                             "minimum_should_match": 1,
                         },
@@ -1005,8 +1070,8 @@ class TestCompileToEsFreeTextOperator:
             "bool": {
                 "must": [
                     _contains_should("title", "cancer"),
-                    _keyword_should("apple", self._DEFAULT_FIELDS),
-                    _keyword_should("banana", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("apple", self._DEFAULT_FIELDS), "apple", self._DEFAULT_FIELDS),
+                    _with_same_as(_keyword_should("banana", self._DEFAULT_FIELDS), "banana", self._DEFAULT_FIELDS),
                 ],
             },
         }

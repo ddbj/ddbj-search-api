@@ -213,6 +213,28 @@ def _keyword_token_clause(text: str, fields: list[str], *, enable_prefix: bool =
     }
 
 
+def _with_same_as(clause: dict[str, Any], text: str, fields: list[str]) -> dict[str, Any]:
+    """Let *clause* also match entries whose ``sameAs`` holds *text* verbatim.
+
+    Secondary IDs (JGA ``SECONDARY_ID``, including zero-padded spellings of the
+    primary accession, and external IDs such as GEO on BioProject) live only in
+    the nested ``sameAs``, which ``multi_match`` does not descend into.  Only
+    applied when ``identifier`` is searched, since sameAs holds identifiers.
+    ``ignore_unmapped`` keeps indexes without ``sameAs`` at zero hits instead of
+    failing the whole search.
+    """
+    if "identifier" not in fields:
+        return clause
+    same_as = {
+        "nested": {
+            "path": "sameAs",
+            "query": {"term": {"sameAs.identifier": text}},
+            "ignore_unmapped": True,
+        },
+    }
+    return {"bool": {"should": [clause, same_as], "minimum_should_match": 1}}
+
+
 def compile_free_text(
     value: str,
     *,
@@ -253,7 +275,11 @@ def compile_free_text(
         if not value:
             raise ValueError(f"empty free-text value (after tokenization): {value!r}")
         multi_matches: list[dict[str, Any]] = [
-            {"multi_match": {"query": value, "fields": used_fields, "type": "phrase"}},
+            _with_same_as(
+                {"multi_match": {"query": value, "fields": used_fields, "type": "phrase"}},
+                value,
+                used_fields,
+            ),
         ]
     else:
         tokens = parse_keywords_with_autophrase(value, ES_AUTO_PHRASE_CHARS)
@@ -265,10 +291,20 @@ def compile_free_text(
                 # quoted / 記号含み (auto-phrase) トークンは順序保持の完全一致 phrase。
                 # クオート = 厳密一致の意図なので前方一致は付けない。
                 multi_matches.append(
-                    {"multi_match": {"query": text, "fields": used_fields, "type": "phrase"}},
+                    _with_same_as(
+                        {"multi_match": {"query": text, "fields": used_fields, "type": "phrase"}},
+                        text,
+                        used_fields,
+                    ),
                 )
             else:
-                multi_matches.append(_keyword_token_clause(text, used_fields, enable_prefix=enable_prefix))
+                multi_matches.append(
+                    _with_same_as(
+                        _keyword_token_clause(text, used_fields, enable_prefix=enable_prefix),
+                        text,
+                        used_fields,
+                    ),
+                )
     if operator == "OR":
         return {"bool": {"should": multi_matches, "minimum_should_match": 1}}
     return {"bool": {"must": multi_matches}}

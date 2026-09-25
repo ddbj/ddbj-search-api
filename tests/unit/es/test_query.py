@@ -368,18 +368,49 @@ def _bare_word_should(token: str, fields: list[str]) -> dict[str, Any]:
     }
 
 
+def _with_same_as(clause: dict[str, Any], token: str, fields: list[str]) -> dict[str, Any]:
+    """The sameAs fallback wrapper a per-token clause gets when ``identifier`` is searched.
+
+    Mirrors ``compiler_es._with_same_as``: secondary IDs live only in the nested
+    ``sameAs``, which ``multi_match`` cannot reach, so every per-token clause is
+    OR-ed with a ``sameAs.identifier`` term lookup for the raw token text.  Fields
+    without ``identifier`` are unaffected (``sameAs`` only holds identifiers).
+    """
+    if "identifier" not in fields:
+        return clause
+    return {
+        "bool": {
+            "should": [
+                clause,
+                {
+                    "nested": {
+                        "path": "sameAs",
+                        "query": {"term": {"sameAs.identifier": token}},
+                        "ignore_unmapped": True,
+                    },
+                },
+            ],
+            "minimum_should_match": 1,
+        },
+    }
+
+
 class TestBuildSearchQueryKeywords:
     """Keyword search → multi_match queries."""
 
     def test_single_keyword_creates_multi_match(self) -> None:
         result = build_search_query(keywords="cancer")
-        # bare word は完全形で should-wrapper (AND multi_match + phrase_prefix) になる.
+        # bare word は完全形で should-wrapper (AND multi_match + phrase_prefix) になり、
+        # identifier を含むので sameAs フォールバックでさらに包まれる.
         default_fields = ["identifier", "title", "name", "description", "organism.name"]
-        assert result["bool"]["must"] == [_bare_word_should("cancer", default_fields)]
+        assert result["bool"]["must"] == [
+            _with_same_as(_bare_word_should("cancer", default_fields), "cancer", default_fields),
+        ]
 
     def test_single_keyword_searches_all_default_fields(self) -> None:
         result = build_search_query(keywords="cancer")
-        should = result["bool"]["must"][0]["bool"]["should"]
+        # must[0] は sameAs wrapper. 先頭要素が bare word の should-wrapper 本体.
+        should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
         and_mm = next(s["multi_match"] for s in should if s["multi_match"].get("operator") == "and")
         prefix_mm = next(s["multi_match"] for s in should if s["multi_match"].get("type") == "phrase_prefix")
         # 完全語側は全 default fields、前方一致側は keyword 型 identifier を除いた text field.
@@ -388,9 +419,9 @@ class TestBuildSearchQueryKeywords:
 
     def test_auto_phrase_keyword_inherits_organism_name(self) -> None:
         # auto-phrase 経路 (multi_match type=phrase) でも default fields の
-        # organism.name が落ちないことを担保する。
+        # organism.name が落ちないことを担保する。sameAs wrapper 越しに元 clause を見る.
         result = build_search_query(keywords="SARS-CoV-2")
-        multi_match = result["bool"]["must"][0]["multi_match"]
+        multi_match = result["bool"]["must"][0]["bool"]["should"][0]["multi_match"]
         assert multi_match["type"] == "phrase"
         assert "organism.name" in multi_match["fields"]
 
@@ -415,8 +446,9 @@ class TestBuildSearchQueryKeywords:
         )
         must = result["bool"]["must"]
         assert len(must) == 2
-        # 各 bare word token は should-wrapper になり、その AND multi_match の query.
-        queries = {m["bool"]["should"][0]["multi_match"]["query"] for m in must}
+        # 各 bare word token は sameAs wrapper → should-wrapper になり、
+        # その内側の AND multi_match の query.
+        queries = {m["bool"]["should"][0]["bool"]["should"][0]["multi_match"]["query"] for m in must}
         assert queries == {"cancer", "human"}
 
     def test_multiple_keywords_or_operator(self) -> None:
@@ -434,13 +466,18 @@ class TestBuildSearchQueryKeywords:
 
         identifier 単独だと前方一致対象の text field が無いため should-wrapper にならず、
         完全語 multi_match 単独になる (keyword 型に phrase_prefix を付けると ES が 400)。
+        identifier を検索対象に含むため sameAs フォールバックの wrapper は付く。
         """
         result = build_search_query(
             keywords="PRJDB1234",
             keyword_fields="identifier",
         )
         assert result["bool"]["must"] == [
-            {"multi_match": {"query": "PRJDB1234", "fields": ["identifier"], "operator": "and"}},
+            _with_same_as(
+                {"multi_match": {"query": "PRJDB1234", "fields": ["identifier"], "operator": "and"}},
+                "PRJDB1234",
+                ["identifier"],
+            ),
         ]
 
     def test_keyword_fields_multiple(self) -> None:
@@ -462,9 +499,9 @@ class TestBuildSearchQueryKeywordsInTokenAnd:
 
     def test_single_word_keyword_has_operator_and(self) -> None:
         result = build_search_query(keywords="cancer")
-        # bare word → should-wrapper の AND multi_match (operator=and, type なし) と
-        # phrase_prefix multi_match の 2 つ.
-        should = result["bool"]["must"][0]["bool"]["should"]
+        # bare word → sameAs wrapper 越しに should-wrapper の AND multi_match
+        # (operator=and, type なし) と phrase_prefix multi_match の 2 つ.
+        should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
         and_mm, prefix_mm = should[0]["multi_match"], should[1]["multi_match"]
         assert and_mm["operator"] == "and"
         assert "type" not in and_mm
@@ -477,7 +514,7 @@ class TestBuildSearchQueryKeywordsInTokenAnd:
         # operator=and で両方 token を含む document のみマッチ. phrase_prefix 側で
         # 末尾語の前方一致も拾う.
         result = build_search_query(keywords="whole genome")
-        should = result["bool"]["must"][0]["bool"]["should"]
+        should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
         and_mm, prefix_mm = should[0]["multi_match"], should[1]["multi_match"]
         assert and_mm["query"] == "whole genome"
         assert and_mm["operator"] == "and"
@@ -488,23 +525,23 @@ class TestBuildSearchQueryKeywordsInTokenAnd:
     def test_phrase_keyword_omits_operator(self) -> None:
         # 明示クオート → phrase. operator は付けない (前方一致もしない).
         result = build_search_query(keywords='"whole genome"')
-        mm = result["bool"]["must"][0]["multi_match"]
+        mm = result["bool"]["must"][0]["bool"]["should"][0]["multi_match"]
         assert mm["type"] == "phrase"
         assert "operator" not in mm
 
     def test_auto_phrase_keyword_omits_operator(self) -> None:
         # 記号 (-/.+:) 含み → auto phrase. operator は付けない (前方一致もしない).
         result = build_search_query(keywords="HIF-1")
-        mm = result["bool"]["must"][0]["multi_match"]
+        mm = result["bool"]["must"][0]["bool"]["should"][0]["multi_match"]
         assert mm["type"] == "phrase"
         assert "operator" not in mm
 
     def test_comma_separated_keywords_each_have_operator_and(self) -> None:
-        # カンマ区切り bare word token がそれぞれ should-wrapper に展開され、
-        # 各 wrapper 内の AND multi_match に operator=and、もう一方に phrase_prefix.
+        # カンマ区切り bare word token がそれぞれ sameAs wrapper → should-wrapper に
+        # 展開され、内側の AND multi_match に operator=and、もう一方に phrase_prefix.
         result = build_search_query(keywords="cancer,human", keyword_operator="AND")
         for clause in result["bool"]["must"]:
-            should = clause["bool"]["should"]
+            should = clause["bool"]["should"][0]["bool"]["should"]
             and_mm, prefix_mm = should[0]["multi_match"], should[1]["multi_match"]
             assert and_mm["operator"] == "and"
             assert "type" not in and_mm
@@ -1563,15 +1600,17 @@ class TestBuildSearchQueryPhraseMatch:
         result = build_search_query(keywords='"RNA-Seq"')
         must = result["bool"]["must"]
         assert len(must) == 1
-        mm = must[0]["multi_match"]
+        # sameAs wrapper 越しに元の phrase multi_match を見る.
+        mm = must[0]["bool"]["should"][0]["multi_match"]
         assert mm["query"] == "RNA-Seq"
         assert mm["type"] == "phrase"
 
     def test_normal_keyword_no_type(self) -> None:
         result = build_search_query(keywords="cancer")
         must = result["bool"]["must"]
-        # bare word → should-wrapper: AND multi_match (type なし) と phrase_prefix.
-        should = must[0]["bool"]["should"]
+        # bare word → sameAs wrapper 越しに should-wrapper: AND multi_match
+        # (type なし) と phrase_prefix.
+        should = must[0]["bool"]["should"][0]["bool"]["should"]
         and_mm, prefix_mm = should[0]["multi_match"], should[1]["multi_match"]
         assert and_mm["query"] == "cancer"
         assert "type" not in and_mm
@@ -1582,11 +1621,12 @@ class TestBuildSearchQueryPhraseMatch:
         result = build_search_query(keywords='"RNA-Seq",cancer')
         must = result["bool"]["must"]
         assert len(must) == 2
-        # First is a phrase (quoted) → 単一 multi_match のまま、前方一致しない.
-        assert must[0]["multi_match"]["type"] == "phrase"
-        assert must[0]["multi_match"]["query"] == "RNA-Seq"
-        # Second is a bare word → should-wrapper の AND multi_match と phrase_prefix.
-        should = must[1]["bool"]["should"]
+        # First is a phrase (quoted) → sameAs wrapper 越しの単一 multi_match、前方一致しない.
+        assert must[0]["bool"]["should"][0]["multi_match"]["type"] == "phrase"
+        assert must[0]["bool"]["should"][0]["multi_match"]["query"] == "RNA-Seq"
+        # Second is a bare word → sameAs wrapper 越しに should-wrapper の
+        # AND multi_match と phrase_prefix.
+        should = must[1]["bool"]["should"][0]["bool"]["should"]
         assert "type" not in should[0]["multi_match"]
         assert should[0]["multi_match"]["query"] == "cancer"
         assert should[1]["multi_match"]["type"] == "phrase_prefix"
@@ -1598,10 +1638,10 @@ class TestBuildSearchQueryPhraseMatch:
         )
         should = result["bool"]["should"]
         assert len(should) == 2
-        # quoted token は単一 phrase multi_match のまま.
-        assert should[0]["multi_match"]["type"] == "phrase"
-        # bare word は should-wrapper として nest される.
-        inner = should[1]["bool"]["should"]
+        # quoted token は sameAs wrapper 越しに単一 phrase multi_match のまま.
+        assert should[0]["bool"]["should"][0]["multi_match"]["type"] == "phrase"
+        # bare word は sameAs wrapper 越しに should-wrapper として nest される.
+        inner = should[1]["bool"]["should"][0]["bool"]["should"]
         assert "type" not in inner[0]["multi_match"]
         assert inner[1]["multi_match"]["type"] == "phrase_prefix"
 
@@ -1611,14 +1651,15 @@ class TestBuildSearchQueryAutoPhrase:
 
     def test_hyphen_keyword_uses_phrase(self) -> None:
         result = build_search_query(keywords="HIF-1")
-        mm = result["bool"]["must"][0]["multi_match"]
+        mm = result["bool"]["must"][0]["bool"]["should"][0]["multi_match"]
         assert mm["query"] == "HIF-1"
         assert mm["type"] == "phrase"
 
     def test_plain_keyword_omits_type(self) -> None:
         result = build_search_query(keywords="cancer")
-        # bare word → should-wrapper: AND multi_match (type なし) と phrase_prefix.
-        should = result["bool"]["must"][0]["bool"]["should"]
+        # bare word → sameAs wrapper 越しに should-wrapper: AND multi_match
+        # (type なし) と phrase_prefix.
+        should = result["bool"]["must"][0]["bool"]["should"][0]["bool"]["should"]
         and_mm, prefix_mm = should[0]["multi_match"], should[1]["multi_match"]
         assert and_mm["query"] == "cancer"
         assert "type" not in and_mm
@@ -1628,11 +1669,12 @@ class TestBuildSearchQueryAutoPhrase:
         result = build_search_query(keywords="HIF-1,cancer")
         must = result["bool"]["must"]
         assert len(must) == 2
-        # 記号含み HIF-1 は phrase のまま (前方一致しない).
-        assert must[0]["multi_match"]["type"] == "phrase"
-        assert must[0]["multi_match"]["query"] == "HIF-1"
-        # bare word cancer は should-wrapper の AND multi_match と phrase_prefix.
-        should = must[1]["bool"]["should"]
+        # 記号含み HIF-1 は sameAs wrapper 越しに phrase のまま (前方一致しない).
+        assert must[0]["bool"]["should"][0]["multi_match"]["type"] == "phrase"
+        assert must[0]["bool"]["should"][0]["multi_match"]["query"] == "HIF-1"
+        # bare word cancer は sameAs wrapper 越しに should-wrapper の
+        # AND multi_match と phrase_prefix.
+        should = must[1]["bool"]["should"][0]["bool"]["should"]
         assert "type" not in should[0]["multi_match"]
         assert should[0]["multi_match"]["query"] == "cancer"
         assert should[1]["multi_match"]["type"] == "phrase_prefix"
@@ -1642,7 +1684,7 @@ class TestBuildSearchQueryAutoPhrase:
         must = result["bool"]["must"]
         assert len(must) == 2
         for clause in must:
-            assert clause["multi_match"]["type"] == "phrase"
+            assert clause["bool"]["should"][0]["multi_match"]["type"] == "phrase"
 
     def test_auto_phrase_with_or_operator(self) -> None:
         result = build_search_query(
@@ -1651,10 +1693,10 @@ class TestBuildSearchQueryAutoPhrase:
         )
         should = result["bool"]["should"]
         assert len(should) == 2
-        # 記号含み HIF-1 は単一 phrase multi_match のまま.
-        assert should[0]["multi_match"]["type"] == "phrase"
-        # bare word cancer は should-wrapper として nest される.
-        inner = should[1]["bool"]["should"]
+        # 記号含み HIF-1 は sameAs wrapper 越しに単一 phrase multi_match のまま.
+        assert should[0]["bool"]["should"][0]["multi_match"]["type"] == "phrase"
+        # bare word cancer は sameAs wrapper 越しに should-wrapper として nest される.
+        inner = should[1]["bool"]["should"][0]["bool"]["should"]
         assert "type" not in inner[0]["multi_match"]
         assert inner[1]["multi_match"]["type"] == "phrase_prefix"
 
