@@ -427,12 +427,12 @@ facet の bucket `value` は DSL `field:value` として再注入できる (port
 - **文法** (Lark LALR(1), Lucene サブセット):
   - bare word / quoted phrase: フィールド指定なしの全文検索。AST 上は `FreeText` ノード。例: `cancer`、`"Homo sapiens"`、`HIF-1` (記号含み bare word も WORD トークンとして通る)
   - `field:value` / `field:"phrase"` / `field:'phrase'` / `field:[a TO b]` / `field:value*` / `field:value?`
-  - phrase は double quote と single quote のどちらでも記述可 (対称)。escape は `\"` / `\'` / `\\`
-  - `AND` / `OR` / `NOT` (大文字必須)、優先度 `AND > OR`、`(...)` でグルーピング
+  - phrase は double quote と single quote のどちらでも記述可。escape は `\"` / `\'` / `\\`。single quote の phrase は、後ろに空白・`)`・クエリの終わりが続く `'` で閉じる。`'Alzheimer's disease'` は 1 つの phrase。閉じる `'` の無い `'` で始まる語 (`'s`) と、語の途中・末尾の `'` (`Alzheimer's`、`5'-UTR`) は語の一部。語の隣に演算子なしで phrase を置くと (`x "a b"`、`x 'a b'`) 構文エラー (`unexpected-token`)
+  - `AND` / `OR` / `NOT` (大文字必須)、優先度 `AND > OR`、`(...)` でグルーピング。演算子として読むのは、後ろに空白・クエリの終わり・`( ) [ ] { } " ' : ^ ~ * ? /` のいずれかが続くときだけ。`NOTCH1` / `ORGANOID` / `ANDROGEN` のように語の文字が続くものは語。演算子として読めない位置の `AND` / `OR` / `NOT` (`cancer NOT mouse` の `NOT`、`AND cancer` の `AND`) は keyword の語になり、AST では小文字で持つ (`/db-portal/parse` は `cancer not mouse` を返す。keyword は大文字小文字を区別しないので意味は変わらない)
   - 非対応構文 (boost `^` / fuzzy `~` / 正規表現 `/.../`、bare wildcard `HIF*`) は構文エラー (`unexpected-token`)。bare wildcard が必要な場合は `field:value*` 形式で
   - `field:value*` 形式でも、(a) leading wildcard (`field:*foo` / `field:?abc`)、(b) 単独 wildcard (`field:*`)、(c) wildcard 前の literal が短すぎる (`field:f*`) は拒否 (`invalid-operator-for-field`)。leading wildcard と過度に短い prefix は ES の全件 wildcard スキャンを誘発するため、最低 2 文字の literal prefix を必須にする
   - wildcard 値に使える文字は `[A-Za-z0-9_\-.]` + `*` / `?` のみ。Lucene/Solr の特殊文字 (`\` / `+` / `-` 先頭 / `!` / `|` / `&` / `<` / `>` / `=`) は構文エラー (`unexpected-token`)。バックエンド escape の漏れを root で防ぐ
-  - ネスト深さ上限と AST ノード総数上限を超えると `nest-depth-exceeded` (横幅 `a OR b OR ... OR z` で同 slug)、クエリ長さ上限超過は `unexpected-token` (具体的な閾値は config を SSOT とする)
+  - ネスト深さ上限と AST ノード総数上限を超えると `nest-depth-exceeded` (横幅 `a OR b OR ... OR z` で同 slug)、クエリ長さ上限超過は `unexpected-token` (具体的な閾値は config を SSOT とする)。深さは parse の段階で見るので、括弧や `NOT (` をどれだけ深く重ねても 400 で返る
   - **FreeText 位置制約**: bare word / phrase は (a) クエリ全体が単一の FreeText、または (b) トップレベル AND 直下の子に最大 1 つ の位置にのみ書ける。OR / NOT 配下、ネスト AND 配下、AND 直下の重複は禁止 ([§ 内部モデル FreeText の位置制約](#freetext-の位置制約))
   - **FreeText 内部の複数トークン**: 1 つの FreeText 値内でカンマ区切りで複数トークンを指定できる (例: `q=cancer,tumor`)。トークン間の連結演算子はクエリパラメータ `keywordOperator` (`AND` / `OR`、default **`OR`**) で切替える。`/entries/*` 系の `keywordOperator` と同じセマンティクスで揃えてあり、DSL の明示 `AND` / `OR` / `NOT` BoolOp は影響を受けない (DSL 内で書いた `cancer AND title:tumor` は常に AND)。**bare token 内**のスペース (例: `q=cancer tumor` で `cancer tumor` を 1 token として渡した場合) は常に AND 結合 (`multi_match.operator=and` 固定、`keywordOperator` の影響を受けない)。**クオートで囲んだトークン** (例: `q="cancer tumor"` または `q='"Homo sapiens"'` のように FreeText 全体を quote) は 1 つの `match_phrase` (順序保持) に展開され、コンマ分割対象から除外される (引用符内のコンマも phrase の一部として保持)。`keywordOperator` は `/db-portal/cross-search` と `/db-portal/search` で受け付け、`/db-portal/parse` では受け付けない (parse の AST には operator state を含まない)。cursor 指定時に `keywordOperator` をデフォルト以外にすると 400 (排他、[§ ページネーション](#ページネーション))
 - **フィールド allowlist (Tier 1/2/3)**: Tier 1 (横断可) / Tier 2 (横断可、converter 側正規化済の共通 field) / Tier 3 (単一 DB 指定必須) の 3 段構造。フィールド一覧は実装 (`allowlist.py`) を SSOT とし、本仕様では各 Tier に属する代表的なフィールドを列挙する。横断 (cross) モードで Tier 3 を使うと 400 `field-not-available-in-cross-db` (detail に候補 DB を列挙)。
@@ -519,7 +519,7 @@ organism_name:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] AND (
 | `facet-not-applicable` | 400 | 当該 scope で利用できない facet を `facets` に指定 (例: cross で `facets=libraryStrategy`、`db=bioproject` で `facets=package`)。`detail` に対象 facet 名を埋め込み。allowlist 自体に無い名前は 422 (`about:blank`) | 両 | `facets` |
 | `invalid-date-format` | 400 | `YYYY-MM-DD` 以外、実在しない日付 | 両 | クエリ |
 | `invalid-operator-for-field` | 400 | フィールド型と演算子の非互換 (例: `date:cancer*`, `identifier:[a TO b]`) | 両 | クエリ |
-| `nest-depth-exceeded` | 400 | AND/OR/NOT ネスト深さの上限超過、または AST ノード総数の上限超過 (具体的な閾値は config を SSOT とする) | 両 | クエリ |
+| `nest-depth-exceeded` | 400 | AND/OR/NOT ネスト深さの上限超過 (parse の段階で判定)、または AST ノード総数の上限超過 (具体的な閾値は config を SSOT とする) | 両 | クエリ |
 | `missing-value` | 400 | `field:""` 等の空値 | 両 | クエリ |
 | `invalid-freetext-position` | 400 | bare word / phrase が OR / NOT 配下、もしくはネスト深部 AND 配下に出現 ([§ FreeText の位置制約](#freetext-の位置制約)) | 両 | クエリ |
 | `duplicate-freetext` | 400 | トップレベル AND 直下に bare word / phrase が 2 つ以上 ([§ FreeText の位置制約](#freetext-の位置制約)) | 両 | クエリ |
@@ -628,13 +628,14 @@ Trailing slash なし (`/db-portal/serialize`) が canonical。
 { "dsl": "cancer AND organism_name:\"Homo sapiens\"" }
 ```
 
-`dsl` は `GET /db-portal/parse?q=<dsl>` の入力としてそのまま使える正規化済 DSL 文字列。`parse(serialize(ast)) == ast` (Position を除く構造的等価) が保証される。
+`dsl` は `GET /db-portal/parse?q=<dsl>` の入力としてそのまま使える正規化済 DSL 文字列。`parse(serialize(ast)) == ast` (Position を除く構造的等価) が保証される。request body の AST は parse の結果と同じ形に正規化してから serialize する (phrase でない `free_text` の `AND` / `OR` / `NOT` の語は小文字にする)。
 
 正規化ルール (`grammar.lark` に従う):
 
-- `value_kind="phrase"` の値は常に `"..."` で quote、内部 `\` / `"` をエスケープ
-- `value_kind="word" / "date" / "wildcard"` の値は bare (wildcard を quote すると `*` / `?` が literal 化するため)
-- 空白・特殊文字を含む `FreeText` 値は必ず quote (parser が複数 token に分解しないように)
+- `value_kind="phrase"` の値は常に `"..."` で quote、内部 `\` / `"` をエスケープ。空白か `)` が後ろに続く `'` も `\'` にする (quote の外では single quote の phrase を閉じる文字のため)
+- `value_kind="word"` の値は bare。ただし parse したときに WORD 以外の token になる値は `"..."` で quote する: 日付で始まる値 (`2024-01-01`、`2024-01-01x`)、`AND` / `OR` / `NOT`、`'` で始まる値、wildcard の形の値
+- `value_kind="date" / "wildcard"` の値は bare (wildcard を quote すると `*` / `?` が literal 化するため)
+- phrase でない `FreeText` 値は、空白区切りの各語が parse で同じ語に戻るときだけ bare。記号・連続空白・`AND` / `OR` / `NOT` そのものの語・語をまたいで single quote の phrase ができる値 (`'s y'`) は quote する。日付の形の語は keyword の位置では DATE にならないので bare のまま
 - BoolOp は precedence (AND > OR、NOT 単項) に従い冗長括弧を排除。AND/OR の子 chain は flat (`a AND b AND c`)
 - `NOT` の子が `BoolOp` (AND/OR/NOT) のときは括弧化 (grammar `not_op: NOT atom` の制約)
 

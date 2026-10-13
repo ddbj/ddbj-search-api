@@ -379,7 +379,7 @@ def _parse_and_validate_query(
     type URI) so the caller can return RFC 7807 problem details.
     """
     try:
-        ast = parse(q, max_length=config.dsl_max_length)
+        ast = parse(q, max_length=config.dsl_max_length, max_depth=config.dsl_max_depth)
         validate(
             ast,
             mode="cross" if db is None else "single",

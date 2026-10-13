@@ -35,7 +35,7 @@ from ddbj_search_api.search.dsl.ast import (
     Range,
     ValueKind,
 )
-from ddbj_search_api.search.dsl.lex_patterns import WORD_RE
+from ddbj_search_api.search.dsl.lex_patterns import WORD_RE, lower_reserved_words
 from ddbj_search_api.search.dsl.validator import resolve_field_operator
 
 # json_to_ast 経由の AST は元の DSL 文字列を持たないので、Position は dummy を割り当てる.
@@ -107,7 +107,11 @@ def json_to_ast(payload: dict[str, Any]) -> Node:
     op = payload.get("op")
     if op == "free_text":
         # 旧形式 JSON tree (is_phrase 不在) は False で復元 (後方互換).
-        return FreeText(value=payload["value"], is_phrase=bool(payload.get("is_phrase", False)))
+        is_phrase = bool(payload.get("is_phrase", False))
+        value = payload["value"]
+        # phrase でない keyword の AND / OR / NOT は語.  parser と同じく小文字にしておくと、
+        # serializer が bare で出した文字列を parse しても同じ語に戻る.
+        return FreeText(value=value if is_phrase else lower_reserved_words(value), is_phrase=is_phrase)
     if op in _BOOL_OPS:
         children = tuple(json_to_ast(rule) for rule in payload["rules"])
         return BoolOp(op=cast(BoolOpKind, op), children=children, position=_DUMMY_POSITION)

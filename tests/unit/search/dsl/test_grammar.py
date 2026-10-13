@@ -11,6 +11,8 @@ validator は allowlist / 演算子互換性 / 日付フォーマット / ネス
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -613,3 +615,201 @@ class TestFreeTextMultiWord:
         assert free_texts[0].is_phrase is False
         assert len(field_clauses) == 1
         assert field_clauses[0].field == "organism_id"
+
+
+class TestOperatorWordBoundary:
+    """``AND`` / ``OR`` / ``NOT`` は、後ろに空白・条件の終わり・``( ) [ ] { } " ' : ^ ~ * ? /`` の
+    いずれかが続くときだけ演算子として読む。後ろに語の文字が続く ``NOTCH1`` や ``ORGANOID`` は語。
+    """
+
+    @pytest.mark.parametrize("word", ["NOTCH1", "ORGANOID", "ANDROGEN", "ORF1ab", "NOT-x", "AND.1"])
+    def test_word_starting_with_operator_letters_is_a_word(self, word: str) -> None:
+        ast = parse(f"{word} signaling")
+        assert isinstance(ast, FreeText)
+        assert ast.value == f"{word} signaling"
+        assert ast.is_phrase is False
+
+    @pytest.mark.parametrize("word", ["NOTCH1", "ORGANOID", "ANDROGEN", "ORF1ab"])
+    def test_word_starting_with_operator_letters_between_operators(self, word: str) -> None:
+        ast = parse(f"x AND {word} AND y")
+        assert isinstance(ast, BoolOp)
+        assert ast.op == "AND"
+        assert [c.value for c in ast.children if isinstance(c, FreeText)] == ["x", word, "y"]
+
+    @pytest.mark.parametrize("dsl", ["NOTCH1 signaling", "breast ORGANOID", "lung ANDROGEN", "SARS-CoV-2 ORF1ab"])
+    def test_keyword_examples_stay_one_keyword(self, dsl: str) -> None:
+        ast = parse(dsl)
+        assert isinstance(ast, FreeText)
+        assert ast.value == dsl
+
+    @pytest.mark.parametrize(
+        ("dsl", "op"),
+        [
+            ("NOT(title:a)", "NOT"),
+            ("(title:a)OR(title:b)", "OR"),
+            ("(title:a)AND(title:b)", "AND"),
+            ('NOT "x"', "NOT"),
+            ("NOT'x'", "NOT"),
+            ("NOT'x y'", "NOT"),
+            ("title:a OR'x'", "OR"),
+            ("title:a AND'x'", "AND"),
+            ("title:a OR\ttitle:b", "OR"),
+        ],
+    )
+    def test_operator_before_paren_quote_bracket_or_space(self, dsl: str, op: str) -> None:
+        ast = parse(dsl)
+        assert isinstance(ast, BoolOp)
+        assert ast.op == op
+
+    @pytest.mark.parametrize("word", ["ORAL'", "NOTE's", "ANDx'y'"])
+    def test_word_with_single_quote_after_letters_is_a_word(self, word: str) -> None:
+        ast = parse(f"x {word}")
+        assert isinstance(ast, FreeText)
+        assert ast.value == f"x {word}"
+
+
+class TestReservedWordsInsideKeyword:
+    """演算子として読めない位置の ``AND`` / ``OR`` / ``NOT`` は keyword の語になり、AST では小文字で持つ。
+    keyword は大文字小文字を区別しないので意味は変わらず、serialize した文字列を parse しても同じ語に戻る。
+    """
+
+    def test_not_after_a_word_becomes_a_lower_case_word(self) -> None:
+        ast = parse("cancer NOT mouse")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer not mouse"
+        assert ast.is_phrase is False
+
+    def test_and_at_the_start_becomes_a_lower_case_word(self) -> None:
+        ast = parse("AND cancer")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "and cancer"
+        assert ast.is_phrase is False
+
+    def test_lower_case_operator_letters_are_a_word(self) -> None:
+        ast = parse("cancer not mouse")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer not mouse"
+
+    def test_phrase_keeps_the_case(self) -> None:
+        ast = parse('"cancer NOT mouse"')
+        assert isinstance(ast, FreeText)
+        assert ast.value == "cancer NOT mouse"
+        assert ast.is_phrase is True
+
+    def test_field_value_keeps_the_case(self) -> None:
+        ast = parse("title:NOT")
+        assert isinstance(ast, FieldClause)
+        assert ast.value == "NOT"
+
+    def test_operator_at_the_end_is_a_syntax_error(self) -> None:
+        with pytest.raises(DslError) as exc_info:
+            parse("cancer OR")
+        assert exc_info.value.type == ErrorType.unexpected_token
+
+
+class TestSingleQuotedPhraseNextToWord:
+    """単一引用符の phrase は、空白・``)``・条件の終わりが後ろに続く ``'`` で閉じる。
+    語の後ろの閉じた ``'...'`` は二重引用符と同じく unexpected-token。閉じない ``'`` で始まる語は語。
+    """
+
+    @pytest.mark.parametrize(
+        "dsl",
+        ['"breast cancer" organoid', 'organoid "breast cancer"', '"a" "b"', "'a b' x", "x 'a b'", "x 'a' y"],
+    )
+    def test_phrase_next_to_word_is_unexpected_token(self, dsl: str) -> None:
+        with pytest.raises(DslError) as exc_info:
+            parse(dsl)
+        assert exc_info.value.type == ErrorType.unexpected_token
+
+    @pytest.mark.parametrize("dsl", ["'s", "x 's", "x 's y's", "'a b'c", "x '"])
+    def test_single_quote_without_closing_quote_is_part_of_a_word(self, dsl: str) -> None:
+        ast = parse(dsl)
+        assert isinstance(ast, FreeText)
+        assert ast.value == dsl
+        assert ast.is_phrase is False
+
+    def test_apostrophe_inside_a_single_quoted_phrase(self) -> None:
+        ast = parse("'Alzheimer's disease'")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "Alzheimer's disease"
+        assert ast.is_phrase is True
+
+    def test_single_quoted_phrase_inside_parentheses(self) -> None:
+        ast = parse("('a b')")
+        assert isinstance(ast, FreeText)
+        assert ast.value == "a b"
+        assert ast.is_phrase is True
+
+    def test_single_quoted_phrase_closed_before_a_parenthesis(self) -> None:
+        ast = parse("NOT ('a b')")
+        assert isinstance(ast, BoolOp)
+        inner = ast.children[0]
+        assert isinstance(inner, FreeText)
+        assert inner.value == "a b"
+        assert inner.is_phrase is True
+
+    def test_unclosed_single_quote_after_an_operator(self) -> None:
+        ast = parse("x AND 's")
+        assert isinstance(ast, BoolOp)
+        assert [c.value for c in ast.children if isinstance(c, FreeText)] == ["x", "'s"]
+        ast = parse("NOT's")
+        assert isinstance(ast, BoolOp)
+        assert ast.op == "NOT"
+        inner = ast.children[0]
+        assert isinstance(inner, FreeText)
+        assert inner.value == "'s"
+
+    def test_unclosed_single_quote_as_a_field_value(self) -> None:
+        ast = parse("title:'x")
+        assert isinstance(ast, FieldClause)
+        assert ast.value_kind == "word"
+        assert ast.value == "'x"
+
+    def test_phrase_next_to_word_with_an_operator_is_accepted(self) -> None:
+        ast = parse('"breast cancer" AND organoid')
+        assert isinstance(ast, BoolOp)
+        assert [type(c) for c in ast.children] == [FreeText, FreeText]
+
+
+class TestDeepNesting:
+    """括弧や ``NOT (`` の入れ子がいくら深くても、parse は RecursionError を出さず、
+    深さ上限を超えた入れ子を nest-depth-exceeded で拒否する。
+    """
+
+    @pytest.mark.parametrize("depth", [100, 300, 2000])
+    def test_redundant_parentheses_return_the_inner_clause(self, depth: int) -> None:
+        ast = parse("(" * depth + "title:a" + ")" * depth)
+        assert isinstance(ast, FieldClause)
+        assert ast.value == "a"
+
+    @pytest.mark.parametrize("depth", [6, 100, 300, 500])
+    def test_nested_groups_beyond_the_limit_are_rejected(self, depth: int) -> None:
+        with pytest.raises(DslError) as exc_info:
+            parse("(a AND " * depth + "b" + ")" * depth)
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+        assert "exceeds limit 5 " in exc_info.value.detail
+
+    @pytest.mark.parametrize("depth", [6, 100, 300, 680])
+    def test_nested_negations_beyond_the_limit_are_rejected(self, depth: int) -> None:
+        with pytest.raises(DslError) as exc_info:
+            parse("NOT (" * depth + "title:a" + ")" * depth)
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+
+    def test_nesting_within_the_limit_is_accepted(self) -> None:
+        ast = parse("NOT (" * 5 + "title:a" + ")" * 5)
+        assert isinstance(ast, BoolOp)
+
+    def test_max_depth_parameter_sets_the_limit(self) -> None:
+        dsl = "NOT (" * 6 + "title:a" + ")" * 6
+        assert isinstance(parse(dsl, max_depth=6), BoolOp)
+        with pytest.raises(DslError) as exc_info:
+            parse(dsl, max_depth=5)
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+        assert "exceeds limit 5 " in exc_info.value.detail
+
+    @given(depth=st.integers(min_value=1, max_value=700), shape=st.sampled_from(["(a AND ", "NOT (", "(", "(a OR "]))
+    @settings(max_examples=40, deadline=None)
+    def test_any_depth_yields_a_node_or_a_dsl_error(self, depth: int, shape: str) -> None:
+        dsl = shape * depth + "title:a" + ")" * depth
+        with contextlib.suppress(DslError):
+            parse(dsl)

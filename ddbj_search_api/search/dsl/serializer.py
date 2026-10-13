@@ -11,19 +11,25 @@ SSOT: grammar.lark.  WORD / PHRASE / WILDCARD / RANGE の lexer 定義と、
 
 quote / paren 判定:
 
-- ``value_kind="word"|"date"``: WORD regex の subset なので bare 出力 (validator 通過前提).
+- ``value_kind="word"``: ``is_bare_word`` (WORD として読み戻せる) なら bare、そうでなければ quote.
+  日付で始まる値・演算子・``'`` で始まる値は WORD 以外の token として読まれるので quote する.
+- ``value_kind="date"``: bare.
 - ``value_kind="wildcard"``: bare. ``"..."`` で包むと ``*`` / ``?`` が literal 化する.
 - ``value_kind="phrase"``: 常に ``"..."`` で包み、内部 ``\\`` → ``\\\\`` / ``"`` → ``\\"`` を
-  エスケープ (parser の ``_PHRASE_UNESCAPE`` と対称).
+  エスケープ (parser の ``_PHRASE_UNESCAPE`` と対称).  空白か ``)`` が後ろに続く ``'`` も
+  ``\\'`` にする (quote の外では単一引用符の phrase を閉じる文字になるため).
 - ``value_kind="range"``: ``[from TO to]``.
-- ``FreeText.value``: 空白区切りの各 token が WORD として bare 出力可能なら bare、記号・
-  連続空白・token 衝突を含めば quote.
+- ``FreeText.value``: ``is_bare_safe_multiword`` (空白区切りの各語が keyword の語として
+  読み戻せる) なら bare、記号・連続空白・演算子の語・語をまたぐ単一引用符を含めば quote.
+  日付の形の語は keyword の位置では DATE にならないので bare のまま.
 - ``BoolOp(NOT, [child])``: 子が ``BoolOp`` (AND/OR/NOT) なら必ず括弧.  grammar の
   ``not_op: NOT atom`` 制約 (連鎖 ``NOT NOT x`` を許容しない) のため.
 - ``BoolOp(AND|OR, ...)``: precedence (AND=3, OR=2) を子のものと比較し、子 < 親なら括弧.
 """
 
 from __future__ import annotations
+
+import re
 
 from ddbj_search_api.search.dsl.ast import (
     BoolOp,
@@ -33,10 +39,7 @@ from ddbj_search_api.search.dsl.ast import (
     Range,
     ValueKind,
 )
-from ddbj_search_api.search.dsl.lex_patterns import (
-    is_bare_safe_multiword,
-    needs_quote_for_token_collision,
-)
+from ddbj_search_api.search.dsl.lex_patterns import is_bare_safe_multiword, is_bare_word
 
 _AND_PRECEDENCE = 3
 _OR_PRECEDENCE = 2
@@ -87,13 +90,11 @@ def _serialize_field_value(value_kind: ValueKind, value: str | Range) -> str:
         return f"[{value.from_} TO {value.to}]"
     if not isinstance(value, str):
         raise TypeError(f"non-range value_kind requires str, got {type(value).__name__}")
-    if value_kind == "phrase":
+    if value_kind == "phrase" or (value_kind == "word" and not is_bare_word(value)):
+        # word でも、WORD 以外の token (DATE / 演算子 / 単一引用符の phrase / WILDCARD) として
+        # 読まれる値は quote しないと parser がドリフトする.
         return _quote_phrase(value)
-    if value_kind == "word" and needs_quote_for_token_collision(value):
-        # word は本来 bare 可だが、grammar の DATE / operator literal token priority が
-        # WORD より高いため、形だけ match する値は quote しないと parser がドリフトする.
-        return _quote_phrase(value)
-    # ``word`` / ``date`` / ``wildcard`` はいずれも grammar token の文字集合に従う bare 出力.
+    # ``date`` / ``wildcard`` は grammar token の文字集合に従う bare 出力.
     # validator が事前に通っている前提で、re-quote は行わない.
     return value
 
@@ -104,16 +105,22 @@ def _serialize_free_text(value: str, is_phrase: bool) -> str:
     # ``is_phrase=True`` の FreeText に復元され、phrase match (順序保持) を継続できる.
     if is_phrase:
         return _quote_phrase(value)
-    # 空白区切りの各 token が bare 出力可能なら bare のまま出す. parser の
+    # 空白区切りの各語が keyword の語として bare 出力可能なら bare のまま出す. parser の
     # ``free_text_atom: WORD+`` がこれを 1 つの FreeText (is_phrase=False) に復元するため
-    # round-trip が安定する. 記号・連続空白・空文字や、DATE / operator literal token と
-    # 衝突する値は quote 必須 (bare だと re-parse で別 token に分解 / drift する).
+    # round-trip が安定する. 記号・連続空白・空文字や、演算子の語、語をまたいで単一引用符の
+    # phrase ができる値は quote 必須 (bare だと re-parse で別 token に分解 / drift する).
     if is_bare_safe_multiword(value):
         return value
     return _quote_phrase(value)
 
 
+# quote の外では、空白か ``)`` が後ろに続く ``'`` は単一引用符の phrase を閉じる.  phrase の
+# 中でもこの ``'`` を escape しておくと、前にある ``'`` で始まる語がこの ``'`` まで phrase に
+# ならない.
+_CLOSING_SINGLE_QUOTE = re.compile(r"'(?=[\s)])")
+
+
 def _quote_phrase(value: str) -> str:
-    # parser の ``_PHRASE_UNESCAPE`` (\\X → X) と対称: \\ → \\\\、" → \\".
+    # parser の ``_PHRASE_UNESCAPE`` (\\X → X) と対称: \\ → \\\\、" → \\"、閉じる ' → \\'.
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    return '"' + _CLOSING_SINGLE_QUOTE.sub("\\\\'", escaped) + '"'

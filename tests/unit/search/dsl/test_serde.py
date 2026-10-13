@@ -444,3 +444,29 @@ class TestAstToJsonUnvalidatedAst:
         # 逆方向 round-trip でも保持される.
         recovered = ast_to_json(json_to_ast(result))
         assert recovered == result
+
+
+class TestJsonToAstKeywordWords:
+    """phrase でない free_text の中の ``AND`` / ``OR`` / ``NOT`` は、parser と同じく小文字の語にする."""
+
+    def test_reserved_words_in_a_keyword_are_lower_cased(self) -> None:
+        node = json_to_ast({"op": "free_text", "value": "cancer NOT mouse"})
+        assert isinstance(node, FreeText)
+        assert node.value == "cancer not mouse"
+        assert node.is_phrase is False
+
+    def test_reserved_word_at_the_start_is_lower_cased(self) -> None:
+        node = json_to_ast({"op": "free_text", "value": "AND cancer", "is_phrase": False})
+        assert isinstance(node, FreeText)
+        assert node.value == "and cancer"
+
+    def test_phrase_keeps_the_case(self) -> None:
+        node = json_to_ast({"op": "free_text", "value": "cancer NOT mouse", "is_phrase": True})
+        assert isinstance(node, FreeText)
+        assert node.value == "cancer NOT mouse"
+        assert node.is_phrase is True
+
+    def test_word_starting_with_operator_letters_is_kept(self) -> None:
+        node = json_to_ast({"op": "free_text", "value": "NOTCH1 ORGANOID"})
+        assert isinstance(node, FreeText)
+        assert node.value == "NOTCH1 ORGANOID"

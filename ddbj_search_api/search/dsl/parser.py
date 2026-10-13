@@ -3,6 +3,10 @@
 Lark LALR(1) で ``grammar.lark`` を適用し、クエリ文字列を AST (``ast.Node``) に変換する。
 Lark の ``propagate_positions=True`` + ``@v_args(meta=True)`` で ``Position`` を全ノードに付与。
 Lark 例外は ``DslError(unexpected_token)`` に統一変換する。
+
+Lark の木から AST への変換は再帰しない (``Transformer_NonRecursive``)。AST を作った直後に
+``check_depth`` で入れ子の深さを見るので、深い入れ子は RecursionError ではなく
+``DslError(nest_depth_exceeded)`` になる。
 """
 
 from __future__ import annotations
@@ -11,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from lark import Lark, Token, Transformer, v_args
+from lark import Lark, Token, v_args
 from lark.exceptions import (
     LarkError,
     UnexpectedCharacters,
@@ -19,9 +23,12 @@ from lark.exceptions import (
     UnexpectedInput,
     UnexpectedToken,
 )
+from lark.visitors import Transformer_NonRecursive
 
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Position, Range
 from ddbj_search_api.search.dsl.errors import DslError, ErrorType
+from ddbj_search_api.search.dsl.lex_patterns import lower_reserved_words
+from ddbj_search_api.search.dsl.validator import DEFAULT_MAX_DEPTH, check_depth
 
 DEFAULT_MAX_LENGTH = 4096
 
@@ -40,7 +47,7 @@ _PHRASE_UNESCAPE = re.compile(r"\\(.)", flags=re.DOTALL)
 
 
 @v_args(meta=True, inline=True)
-class _AstTransformer(Transformer):  # type: ignore[type-arg]
+class _AstTransformer(Transformer_NonRecursive):  # type: ignore[type-arg]
     def start(self, meta: Any, expr: Node) -> Node:
         return expr
 
@@ -105,8 +112,10 @@ class _AstTransformer(Transformer):  # type: ignore[type-arg]
         return FreeText(value=unescaped, is_phrase=True, position=_position(meta))
 
     def ft_word(self, meta: Any, *toks: Token) -> FreeText:
+        # 演算子として読めない位置の AND / OR / NOT は語になる.  小文字にしておくと、
+        # serializer が bare で出した文字列を parse しても同じ語に戻る.
         return FreeText(
-            value=" ".join(str(tok) for tok in toks),
+            value=lower_reserved_words(" ".join(str(tok) for tok in toks)),
             is_phrase=False,
             position=_position(meta),
         )
@@ -119,11 +128,12 @@ def _position(meta: Any) -> Position:
     return Position(column=column, length=length)
 
 
-def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
+def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH, max_depth: int = DEFAULT_MAX_DEPTH) -> Node:
     """Parse a query string into an AST.
 
     Raises:
         DslError(unexpected_token): on syntax errors, over-length input, or empty input.
+        DslError(nest_depth_exceeded): when AND / OR / NOT groups nest deeper than ``max_depth``.
     """
     if len(dsl) > max_length:
         raise DslError(
@@ -196,4 +206,5 @@ def parse(dsl: str, *, max_length: int = DEFAULT_MAX_LENGTH) -> Node:
             column=1,
             length=1,
         )
+    check_depth(ast, max_depth=max_depth)
     return ast

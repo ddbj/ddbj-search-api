@@ -10,10 +10,14 @@ PHRASE は ``"..."`` のエスケープ ``\\"`` / ``\\\\`` を受ける。AND > 
 
 from __future__ import annotations
 
+import string
+
 from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from ddbj_search_api.search.dsl import parse
 from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, FreeText, Node, Position, Range
+from ddbj_search_api.search.dsl.lex_patterns import is_bare_safe_multiword, lower_reserved_words
 from ddbj_search_api.search.dsl.serde import ast_to_json
 from ddbj_search_api.search.dsl.serializer import ast_to_dsl
 from ddbj_search_api.search.dsl.validator import validate
@@ -123,10 +127,17 @@ class TestFreeTextQuoting:
         # quote 不要 (round-trip 安定).
         assert ast_to_dsl(_free("cancer tumor")) == "cancer tumor"
 
-    def test_value_with_collision_token_must_quote(self) -> None:
-        # 空白区切りでも token に operator literal / DATE shape が混じると bare 化できず quote.
+    def test_value_with_operator_literal_must_quote(self) -> None:
+        # 空白区切りでも token に operator literal が混じると bare 化できず quote.
         assert ast_to_dsl(_free("cancer AND")) == '"cancer AND"'
-        assert ast_to_dsl(_free("cancer 2024-01-01")) == '"cancer 2024-01-01"'
+
+    def test_value_with_date_shape_stays_bare(self) -> None:
+        # keyword の位置では parser が DATE を読まないので、日付の形の語も bare のまま.
+        assert ast_to_dsl(_free("cancer 2024-01-01")) == "cancer 2024-01-01"
+        reparsed = parse("cancer 2024-01-01")
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "cancer 2024-01-01"
+        assert reparsed.is_phrase is False
 
     def test_value_with_consecutive_spaces_must_quote(self) -> None:
         # 連続空白は単一空白正規形でないため quote (bare だと re-parse で空白が畳まれ drift).
@@ -384,3 +395,164 @@ class TestRoundTrip:
         assert _equals_ignoring_position(reparsed, ast), (
             f"round-trip mismatch:\n  dsl={dsl!r}\n  original={ast!r}\n  reparsed={reparsed!r}"
         )
+
+
+class TestDatePrefixedValues:
+    """grammar の DATE は値の先頭だけが合っても切り出すので、日付で始まる word 値は quote する.
+    keyword の位置では parser が DATE を読まないので、keyword の語は日付で始まっても bare のまま.
+    """
+
+    def test_word_value_starting_with_a_date_is_quoted(self) -> None:
+        assert ast_to_dsl(_word("title", "2024-01-01x")) == 'title:"2024-01-01x"'
+
+    def test_word_value_starting_with_a_date_round_trips(self) -> None:
+        reparsed = parse(ast_to_dsl(_word("title", "2024-01-01x")))
+        assert isinstance(reparsed, FieldClause)
+        assert reparsed.field == "title"
+        assert reparsed.value == "2024-01-01x"
+
+    def test_word_value_that_is_a_date_is_quoted(self) -> None:
+        assert ast_to_dsl(_word("title", "2024-01-01")) == 'title:"2024-01-01"'
+
+    def test_keyword_word_starting_with_a_date_stays_bare(self) -> None:
+        assert ast_to_dsl(_free("2024-01-01x cancer")) == "2024-01-01x cancer"
+        reparsed = parse("2024-01-01x cancer")
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "2024-01-01x cancer"
+        assert reparsed.is_phrase is False
+
+    def test_keyword_that_is_a_date_stays_bare(self) -> None:
+        assert ast_to_dsl(_free("2024-01-01")) == "2024-01-01"
+        reparsed = parse("2024-01-01")
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "2024-01-01"
+        assert reparsed.is_phrase is False
+
+
+class TestReservedWordsInKeywords:
+    """keyword の語の ``AND`` / ``OR`` / ``NOT`` は quote すると phrase になり意味が変わるので、
+    parser と serde が小文字にした語をそのまま bare で出す. 大文字のままの語は quote する.
+    """
+
+    def test_lower_case_reserved_word_stays_bare(self) -> None:
+        assert ast_to_dsl(_free("cancer not mouse")) == "cancer not mouse"
+
+    def test_upper_case_reserved_word_is_quoted(self) -> None:
+        assert ast_to_dsl(_free("cancer NOT mouse")) == '"cancer NOT mouse"'
+
+    def test_parsed_keyword_with_not_round_trips_as_words(self) -> None:
+        dsl = ast_to_dsl(parse("cancer NOT mouse"))
+        assert dsl == "cancer not mouse"
+        reparsed = parse(dsl)
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "cancer not mouse"
+        assert reparsed.is_phrase is False
+
+    def test_parsed_keyword_with_and_at_the_start_round_trips_as_words(self) -> None:
+        assert ast_to_dsl(parse("AND cancer")) == "and cancer"
+
+    def test_word_starting_with_operator_letters_stays_bare(self) -> None:
+        assert ast_to_dsl(_free("NOTCH1 signaling")) == "NOTCH1 signaling"
+        assert ast_to_dsl(_free("breast ORGANOID")) == "breast ORGANOID"
+
+    def test_word_that_is_an_operator_followed_by_a_quote_is_quoted(self) -> None:
+        # ``x AND'y`` は AND を演算子として読むので、この語を含む keyword は bare にできない.
+        assert ast_to_dsl(_free("x AND'y")) == '"x AND\'y"'
+
+
+class TestSingleQuoteQuoting:
+    """``'`` は語の文字でもあり、単一引用符の phrase の区切りでもある. 語を読み直したときに
+    phrase にならない形だけ bare で出し、それ以外は二重引用符で quote する.
+    """
+
+    def test_value_starting_with_a_single_quote_is_quoted(self) -> None:
+        assert ast_to_dsl(_word("title", "'x")) == 'title:"\'x"'
+        reparsed = parse(ast_to_dsl(_word("title", "'x")))
+        assert isinstance(reparsed, FieldClause)
+        assert reparsed.value == "'x"
+
+    def test_keyword_words_with_an_unclosed_quote_stay_bare(self) -> None:
+        assert ast_to_dsl(_free("x 's")) == "x 's"
+        assert ast_to_dsl(_free("'x y")) == "'x y"
+
+    def test_keyword_words_that_close_a_single_quote_together_are_quoted(self) -> None:
+        assert ast_to_dsl(_free("'s y'")) == "\"'s y'\""
+        reparsed = parse(ast_to_dsl(_free("'s y'")))
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "'s y'"
+
+    def test_closing_single_quote_inside_a_phrase_is_escaped(self) -> None:
+        assert ast_to_dsl(FreeText(value="a' b", is_phrase=True)) == '"a\\\' b"'
+        reparsed = parse(ast_to_dsl(FreeText(value="a' b", is_phrase=True)))
+        assert isinstance(reparsed, FreeText)
+        assert reparsed.value == "a' b"
+        assert reparsed.is_phrase is True
+
+    def test_single_quote_inside_or_at_the_end_of_a_word_stays_bare(self) -> None:
+        assert ast_to_dsl(_free("5'-UTR 3' Alzheimer's")) == "5'-UTR 3' Alzheimer's"
+        assert ast_to_dsl(_word("title", "b'")) == "title:b'"
+
+    def test_clauses_that_together_hold_a_pair_of_single_quotes_round_trip(self) -> None:
+        ast = _and(
+            _word("title", "'a"), _word("description", "b'"), FreeText(value="'s", is_phrase=True), _free("Crohn's")
+        )
+        dsl = ast_to_dsl(ast)
+        assert dsl == "title:\"'a\" AND description:b' AND \"'s\" AND Crohn's"
+        assert _equals_ignoring_position(parse(dsl), ast)
+
+    def test_word_before_a_phrase_with_a_closing_quote_round_trips(self) -> None:
+        ast = _and(_free("'x"), FreeText(value="a' b", is_phrase=True))
+        assert _equals_ignoring_position(parse(ast_to_dsl(ast)), ast)
+
+
+_KEYWORD_WORDS = st.one_of(
+    st.text(alphabet="abcxyz019'-", min_size=1, max_size=6),
+    st.sampled_from(
+        [
+            "AND",
+            "OR",
+            "NOT",
+            "and",
+            "or",
+            "not",
+            "2024-01-01",
+            "2024-01-01x",
+            "NOTCH1",
+            "ORGANOID",
+            "'s",
+            "'a",
+            "b'",
+            "'",
+        ]
+    ),
+)
+_PHRASE_TEXT = st.text(alphabet=string.ascii_letters + string.digits + " '\"\\()[]:-", max_size=12)
+
+
+class TestKeywordRoundTripPBT:
+    @given(words=st.lists(_KEYWORD_WORDS, min_size=1, max_size=4))
+    @settings(max_examples=300, deadline=None)
+    def test_keyword_of_words_serializes_and_parses_back(self, words: list[str]) -> None:
+        value = lower_reserved_words(" ".join(words))
+        node = FreeText(value=value, is_phrase=not is_bare_safe_multiword(value))
+        reparsed = parse(ast_to_dsl(node))
+        assert isinstance(reparsed, FreeText)
+        assert _equals_ignoring_position(reparsed, node)
+
+    @given(value=_PHRASE_TEXT)
+    @settings(max_examples=200, deadline=None)
+    def test_phrase_serializes_and_parses_back(self, value: str) -> None:
+        node = FreeText(value=value, is_phrase=True)
+        reparsed = parse(ast_to_dsl(node))
+        assert isinstance(reparsed, FreeText)
+        assert _equals_ignoring_position(reparsed, node)
+
+    @given(words=st.lists(_KEYWORD_WORDS, min_size=1, max_size=3), value=_PHRASE_TEXT)
+    @settings(max_examples=200, deadline=None)
+    def test_keyword_before_a_phrase_serializes_and_parses_back(self, words: list[str], value: str) -> None:
+        keyword = lower_reserved_words(" ".join(words))
+        node = _and(
+            FreeText(value=keyword, is_phrase=not is_bare_safe_multiword(keyword)),
+            FreeText(value=value, is_phrase=True),
+        )
+        assert _equals_ignoring_position(parse(ast_to_dsl(node)), node)

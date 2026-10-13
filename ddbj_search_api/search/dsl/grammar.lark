@@ -28,12 +28,17 @@ value: PHRASE    -> v_phrase
      | WORD      -> v_word
 
 // AND / OR / NOT must outrank WORD so a bare ``NOT`` is recognised as the
-// operator instead of being absorbed into ``free_text_atom: WORD``.
-AND.10: "AND"
-OR.10: "OR"
-NOT.10: "NOT"
+// operator instead of being absorbed into ``free_text_atom: WORD``. An operator
+// must not be followed by a WORD character, so ``NOTCH1`` and ``ORGANOID`` are
+// words while ``NOT(a)``, ``a OR "x"``, and ``NOT'x'`` read the operator.
+AND.10: /AND(?![^\s:()\[\]"'{}^~*?\/])/
+OR.10: /OR(?![^\s:()\[\]"'{}^~*?\/])/
+NOT.10: /NOT(?![^\s:()\[\]"'{}^~*?\/])/
 
-PHRASE.5: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/
+// A single-quoted phrase closes at a `'` that a space, `)`, or the end follows.
+// A `'` inside the phrase that another character follows is part of the
+// phrase, as in 'Alzheimer's disease'.
+PHRASE.5: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.|'(?=[^\s)]))*'(?![^\s)])/
 RANGE.5: /\[[^\s\]]+\s+TO\s+[^\s\]]+\]/
 DATE.4: /\d{4}-\d{2}-\d{2}/
 // WILDCARD is intentionally a narrower character class than WORD: only
@@ -43,6 +48,9 @@ DATE.4: /\d{4}-\d{2}-\d{2}/
 // Solr metacharacters (`\`, `+`, leading `-`, `!`, `|`, `&`, `<`, `>`, `=`)
 // are kept out at the grammar level to avoid downstream escape bugs.
 WILDCARD.3: /[A-Za-z0-9_\-.]*[*?][A-Za-z0-9_\-.]*/
-WORD.1: /[^\s:()\[\]"{}^~*?\/]+/
+// A WORD does not start where a single-quoted phrase starts, so a closed '...'
+// after a word is a syntax error, as a phrase next to a word is. A `'` that no
+// closing `'` follows starts a word, as in `'s`.
+WORD.1: /(?!'(?:[^'\\]|\\.|'(?=[^\s)]))*'(?![^\s)]))[^\s:()\[\]"{}^~*?\/]+/
 
 %ignore /\s+/

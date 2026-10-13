@@ -575,3 +575,34 @@ class TestDbPortalParseOpenAPI:
         props = components["DbPortalParseLeafRange"]["properties"]
         assert "from" in props
         assert "from_" not in props
+
+
+class TestDbPortalParseGrammarEdges:
+    """演算子で始まる語、keyword の中の予約語、深い入れ子の endpoint での見え方。"""
+
+    def test_word_starting_with_operator_letters_is_one_keyword(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": "NOTCH1 signaling"})
+        assert resp.status_code == 200
+        assert _ast(resp.json()) == {"op": "free_text", "value": "NOTCH1 signaling", "is_phrase": False}
+
+    def test_reserved_word_inside_keyword_is_lower_cased(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": "cancer NOT mouse"})
+        assert resp.status_code == 200
+        assert _ast(resp.json()) == {"op": "free_text", "value": "cancer not mouse", "is_phrase": False}
+
+    def test_single_quoted_phrase_after_a_word_returns_400(self, app_with_db_portal: TestClient) -> None:
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": "x 'a b'"})
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.unexpected_token.value
+
+    def test_deep_negations_return_400_nest_depth_exceeded(self, app_with_db_portal: TestClient) -> None:
+        q = "NOT (" * 200 + "title:a" + ")" * 200
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": q})
+        assert resp.status_code == 400
+        assert resp.json()["type"] == DbPortalErrorType.nest_depth_exceeded.value
+
+    def test_deep_redundant_parentheses_return_200(self, app_with_db_portal: TestClient) -> None:
+        q = "(" * 300 + "title:a" + ")" * 300
+        resp = app_with_db_portal.get("/db-portal/parse", params={"q": q})
+        assert resp.status_code == 200
+        assert _ast(resp.json()) == {"field": "title", "op": "contains", "value": "a"}

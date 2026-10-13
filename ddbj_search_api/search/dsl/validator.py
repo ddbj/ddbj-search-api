@@ -9,6 +9,8 @@
 5. phrase 値が empty でないか → missing-value
 6. AND/OR/NOT のネスト深さが max_depth 以下、AST ノード総数が max_nodes 以下か → nest-depth-exceeded
    (max_depth は深さのみを抑えるため、`a OR b OR ... OR z` のような横幅も同 slug でガードする)
+   深さの検査は max_depth で止まる再帰なので、どれだけ深い AST でも RecursionError を出さない。
+   ノード総数の検査は木全体を再帰で辿るので、深さの検査の後に行う。
 7. FreeText の位置制約 (root 単独 or トップレベル AND 直下に最大 1 つ) → invalid-freetext-position / duplicate-freetext
 """
 
@@ -64,16 +66,22 @@ def validate(
     it scopes Tier 2/3 fields to the DBs that actually own them. ``None``
     (cross mode, or single mode without a target) skips the db-scope check.
     """
+    check_depth(ast, max_depth=max_depth)
     _check_total_nodes(ast, max_nodes=max_nodes)
-    _check_depth(ast, current=1, max_depth=max_depth)
     _check_nodes(ast, mode=mode, db=db)
     _check_freetext_position(ast)
 
 
 def _count_nodes(node: Node) -> int:
-    if isinstance(node, FieldClause | FreeText):
-        return 1
-    return 1 + sum(_count_nodes(child) for child in node.children)
+    """木全体のノード数.  深い木でも RecursionError を出さないよう、再帰ではなく stack で辿る."""
+    total = 0
+    stack: list[Node] = [node]
+    while stack:
+        current = stack.pop()
+        total += 1
+        if isinstance(current, BoolOp):
+            stack.extend(current.children)
+    return total
 
 
 def _check_total_nodes(node: Node, *, max_nodes: int) -> None:
@@ -88,6 +96,14 @@ def _check_total_nodes(node: Node, *, max_nodes: int) -> None:
             column=position.column if position else 1,
             length=position.length if position else 0,
         )
+
+
+def check_depth(node: Node, *, max_depth: int) -> None:
+    """Raise ``DslError(nest_depth_exceeded)`` when AND / OR / NOT groups nest deeper than ``max_depth``.
+
+    The recursion stops at ``max_depth``, so the check is safe for a tree of any depth.
+    """
+    _check_depth(node, current=1, max_depth=max_depth)
 
 
 def _check_depth(node: Node, *, current: int, max_depth: int) -> None:

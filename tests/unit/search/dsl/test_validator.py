@@ -13,6 +13,7 @@ from hypothesis import strategies as st
 
 from ddbj_search_api.search.dsl import DslError, ErrorType, parse
 from ddbj_search_api.search.dsl.allowlist import ALL_ALLOWED_FIELDS
+from ddbj_search_api.search.dsl.ast import BoolOp, FieldClause, Node, Position
 from ddbj_search_api.search.dsl.validator import DEFAULT_MAX_NODES, validate
 
 
@@ -242,11 +243,12 @@ class TestNestDepth:
         validate(parse(dsl), mode="cross")
 
     def test_depth_6_rejected(self) -> None:
-        # 6 iteration で 6 BoolOp ネスト → max_depth=5 を超過で reject
+        # 6 iteration で 6 BoolOp ネスト → max_depth=5 を超過で reject.
+        # parse も同じ上限で見るので、validator 単体を試すために parse 側の上限だけ緩める.
         dsl = "title:a"
         for i in range(6):
             dsl = f"({dsl} AND title:v{i})"
-        ast = parse(dsl)
+        ast = parse(dsl, max_depth=6)
         with pytest.raises(DslError) as exc_info:
             validate(ast, mode="cross")
         assert exc_info.value.type == ErrorType.nest_depth_exceeded
@@ -861,3 +863,27 @@ class TestTier3PBT:
         with pytest.raises(DslError) as exc_info:
             validate(ast, mode="cross")
         assert exc_info.value.type == ErrorType.field_not_available_in_cross_db
+
+
+class TestDepthIsCheckedBeforeRecursion:
+    """深さの検査は上限で止まる再帰なので、どれだけ深い AST でも RecursionError を出さずに
+    nest_depth_exceeded を返す。ノード総数の検査は深さの検査の後に行う。
+    """
+
+    def test_deep_hand_built_ast_is_rejected_with_nest_depth_exceeded(self) -> None:
+        node: Node = FieldClause(field="title", value_kind="word", value="a", position=Position(column=1, length=7))
+        for _ in range(5000):
+            node = BoolOp(op="NOT", children=(node,), position=Position(column=1, length=1))
+        with pytest.raises(DslError) as exc_info:
+            validate(node, mode="cross")
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+        assert "nest depth 6 " in exc_info.value.detail
+
+    def test_deep_hand_built_ast_with_a_high_depth_limit_hits_the_node_limit(self) -> None:
+        node: Node = FieldClause(field="title", value_kind="word", value="a", position=Position(column=1, length=7))
+        for _ in range(600):
+            node = BoolOp(op="NOT", children=(node,), position=Position(column=1, length=1))
+        with pytest.raises(DslError) as exc_info:
+            validate(node, mode="cross", max_depth=10_000, max_nodes=512)
+        assert exc_info.value.type == ErrorType.nest_depth_exceeded
+        assert "total node count 601 " in exc_info.value.detail
