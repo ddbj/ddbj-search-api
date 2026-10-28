@@ -129,7 +129,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
   "title": "Not Found",
   "status": 404,
   "detail": "The requested bioproject entry was not found.",
-  "instance": "/entries/bioproject/INVALID",
+  "instance": "/search/api/entries/bioproject/INVALID",
   "timestamp": "2024-01-15T10:30:00Z",
   "requestId": "req-abc123"
 }
@@ -141,7 +141,7 @@ Facets API (`/facets`, `/facets/{type}`) と DB Portal API (`/db-portal/cross-se
 | `title` | string | 問題の概要 (例: "Not Found") |
 | `status` | number | HTTP ステータスコード |
 | `detail` | string | 詳細メッセージ |
-| `instance` | string | エラーが発生したリクエストパス |
+| `instance` | string | エラーが発生したリクエストパス (公開 URL の prefix `/search/api` を含む) |
 | `timestamp` | string | エラー発生時刻 (ISO 8601) |
 | `requestId` | string | リクエスト追跡用 ID (X-Request-ID と同じ) |
 

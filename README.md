@@ -27,11 +27,11 @@ docker compose -f compose.yml -f compose.dev.yml exec app ddbj_search_api
 別ターミナルで動作確認:
 
 ```bash
-curl "http://localhost:8080/search/api/entries/bioproject/PRJNA16"
-curl "http://localhost:8080/search/api/entries/biosample/SAMN02953658.jsonld"
+curl "http://localhost:8080/entries/bioproject/PRJNA16"
+curl "http://localhost:8080/entries/biosample/SAMN02953658.jsonld"
 ```
 
-Swagger UI は `http://localhost:8080/search/api/docs`。staging / production の手順は [docs/deployment.md](docs/deployment.md)。
+Swagger UI は `http://localhost:8080/docs`。staging / production の手順は [docs/deployment.md](docs/deployment.md)。
 
 ## ドキュメント
 

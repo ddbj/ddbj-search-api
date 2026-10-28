@@ -6,7 +6,7 @@ staging / production への deploy 手順、podman 固有の注意、URL prefix 
 
 | 環境 | ランタイム | network | コンテナ名 | base URL |
 |------|----------|---------|-----------|----------|
-| dev | docker compose | `ddbj-search-network-dev` | `ddbj-search-api-dev` | `http://localhost:8080/search/api` |
+| dev | docker compose | `ddbj-search-network-dev` | `ddbj-search-api-dev` | `http://localhost:8080` |
 | staging | podman-compose | `ddbj-search-network-staging` | `ddbj-search-api-staging` | `https://ddbj-staging.nig.ac.jp/search/api` |
 | production | podman-compose | `ddbj-search-network-production` | `ddbj-search-api-production` | `https://ddbj.nig.ac.jp/search/api` |
 
@@ -14,7 +14,7 @@ staging / production への deploy 手順、podman 固有の注意、URL prefix 
 
 ## URL prefix と nginx routing
 
-API サーバーは URL prefix `/search/api` の下に公開される。FastAPI 側の router は root (`/`) に mount しており (= 個別 endpoint は `/entries/...` や `/db-portal/search` として登録)、`DDBJ_SEARCH_API_URL_PREFIX=/search/api` は OpenAPI schema の `servers` block にだけ反映される。上流の nginx は `/search/api/` prefix を strip してから backend に転送する前提。
+API サーバーは URL prefix `/search/api` の下に公開される。FastAPI 側の router は root (`/`) に mount しており (= 個別 endpoint は `/entries/...` や `/db-portal/search` として登録)、上流の nginx は `/search/api/` prefix を strip してから backend に転送する。`DDBJ_SEARCH_API_URL_PREFIX=/search/api` は uvicorn の `root_path` と OpenAPI schema の `servers` block に使う。uvicorn は strip された prefix を ASGI scope の path に戻すので、`/docs` が参照する `openapi.json` の URL と RFC 7807 の `instance` は prefix 付きになる。dev は nginx を介さず直接叩くので `root_path` を渡さず、`http://localhost:8080/entries/...` のように prefix 無しで到達する。
 
 物理ネットワーク構成 (gateway / 内部 nginx / コンテナ間通信) は [ddbj-search/docs/network-architecture.md](https://github.com/ddbj/ddbj-search/blob/main/docs/network-architecture.md) を参照。
 
@@ -28,9 +28,12 @@ cp compose.override.podman.yml compose.override.yml
 # 2. network 作成 (初回のみ、既存ならエラーにならない)
 podman network create ddbj-search-network-staging || true
 
-# 3. 起動
+# 3. 起動 (更新時は同名の container を先に消す)
+podman-compose down
 podman-compose up -d --build
 ```
+
+`podman-compose up -d --build` は image を作り直しても、同名の container が残っているとその container を start するだけで作り直さない。更新時は `podman-compose down` で消してから起動する。
 
 ソースコードは bind mount (`.:/app:rw`) のため、git pull したら `podman-compose restart app` だけで反映される。Dockerfile の依存関係を変えていない限り `--build` も不要。
 
@@ -40,6 +43,7 @@ podman-compose up -d --build
 
 ```bash
 podman-compose build --no-cache app  # uv が -P 相当で main を取り直す
+podman-compose down
 podman-compose up -d
 ```
 
@@ -50,7 +54,7 @@ podman-compose up -d
 
 ## venv は image layer 内
 
-venv は image layer 内 (`/opt/venv/`) に焼き込んでいる。`pyproject.toml` / `uv.lock` を更新したら `podman-compose up -d --build` で image を再構築すれば反映される。bind mount (`.:/app:rw`) は Python ソース変更を即時反映するが、venv 自体は image の外には出していない (= UID mismatch + named volume で venv が壊れるケースを構造的に避けるため)。
+venv は image layer 内 (`/opt/venv/`) に焼き込んでいる。`pyproject.toml` / `uv.lock` を更新したら `podman-compose down` してから `podman-compose up -d --build` で image と container を作り直せば反映される。bind mount (`.:/app:rw`) は Python ソース変更を即時反映するが、venv 自体は image の外には出していない (= UID mismatch + named volume で venv が壊れるケースを構造的に避けるため)。
 
 旧構成の `app-venv` named volume は使わない。以前の deploy で作られた `<project>_app-venv` が残っている場合は `podman volume rm <project>_app-venv` で掃除しておく (= 残しても害はないがディスクを占有するだけ)。
 

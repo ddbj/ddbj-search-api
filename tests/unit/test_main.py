@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import sys
 import uuid
+import warnings
 from typing import Any
 
 import httpx
 import pytest
 import uvicorn
 from fastapi import FastAPI
+from fastapi.exceptions import FastAPIDeprecationWarning
 from fastapi.testclient import TestClient
 from openapi_spec_validator import validate as validate_openapi_spec
 
@@ -43,10 +45,11 @@ class TestCreateApp:
         app = create_app(AppConfig())
         assert app.title == "DDBJ Search API"
 
-    def test_root_path_matches_url_prefix(self) -> None:
-        config = AppConfig(url_prefix="/custom/prefix")
-        app = create_app(config)
-        assert app.root_path == "/custom/prefix"
+    def test_create_app_emits_no_fastapi_deprecation_warning(self) -> None:
+        # root_path は uvicorn 側に渡すので、FastAPI() に deprecated な引数を渡さない
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FastAPIDeprecationWarning)
+            create_app(AppConfig(url_prefix="/custom/prefix"))
 
     def test_redirect_slashes_disabled(self) -> None:
         app = create_app(AppConfig())
@@ -663,6 +666,25 @@ class TestMainStartup:
         assert len(run_calls) == 1
         assert run_calls[0]["workers"] == 1
         assert run_calls[0]["reload"] is False
+
+    def test_root_path_is_url_prefix_behind_the_reverse_proxy(
+        self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "production")
+        monkeypatch.setenv("DDBJ_SEARCH_API_URL_PREFIX", "/custom/prefix")
+
+        main_module.main()
+
+        assert run_calls[0]["root_path"] == "/custom/prefix"
+
+    def test_dev_runs_without_root_path(self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch) -> None:
+        # dev は reverse proxy を介さず直接叩くので、uvicorn に root_path を渡さない
+        monkeypatch.setenv("DDBJ_SEARCH_ENV", "dev")
+        monkeypatch.setenv("DDBJ_SEARCH_API_URL_PREFIX", "/custom/prefix")
+
+        main_module.main()
+
+        assert run_calls[0]["root_path"] == ""
 
     def test_multiple_workers_are_passed_through_when_secret_is_set(
         self, run_calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch

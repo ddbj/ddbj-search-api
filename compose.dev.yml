@@ -1,5 +1,5 @@
 # Dev-only override: publish 8080 to the host so the README quick-start
-# (`curl http://localhost:8080/search/api/...`) works.
+# (`curl http://localhost:8080/...`) works.
 #
 # Apply with `-f compose.yml -f compose.dev.yml`. See README and
 # docs/development.md for the full command.  staging / production use

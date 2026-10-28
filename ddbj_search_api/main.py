@@ -437,7 +437,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         redirect_slashes=False,
-        root_path=config.url_prefix,
         lifespan=_make_lifespan(config),
         openapi_tags=_OPENAPI_TAGS,
         contact={
@@ -531,11 +530,17 @@ def main() -> None:
         # different worker. Refusing to start is louder than intermittent 400s.
         raise SystemExit(f"{CURSOR_SECRET_ENV} must be set when DDBJ_SEARCH_API_WORKERS > 1")
 
+    # staging / production では reverse proxy が url_prefix を剥がして転送するので、
+    # uvicorn の root_path で ASGI scope の path に戻す (request.url.path は prefix 付き)。
+    # dev は proxy を介さず直接叩くので root_path を渡さない。
+    root_path = "" if config.debug else config.url_prefix
+
     uvicorn.run(
         "ddbj_search_api.main:create_app",
         factory=True,
         host=config.host,
         port=config.port,
+        root_path=root_path,
         reload=config.debug,
         workers=workers,
         log_config=log_config,
