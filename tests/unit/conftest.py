@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from hypothesis import settings
 
 from ddbj_search_api import config as _config_module
 from ddbj_search_api.config import AppConfig
@@ -17,6 +18,13 @@ from ddbj_search_api.es import get_es_client
 from ddbj_search_api.main import create_app
 from ddbj_search_api.routers.db_portal import _get_config_dep
 from ddbj_search_api.solr import get_solr_client
+
+# FastAPI は app ごとに最初の request で route table (Dependant と validator) を
+# 組み立てるので、TestClient の最初の request には数百 ms の固定費が乗る。
+# hypothesis の deadline (既定 200 ms) はこの固定費を最初の example に計上して
+# DeadlineExceeded / FlakyFailure にするので、unit test では deadline を外す。
+settings.register_profile("ddbj_search_api", deadline=None)
+settings.load_profile("ddbj_search_api")
 
 
 @pytest.fixture(autouse=True)

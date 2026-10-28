@@ -17,6 +17,7 @@ import json
 from typing import Any, cast
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -557,14 +558,18 @@ class TestDbPortalParseOpenAPI:
         assert set(free_text["properties"]) >= {"op", "value"}
 
     def test_400_declared_on_route(self, app_with_db_portal: TestClient) -> None:
+        # app.routes は include_router した router を木のまま持つので、
+        # 平らな route 一覧は iter_route_contexts で得る。
         app = cast(FastAPI, app_with_db_portal.app)
-        for route in app.routes:
-            if getattr(route, "path", None) == "/db-portal/parse":
-                responses = getattr(route, "responses", {}) or {}
-                assert 400 in responses or "400" in responses, (
-                    f"Expected 400 in route.responses, got keys: {list(responses.keys())}"
-                )
-                return
+        for route_context in iter_route_contexts(app.routes):
+            if route_context.path != "/db-portal/parse":
+                continue
+            route = route_context.original_route
+            assert isinstance(route, APIRoute)
+            assert 400 in route.responses or "400" in route.responses, (
+                f"Expected 400 in route.responses, got keys: {list(route.responses.keys())}"
+            )
+            return
         msg = "/db-portal/parse route not found"
         raise AssertionError(msg)
 

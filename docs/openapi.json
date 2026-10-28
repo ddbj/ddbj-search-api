@@ -11,7 +11,7 @@
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
-    "version": "0.3.3.dev17+g68566bc43.d20260512"
+    "version": "0.4.2.dev11+g9bc706afb.d20261028"
   },
   "paths": {
     "/entries/": {
@@ -27209,10 +27209,11 @@
               "JSON-LD",
               "XML",
               "FASTQ",
-              "SRA"
+              "SRA",
+              "DATA"
             ],
             "title": "Encodingformat",
-            "description": "Representation format of a Schema.org Distribution. \"JSON\" / \"JSON-LD\" / \"XML\" describe textual metadata payloads; \"FASTQ\" / \"SRA\" describe binary sequencing data downloads."
+            "description": "Representation format of a Schema.org Distribution. \"JSON\" / \"JSON-LD\" / \"XML\" describe textual metadata payloads; \"FASTQ\" / \"SRA\" describe binary sequencing data downloads; \"DATA\" describes a directory landing page that lists analysis output files."
           },
           "contentUrl": {
             "type": "string",
@@ -28699,7 +28700,7 @@
             },
             "type": "array",
             "title": "Agency",
-            "description": "Funding organizations (at least one)."
+            "description": "Funding organizations (zero or more). Empty when the source XML has no `Agency` element or all entries failed to parse."
           }
         },
         "type": "object",
@@ -31761,8 +31762,16 @@
   ],
   "servers": [
     {
+      "url": "https://ddbj.nig.ac.jp/search/api",
+      "description": "Production"
+    },
+    {
+      "url": "https://ddbj-staging.nig.ac.jp/search/api",
+      "description": "Staging"
+    },
+    {
       "url": "/search/api",
-      "description": "Current deployment"
+      "description": "Relative (current deployment)"
     }
   ]
 }
