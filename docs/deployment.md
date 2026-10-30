@@ -28,21 +28,22 @@ cp compose.override.podman.yml compose.override.yml
 # 2. network 作成 (初回のみ、既存ならエラーにならない)
 podman network create ddbj-search-network-staging || true
 
-# 3. 起動 (更新時は同名の container を先に消す)
+# 3. image を build し、container を作り直して起動する
+podman-compose build --pull
 podman-compose down
-podman-compose up -d --build
+podman-compose up -d
 ```
 
-`podman-compose up -d --build` は image を作り直しても、同名の container が残っているとその container を start するだけで作り直さない。更新時は `podman-compose down` で消してから起動する。
+`--pull` を付けると、docker library が rebuild した base image を取り込む ([development.md § Docker image の構成](development.md#docker-image-の構成))。podman-compose は、同名の container が残っていると image を作り直してもその container を start するだけで作り直さない。そのため、build のあとに `podman-compose down` で container を消してから `up -d` で起動する。
 
-ソースコードは bind mount (`.:/app:rw`) のため、git pull したら `podman-compose restart app` だけで反映される。Dockerfile の依存関係を変えていない限り `--build` も不要。
+ソースコードは bind mount (`.:/app:rw`) のため、git pull したら `podman-compose restart app` だけで反映される。Dockerfile・`pyproject.toml`・`uv.lock` を変えていなければ、image の build も不要。
 
 ### converter のリリース取り込み
 
 `ddbj-search-converter` は git の main 参照のため、リリース取り込み時は `-P` で再 build する。
 
 ```bash
-podman-compose build --no-cache app  # uv が -P 相当で main を取り直す
+podman-compose build --pull --no-cache app  # uv が -P 相当で main を取り直す
 podman-compose down
 podman-compose up -d
 ```
@@ -54,9 +55,9 @@ podman-compose up -d
 
 ## venv は image layer 内
 
-venv は image layer 内 (`/opt/venv/`) に焼き込んでいる。`pyproject.toml` / `uv.lock` を更新したら `podman-compose down` してから `podman-compose up -d --build` で image と container を作り直せば反映される。bind mount (`.:/app:rw`) は Python ソース変更を即時反映するが、venv 自体は image の外には出していない (= UID mismatch + named volume で venv が壊れるケースを構造的に避けるため)。
+venv は image layer 内 (`/opt/venv/`) に焼き込んでいる。`pyproject.toml` / `uv.lock` を更新したら、デプロイ手順と同じく `podman-compose build --pull`、`podman-compose down`、`podman-compose up -d` の順に実行して image と container を作り直す。bind mount (`.:/app:rw`) は Python ソース変更を即時反映するが、venv 自体は image の外には出していない (= UID mismatch + named volume で venv が壊れるケースを構造的に避けるため)。
 
-旧構成の `app-venv` named volume は使わない。以前の deploy で作られた `<project>_app-venv` が残っている場合は `podman volume rm <project>_app-venv` で掃除しておく (= 残しても害はないがディスクを占有するだけ)。
+staging / production の image は Dockerfile の `runtime` target なので、dev dependency group (pytest など) と uv を含まない。integration テストは [tests/integration-note.md § staging / production での実行](../tests/integration-note.md#staging--production-での実行) の手順で、`dev` target の image から作った別の container で実行する。
 
 ## ロールバック
 
@@ -65,13 +66,14 @@ venv は image layer 内 (`/opt/venv/`) に焼き込んでいる。`pyproject.to
 ### A. git rebuild (default)
 
 ```bash
-cd /data1/ddbj-search/ddbj-search-api/
+cd <ddbj-search-api の clone>
 git checkout <previous-commit>
+podman-compose build --pull
 podman-compose down
-podman-compose up -d --build
+podman-compose up -d
 ```
 
-Python ソースだけのロールバックで Dockerfile / `pyproject.toml` / `uv.lock` が変わっていない場合は、`--build` を省略すれば bind mount だけで戻せる (`git checkout <commit> && podman-compose restart app`)。依存パッケージが変わっているときは `--build` 必須。
+Python ソースだけのロールバックで Dockerfile / `pyproject.toml` / `uv.lock` が変わっていない場合は、image の build を省略すれば bind mount だけで戻せる (`git checkout <commit> && podman-compose restart app`)。依存パッケージが変わっているときは image の build が必須。
 
 ### B. image tag backup (緊急 option)
 

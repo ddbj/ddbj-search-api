@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 import re
 from typing import Literal, NoReturn, TypeAlias
 
@@ -341,7 +341,7 @@ def _ensure_iso_date(value: str, clause: FieldClause) -> None:
             length=clause.position.length,
         )
     try:
-        datetime.date.fromisoformat(value)
+        dt.date.fromisoformat(value)
     except ValueError as exc:
         raise DslError(
             type=ErrorType.invalid_date_format,

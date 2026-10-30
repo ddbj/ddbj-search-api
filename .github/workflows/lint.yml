@@ -26,10 +26,10 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install Python Dependencies
-        run: uv sync --frozen --extra tests
+        run: uv sync --frozen
 
       - name: Run ruff check
         run: |

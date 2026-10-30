@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 import string
 from typing import Final
 
@@ -207,8 +207,8 @@ def _dsl_wildcard_value(draw: st.DrawFn) -> str:
 def _dsl_date_value(draw: st.DrawFn) -> str:
     d = draw(
         st.dates(
-            min_value=datetime.date(1900, 1, 1),
-            max_value=datetime.date(2099, 12, 31),
+            min_value=dt.date(1900, 1, 1),
+            max_value=dt.date(2099, 12, 31),
         ),
     )
     return d.isoformat()

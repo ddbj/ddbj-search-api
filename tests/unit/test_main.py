@@ -216,6 +216,48 @@ class TestErrorHandlerNotFound:
         assert "detail" in body
 
 
+class TestErrorHandlerUnhandled:
+    """Unhandled exception -> 500 with RFC 7807 ProblemDetails, traceback logged."""
+
+    @pytest.fixture
+    def app_with_crash(self) -> TestClient:
+        application = create_app(AppConfig())
+
+        @application.get("/test-crash")
+        async def _crash() -> None:
+            msg = "boom"
+            raise RuntimeError(msg)
+
+        return TestClient(application, raise_server_exceptions=False)
+
+    def test_status_code_500_problem_json(self, app_with_crash: TestClient) -> None:
+        resp = app_with_crash.get("/test-crash")
+        assert resp.status_code == 500
+        assert "application/problem+json" in resp.headers["content-type"]
+        body = resp.json()
+        assert body["title"] == "Internal Server Error"
+        assert body["detail"] == "An unexpected error occurred."
+
+    def test_detail_does_not_leak_exception_message(self, app_with_crash: TestClient) -> None:
+        resp = app_with_crash.get("/test-crash")
+        assert "boom" not in resp.text
+
+    def test_logs_error_with_traceback(
+        self,
+        app_with_crash: TestClient,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        with caplog.at_level("ERROR", logger=main_module.logger.name):
+            app_with_crash.get("/test-crash")
+        records = [r for r in caplog.records if r.name == main_module.logger.name]
+        assert len(records) == 1
+        assert records[0].levelname == "ERROR"
+        assert records[0].exc_info is not None
+        exc = records[0].exc_info[1]
+        assert isinstance(exc, RuntimeError)
+        assert str(exc) == "boom"
+
+
 # === OpenAPI customisation ===
 
 
@@ -277,7 +319,8 @@ class TestOpenAPIRequiredArrayFields:
     """All entry-related OpenAPI schemas surface converter-required list fields in `required`."""
 
     @pytest.fixture(scope="class")
-    def schema(self) -> dict[str, Any]:
+    @classmethod
+    def schema(cls) -> dict[str, Any]:
         return create_app(AppConfig()).openapi()
 
     @pytest.mark.parametrize(
@@ -343,7 +386,8 @@ class TestOpenAPIConverterDescriptions:
     """
 
     @pytest.fixture(scope="class")
-    def schema(self) -> dict[str, Any]:
+    @classmethod
+    def schema(cls) -> dict[str, Any]:
         return create_app(AppConfig()).openapi()
 
     @pytest.mark.parametrize("schema_name", _CONVERTER_SCHEMAS)
@@ -456,7 +500,8 @@ class TestOpenAPIResponseExamples:
     """
 
     @pytest.fixture(scope="class")
-    def schema(self) -> dict[str, Any]:
+    @classmethod
+    def schema(cls) -> dict[str, Any]:
         return create_app(AppConfig()).openapi()
 
     @pytest.mark.parametrize(("path", "method"), _EXAMPLE_ENDPOINTS)
@@ -517,7 +562,8 @@ class TestOpenAPIQuerySemantics:
     """
 
     @pytest.fixture(scope="class")
-    def schema(self) -> dict[str, Any]:
+    @classmethod
+    def schema(cls) -> dict[str, Any]:
         return create_app(AppConfig()).openapi()
 
     @pytest.mark.parametrize(("path", "param_name"), _QUERY_SEMANTICS_ENDPOINTS_PARAMS)

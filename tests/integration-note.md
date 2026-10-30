@@ -44,7 +44,7 @@ assert total == 26537  # 来月にはずれる
 r_lower = fetch("q=title:cancer*&db=bioproject")
 r_upper = fetch("q=title:Cancer*&db=bioproject")
 assert r_lower["total"] == r_upper["total"]  # case-insensitive で値は何でも良い
-assert r_lower["total"] > 0                  # 「何かヒットしている」の最小保証
+assert r_lower["total"] > 0  # 「何かヒットしている」の最小保証
 ```
 
 ```python
@@ -90,6 +90,26 @@ markers = [
 | `pytest tests/integration/` | 全シナリオ (Solr 含む) | staging 環境 (default) |
 | `pytest tests/integration/ -m "not staging_only"` | Solr 抜き | Solr が利用できない環境での確認 |
 | `pytest tests/integration/ -m staging_only` | Solr のみ | 限定確認 (ARSA / TXSearch の整合性チェック) |
+
+## staging / production での実行
+
+staging / production の API コンテナは Dockerfile の `runtime` target から作るので、pytest と uv を含まない。integration テストは `dev` target の image を build し、API コンテナと同じ network につないだ使い捨てのコンテナで実行する。repo のディレクトリで次を実行する。
+
+```bash
+ENV_NAME=$(sed -n 's/^DDBJ_SEARCH_ENV=//p' .env)
+CONST_PATH=$(sed -n 's/^DDBJ_SEARCH_CONVERTER_CONST_PATH=//p' .env)
+podman build --pull --target dev -t "ddbj-search-api-${ENV_NAME}-dev" .
+podman run --rm --userns keep-id \
+  --network "ddbj-search-network-${ENV_NAME}" \
+  --env-file .env \
+  -v "$PWD":/app:rw \
+  -v "${CONST_PATH}":/home/w3ddbjld/const:ro \
+  "ddbj-search-api-${ENV_NAME}-dev" \
+  sh -c 'DDBJ_SEARCH_INTEGRATION_ES_URL="$DDBJ_SEARCH_API_ES_URL" uv run --no-sync pytest tests/integration/ -q'
+```
+
+- `.env` は shell で `source` しない。`DDBJ_SEARCH_API_COMMAND` のように値に空白を含む行があるので、必要な値だけを `sed` で取り出す
+- `uv run` に `--no-sync` を付けないと、uv は bind mount したソースを検知して venv を sync し直す
 
 ## CI
 

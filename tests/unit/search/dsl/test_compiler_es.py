@@ -9,7 +9,7 @@ wrap it with ``{"query": ..., "size": ..., "sort": ...}``.
 
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 from typing import Any
 
 import pytest
@@ -275,7 +275,7 @@ class TestPrecedence:
 
 def _is_valid_iso_date(s: str) -> bool:
     try:
-        datetime.date.fromisoformat(s)
+        dt.date.fromisoformat(s)
     except ValueError:
         return False
     return True
@@ -308,10 +308,10 @@ class TestCompilerPBT:
         }
 
     @given(
-        d=st.dates(min_value=datetime.date(1000, 1, 1), max_value=datetime.date(9999, 12, 31)),
+        d=st.dates(min_value=dt.date(1000, 1, 1), max_value=dt.date(9999, 12, 31)),
     )
     @settings(max_examples=30, deadline=None)
-    def test_date_published_always_term(self, d: datetime.date) -> None:
+    def test_date_published_always_term(self, d: dt.date) -> None:
         date_str = d.isoformat()
         q = _compile(f"date_published:{date_str}")
         assert q == {"term": {"datePublished": date_str}}

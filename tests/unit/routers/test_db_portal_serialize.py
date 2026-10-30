@@ -350,8 +350,10 @@ class TestParseSerializeSymmetry:
             # 複合 (top-level AND with FreeText / OR inside AND)
             'cancer AND organism_name:"Homo sapiens"',
             "(title:a OR title:b) AND title:c",
-            'organism_name:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] '
-            "AND (title:cancer OR title:tumor)",
+            (
+                'organism_name:"Homo sapiens" AND date_published:[2020-01-01 TO 2024-12-31] '
+                "AND (title:cancer OR title:tumor)"
+            ),
             # token-collision corner: DATE-shape value as identifier / reserved literal as text
             'identifier:"2024-01-01"',
             'title:"AND"',

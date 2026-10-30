@@ -12,11 +12,14 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "duckdb",
     "fastapi",
+    "httptools",
     "httpx",
     "lark",
     "pydantic",
     "pydantic-settings",
-    "uvicorn[standard]",
+    "starlette",
+    "uvicorn",
+    "uvloop",
     "ddbj-search-converter@git+https://github.com/ddbj/ddbj-search-converter@main",
 ]
 
@@ -25,8 +28,12 @@ Homepage = "https://github.com/ddbj/ddbj-search-api"
 Documentation = "https://github.com/ddbj/ddbj-search-api/blob/main/README.md"
 Repository = "https://github.com/ddbj/ddbj-search-api.git"
 
-[project.optional-dependencies]
-tests = [
+[project.scripts]
+ddbj_search_api = "ddbj_search_api.main:main"
+dump_openapi_spec = "ddbj_search_api.main:dump_openapi_spec"
+
+[dependency-groups]
+dev = [
     "pytest",
     "httpx2",
     "pytest-mock",
@@ -36,11 +43,12 @@ tests = [
     "mypy",
     "hypothesis",
     "openapi-spec-validator",
+    "watchfiles",
 ]
 
-[project.scripts]
-ddbj_search_api = "ddbj_search_api.main:main"
-dump_openapi_spec = "ddbj_search_api.main:dump_openapi_spec"
+[tool.deptry.per_rule_ignores]
+# uvicorn loads these at startup when they are installed; no module imports them.
+DEP002 = ["httptools", "uvloop"]
 
 [tool.pytest.ini_options]
 addopts = ["-n", "auto"]
@@ -103,6 +111,7 @@ ignore = [
     "PT011",    # pytest.raises too broad (段階的に改善)
     "RUF012",   # ClassVar annotation (テストデータクラスで頻出)
     "FAST002",  # FastAPI Annotated style (段階的に移行)
+    "CPY",      # copyright notice (license は LICENSE ファイルで示す)
 ]
 
 [tool.ruff.lint.per-file-ignores]
