@@ -290,8 +290,7 @@ def mock_es_get_source_entry_detail() -> collections.abc.Iterator[AsyncMock]:
     Default: ``{"identifier": <requested id>, "status": "public"}``
     so the visibility check (docs/api-spec.md § データ可視性) passes
     for the majority of tests. Override ``.return_value`` or
-    ``.side_effect`` to emulate alias docs, hidden statuses, or missing
-    documents.
+    ``.side_effect`` to emulate hidden statuses or missing documents.
     """
     with patch(
         "ddbj_search_api.routers.entry_detail.es_get_source",

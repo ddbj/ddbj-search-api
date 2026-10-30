@@ -1,7 +1,7 @@
 """Integration tests for IT-DETAIL-* scenarios.
 
 GET /entries/{type}/{id} 4 variants (`/{id}`, `.json`, `.jsonld`,
-`/dbxrefs.json`) — sameAs fallback, alias hit, missing entries, dbXrefs
+`/dbxrefs.json`) — sameAs fallback, missing entries, dbXrefs
 truncation, JSON-LD @id, array-field contract, case normalisation.
 See ``tests/integration-scenarios.md § IT-DETAIL-*``.
 """
@@ -101,9 +101,10 @@ class TestSameAsFallback:
     """IT-DETAIL-03: a JGA-study Secondary ID resolves to its Primary.
 
     A Secondary JGA-study accession (e.g. ``JGAS000556``) resolves back to
-    its Primary (``JGAS000561``) through the sameAs resolution pipeline.
-    BioProject sameAs entries point to external DBs (GEO etc.) and are not
-    in the API fallback path on staging — see the coverage note in
+    its Primary (``JGAS000561``) through the sameAs nested query, because
+    ddbj-search-converter indexes no document whose ``_id`` is a Secondary
+    ID. BioProject sameAs entries point to external DBs (GEO etc.) and are
+    not in the API fallback path on staging — see the coverage note in
     tests/integration-note.md.
     """
 
@@ -115,35 +116,22 @@ class TestSameAsFallback:
         )
         resp = app.get(f"/entries/jga-study/{secondary}")
         assert resp.status_code == 200
-        assert resp.json()["identifier"] != secondary
+        primary = resp.json()["identifier"]
+        assert primary != secondary
+        assert primary.startswith("JGAS")
+        assert primary[len("JGAS") :].isdigit()
 
-
-class TestAliasDocument:
-    """IT-DETAIL-04: converter-side alias document hit.
-
-    ddbj-search-converter ingests a JGA Secondary accession as an alias ES
-    document whose ``_id`` is the Secondary but whose ``_source.identifier``
-    is the Primary it resolves to. Hitting the Secondary path therefore
-    resolves via the direct ``_doc/{id}`` lookup (step 1 of the resolution
-    pipeline in api-spec.md § sameAs), returning the Primary identifier.
-    """
-
-    def test_alias_resolves_to_canonical(self, app: TestClient) -> None:
-        """IT-DETAIL-04: the alias ``_id`` returns 200 with the Primary identifier."""
+    def test_primary_listed_once(self, app: TestClient) -> None:
+        """IT-DETAIL-03: the Primary that owns a Secondary ID appears once in the list."""
         secondary = require_accession(
             "SECONDARY_JGA_STUDY_ID",
             SECONDARY_JGA_STUDY_ID,
         )
-        resp = app.get(f"/entries/jga-study/{secondary}")
+        primary = app.get(f"/entries/jga-study/{secondary}").json()["identifier"]
+        resp = app.get("/entries/jga-study/", params={"keywords": primary, "perPage": 100})
         assert resp.status_code == 200
-        body = resp.json()
-        # ``identifier`` is the Primary (the alias ``_source`` mirrors the
-        # Primary document's ``_source``), distinct from the queried Secondary.
-        canonical = body["identifier"]
-        assert canonical != secondary
-        # Smoke: the canonical Primary is a JGA-study accession (JGAS + digits).
-        assert canonical.startswith("JGAS")
-        assert canonical[len("JGAS") :].isdigit()
+        identifiers = [item["identifier"] for item in resp.json()["items"]]
+        assert identifiers.count(primary) == 1
 
 
 class TestNotFound:

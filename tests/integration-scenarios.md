@@ -37,7 +37,7 @@
 
 | 観点 | 内容 | 主な対象カテゴリ |
 |------|------|-----------------|
-| 正常系 | 主要パス、sameAs フォールバック、alias ヒット、DSL 各演算子 | 全カテゴリ |
+| 正常系 | 主要パス、sameAs フォールバック、DSL 各演算子 | 全カテゴリ |
 | 境界値 | ページネーション境界、cursor 期限、`perPage` 上下限、`topHits` 上下限、`hardLimitReached` 閾値、DSL ネスト深さ上限 | SEARCH / DBPORTAL / BULK / DSL |
 | 異常系 | 422 (Pydantic) / 400 (業務エラー) / 404 / 500 / 502、RFC 7807 形式、DSL 7 slug | 全カテゴリ |
 | status filter | `withdrawn` / `private` 常に除外、`suppressed` は `q` がアクセッション完全一致 (free text) または single leaf `identifier:` eq のときのみ解放 | DETAIL / SEARCH / BULK / UMBRELLA / FACETS / STATUS / DBPORTAL |
@@ -516,26 +516,15 @@
 
 ### IT-DETAIL-03: sameAs Secondary ID フォールバック
 
-**endpoint**: `GET /entries/bioproject/<Secondary_ID>` (Secondary ID 直打ち)
+**endpoint**: `GET /entries/jga-study/<Secondary_ID>` (Secondary ID 直打ち)
 
 **不変条件**:
 - `status_code == 200`
 - response の `identifier` は Primary ID (Secondary でない)
-- sameAs nested query が機能している
+- converter は Secondary ID を `_id` とするドキュメントを作らないので、sameAs nested query で解決されている
+- `GET /entries/jga-study/?keywords=<Primary_ID>` の `items` で、Primary ID は 1 件だけ
 
 **回帰元**: `docs/api-spec.md § sameAs による ID 解決`
-**関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
-
-### IT-DETAIL-04: alias ドキュメントヒット
-
-**endpoint**: `GET /entries/{type}/<alias>` (converter が alias として投入したドキュメント)
-
-**不変条件**:
-- alias でも 200 で詳細が返る
-- response の Primary は alias ではなく canonical ID
-
-**回帰元**: `docs/api-spec.md § sameAs による ID 解決`
-
 **関連 unit テスト**: `tests/unit/routers/test_entry_detail.py`
 
 ### IT-DETAIL-05: 不在 entry の 404

@@ -403,19 +403,14 @@ class TestDbPortalCrossSearch:
         resp = app_with_db_portal.get("/db-portal/cross-search")
         assert resp.status_code == 200
         # First call is for sra (first ES-backed DB in order). Default
-        # ``topHits=10``; ES ``size`` is overshot so post-filter de-dup
-        # can still yield 10 unique hits when sameAs alias docs collide.
-        # 倍率そのものは router の private constant なので、構造的不変条件
-        # (top_hits=10 の整数倍 + overshoot) のみを確認する。
+        # ``topHits=10`` goes to ES ``size`` as is.
         # ``q`` 省略でも default で ``public_only`` status filter が付くため、
         # query は ``match_all`` ではなく ``bool.filter`` 1 本のみ。
         first_call_body = get_es_search_body(mock_es_search_db_portal, call_index=0)
         assert first_call_body["query"] == {
             "bool": {"filter": [{"term": {"status": "public"}}]},
         }
-        observed_size = first_call_body["size"]
-        assert observed_size >= 2 * 10, f"overshoot expected: size={observed_size}"
-        assert observed_size % 10 == 0, f"size {observed_size} not an integer multiple of top_hits=10"
+        assert first_call_body["size"] == 10
 
 
 class TestDbPortalCrossSearchTopHits:
@@ -464,10 +459,7 @@ class TestDbPortalCrossSearchTopHits:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x"})
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)
-        # Default ``topHits=10`` 、ES ``size`` は de-dup overshoot 込み。倍率は
-        # router private なので、整数倍 + overshoot の構造的不変条件で確認する。
-        assert body["size"] >= 2 * 10
-        assert body["size"] % 10 == 0
+        assert body["size"] == 10
         # Source allowlist is the 12-field lightweight contract.
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
@@ -500,10 +492,7 @@ class TestDbPortalCrossSearchTopHits:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 25})
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)
-        # Explicit ``topHits`` 値も de-dup overshoot 倍率で ES へ流れる。倍率自体
-        # は router 内部実装、ここでは ``size >= 2 * top_hits`` + 整数倍を検証。
-        assert body["size"] >= 2 * 25
-        assert body["size"] % 25 == 0
+        assert body["size"] == 25
 
     def test_top_hits_max_50_accepted(self, app_with_db_portal: TestClient) -> None:
         resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 50})
@@ -554,6 +543,29 @@ class TestDbPortalCrossSearchTopHits:
         assert by_db["bioproject"]["hits"][0]["identifier"] == "PRJDB1"
         # Empty-hit ES DB still gets [] (not None) when topHits>=1.
         assert by_db["biosample"]["hits"] == []
+
+    def test_es_hits_kept_in_es_order(
+        self,
+        app_with_db_portal: TestClient,
+        mock_es_search_db_portal: AsyncMock,
+    ) -> None:
+        # ES hits pass through in ES order, one hit per ES document, and
+        # ``count`` is the ES total.
+        hits = [
+            self._es_hit("JGAS000002", "jga-study"),
+            self._es_hit("JGAS000001", "jga-dataset"),
+            self._es_hit("JGAS000001", "jga-study"),
+        ]
+        mock_es_search_db_portal.return_value = make_es_search_response(total=12345, hits=hits)
+        resp = app_with_db_portal.get("/db-portal/cross-search", params={"q": "x", "topHits": 3})
+        assert resp.status_code == 200
+        jga = next(e for e in resp.json()["databases"] if e["db"] == "jga")
+        assert [(h["identifier"], h["type"]) for h in jga["hits"]] == [
+            ("JGAS000002", "jga-study"),
+            ("JGAS000001", "jga-dataset"),
+            ("JGAS000001", "jga-study"),
+        ]
+        assert jga["count"] == 12345
 
     def test_arsa_lightweight_fixed_values(
         self,
@@ -704,10 +716,7 @@ class TestDbPortalAdvCrossSearchTopHits:
         )
         assert resp.status_code == 200
         body = get_es_search_body(mock_es_search_db_portal, call_index=0)
-        # field clause を含む q でも ES ``size`` は de-dup overshoot 倍率。倍率は
-        # router private なので、整数倍 + overshoot の構造的不変条件で確認する。
-        assert body["size"] >= 2 * 7
-        assert body["size"] % 7 == 0
+        assert body["size"] == 7
         assert set(body["_source"]) == self._LIGHTWEIGHT_FIELDS
         assert body["track_total_hits"] is True
         assert "sort" in body

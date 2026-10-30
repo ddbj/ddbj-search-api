@@ -20,11 +20,11 @@ sameAs フォールバックでヒットした場合、レスポンスは identi
 
 **sameAs クエリのエラーハンドリング**: sameAs nested query が ES エラー (400 等) を返した場合、「見つからない」として扱い、ステップ 3 の 404 へフォールスルーする。これにより、`sameAs` フィールドのマッピングが存在しないインデックスに対するリクエストでも 500 ではなく 404 を返す。
 
-**対象データ**: JGA エントリー (jga-study, jga-dataset, jga-dac) は XML の `IDENTIFIERS.SECONDARY_ID` を `sameAs` に格納しており、Secondary ID から Primary エントリーを取得できる。Primary と数値が同じでゼロ埋め桁数だけが違う表記 (例: `JGAS000038` に対する `JGAS00000000038`) も `sameAs` に入っているが、converter はこの表記の alias ドキュメントを作らない (一覧で重複するため) ので、ステップ 2 の sameAs nested query で解決する。ロジック自体は全タイプ共通で、`sameAs` が空のタイプではフォールバックが発火しないだけである。BioProject の `sameAs` には GEO 等の外部 DB cross-ref のみが格納されており (`sameAs.type` が `bioproject` 以外)、Secondary ID による Primary 解決経路は事実上 JGA 系のみで効く。
+**対象データ**: JGA エントリー (jga-study, jga-dataset, jga-dac) は XML の `IDENTIFIERS.SECONDARY_ID` を `sameAs` に格納しており、Secondary ID から Primary エントリーを取得できる。Secondary ID には別の accession 番号 (例: `JGAS000561` に対する `JGAS000556`) と、Primary と数値が同じでゼロ埋め桁数だけが違う表記 (例: `JGAS000038` に対する `JGAS00000000038`) があり、どちらもステップ 2 の sameAs nested query で解決する。ロジック自体は全タイプ共通で、`sameAs` が空のタイプではフォールバックが発火しないだけである。BioProject の `sameAs` には GEO 等の外部 DB cross-ref のみが格納されており (`sameAs.type` が `bioproject` 以外)、Secondary ID による Primary 解決経路は事実上 JGA 系のみで効く。
 
 **Elasticsearch 要件**: `sameAs` フィールドは nested タイプとしてインデックスされている必要がある (ddbj-search-converter 側のマッピング定義)。
 
-**alias ドキュメント (converter 連携)**: ddbj-search-converter は、エントリーの `sameAs` に含まれる Secondary ID を `_id` とする alias ドキュメントを ES に投入する (alias ドキュメントの `_source` は Primary ドキュメントと同一で、`identifier` フィールドは Primary ID のまま)。これにより、Secondary ID による直接取得 (ステップ 1) が alias ドキュメントにヒットし、sameAs nested query (ステップ 2) へのフォールバックが不要になる。API 側では、直接取得成功時に `_source.identifier` を確認し、リクエストの `{id}` と異なる場合は `identifier` を Primary ID として DuckDB 検索・JSON-LD `@id` に使用する。
+**converter 連携**: ddbj-search-converter は 1 エントリーにつき Primary ID を `_id` とするドキュメントを 1 件だけ ES に投入し、Secondary ID を `_id` とするドキュメントは作らない (同じ `_source` が 2 件あると一覧の検索と集計で重複するため)。そのため Secondary ID はステップ 1 では見つからず、常にステップ 2 で解決される。
 
 ## Umbrella Tree (BioProject 専用)
 
@@ -582,7 +582,7 @@ dbXrefs は DBLinks API と同じ DuckDB ファイル (`dblink.duckdb`) から�
 
 各エントリーの `dbXrefs` は ES ドキュメントから除外し、DuckDB から取得して JSON に注入する (1 エントリーずつメモリロード)。
 
-指定された ID のうち見つからなかったものは、レスポンスの `notFound` フィールドで返す。
+指定された ID のうち見つからなかったものは、レスポンスの `notFound` フィールドで返す。Bulk API は ES ドキュメント ID (`_id` = `identifier`) だけで取得し、sameAs による ID 解決をしないので、Secondary ID は `notFound` になる。
 
 - `format=json`: `{ "entries": [...], "notFound": ["ID_1", "ID_2"] }`
 - `format=ndjson`: エントリーを 1 行 1 件で出力 (`notFound` は含まない)

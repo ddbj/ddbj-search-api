@@ -189,7 +189,7 @@ class TestCrossSearchEightDbHitsUniqueness:
         app: TestClient,
         query: str,
     ) -> None:
-        """ES 6 DB は API 層 de-dup、Solr 2 DB は別 mapper 経路で重複を持たない."""
+        """ES 6 DB は converter が 1 エントリー 1 ドキュメントで投入し、Solr 2 DB は mapper で重複しない."""
         resp = app.get(
             "/db-portal/cross-search",
             params={"q": query, "topHits": 50},

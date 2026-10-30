@@ -332,10 +332,9 @@ _ES_DBS_FOR_UNIQUENESS: tuple[str, ...] = (
 class TestCrossSearchHitsUniqueness:
     """IT-DBPORTAL-21: cross-search per-DB hits は ``(identifier, type)`` で unique.
 
-    ddbj-search-converter の sameAs alias 投入 (同一 ``_source`` を別 ``_id`` で
-    複数件投入) により ES raw hits に同 ``(identifier, type)`` が複数現れることが
-    あるが、API 層で de-dup している (docs/db-portal-api-spec.md § hits 仕様)。
-    JGA / SRA など subtype を持つ DB で特に効果がある。
+    ddbj-search-converter は 1 エントリーにつき 1 ドキュメントだけを ES に投入し、
+    API は ES の hits をそのまま返す (docs/db-portal-api-spec.md § hits 仕様)。
+    JGA の Secondary ID を ``_id`` とするドキュメントが ES に残ると、ここで重複が出る。
     """
 
     @pytest.mark.parametrize("query", ["human", "cancer"])

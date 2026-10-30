@@ -549,31 +549,39 @@ class TestDbXrefsLimitValidationPBT:
         assert resp.status_code != 422
 
 
-# === Alias document (sameAs Secondary ID) resolution ===
+# === sameAs Secondary ID resolution ===
 
 
-class TestAliasDocResolution:
-    """Verify that alias documents resolve to the primary identifier
-    via ``es_get_source`` (which carries ``_source.identifier``).
+class TestSameAsResolution:
+    """A Secondary ID has no ES document of its own: the direct lookup
+    misses, ``es_resolve_same_as`` returns the Primary ID, and every
+    variant uses the Primary ID for DuckDB and JSON-LD ``@id``.
     """
 
-    @staticmethod
-    def _alias_source_side_effect() -> object:
-        async def _se(_client: object, _index: str, _id: str, **_kwargs: object) -> dict[str, str]:
-            return {"identifier": "JGAS000001", "status": "public"}
+    @pytest.fixture
+    def _secondary_resolves_to_primary(
+        self,
+        mock_es_get_source_entry_detail: AsyncMock,
+        mock_es_resolve_same_as: AsyncMock,
+    ) -> None:
+        async def _se(_client: object, _index: str, id_: str, **_kwargs: object) -> dict[str, str] | None:
+            if id_ == "JGAS000001":
+                return {"identifier": "JGAS000001", "status": "public"}
+            return None
 
-        return _se
+        mock_es_get_source_entry_detail.side_effect = _se
+        mock_es_resolve_same_as.return_value = "JGAS000001"
 
-    def test_alias_doc_resolves_primary_id_for_detail(
+    @pytest.mark.usefixtures("_secondary_resolves_to_primary")
+    def test_secondary_id_uses_primary_id_for_detail(
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_source_entry_detail: AsyncMock,
+        mock_es_resolve_same_as: AsyncMock,
     ) -> None:
-        """When ES returns an alias doc, entry_id is resolved to primary."""
+        """GET /{id}: DuckDB gets the Primary ID, not the Secondary ID."""
         body = json.dumps({"identifier": "JGAS000001", "type": "jga-study"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         with (
             patch(
@@ -588,22 +596,23 @@ class TestAliasDocResolution:
             resp = app_with_entry_detail.get("/entries/jga-study/JGAS000556")
 
         assert resp.status_code == 200
-        # DuckDB must be called with the primary ID, not the secondary ID
+        assert resp.json()["identifier"] == "JGAS000001"
+        mock_es_resolve_same_as.assert_awaited_once()
         mock_duckdb.assert_called_once()
         call_args = mock_duckdb.call_args[0]
         assert call_args[1] == "jga-study"
         assert call_args[2] == "JGAS000001"
+        assert mock_es_get_source_stream.call_args[0][2] == "JGAS000001"
 
-    def test_alias_doc_resolves_primary_id_for_json(
+    @pytest.mark.usefixtures("_secondary_resolves_to_primary")
+    def test_secondary_id_uses_primary_id_for_json(
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        """GET .json: alias doc resolves to primary ID for DuckDB."""
+        """GET .json: DuckDB gets the Primary ID."""
         body = json.dumps({"identifier": "JGAS000001"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         with patch(
             "ddbj_search_api.routers.entry_detail.iter_linked_ids",
@@ -613,34 +622,29 @@ class TestAliasDocResolution:
 
         assert resp.status_code == 200
         mock_iter.assert_called_once()
-        call_args = mock_iter.call_args[0]
-        assert call_args[2] == "JGAS000001"
+        assert mock_iter.call_args[0][2] == "JGAS000001"
 
-    def test_alias_doc_resolves_primary_id_for_jsonld(
+    @pytest.mark.usefixtures("_secondary_resolves_to_primary")
+    def test_secondary_id_uses_primary_id_for_jsonld(
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
-        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        """GET .jsonld: @id uses primary ID, not secondary."""
+        """GET .jsonld: ``@id`` uses the Primary ID."""
         body = json.dumps({"identifier": "JGAS000001"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
 
         resp = app_with_entry_detail.get("/entries/jga-study/JGAS000556.jsonld")
 
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["@id"].endswith("/entries/jga-study/JGAS000001")
+        assert resp.json()["@id"].endswith("/entries/jga-study/JGAS000001")
 
-    def test_alias_doc_resolves_primary_id_for_dbxrefs(
+    @pytest.mark.usefixtures("_secondary_resolves_to_primary")
+    def test_secondary_id_uses_primary_id_for_dbxrefs(
         self,
         app_with_entry_detail: TestClient,
-        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        """GET dbxrefs.json: alias doc resolves to primary ID for DuckDB."""
-        mock_es_get_source_entry_detail.side_effect = self._alias_source_side_effect()
-
+        """GET dbxrefs.json: DuckDB gets the Primary ID."""
         with patch(
             "ddbj_search_api.routers.entry_detail.iter_linked_ids",
             side_effect=lambda *_a, **_kw: iter([]),
@@ -651,45 +655,23 @@ class TestAliasDocResolution:
 
         assert resp.status_code == 200
         mock_iter.assert_called_once()
-        call_args = mock_iter.call_args[0]
-        assert call_args[2] == "JGAS000001"
+        assert mock_iter.call_args[0][2] == "JGAS000001"
 
-    def test_non_alias_doc_passes_id_through(
-        self,
-        app_with_entry_detail: TestClient,
-        mock_es_get_source_stream: AsyncMock,
-    ) -> None:
-        """Normal doc: source.identifier == requested id, passed through."""
-        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
-        mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        # default fixture: source.identifier = requested id_, so primary == id_
-
-        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["identifier"] == "PRJDB1"
-
-    def test_same_as_fallback_still_works(
+    def test_primary_id_skips_same_as_query(
         self,
         app_with_entry_detail: TestClient,
         mock_es_get_source_stream: AsyncMock,
         mock_es_resolve_same_as: AsyncMock,
-        mock_es_get_source_entry_detail: AsyncMock,
     ) -> None:
-        """When direct es_get_source returns None, sameAs fallback is used."""
-        body = json.dumps({"identifier": "JGAS000001", "type": "jga-study"}).encode()
+        """A Primary ID hits the direct lookup and never runs the sameAs query."""
+        body = json.dumps({"identifier": "PRJDB1", "type": "bioproject"}).encode()
         mock_es_get_source_stream.return_value = make_mock_stream_response(body)
-        # First es_get_source: not found; second (with resolved id): found
-        mock_es_get_source_entry_detail.side_effect = [
-            None,
-            {"identifier": "JGAS000001", "status": "public"},
-        ]
-        mock_es_resolve_same_as.return_value = "JGAS000001"
 
-        resp = app_with_entry_detail.get("/entries/jga-study/JGAS000556")
+        resp = app_with_entry_detail.get("/entries/bioproject/PRJDB1")
 
         assert resp.status_code == 200
-        mock_es_resolve_same_as.assert_awaited_once()
+        assert resp.json()["identifier"] == "PRJDB1"
+        mock_es_resolve_same_as.assert_not_awaited()
 
     def test_same_as_query_es_error_returns_404(
         self,
