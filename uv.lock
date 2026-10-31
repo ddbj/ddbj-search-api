@@ -201,8 +201,8 @@ dev = [
 
 [[package]]
 name = "ddbj-search-converter"
-version = "0.4.2.dev16+gfda7e3027"
-source = { git = "https://github.com/ddbj/ddbj-search-converter?rev=main#fda7e3027316847204279e015b80c88b21ebf1e1" }
+version = "0.4.2.dev17+g9a22393fe"
+source = { git = "https://github.com/ddbj/ddbj-search-converter?rev=main#9a22393fe022fb056948711129fe2d804794e527" }
 dependencies = [
     { name = "duckdb" },
     { name = "elastic-transport" },

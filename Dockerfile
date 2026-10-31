@@ -17,11 +17,11 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md ./
 
-RUN uv sync --no-dev --no-install-project -P ddbj-search-converter
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY . .
 
-RUN SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv sync --no-dev -P ddbj-search-converter
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv sync --locked --no-dev
 
 # dev: adds the dev dependency group, uv, and debugging tools on top of builder.
 FROM builder AS dev
@@ -40,7 +40,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv sync -P ddbj-search-converter
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv sync --locked
 
 ENV HOME=/home/app
 RUN mkdir -p /home/app && chmod 777 /home/app

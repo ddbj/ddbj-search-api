@@ -40,13 +40,7 @@ podman-compose up -d
 
 ### converter のリリース取り込み
 
-`ddbj-search-converter` は git の main 参照のため、リリース取り込み時は `-P` で再 build する。
-
-```bash
-podman-compose build --pull --no-cache app  # uv が -P 相当で main を取り直す
-podman-compose down
-podman-compose up -d
-```
+`ddbj-search-converter` の更新は、`uv.lock` の converter の SHA を更新した commit で取り込む ([development.md § ddbj-search-converter の更新](development.md#ddbj-search-converter-の更新))。その commit を git pull してから、上のデプロイ手順 (`podman-compose build --pull`、`podman-compose down`、`podman-compose up -d`) を実行する。ビルドは `uv.lock` の SHA どおりに converter を入れるので、`uv.lock` を更新せずに再 build しても converter は変わらない。
 
 ## podman 固有の注意
 

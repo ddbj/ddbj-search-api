@@ -35,7 +35,7 @@ base image の tag には Python の minor version と Debian の codename ま�
 docker compose -f compose.yml -f compose.dev.yml exec app uv sync -P ddbj-search-converter
 ```
 
-Docker イメージのビルド時も同じく `-P ddbj-search-converter` で常に最新 main を取り込む運用。converter の Pydantic スキーマや mapping を変更したら、まず converter を `-P` で更新してから本リポジトリ側の対応を進める。
+このコマンドは `uv.lock` の converter の SHA を main の先頭に更新する。Docker イメージのビルドは `uv sync --locked` で `uv.lock` の SHA どおりに converter を入れ、upgrade しない。staging / production に入る依存を `uv.lock` と一致させるためである。そのため、converter の更新は、更新した `uv.lock` を commit するまで staging / production に入らない。converter の Pydantic スキーマや mapping を変更したら、まず converter を `-P` で更新して `uv.lock` を commit してから、本リポジトリ側の対応を進める。
 
 ## 日常コマンド
 
